@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any
 
+from ...storage.research_objects import ResearchObjectAuthority
 from .description_resolver import (
     ResearchResolutionResponse,
     ResolvedResearchDataset,
@@ -20,6 +21,7 @@ from .resolver_policy import canonical_json_bytes
 
 __all__ = [
     "PREPARATION_SCHEMA_VERSION",
+    "PreparedResearchAuthority",
     "PreparedResearchInput",
     "join_prepared_research_input",
     "with_execution_fingerprint",
@@ -30,8 +32,18 @@ _SAFE_MESSAGE = "Research input resolution failed."
 
 
 @dataclass(frozen=True, slots=True)
-class PreparedResearchInput:
-    """Final immutable native Research input after the opaque-ID join."""
+class PreparedResearchAuthority:
+    """Persistable exact-reference binding for one opaque authority."""
+
+    dataset_id: str
+    exact_reference: str
+    compound_suffix: str
+    authority: ResearchObjectAuthority
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedResearchIdentity:
+    """Stable native input identity independent of private grant rotation."""
 
     effective_query: str
     obs_file_list: tuple[str, ...]
@@ -40,6 +52,13 @@ class PreparedResearchInput:
     evidence_digest: str
     execution_fingerprint: str
     authority_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedResearchInput(_PreparedResearchIdentity):
+    """Final immutable native Research input after the opaque-ID join."""
+
+    authorities: tuple[PreparedResearchAuthority, ...] = ()
 
 
 def join_prepared_research_input(
@@ -75,6 +94,7 @@ def join_prepared_research_input(
     authority_ids = tuple(
         entry.authority_id for entry in inventory.entries if entry.authority_id
     )
+    authorities = _prepared_authorities(inventory)
     query = resolution.effective_query
     fingerprint = _join_fingerprint(inventory, resolution, query)
     return PreparedResearchInput(
@@ -85,6 +105,7 @@ def join_prepared_research_input(
         evidence_digest="",
         execution_fingerprint=fingerprint,
         authority_ids=authority_ids,
+        authorities=authorities,
     )
 
 
@@ -177,7 +198,15 @@ def _prepared_identity(
     prepared: PreparedResearchInput, effective_query: str
 ) -> dict[str, Any]:
     return {
-        "authority_ids": prepared.authority_ids,
+        "authorities": tuple(
+            (
+                item.dataset_id,
+                item.exact_reference,
+                item.compound_suffix,
+                item.authority.snapshot.snapshot_digest,
+            )
+            for item in prepared.authorities
+        ),
         "data_list": tuple(prepared.data_list.items()),
         "effective_query_digest": _digest(effective_query),
         "inventory_digest": prepared.inventory_digest,
@@ -209,7 +238,6 @@ def _inventory_identity(
 ) -> tuple[dict[str, Any], ...]:
     return tuple(
         {
-            "authority_id": entry.authority_id,
             "dataset_id": entry.dataset_id,
             "lane": entry.lane,
             "purpose": entry.purpose,
@@ -218,6 +246,29 @@ def _inventory_identity(
             "size_bytes": entry.size_bytes,
         }
         for entry in inventory.entries
+    )
+
+
+def _prepared_authorities(
+    inventory: ResearchInputInventory,
+) -> tuple[PreparedResearchAuthority, ...]:
+    """Join durable exact references to their private authority snapshots."""
+    by_dataset = {
+        authority.dataset_id: authority for authority in inventory.authorities
+    }
+    if inventory.authorities and set(by_dataset) != {
+        entry.dataset_id for entry in inventory.datasets
+    }:
+        raise _failure()
+    return tuple(
+        PreparedResearchAuthority(
+            dataset_id=entry.dataset_id,
+            exact_reference=entry.exact_reference,
+            compound_suffix=entry.compound_suffix,
+            authority=by_dataset[entry.dataset_id],
+        )
+        for entry in inventory.datasets
+        if entry.dataset_id in by_dataset
     )
 
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
@@ -25,6 +26,7 @@ from mcp_server_phytomni.agents.research.dispatch_outbox import (
     persist_plan_and_outbox,
 )
 from mcp_server_phytomni.agents.research.input_preparation import (
+    PreparedResearchAuthority,
     PreparedResearchInput,
 )
 from mcp_server_phytomni.agents.research.planning import (
@@ -36,6 +38,10 @@ from mcp_server_phytomni.agents.research.recovery import (
 )
 from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
 from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
+from mcp_server_phytomni.storage.research_objects import (
+    ResearchObjectAuthority,
+    ResearchObjectSnapshot,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -117,6 +123,11 @@ def _plan(count: int = 2) -> ResearchPlan:
     )
 
 
+def _authority_verifier(_row: ResearchDispatchRecord) -> bool:
+    """Stand in for the real metadata authority port in legacy tests."""
+    return True
+
+
 def test_atomic_plan_projection_and_outbox_commit(tmp_path: Path) -> None:
     """One commit exposes the final projection and every deterministic row."""
     store = _store(tmp_path)
@@ -149,6 +160,46 @@ def test_atomic_plan_projection_and_outbox_commit(tmp_path: Path) -> None:
     ]
     assert work == (2,)
     assert stage == ("planning",)
+
+
+def test_plan_persists_exact_private_authority_bindings(
+    tmp_path: Path,
+) -> None:
+    """Outbox payloads retain exact references and immutable snapshots privately."""
+    store = _store(tmp_path)
+    authority = ResearchObjectAuthority(
+        dataset_id="dataset-001",
+        authority_id="grant-001",
+        snapshot=ResearchObjectSnapshot(
+            dataset_id="dataset-001",
+            size_bytes=17,
+            etag="etag-001",
+            version_id="version-001",
+            last_modified="2026-08-08T00:00:00+00:00",
+            placeholder=False,
+            snapshot_digest="snapshot-001",
+        ),
+    )
+    prepared = replace(
+        _prepared(),
+        authorities=(
+            PreparedResearchAuthority(
+                dataset_id="dataset-001",
+                exact_reference="obs://dev-bucket/dataset-001.tsv",
+                compound_suffix=".tsv",
+                authority=authority,
+            ),
+        ),
+    )
+
+    record = persist_plan_and_outbox(store, "run-1", 0, prepared, _plan(1))[0]
+    durable = ResearchDispatchOutbox(store).load(record.dispatch_id)
+
+    grant = durable.payload["research_grants"][0]
+    assert durable.grant_ids == ("grant-001",)
+    assert grant["dataset_id"] == "dataset-001"
+    assert grant["exact_reference"] == "obs://dev-bucket/dataset-001.tsv"
+    assert grant["snapshot_digest"] == "snapshot-001"
 
 
 def test_plan_write_failure_rolls_back_every_private_projection(
@@ -233,7 +284,12 @@ async def test_recovery_reclaims_expired_leased_outbox(
         return {"task_id": "task-recovered"}
 
     outcomes = await dispatch_outbox.recover_dispatch_outbox(
-        ResearchDispatchOutbox(store, submit=submit), now, 1, "recovery"
+        ResearchDispatchOutbox(
+            store, submit=submit, authority_verifier=_authority_verifier
+        ),
+        now,
+        1,
+        "recovery",
     )
     assert outcomes == ("accepted",)
     assert calls == ["submit"]
@@ -273,7 +329,10 @@ async def test_first_dispatch_queries_remote_and_ignores_failed_local_task(
         return {"task_id": "unexpected"}
 
     disposition = await ResearchDispatchOutbox(
-        store, remote_query=remote_query, submit=submit
+        store,
+        remote_query=remote_query,
+        submit=submit,
+        authority_verifier=_authority_verifier,
     ).dispatch_once(record.dispatch_id, "worker-a")
     assert disposition.state == "accepted"
     assert disposition.remote_task_id == "remote-existing"
@@ -307,6 +366,99 @@ async def test_authority_verifier_receives_durable_child_bindings(
         == record.dispatch_fingerprint
     )
     assert observed[0].grant_ids == ("authority-1",)
+
+
+@pytest.mark.asyncio
+async def test_missing_authority_verifier_fails_closed_before_submit(
+    tmp_path: Path,
+) -> None:
+    """A child cannot cross the send boundary without fresh verification."""
+    store = _store(tmp_path)
+    record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
+        0
+    ]
+    calls: list[str] = []
+
+    async def submit(_row: ResearchDispatchRecord) -> object:
+        calls.append("submit")
+        return {"task_id": "must-not-send"}
+
+    disposition = await ResearchDispatchOutbox(
+        store, submit=submit
+    ).dispatch_once(record.dispatch_id, "worker-a")
+
+    assert disposition.state == "ambiguous"
+    assert not calls
+
+
+@pytest.mark.asyncio
+async def test_plain_verifier_without_authority_verifier_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """A generic verification hook cannot substitute fresh authority proof."""
+    store = _store(tmp_path)
+    record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
+        0
+    ]
+
+    async def verify(_row: ResearchDispatchRecord) -> bool:
+        return True
+
+    calls: list[str] = []
+
+    async def submit(_row: ResearchDispatchRecord) -> object:
+        calls.append("submit")
+        return {"task_id": "must-not-send"}
+
+    disposition = await ResearchDispatchOutbox(
+        store, submit=submit, verify=verify
+    ).dispatch_once(record.dispatch_id, "worker-a")
+
+    assert disposition.state == "ambiguous"
+    assert not calls
+
+
+@pytest.mark.asyncio
+async def test_authority_rotation_is_persisted_with_acceptance(
+    tmp_path: Path,
+) -> None:
+    """A verifier may rotate only private authority bindings atomically."""
+    store = _store(tmp_path)
+    record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
+        0
+    ]
+    observed: list[tuple[str, ...]] = []
+
+    async def verify(row: ResearchDispatchRecord) -> ResearchDispatchRecord:
+        observed.append(row.grant_ids)
+        payload = dict(row.payload)
+        payload["research_grants"] = [{"grant_id": "rotated-grant"}]
+        return replace(
+            row,
+            grant_ids=("rotated-grant",),
+            payload=payload,
+        )
+
+    async def submit(row: ResearchDispatchRecord) -> object:
+        assert row.grant_ids == ("rotated-grant",)
+        return {"task_id": "task-rotated"}
+
+    disposition = await ResearchDispatchOutbox(
+        store, submit=submit, authority_verifier=verify
+    ).dispatch_once(record.dispatch_id, "worker-a")
+
+    assert disposition.state == "accepted"
+    assert observed == [("authority-1",)]
+    with sqlite3.connect(store.db_path) as connection:
+        row = connection.execute(
+            "SELECT grant_ids_json, payload_json FROM "
+            "research_dispatch_outbox WHERE outbox_id = ?",
+            (record.dispatch_id,),
+        ).fetchone()
+    assert json.loads(row[0]) == ["rotated-grant"]
+    assert json.loads(row[1])["research_grants"][0]["grant_id"] == (
+        "rotated-grant"
+    )
 
 
 def test_plan_replacement_removes_stale_child_rows(tmp_path: Path) -> None:
@@ -363,7 +515,10 @@ async def test_acceptance_requires_parent_revision_and_durable_attachment(
         raise RuntimeError("attachment failed")
 
     accepted = await ResearchDispatchOutbox(
-        fresh_store, submit=submit, attach_task=fail_attach
+        fresh_store,
+        submit=submit,
+        attach_task=fail_attach,
+        authority_verifier=_authority_verifier,
     ).dispatch_once(fresh.dispatch_id, "worker-a")
     assert accepted.state == "accepted"
     with sqlite3.connect(fresh_store.db_path) as connection:
@@ -389,7 +544,9 @@ async def test_unknown_acceptance_never_blind_resubmits(
         calls.append("submit")
         raise RuntimeError("crash after remote acceptance")
 
-    outbox = ResearchDispatchOutbox(store, submit=submit)
+    outbox = ResearchDispatchOutbox(
+        store, submit=submit, authority_verifier=_authority_verifier
+    )
     first = await outbox.dispatch_once(record.dispatch_id, "worker-a")
     second = await outbox.reconcile_once(record.dispatch_id, "worker-b")
 
@@ -416,7 +573,9 @@ async def test_remote_task_id_is_cas_accepted_and_local_replay_is_reused(
         calls.append("submit")
         return {"task_id": "task-1"}
 
-    outbox = ResearchDispatchOutbox(store, submit=submit)
+    outbox = ResearchDispatchOutbox(
+        store, submit=submit, authority_verifier=_authority_verifier
+    )
     accepted = await outbox.dispatch_once(record.dispatch_id, "worker-a")
     replay = await outbox.dispatch_once(record.dispatch_id, "worker-b")
 
@@ -486,6 +645,7 @@ async def test_recovery_processes_pending_outbox_without_resolver_provider(
         store,
         _Provider(),
         dispatch_submit=submit,
+        authority_verifier=_authority_verifier,
         batch_size=1,
         lease_owner="recovery-worker",
     )

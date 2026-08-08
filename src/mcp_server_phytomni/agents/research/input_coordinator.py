@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
 from ...api.agent_capabilities import agent_supports_attachment_channels
 from ...mcp.schemas import InSilicoResearchAgent
 from .dispatch_outbox import ResearchDispatchOutbox, persist_plan_and_outbox
+from .dispatch_runtime import build_research_dispatch_runtime
 from .input_contracts import (
     ResearchCoordinatorDependencies,
     ResearchCoordinatorRequest,
@@ -20,6 +21,7 @@ from .input_contracts import (
     ResearchInputFailure,
     research_input_failure,
 )
+from .input_inventory import same_research_inventory_snapshot
 from .input_preparation import (
     PreparedResearchInput,
     join_prepared_research_input,
@@ -35,6 +37,13 @@ ResearchInputResumeLoader = Callable[
 
 _FAILURE_MESSAGE = "Research input resolution failed."
 _UNAVAILABLE_MESSAGE = "Research input resolution is unavailable."
+
+
+class _DispatchBinding(NamedTuple):
+    """Optional recovery service and automatic child-dispatch switch."""
+
+    recovery: Any | None
+    auto_dispatch: bool
 
 
 class ResearchInputCoordinator:
@@ -62,7 +71,20 @@ class ResearchInputCoordinator:
         self.plan = ports.pop("plan", None)
         self.plan_builder = ports.pop("plan_builder", None)
         self.outbox = ports.pop("outbox", None)
-        self._auto_dispatch = False
+        self._dispatch_binding = _DispatchBinding(None, False)
+        runtime = ports.pop("dispatch_runtime", None)
+        if runtime is not None:
+            if self.outbox is not None:
+                raise TypeError("dispatch_runtime cannot combine with outbox")
+            self.outbox = getattr(runtime, "outbox", None)
+            self._dispatch_binding = _DispatchBinding(
+                getattr(runtime, "recovery", None), True
+            )
+            if self.outbox is None:
+                raise TypeError("dispatch_runtime must provide an outbox")
+            self._dispatch_binding = _DispatchBinding(
+                self._dispatch_binding.recovery, True
+            )
         self.expected_revision = ports.pop("expected_revision", 0)
         store = ports.pop("store", None)
         if self.outbox is None and store is not None:
@@ -81,13 +103,44 @@ class ResearchInputCoordinator:
                     authority_verifier=ports.pop("authority_verifier", None),
                     attach_task=ports.pop("attach_task", None),
                 )
-                self._auto_dispatch = True
+                self._dispatch_binding = _DispatchBinding(
+                    self._dispatch_binding.recovery, True
+                )
         self._validate_optional_ports()
         self.dependencies = dependencies or (
             request.dependencies
             if isinstance(request, ResearchCoordinatorRequest)
             else _dependencies_from_ports(ports)
         )
+
+    @classmethod
+    def from_production(
+        cls,
+        request: ResearchCoordinatorRequest | None = None,
+        **ports: Any,
+    ) -> ResearchInputCoordinator:
+        """Construct the coordinator with real Analyst/recovery providers."""
+        runtime = build_research_dispatch_runtime(
+            ports.pop("store"),
+            ports.pop("provider"),
+            analyst_agent=ports.pop("analyst_agent"),
+            analyst_config=ports.pop("analyst_config"),
+            sensitive_config=ports.pop("sensitive_config"),
+            metadata_port=ports.pop("metadata_port", None),
+            now=ports.pop("now", None),
+            lease_owner=ports.pop("lease_owner", None),
+        )
+        return cls(request, dispatch_runtime=runtime, **ports)
+
+    @property
+    def recovery(self) -> Any | None:
+        """Expose the restart recovery service when production-wired."""
+        return self._dispatch_binding.recovery
+
+    @property
+    def _auto_dispatch(self) -> bool:
+        """Whether committed children dispatch immediately after planning."""
+        return self._dispatch_binding.auto_dispatch
 
     def _validate_optional_ports(self) -> None:
         """Validate constructor-only planning/outbox controls."""
@@ -167,7 +220,7 @@ class ResearchInputCoordinator:
             raise _failure("input_resolution", last_stage="join")
         prepared = _bind_request_identity(prepared, context)
         refreshed = await self._revalidate(dependencies, context)
-        if refreshed != inventory:
+        if not same_research_inventory_snapshot(inventory, refreshed):
             raise _snapshot_drift()
         prepared = await self._validate_native(dependencies, prepared, context)
         await self._persist(run_id, prepared, context, lease_owner)

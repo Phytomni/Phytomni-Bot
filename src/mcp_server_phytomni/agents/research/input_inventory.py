@@ -38,6 +38,7 @@ __all__ = [
     "ResearchInventoryRequest",
     "build_research_inventory",
     "revalidate_research_inventory",
+    "same_research_inventory_snapshot",
 ]
 
 _MAX_RESEARCH_REFERENCES = 256
@@ -141,6 +142,7 @@ class ResearchInputInventory:
     documents: tuple[ResearchInventoryEntry, ...]
     datasets: tuple[ResearchInventoryEntry, ...]
     digest: str
+    authorities: tuple[ResearchObjectAuthority, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,7 +182,14 @@ async def build_research_inventory(
     drafts = _preflight(request)
     authorities = await _resolve_drafts(drafts, object_port)
     entries = _entries_from_drafts(drafts, authorities)
-    return _inventory(entries)
+    return _inventory(
+        entries,
+        tuple(
+            authorities[entry.dataset_id]
+            for entry in entries
+            if entry.dataset_id in authorities
+        ),
+    )
 
 
 async def revalidate_research_inventory(
@@ -205,6 +214,17 @@ async def revalidate_research_inventory(
             "Research input metadata changed before execution.",
         )
     return refreshed
+
+
+def same_research_inventory_snapshot(
+    previous: ResearchInputInventory, refreshed: ResearchInputInventory
+) -> bool:
+    """Compare immutable coordinates while allowing authority rotation."""
+    if not isinstance(previous, ResearchInputInventory) or not isinstance(
+        refreshed, ResearchInputInventory
+    ):
+        return refreshed == previous
+    return _same_inventory_snapshot(previous, refreshed)
 
 
 def managed_research_assets_from_bundle(
@@ -594,6 +614,7 @@ def _entry_snapshot(
 
 def _inventory(
     entries: tuple[ResearchInventoryEntry, ...],
+    authorities: tuple[ResearchObjectAuthority, ...] = (),
 ) -> ResearchInputInventory:
     """Build immutable purpose partitions and a non-secret digest."""
     return ResearchInputInventory(
@@ -617,6 +638,7 @@ def _inventory(
                 for entry in entries
             ]
         ),
+        authorities=authorities,
     )
 
 

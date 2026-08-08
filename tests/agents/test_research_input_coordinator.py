@@ -5,13 +5,22 @@
 
 from __future__ import annotations
 
+import hashlib
+import sqlite3
 from dataclasses import dataclass
-from types import MappingProxyType
+from datetime import UTC, datetime, timedelta
+from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
 import pytest
 
-from mcp_server_phytomni.agents.research import input_coordinator
+from mcp_server_phytomni.agents.research import (
+    dispatch_runtime,
+    input_coordinator,
+)
+from mcp_server_phytomni.agents.research.dispatch_outbox import (
+    persist_plan_and_outbox,
+)
 from mcp_server_phytomni.agents.research.input_contracts import (
     ResearchCoordinatorDependencies,
     ResearchCoordinatorRequest,
@@ -20,10 +29,188 @@ from mcp_server_phytomni.agents.research.input_coordinator import (
     ResearchInputCoordinator,
 )
 from mcp_server_phytomni.agents.research.input_preparation import (
+    PreparedResearchAuthority,
     PreparedResearchInput,
+)
+from mcp_server_phytomni.agents.research.planning import (
+    ResearchChildPlan,
+    ResearchPlan,
+)
+from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
+from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
+from mcp_server_phytomni.storage.research_objects import (
+    ResearchObjectAuthority,
+    ResearchObjectResolveRequest,
+    ResearchObjectSnapshot,
+    ResearchObjectVerifyRequest,
 )
 
 pytestmark = pytest.mark.agent
+
+
+def _runtime_resolution() -> dict[str, Any]:
+    """Return the durable resolution fields for runtime fixtures."""
+    return {
+        "original_query_digest": "q" * 64,
+        "original_query_length": 5,
+        "effective_query": "query",
+        "source_map": {},
+        "parsed_candidates": [],
+        "managed_snapshot": [],
+        "evidence_digest": "e" * 64,
+        "work_digest": "w" * 64,
+    }
+
+
+def _runtime_store(tmp_path: Any, name: str) -> ResearchInputStore:
+    """Create one durable parent used by the production-runtime test."""
+    database = str(tmp_path / f"{name}.db")
+    RunRegistry(database).create_run(
+        RunSpec(
+            run_id="run-runtime",
+            user_id="owner",
+            agent="research",
+            origin="api",
+        )
+    )
+    store = ResearchInputStore(database)
+    assert store.persist_resolution("run-runtime", **_runtime_resolution())
+    return store
+
+
+def _runtime_prepared() -> PreparedResearchInput:
+    """Build a private prepared input with one exact authority binding."""
+    snapshot = ResearchObjectSnapshot(
+        "dataset-001",
+        17,
+        "etag-001",
+        "version-001",
+        "2026-08-08T00:00:00+00:00",
+        False,
+        "snapshot-001",
+    )
+    authority = ResearchObjectAuthority("dataset-001", "grant-000", snapshot)
+    return PreparedResearchInput(
+        effective_query="query",
+        obs_file_list=(),
+        data_list=MappingProxyType({"obs://dev-bucket/data.tsv": "dataset"}),
+        inventory_digest="i" * 64,
+        evidence_digest="e" * 64,
+        execution_fingerprint="x" * 64,
+        authority_ids=(authority.authority_id,),
+        authorities=(
+            PreparedResearchAuthority(
+                dataset_id="dataset-001",
+                exact_reference="obs://dev-bucket/data.tsv",
+                compound_suffix=".tsv",
+                authority=authority,
+            ),
+        ),
+    )
+
+
+def _runtime_plan(fingerprint: str = "f" * 64) -> ResearchPlan:
+    """Build one result-child plan for the real Analyst adapter seam."""
+    child = ResearchChildPlan(
+        ordinal=0,
+        task_name="research_goal_0",
+        goal_description="run the research goal",
+        context="context",
+        data_list=MappingProxyType({"obs://dev-bucket/data.tsv": "dataset"}),
+        output_dir="research/run-runtime/children/part-001",
+        thread_id="thread-runtime",
+        interop_mode="off",
+        interop_targets=(),
+        dispatch_fingerprint=fingerprint,
+    )
+    return ResearchPlan(goals=(), children=(child,), digest="a" * 64)
+
+
+class _RuntimeMetadataPort:
+    """Concrete typed metadata port fake with rotating authority IDs."""
+
+    def __init__(self) -> None:
+        self.resolve_calls: list[ResearchObjectResolveRequest] = []
+        self.generation = 0
+
+    async def resolve(
+        self, request: ResearchObjectResolveRequest
+    ) -> tuple[ResearchObjectAuthority, ...]:
+        """Return the current authority generation for each candidate."""
+        self.resolve_calls.append(request)
+        self.generation += 1
+        return tuple(
+            ResearchObjectAuthority(
+                candidate.dataset_id,
+                f"grant-{self.generation:03d}",
+                ResearchObjectSnapshot(
+                    candidate.dataset_id,
+                    17,
+                    "etag-001",
+                    "version-001",
+                    "2026-08-08T00:00:00+00:00",
+                    False,
+                    "snapshot-001",
+                ),
+            )
+            for candidate in request.objects
+        )
+
+    async def verify(
+        self, request: ResearchObjectVerifyRequest
+    ) -> tuple[ResearchObjectAuthority, ...]:
+        """Preserve the verifier protocol for the typed fake port."""
+        return request.authorities
+
+    async def revoke(self, request: Any) -> None:
+        """Accept revocation calls without retaining private state."""
+        del request
+
+
+class _RuntimeProvider:
+    """Resolver provider that must never receive dispatch rows."""
+
+    async def invoke(self, work_input: object, policy: object) -> object:
+        """Reject accidental resolver use during dispatch tests."""
+        del work_input, policy
+        raise AssertionError("dispatch row entered resolver provider")
+
+    async def query(self, request_identity: str) -> object | None:
+        """Return no resolver task because dispatch owns this provider."""
+        del request_identity
+        return None
+
+
+def _runtime_analyst(submitted: list[Any]) -> Any:
+    """Build the real adapter shape while recording child submissions."""
+
+    async def ainvoke(analyst_input: Any, *, config: Any) -> dict[str, Any]:
+        """Record one adapter invocation and return a durable task id."""
+        submitted.append((analyst_input, config))
+        return {
+            "task_id": "analyst-task-001",
+            "output_dir": analyst_input["output_dir"],
+        }
+
+    return SimpleNamespace(app=SimpleNamespace(ainvoke=ainvoke))
+
+
+def _runtime(
+    store: ResearchInputStore,
+    metadata: _RuntimeMetadataPort,
+    submitted: list[Any],
+    lease_owner: str,
+) -> Any:
+    """Construct the production dispatch/recovery graph for one test."""
+    return dispatch_runtime.build_research_dispatch_runtime(
+        store,
+        _RuntimeProvider(),
+        analyst_agent=_runtime_analyst(submitted),
+        analyst_config=type("Config", (), {"USER_ID": "owner"})(),
+        sensitive_config=object(),
+        metadata_port=metadata,
+        lease_owner=lease_owner,
+    )
 
 
 @dataclass
@@ -551,3 +738,101 @@ async def test_restart_rejects_pasted_head_snapshot_drift(
     assert getattr(error, "code") == "research_input_resolution_failed"
     assert getattr(error, "last_stage") == "revalidation"
     assert "persist_planning" not in harness.calls
+
+
+@pytest.mark.asyncio
+async def test_production_runtime_wires_analyst_and_rotation(
+    tmp_path: Any,
+) -> None:
+    """The production seam submits, attaches, and deduplicates replay."""
+    store = _runtime_store(tmp_path, "accepted")
+    fingerprint = hashlib.sha256(str(tmp_path).encode()).hexdigest()
+    metadata = _RuntimeMetadataPort()
+    submitted: list[Any] = []
+
+    runtime = _runtime(store, metadata, submitted, "runtime-worker")
+    coordinator = ResearchInputCoordinator(dispatch_runtime=runtime)
+    assert coordinator.outbox is runtime.outbox
+    assert coordinator.recovery is runtime.recovery
+    production_coordinator = ResearchInputCoordinator.from_production(
+        store=store,
+        provider=_RuntimeProvider(),
+        analyst_agent=_runtime_analyst(submitted),
+        analyst_config=type("Config", (), {"USER_ID": "owner"})(),
+        sensitive_config=object(),
+        metadata_port=metadata,
+        lease_owner="runtime-worker-2",
+    )
+    assert production_coordinator.outbox is not None
+    assert production_coordinator.recovery is not None
+    record = persist_plan_and_outbox(
+        store,
+        "run-runtime",
+        0,
+        _runtime_prepared(),
+        _runtime_plan(fingerprint),
+    )[0]
+    accepted = await runtime.outbox.dispatch_once(record.dispatch_id, "worker")
+    replay = await runtime.outbox.dispatch_once(record.dispatch_id, "worker-2")
+
+    assert accepted.state == "accepted"
+    assert replay.state == "accepted"
+    assert len(submitted) == 1
+    assert (
+        submitted[0][0]["research_grant_sidecar"]["objects"][0]["grant_id"]
+        == "grant-001"
+    )
+    with sqlite3.connect(store.db_path) as connection:
+        task = connection.execute(
+            "SELECT run_id, input_fingerprint, status FROM tasks "
+            "WHERE task_id='analyst-task-001'"
+        ).fetchone()
+    assert task == ("run-runtime", fingerprint, "submitted")
+
+
+@pytest.mark.asyncio
+async def test_production_runtime_recovers_expired_remote_task(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Restart recovery queries an expired sent row without resubmitting."""
+    recovery_store = _runtime_store(tmp_path, "recovery")
+    submitted: list[Any] = []
+    recovery_runtime = _runtime(
+        recovery_store,
+        _RuntimeMetadataPort(),
+        submitted,
+        "recovery-worker",
+    )
+    recovery_record = persist_plan_and_outbox(
+        recovery_store,
+        "run-runtime",
+        0,
+        _runtime_prepared(),
+        _runtime_plan(
+            hashlib.sha256(f"{tmp_path}-recovery".encode()).hexdigest()
+        ),
+    )[0]
+    expired = datetime.now(UTC) - timedelta(minutes=2)
+    with sqlite3.connect(recovery_store.db_path) as connection:
+        connection.execute(
+            "UPDATE research_dispatch_outbox SET state='sent', "
+            "lease_owner='dead-worker', remote_task_id='analyst-existing', "
+            "lease_expires_at=?, revision=1 "
+            "WHERE outbox_id=?",
+            (expired.isoformat(), recovery_record.dispatch_id),
+        )
+        connection.commit()
+
+    async def query(_task_id: str, **_kwargs: Any) -> dict[str, str]:
+        """Report a still-running remote task during recovery."""
+        return {"status": "RUNNING"}
+
+    monkeypatch.setattr(dispatch_runtime, "task_status", query)
+    summary = await recovery_runtime.recovery.recover_once(datetime.now(UTC))
+
+    assert summary.reconciled == 1
+    assert not submitted[1:]
+    assert recovery_runtime.outbox.load(recovery_record.dispatch_id).state == (
+        "accepted"
+    )

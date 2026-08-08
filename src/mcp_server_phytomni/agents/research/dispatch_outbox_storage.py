@@ -10,9 +10,38 @@ import json
 import sqlite3
 from collections.abc import Callable, Mapping, Sequence
 from importlib import import_module
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from ...runtime.sqlite import sqlite_transaction
+
+
+class SqlContext(NamedTuple):
+    """SQL fragments shared by one outbox mutation."""
+
+    db_path: str
+    select_sql: str
+    parent_sql: str
+
+
+class ClaimRequest(NamedTuple):
+    """Inputs for one compare-and-swap lease claim."""
+
+    sql: SqlContext
+    dispatch_id: str
+    owner: str
+    revision: int
+    now_iso: str
+    expiry: str
+
+
+class SentRequest(NamedTuple):
+    """Inputs for one verified sent transition."""
+
+    sql: SqlContext
+    record: Any
+    owner: str
+    now_iso: str
+    expiry: str
 
 
 def recovery_ports(options: dict[str, object]) -> dict[str, object]:
@@ -73,6 +102,35 @@ def reusable_task_id(value: object) -> str | None:
         }:
             return None
     return task_id(value)
+
+
+def binding_values(record: Any) -> tuple[str, str, str, str]:
+    """Return canonical private binding columns for one outbox record."""
+    payload_json = _canonical_json(record.payload)
+    return (
+        payload_json,
+        _digest(record.payload),
+        _canonical_json(list(record.grant_ids)),
+        record.snapshot_digest,
+    )
+
+
+def same_dispatch_identity(before: Any, after: Any) -> bool:
+    """Keep verifier rotation private to one immutable dispatch identity."""
+    return all(
+        getattr(before, name) == getattr(after, name)
+        for name in (
+            "dispatch_id",
+            "run_id",
+            "child_ordinal",
+            "dispatch_fingerprint",
+            "state",
+            "remote_task_id",
+            "revision",
+            "output_dir",
+            "parent_revision",
+        )
+    )
 
 
 def _valid_child_shape(
@@ -138,24 +196,31 @@ def plan_children(
         seen["fingerprints"].add(cast(str, fingerprint))
         seen["task_names"].add(cast(str, task_name))
         seen["output_dirs"].add(cast(str, output_dir))
+        research_grants, resolved_grant_ids = _research_grants(
+            prepared, error_factory
+        )
+        payload = {
+            "context": getattr(child, "context", ""),
+            "data_list": list(data.items()),
+            "dispatch_fingerprint": fingerprint,
+            "goal_description": getattr(child, "goal_description", ""),
+            "interop_mode": getattr(child, "interop_mode", "off"),
+            "interop_targets": targets,
+            "ordinal": ordinal,
+            "output_dir": output_dir,
+            "task_name": task_name,
+            "thread_id": getattr(child, "thread_id", ""),
+        }
+        if research_grants:
+            payload["research_grants"] = research_grants
         return {
             "dispatch_id": f"{run_id}:dispatch:{ordinal}",
             "child_ordinal": ordinal,
             "dispatch_fingerprint": fingerprint,
-            "payload": {
-                "context": getattr(child, "context", ""),
-                "data_list": list(data.items()),
-                "dispatch_fingerprint": fingerprint,
-                "goal_description": getattr(child, "goal_description", ""),
-                "interop_mode": getattr(child, "interop_mode", "off"),
-                "interop_targets": targets,
-                "ordinal": ordinal,
-                "output_dir": output_dir,
-                "task_name": task_name,
-                "thread_id": getattr(child, "thread_id", ""),
-            },
+            "payload": payload,
             "output_dir": output_dir,
-            "grant_ids": tuple(
+            "grant_ids": resolved_grant_ids
+            or tuple(
                 getattr(
                     prepared,
                     "grant_ids",
@@ -171,6 +236,52 @@ def plan_children(
     if not values:
         raise error_factory()
     return tuple(values)
+
+
+def _research_grants(
+    prepared: object, error_factory: Callable[[], Exception]
+) -> tuple[tuple[dict[str, Any], ...], tuple[str, ...]]:
+    """Project exact references and snapshots into a private child payload."""
+    bindings = getattr(prepared, "authorities", ())
+    if not bindings:
+        return (), ()
+    if not isinstance(bindings, tuple):
+        raise error_factory()
+    grants: list[dict[str, Any]] = []
+    grant_ids: list[str] = []
+    for binding in bindings:
+        authority = getattr(binding, "authority", None)
+        snapshot = getattr(authority, "snapshot", None)
+        values = {
+            "dataset_id": getattr(binding, "dataset_id", None),
+            "exact_reference": getattr(binding, "exact_reference", None),
+            "compound_suffix": getattr(binding, "compound_suffix", None),
+            "grant_id": getattr(authority, "authority_id", None),
+            "snapshot_digest": getattr(snapshot, "snapshot_digest", None),
+        }
+        if not all(
+            isinstance(value, str) and value for value in values.values()
+        ):
+            raise error_factory()
+        grants.append(
+            {
+                **values,
+                "snapshot": {
+                    name: getattr(snapshot, name)
+                    for name in (
+                        "dataset_id",
+                        "size_bytes",
+                        "etag",
+                        "version_id",
+                        "last_modified",
+                        "placeholder",
+                        "snapshot_digest",
+                    )
+                },
+            }
+        )
+        grant_ids.append(cast(str, values["grant_id"]))
+    return tuple(grants), tuple(grant_ids)
 
 
 def existing_plan_rows(
@@ -364,6 +475,96 @@ def insert_dispatch_row(
     )
     if outbox is None or tuple(outbox) != expected:
         raise sqlite3.IntegrityError("research dispatch outbox collision")
+
+
+def claim_row(request: ClaimRequest) -> bool:
+    """CAS-claim one pending or expired leased outbox row."""
+    sql = request.sql
+    with sqlite_transaction(sql.db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            sql.select_sql, (request.dispatch_id,)
+        ).fetchone()
+        if row is None or not _parent_live(connection, row["run_id"]):
+            return False
+        state, stored_expiry = row["state"], row["lease_expires_at"]
+        if state not in {"pending", "leased"} or (
+            state == "leased"
+            and stored_expiry is not None
+            and stored_expiry > request.now_iso
+        ):
+            return False
+        changed = connection.execute(
+            "UPDATE research_dispatch_outbox SET state='leased', "
+            "lease_owner=?, lease_expires_at=?, attempt=attempt+1, "
+            "updated_at=?, revision=revision+1 WHERE outbox_id=? "
+            "AND revision=? AND state IN ('pending','leased') AND "
+            "(state='pending' OR lease_expires_at <= ?) AND " + sql.parent_sql,
+            (
+                request.owner,
+                request.expiry,
+                request.now_iso,
+                request.dispatch_id,
+                request.revision,
+                request.now_iso,
+            ),
+        )
+    return changed.rowcount == 1
+
+
+def mark_sent(request: SentRequest) -> bool:
+    """Persist a verified binding and mark a claimed row sent atomically."""
+    sql = request.sql
+    record = request.record
+    payload_json, payload_digest, grant_json, snapshot_digest = binding_values(
+        record
+    )
+    with sqlite_transaction(sql.db_path) as connection:
+        changed = connection.execute(
+            "UPDATE research_dispatch_outbox SET state='sent', "
+            "lease_owner=?, lease_expires_at=?, sent_at=?, updated_at=?, "
+            "revision=revision+1, payload_json=?, payload_digest=?, "
+            "grant_ids_json=?, snapshot_digest=? WHERE outbox_id=? "
+            "AND lease_owner=? AND revision=? AND state='leased' "
+            "AND lease_expires_at IS NOT NULL AND lease_expires_at > ? "
+            "AND " + sql.parent_sql,
+            (
+                request.owner,
+                request.expiry,
+                request.now_iso,
+                request.now_iso,
+                payload_json,
+                payload_digest,
+                grant_json,
+                snapshot_digest,
+                record.dispatch_id,
+                request.owner,
+                record.revision,
+                request.now_iso,
+            ),
+        )
+    return changed.rowcount == 1
+
+
+def _parent_live(connection: sqlite3.Connection, run_id: str) -> bool:
+    """Check the parent row while the claim transaction is open."""
+    row = connection.execute(
+        "SELECT status, COALESCE((SELECT cancel_requested FROM "
+        "research_input_resolutions WHERE run_id = runs.run_id),0) "
+        "FROM runs WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    return (
+        row is not None
+        and row[0]
+        not in {
+            "succeeded",
+            "failed",
+            "cancelled",
+        }
+        and not bool(row[1])
+    )
 
 
 def mark_row(

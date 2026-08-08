@@ -1,0 +1,315 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+"""Production construction seam for Research child dispatch and recovery."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from typing import Any, cast
+
+from ...agents.analyst.defaults import ANALYST_CONFIG
+from ...agents.analyst.task_ops import task_status
+from ...agents.shared.remote_analysis import (
+    RemoteAnalysisPrompt,
+    RemoteAnalysisRequest,
+    ResearchGrantUse,
+    submit_remote_analysis,
+)
+from ...common.relay_client import current_relay_client
+from ...config.defaults import ServerConfig
+from ...config.relay_mode import relay_mode_enabled
+from ...runtime.research_input_store import ResearchInputStore
+from ...storage.obs_relay_ops import operator_obs_client
+from ...storage.research_objects import (
+    DirectResearchObjectMetadataPort,
+    RelayResearchObjectMetadataPort,
+    ResearchObjectCandidate,
+    ResearchObjectMetadataError,
+    ResearchObjectMetadataPort,
+    ResearchObjectResolveRequest,
+    ResearchObjectSnapshot,
+)
+from .dispatch_outbox import (
+    ResearchDispatchOutbox,
+    ResearchDispatchRecord,
+)
+from .recovery import ResearchRecoveryService, ResearchWorkProvider
+
+__all__ = [
+    "ResearchDispatchRuntime",
+    "build_research_dispatch_runtime",
+]
+
+Clock = Callable[[], datetime]
+_QUERY_FAILURES = (Exception,)
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchDispatchRuntime:
+    """Real provider wiring shared by coordinator and restart recovery."""
+
+    outbox: ResearchDispatchOutbox
+    recovery: ResearchRecoveryService
+
+
+@dataclass(frozen=True, slots=True)
+class _RuntimeBindings:
+    """Provider objects captured by the durable callback boundary."""
+
+    analyst_agent: Any
+    analyst_config: Any
+    sensitive_config: Any
+    metadata_port: ResearchObjectMetadataPort
+
+    async def submit(self, row: ResearchDispatchRecord) -> object:
+        """Submit one child through the real Analyst graph adapter."""
+        payload = row.payload
+        request = RemoteAnalysisRequest(
+            analysis_type="research",
+            target_id=str(payload.get("target_id") or row.dispatch_id),
+            output_dir=row.output_dir,
+            prompt=RemoteAnalysisPrompt(
+                goal_description=str(payload.get("goal_description") or ""),
+                meta=str(payload.get("context") or ""),
+                data_list=_data_list(payload.get("data_list")),
+            ),
+            compute_resource=str(
+                payload.get(
+                    "compute_resource",
+                    getattr(self.analyst_config, "COMPUTE_RESOURCE", "medium"),
+                )
+            ),
+            dispatch_fingerprint=row.dispatch_fingerprint,
+            research_grants=_grant_uses(payload.get("research_grants")),
+            parent_run_id=row.run_id,
+            output_dir_is_result_child=True,
+        )
+        return await submit_remote_analysis(
+            self.analyst_agent,
+            self.analyst_config,
+            self.sensitive_config,
+            request,
+            is_polling=False,
+        )
+
+    async def query(self, row: ResearchDispatchRecord) -> object | None:
+        """Query the original Analyst task identity without submitting again."""
+        if not row.remote_task_id:
+            return None
+        config = self.analyst_config
+        try:
+            response = await task_status(
+                row.remote_task_id,
+                analysis_url=getattr(
+                    config, "ANALYSIS_URL", ANALYST_CONFIG.ANALYSIS_URL
+                ),
+                region=getattr(
+                    config, "ANALYSIS_REGION", ANALYST_CONFIG.ANALYSIS_REGION
+                ),
+                timeout=getattr(config, "TIMEOUT", ANALYST_CONFIG.TIMEOUT),
+                retriable_codes=getattr(
+                    config, "RETRIABLE_CODES", ANALYST_CONFIG.RETRIABLE_CODES
+                ),
+                max_retries=getattr(
+                    config, "MAX_RETRIES", ANALYST_CONFIG.MAX_RETRIES
+                ),
+            )
+        except _QUERY_FAILURES:
+            return None
+        if not isinstance(response, Mapping):
+            return None
+        status = str(response.get("status") or "").lower()
+        if status in {"failed", "error", "cancelled", "failed_at_agent_level"}:
+            return None
+        return {"task_id": row.remote_task_id, **dict(response)}
+
+    async def verify(
+        self, row: ResearchDispatchRecord
+    ) -> ResearchDispatchRecord:
+        """Resolve exact references, compare snapshots, and rotate grants."""
+        raw_grants = row.payload.get("research_grants", ())
+        if not raw_grants:
+            await self.metadata_port.resolve(
+                ResearchObjectResolveRequest(
+                    row.run_id, row.dispatch_fingerprint, ()
+                )
+            )
+            return row
+        candidates, expected = _grant_bindings(raw_grants)
+        fresh = await self.metadata_port.resolve(
+            ResearchObjectResolveRequest(
+                row.run_id, row.dispatch_fingerprint, candidates
+            )
+        )
+        if len(fresh) != len(expected):
+            raise ResearchObjectMetadataError()
+        by_dataset = {authority.dataset_id: authority for authority in fresh}
+        if set(by_dataset) != {item[0] for item in expected}:
+            raise ResearchObjectMetadataError()
+        rotated, grant_ids = _rotate_grants(expected, by_dataset)
+        payload = dict(row.payload)
+        payload["research_grants"] = rotated
+        return replace(row, payload=payload, grant_ids=tuple(grant_ids))
+
+
+def build_research_dispatch_runtime(
+    store: ResearchInputStore,
+    provider: ResearchWorkProvider,
+    **options: Any,
+) -> ResearchDispatchRuntime:
+    """Construct one real coordinator/outbox/recovery provider graph."""
+    bindings = _RuntimeBindings(
+        analyst_agent=options["analyst_agent"],
+        analyst_config=options["analyst_config"],
+        sensitive_config=options["sensitive_config"],
+        metadata_port=options.get("metadata_port") or _metadata_port(),
+    )
+    clock = options.get("now") or (lambda: datetime.now(UTC))
+    outbox = ResearchDispatchOutbox(
+        store,
+        submit=bindings.submit,
+        remote_query=bindings.query,
+        authority_verifier=bindings.verify,
+        now=clock,
+    )
+    recovery = ResearchRecoveryService(
+        store,
+        provider,
+        outbox=outbox,
+        now=clock,
+        lease_owner=options.get("lease_owner"),
+    )
+    return ResearchDispatchRuntime(outbox=outbox, recovery=recovery)
+
+
+def _rotate_grants(
+    expected: Sequence[tuple[str, str, str, ResearchObjectSnapshot]],
+    by_dataset: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Replace private grant ids after the immutable snapshots match."""
+    rotated: list[dict[str, Any]] = []
+    grant_ids: list[str] = []
+    for dataset_id, reference, suffix, snapshot in expected:
+        authority = by_dataset[dataset_id]
+        if authority.snapshot != snapshot:
+            raise ResearchObjectMetadataError()
+        grant_ids.append(authority.authority_id)
+        rotated.append(
+            {
+                "dataset_id": dataset_id,
+                "exact_reference": reference,
+                "compound_suffix": suffix,
+                "grant_id": authority.authority_id,
+                "snapshot_digest": snapshot.snapshot_digest,
+                "snapshot": _snapshot_payload(authority.snapshot),
+            }
+        )
+    return rotated, grant_ids
+
+
+def _metadata_port() -> ResearchObjectMetadataPort:
+    """Build the operator direct or customer relay metadata port."""
+    if relay_mode_enabled():
+        return RelayResearchObjectMetadataPort(current_relay_client())
+    config = ServerConfig()
+    return DirectResearchObjectMetadataPort(
+        config.BUCKET_NAME,
+        lambda: operator_obs_client(config.OBS_SERVER),
+    )
+
+
+def _data_list(value: object) -> dict[str, Any]:
+    """Validate the private child data-list projection."""
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return dict(value)
+    return {}
+
+
+def _grant_uses(value: object) -> tuple[ResearchGrantUse, ...]:
+    """Convert persisted private grants into the relay-only sidecar type."""
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return ()
+    result: list[ResearchGrantUse] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise ResearchObjectMetadataError()
+        result.append(
+            ResearchGrantUse(
+                dataset_id=cast(str, item["dataset_id"]),
+                exact_reference=cast(str, item["exact_reference"]),
+                grant_id=cast(str, item["grant_id"]),
+                snapshot_digest=cast(str, item["snapshot_digest"]),
+            )
+        )
+    return tuple(result)
+
+
+def _grant_bindings(
+    value: object,
+) -> tuple[
+    tuple[ResearchObjectCandidate, ...],
+    tuple[tuple[str, str, str, ResearchObjectSnapshot], ...],
+]:
+    """Decode persisted candidate references and expected snapshots."""
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise ResearchObjectMetadataError()
+    candidates: list[ResearchObjectCandidate] = []
+    expected: list[tuple[str, str, str, ResearchObjectSnapshot]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise ResearchObjectMetadataError()
+        dataset_id = item.get("dataset_id")
+        reference = item.get("exact_reference")
+        suffix = item.get("compound_suffix")
+        snapshot = _snapshot_from_payload(item.get("snapshot"))
+        if not all(
+            isinstance(text, str) and text
+            for text in (dataset_id, reference, suffix)
+        ):
+            raise ResearchObjectMetadataError()
+        candidates.append(
+            ResearchObjectCandidate(dataset_id, reference, suffix)
+        )
+        expected.append((dataset_id, reference, suffix, snapshot))
+    return tuple(candidates), tuple(expected)
+
+
+def _snapshot_from_payload(value: object) -> ResearchObjectSnapshot:
+    """Decode one immutable metadata snapshot without trusting its shape."""
+    if not isinstance(value, Mapping):
+        raise ResearchObjectMetadataError()
+    try:
+        snapshot = ResearchObjectSnapshot(
+            dataset_id=cast(str, value["dataset_id"]),
+            size_bytes=cast(int, value["size_bytes"]),
+            etag=cast(str | None, value["etag"]),
+            version_id=cast(str | None, value["version_id"]),
+            last_modified=cast(str | None, value["last_modified"]),
+            placeholder=cast(bool, value["placeholder"]),
+            snapshot_digest=cast(str, value["snapshot_digest"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        raise ResearchObjectMetadataError() from None
+    if not isinstance(snapshot.size_bytes, int) or isinstance(
+        snapshot.size_bytes, bool
+    ):
+        raise ResearchObjectMetadataError()
+    return snapshot
+
+
+def _snapshot_payload(snapshot: ResearchObjectSnapshot) -> dict[str, Any]:
+    """Project a typed snapshot back into the private JSON binding."""
+    return {
+        "dataset_id": snapshot.dataset_id,
+        "size_bytes": snapshot.size_bytes,
+        "etag": snapshot.etag,
+        "version_id": snapshot.version_id,
+        "last_modified": snapshot.last_modified,
+        "placeholder": snapshot.placeholder,
+        "snapshot_digest": snapshot.snapshot_digest,
+    }

@@ -20,9 +20,14 @@ from mcp_server_phytomni.agents.research.input_inventory import (
     ResearchInventoryEntry,
 )
 from mcp_server_phytomni.agents.research.input_preparation import (
+    PreparedResearchAuthority,
     PreparedResearchInput,
     join_prepared_research_input,
     with_execution_fingerprint,
+)
+from mcp_server_phytomni.storage.research_objects import (
+    ResearchObjectAuthority,
+    ResearchObjectSnapshot,
 )
 
 pytestmark = pytest.mark.agent
@@ -130,6 +135,44 @@ def test_join_keeps_inventory_order_and_frozen_trusted_references() -> None:
         prepared.data_list["obs://model-added/path"] = (  # type: ignore[index]
             "unsafe"
         )
+
+
+def test_join_carries_exact_private_authority_binding() -> None:
+    """The prepared object retains the authority needed for restart verify."""
+    entry = _entry("dataset_002", 0)
+    authority = ResearchObjectAuthority(
+        dataset_id=entry.dataset_id,
+        authority_id="grant-dataset-002",
+        snapshot=ResearchObjectSnapshot(
+            dataset_id=entry.dataset_id,
+            size_bytes=10,
+            etag="etag-1",
+            version_id="version-1",
+            last_modified="2026-08-08T00:00:00+00:00",
+            placeholder=False,
+            snapshot_digest="snapshot-dataset-002",
+        ),
+    )
+    inventory = ResearchInputInventory(
+        entries=(entry,),
+        documents=(),
+        datasets=(entry,),
+        digest="inventory-digest",
+        authorities=(authority,),
+    )
+
+    prepared = join_prepared_research_input(
+        inventory, _resolution((entry.dataset_id, "grounded description"))
+    )
+
+    assert prepared.authorities == (
+        PreparedResearchAuthority(
+            dataset_id=entry.dataset_id,
+            exact_reference=entry.exact_reference,
+            compound_suffix=entry.compound_suffix,
+            authority=authority,
+        ),
+    )
 
 
 @pytest.mark.parametrize(
