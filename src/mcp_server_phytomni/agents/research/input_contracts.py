@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, TypedDict, Unpack
+from typing import Literal, Protocol, TypedDict, Unpack
 
 __all__ = [
     "EvidenceSourceKind",
@@ -16,12 +16,22 @@ __all__ = [
     "ResearchFailureStage",
     "ResearchInputFailure",
     "SourceSpan",
+    "TokenEstimator",
     "research_input_failure",
 ]
 
 EvidenceSourceKind = Literal[
     "query", "pdf_page", "document_section", "user_hint", "dataset_meta"
 ]
+
+
+class TokenEstimator(Protocol):
+    """Estimate the token cost of one exact serialized provider request."""
+
+    def estimate(self, serialized_request: bytes) -> int:
+        """Return a non-negative token estimate without provider I/O."""
+        raise NotImplementedError
+
 
 ResearchErrorCode = Literal[
     "research_idempotency_key_required",
