@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +32,9 @@ from .obs_storage import (
 
 __all__ = [
     "ObsObjectAlreadyExistsError",
+    "ObsObjectMetadataError",
     "ObsObjectNotFoundError",
+    "head_object_metadata",
     "put_object_bytes",
     "put_object_bytes_if_absent",
     "put_object_file",
@@ -52,6 +55,71 @@ class ObsObjectNotFoundError(FileNotFoundError):
 
 class ObsObjectAlreadyExistsError(FileExistsError):
     """Raised when a conditional OBS object creation finds an existing key."""
+
+
+class ObsObjectMetadataError(OSError):
+    """Raised when an exact-key OBS metadata read cannot be trusted."""
+
+
+@dataclass(frozen=True, slots=True)
+class _ObsObjectMetadata:
+    """Private exact-key metadata returned without object body access."""
+
+    size_bytes: int
+    etag: str | None
+    version_id: str | None
+    last_modified: str | None
+
+
+def head_object_metadata(
+    bucket: str, object_key: str, *, client: Any
+) -> _ObsObjectMetadata:
+    """Read one already-normalized object's metadata through SDK HEAD only.
+
+    This low-level adapter deliberately accepts the configured bucket and
+    normalized object key as-is.  Its callers own path normalization and can
+    reuse one client for a batch of exact-key HEAD requests.  It never calls
+    list, download, write, or delete SDK methods.
+
+    Args:
+        bucket: Configured OBS bucket name, already validated by the caller.
+        object_key: Normalized key within ``bucket``.
+        client: Operator-authenticated OBS SDK client.
+
+    Returns:
+        Private immutable metadata for the exact object key.
+
+    Raises:
+        ObsObjectNotFoundError: If the SDK confirms that the key is absent.
+        ObsObjectMetadataError: If the metadata response is invalid or fails.
+    """
+    try:
+        response = client.getObjectMetadata(
+            bucketName=bucket, objectKey=object_key
+        )
+        _require_ok(response, "head")
+        body = response.body
+        size_bytes = int(body.contentLength)
+        if size_bytes < 0:
+            raise ValueError("negative content length")
+        return _ObsObjectMetadata(
+            size_bytes=size_bytes,
+            etag=_optional_metadata_value(body, "etag"),
+            version_id=_optional_metadata_value(body, "versionId"),
+            last_modified=_optional_metadata_value(body, "lastModified"),
+        )
+    except ObsObjectNotFoundError:
+        raise
+    except Exception:
+        raise ObsObjectMetadataError(
+            "OBS object metadata is unavailable"
+        ) from None
+
+
+def _optional_metadata_value(body: Any, attribute: str) -> str | None:
+    """Return an SDK metadata value as text, preserving missing as ``None``."""
+    value = getattr(body, attribute, None)
+    return None if value is None else str(value)
 
 
 def _obs_client(obs_server: str) -> ObsClient:
