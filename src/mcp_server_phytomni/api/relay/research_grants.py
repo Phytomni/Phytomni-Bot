@@ -111,17 +111,21 @@ class ResearchGrantRevoke:
     grant_ids: tuple[str, ...]
 
 
-# Public DTO fields are prescribed by the run-bound grant protocol.
-# pylint: disable=too-many-instance-attributes
 @dataclass(frozen=True, slots=True)
-class ResearchGrantRecord:
-    """One safe public projection of a durable private grant."""
+class _ResearchGrantRecordBinding:
+    """Stable run and dataset binding fields for a public grant record."""
 
     grant_id: str
     principal_key_prefix: str
     parent_run_id: str
     execution_fingerprint: str
     dataset_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchGrantRecord(_ResearchGrantRecordBinding):
+    """One safe public projection of a durable private grant."""
+
     key_digest: str
     snapshot: ResearchObjectSnapshot
     state: Literal["active", "revoked", "expired"]

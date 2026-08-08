@@ -18,12 +18,9 @@ __all__ = [
 EffectiveAssetPurpose = Literal["dataset", "document"]
 
 
-# Trailing fields preserve legacy fake construction while exposing state.
-# Keep this compatibility DTO flat: callers construct and project all fields.
-# pylint: disable=too-many-instance-attributes
 @dataclass(frozen=True, slots=True)
-class ResolvedAsset:
-    """One owner-validated internal reference with its effective purpose."""
+class _ResolvedAssetDescriptor:
+    """Stable owner-validated attachment identity and content fields."""
 
     asset_id: str
     reference: str
@@ -31,11 +28,14 @@ class ResolvedAsset:
     content_type: str
     size_bytes: int
     purpose: EffectiveAssetPurpose
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedAsset(_ResolvedAssetDescriptor):
+    """One owner-validated internal reference with its effective purpose."""
+
     state_version: int = 0
     completed_at: str | None = None
-
-
-# pylint: enable=too-many-instance-attributes
 
 
 @dataclass(frozen=True, slots=True)

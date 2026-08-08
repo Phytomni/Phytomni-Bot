@@ -45,13 +45,9 @@ _Purpose = Literal["document", "dataset"]
 _Lane = Literal["managed", "pasted"]
 
 
-# Immutable DTO attributes mirror the declared Research inventory contract.
-# Splitting these protocol fields would make construction and snapshot identity
-# indirect without reducing the data carried across the inventory boundary.
-# pylint: disable=too-many-instance-attributes
 @dataclass(frozen=True, slots=True)
-class ManagedResearchAssetSnapshot:
-    """One immutable server-owned managed attachment state snapshot."""
+class _ManagedResearchAssetSnapshotIdentity:
+    """Stable identity fields shared by the public snapshot projection."""
 
     asset_id: str
     exact_reference: str
@@ -59,6 +55,12 @@ class ManagedResearchAssetSnapshot:
     purpose: _Purpose
     completed: bool
     state_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class ManagedResearchAssetSnapshot(_ManagedResearchAssetSnapshotIdentity):
+    """One immutable server-owned managed attachment state snapshot."""
+
     completed_at: str
     etag: str | None
     version_id: str | None
@@ -72,14 +74,20 @@ type ManagedResearchAssetResolver = Callable[
 
 
 @dataclass(frozen=True, slots=True)
-class ResearchInputSnapshot:
-    """Immutable metadata used to detect input drift before execution."""
+class _ResearchInputSnapshotIdentity:
+    """Stable identity fields for an immutable input snapshot."""
 
     lane: _Lane
     size_bytes: int
     state_version: int | None
     completed_at: str | None
     etag: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchInputSnapshot(_ResearchInputSnapshotIdentity):
+    """Immutable metadata used to detect input drift before execution."""
+
     version_id: str | None
     last_modified: str | None
     placeholder: bool
@@ -100,8 +108,8 @@ class ResearchInventoryRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class ResearchInventoryEntry:
-    """One private immutable Research input with deterministic identity."""
+class _ResearchInventoryEntryIdentity:
+    """Stable source identity fields for one Research input."""
 
     dataset_id: str
     lane: _Lane
@@ -110,6 +118,12 @@ class ResearchInventoryEntry:
     comparison_digest: str
     safe_basename: str
     compound_suffix: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchInventoryEntry(_ResearchInventoryEntryIdentity):
+    """One private immutable Research input with deterministic identity."""
+
     size_bytes: int
     media_hint: str
     purpose: _Purpose
@@ -130,8 +144,8 @@ class ResearchInputInventory:
 
 
 @dataclass(frozen=True, slots=True)
-class _DraftEntry:
-    """Validated entry details held before any metadata-port operation."""
+class _DraftEntryIdentity:
+    """Stable source identity fields held during inventory construction."""
 
     dataset_id: str
     lane: _Lane
@@ -140,14 +154,17 @@ class _DraftEntry:
     comparison_key: str
     safe_basename: str
     compound_suffix: str
+
+
+@dataclass(frozen=True, slots=True)
+class _DraftEntry(_DraftEntryIdentity):
+    """Validated entry details held before any metadata-port operation."""
+
     media_hint: str
     purpose: _Purpose
     user_hint: str | None
     source_span: SourceSpan | None
     managed_snapshot: ManagedResearchAssetSnapshot | None
-
-
-# pylint: enable=too-many-instance-attributes
 
 
 async def build_research_inventory(
