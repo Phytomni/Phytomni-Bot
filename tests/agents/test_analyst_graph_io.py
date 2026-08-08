@@ -64,11 +64,9 @@ def test_analyst_input_requires_only_query() -> None:
 def test_analyst_input_optional_keys_match_arun_kwargs() -> None:
     """Optional ``AnalystInput`` keys mirror ``arun`` kwargs.
 
-    The nine optional fields are the kwargs ``arun`` already accepts
-    (``goal_description`` / ``preset_plan`` / ``data_list`` /
-    ``obs_file_list`` / ``compute_resource`` / ``output_dir`` plus
-    the three boolean toggles). A future ``arun`` kwarg surfaces
-    here before parent graphs can compose against it.
+    The ordinary ``arun`` kwargs and the optional dispatch identity /
+    relay-sidecar fields are all optional. A future ``arun`` kwarg
+    surfaces here before parent graphs can compose against it.
     """
     assert _optional_keys(AnalystInput) == (
         ANALYST_CHAT_MOUNT_TOPOLOGY.input_fields - {"query"}
@@ -133,6 +131,8 @@ def test_analyst_state_carries_full_field_union() -> None:
         "knowledge_payload",
         "knowledge_response",
         "input_fingerprint",
+        "dispatch_fingerprint",
+        "research_grant_sidecar",
     }
     assert set(get_type_hints(AnalystState).keys()) == expected
 

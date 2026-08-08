@@ -102,6 +102,9 @@ ANALYST_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
         "is_auto_select",
         "is_preset_plan",
         "locale",
+        "dispatch_fingerprint",
+        "input_fingerprint",
+        "research_grant_sidecar",
     },
     required_input_fields={"query"},
     output_fields={
