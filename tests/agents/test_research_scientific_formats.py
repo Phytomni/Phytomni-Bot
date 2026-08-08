@@ -74,6 +74,70 @@ def test_zip_is_one_archive_reference() -> None:
     assert result.archive is True
 
 
+@pytest.mark.parametrize(
+    "suffix",
+    (
+        ".zip",
+        ".tar",
+        ".tgz",
+        ".gz",
+        ".bgzf",
+        ".bz2",
+        ".xz",
+        ".zst",
+        ".7z",
+        ".rar",
+    ),
+)
+def test_only_design_approved_archive_suffixes_are_classified(
+    suffix: str,
+) -> None:
+    """The future archive validator has the exact design-approved boundary."""
+    result = classify_scientific_reference(f"bundle{suffix}")
+
+    assert result is not None
+    assert result.canonical_suffix == suffix
+    assert result.archive is True
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    (
+        ".zipx",
+        ".tbz",
+        ".tbz2",
+        ".txz",
+        ".tlz",
+        ".tzst",
+        ".bgz",
+        ".bgzip",
+        ".cab",
+        ".arj",
+    ),
+)
+def test_unapproved_archive_suffixes_are_rejected(suffix: str) -> None:
+    """The catalog does not expand the approved archive contract."""
+    assert classify_scientific_reference(f"bundle{suffix}") is None
+
+
+@pytest.mark.parametrize(
+    ("reference", "media_hint"),
+    (
+        ("metadata.xml", "application/xml"),
+        ("metadata.yaml", "application/yaml"),
+    ),
+)
+def test_structured_formats_keep_accurate_media_hints(
+    reference: str,
+    media_hint: str,
+) -> None:
+    """Format metadata does not label XML or YAML as JSON."""
+    result = classify_scientific_reference(reference)
+
+    assert result is not None
+    assert result.media_hint == media_hint
+
+
 def test_unknown_suffix_is_rejected() -> None:
     """An unregistered suffix cannot enter the Research inventory."""
     assert classify_scientific_reference("opaque.payload") is None

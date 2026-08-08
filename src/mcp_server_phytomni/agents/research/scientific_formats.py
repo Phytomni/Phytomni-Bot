@@ -174,10 +174,12 @@ _SCIENTIFIC_FORMATS = (
         "application/octet-stream",
     )
     + _formats(
-        (".json", ".jsonl", ".ndjson", ".xml", ".yaml", ".yml"),
+        (".json", ".jsonl", ".ndjson"),
         "structured",
         "application/json",
     )
+    + _formats((".xml",), "structured", "application/xml")
+    + _formats((".yaml", ".yml"), "structured", "application/yaml")
     + _formats(
         (".mzml", ".mzid", ".pepxml", ".protxml"),
         "proteomics",
@@ -212,34 +214,16 @@ _SCIENTIFIC_FORMATS = (
     + _formats(
         (
             ".zip",
-            ".zipx",
             ".tar.gz",
             ".tar",
             ".tgz",
-            ".tbz",
-            ".tbz2",
-            ".txz",
-            ".tlz",
-            ".tzst",
             ".gz",
-            ".bgz",
             ".bgzf",
-            ".bgzip",
-            ".bz",
             ".bz2",
             ".xz",
-            ".lz",
-            ".lzma",
-            ".lz4",
-            ".lzo",
-            ".br",
-            ".z",
             ".zst",
             ".7z",
             ".rar",
-            ".cab",
-            ".ace",
-            ".arj",
         ),
         "archive",
         "application/octet-stream",
