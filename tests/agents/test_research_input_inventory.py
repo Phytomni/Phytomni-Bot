@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
+from typing import Literal
 
 import pytest
 
@@ -87,14 +88,14 @@ def _managed(
     asset_id: str,
     reference: str,
     *,
-    purpose: str = "dataset",
+    purpose: Literal["dataset", "document"] = "dataset",
 ) -> ManagedResearchAssetSnapshot:
     """Build one valid server-owned managed Research asset snapshot."""
     return ManagedResearchAssetSnapshot(
         asset_id=asset_id,
         exact_reference=reference,
         size_bytes=17,
-        purpose=purpose,  # type: ignore[arg-type]
+        purpose=purpose,
         completed=True,
         state_version=1,
         completed_at="2026-08-08T00:00:00+00:00",
@@ -325,7 +326,7 @@ async def test_inventory_rejects_invalid_metadata_and_format() -> None:
 
 @pytest.mark.parametrize("purpose", ("document", "dataset"))
 async def test_inventory_rejects_zero_byte_managed_assets(
-    purpose: str,
+    purpose: Literal["dataset", "document"],
 ) -> None:
     """Zero-byte managed assets are placeholders, not inputs."""
     port = RecordingResearchObjectPort()

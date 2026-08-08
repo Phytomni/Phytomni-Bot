@@ -46,7 +46,6 @@ _Lane = Literal["managed", "pasted"]
 
 
 # Immutable DTO attributes mirror the declared Research inventory contract.
-# pylint: disable=too-many-instance-attributes
 @dataclass(frozen=True, slots=True)
 class ManagedResearchAssetSnapshot:
     """One immutable server-owned managed attachment state snapshot."""

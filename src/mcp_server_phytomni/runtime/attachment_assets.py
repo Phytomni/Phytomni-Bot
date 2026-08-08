@@ -19,7 +19,6 @@ EffectiveAssetPurpose = Literal["dataset", "document"]
 
 
 # Trailing fields preserve legacy fake construction while exposing state.
-# pylint: disable=too-many-instance-attributes
 @dataclass(frozen=True, slots=True)
 class ResolvedAsset:
     """One owner-validated internal reference with its effective purpose."""
@@ -32,9 +31,6 @@ class ResolvedAsset:
     purpose: EffectiveAssetPurpose
     state_version: int = 0
     completed_at: str | None = None
-
-
-# pylint: enable=too-many-instance-attributes
 
 
 @dataclass(frozen=True, slots=True)
