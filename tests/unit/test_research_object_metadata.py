@@ -51,7 +51,7 @@ class FakeObsClient:
     def __getattr__(self, name: str) -> object:
         """Expose only the OBS SDK methods the port must not widen."""
         methods = {
-            "getObjectMetadata": self._get_object_metadata,
+            "getObjectMetadata": self.get_object_metadata,
             "getObject": self._get_object,
             "listObjects": self._list_objects,
             "putContent": self._put_content,
@@ -62,7 +62,7 @@ class FakeObsClient:
         except KeyError:
             raise AttributeError(name) from None
 
-    def _get_object_metadata(self, **kwargs: str) -> SimpleNamespace:
+    def get_object_metadata(self, **kwargs: str) -> SimpleNamespace:
         """Return one seeded metadata HEAD response."""
         bucket = kwargs["bucketName"]
         key = kwargs["objectKey"]
