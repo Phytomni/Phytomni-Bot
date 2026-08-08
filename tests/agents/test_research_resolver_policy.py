@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import fields, replace
 
 import pytest
 
@@ -33,11 +33,18 @@ class _ExactEstimator:
     """Record deterministic requests presented to the injected estimator."""
 
     def __init__(self) -> None:
+        """Start a deterministic request ledger."""
         self.requests: list[bytes] = []
 
     def estimate(self, serialized_request: bytes) -> int:
+        """Record and deterministically estimate one exact request."""
         self.requests.append(serialized_request)
         return len(serialized_request) // 4 + 1
+
+    @property
+    def contract_name(self) -> str:
+        """Identify this pure test estimator."""
+        return "research_token_estimator"
 
 
 def _policy(**changes: object) -> ResearchResolverPolicy:
@@ -105,17 +112,25 @@ def _covered_text(plan) -> str:
 def test_policy_fingerprint_changes_for_every_semantic_field() -> None:
     """Every versioned policy field participates in a canonical fingerprint."""
     policy = _policy()
-    for field in policy.__dataclass_fields__:
-        value = getattr(policy, field)
-        changed = (
-            not value
-            if isinstance(value, bool)
-            else value + 1 if isinstance(value, int) else value + "-changed"
-        )
-        assert (
-            replace(policy, **{field: changed}).fingerprint()
-            != policy.fingerprint()
-        )
+    replacements = (
+        replace(policy, schema_version=2),
+        replace(policy, model_id="other"),
+        replace(policy, context_token_limit=257),
+        replace(policy, output_token_reserve=17),
+        replace(policy, prompt_token_overhead=9),
+        replace(policy, schema_token_overhead=9),
+        replace(policy, safety_margin_tokens=9),
+        replace(policy, max_serialized_request_bytes=513),
+        replace(policy, max_description_chars=201),
+        replace(policy, overlap_chars=13),
+        replace(policy, provider_identity="other-provider"),
+        replace(policy, provider_idempotency_supported=False),
+        replace(policy, provider_status_query_supported=False),
+    )
+    assert len(replacements) == len(fields(policy))
+    assert all(
+        item.fingerprint() != policy.fingerprint() for item in replacements
+    )
 
 
 def test_planner_uses_canonical_bytes_and_budgets() -> None:
@@ -156,7 +171,7 @@ def test_tiny_context_covers_all_units_and_preserves_oversized_suffix() -> (
         _unit("document_002_section_001", "section text"),
     )
     policy = _policy(
-        context_token_limit=128,
+        context_token_limit=256,
         output_token_reserve=8,
         prompt_token_overhead=8,
         schema_token_overhead=8,

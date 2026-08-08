@@ -32,6 +32,11 @@ class TokenEstimator(Protocol):
         """Return a non-negative token estimate without provider I/O."""
         raise NotImplementedError
 
+    @property
+    def contract_name(self) -> str:
+        """Identify the pure local estimation contract."""
+        return "research_token_estimator"
+
 
 ResearchErrorCode = Literal[
     "research_idempotency_key_required",

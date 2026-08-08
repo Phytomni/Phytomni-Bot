@@ -45,23 +45,44 @@ class ResearchResolverPolicyError(ValueError):
     """A safe local planning failure that never contains evidence text."""
 
 
-@dataclass(frozen=True, slots=True)
-class ResearchResolverPolicy:
-    """All semantic controls that affect deterministic resolver requests."""
+@dataclass(frozen=True)
+class _ResolverTokenBudgetFields:
+    """Immutable token sizing fields for one resolver policy."""
 
-    schema_version: int
-    model_id: str
     context_token_limit: int
     output_token_reserve: int
     prompt_token_overhead: int
     schema_token_overhead: int
     safety_margin_tokens: int
+
+
+@dataclass(frozen=True)
+class _ResolverRequestBudgetFields:
+    """Immutable request and description caps for one resolver policy."""
+
     max_serialized_request_bytes: int
     max_description_chars: int
     overlap_chars: int
+
+
+@dataclass(frozen=True)
+class _ResolverProviderFields:
+    """Immutable provider/version fields for one resolver policy."""
+
+    schema_version: int
+    model_id: str
     provider_identity: str
     provider_idempotency_supported: bool
     provider_status_query_supported: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchResolverPolicy(
+    _ResolverTokenBudgetFields,
+    _ResolverRequestBudgetFields,
+    _ResolverProviderFields,
+):
+    """All semantic controls that affect deterministic resolver requests."""
 
     def fingerprint(self) -> str:
         """Hash every policy semantic field in stable versioned order."""
@@ -106,6 +127,17 @@ class _Fragment:
     overlap_chars: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class _PlannerContext:
+    """Stable local dependencies and opaque request binding for one plan."""
+
+    policy: ResearchResolverPolicy
+    estimator: TokenEstimator
+    fingerprint: str
+    inventory_digest: str
+    group_members: tuple[str, ...]
+
+
 def canonical_json_bytes(value: object) -> bytes:
     """Return canonical UTF-8 JSON used for both hashing and byte budgets."""
     return json.dumps(
@@ -125,25 +157,24 @@ def plan_resolver_work(
     if len(required) != len(set(required)):
         raise ResearchResolverPolicyError("Research evidence IDs are invalid.")
     fingerprint = policy.fingerprint()
+    context = _PlannerContext(
+        policy,
+        estimator,
+        fingerprint,
+        inventory.digest,
+        tuple(entry.dataset_id for entry in inventory.entries),
+    )
     units: list[ResearchResolverObservationUnit] = []
     for evidence_unit in evidence.units:
         fragments = _fit_evidence_unit(
             evidence_unit,
-            policy,
-            estimator,
-            fingerprint,
-            inventory.digest,
-            tuple(entry.dataset_id for entry in inventory.entries),
+            context,
         )
         units.extend(
             _observation(
                 fragment,
                 f"resolver_{len(units) + 1:03d}",
-                policy,
-                estimator,
-                fingerprint,
-                inventory.digest,
-                tuple(entry.dataset_id for entry in inventory.entries),
+                context,
                 estimated_tokens=tokens,
             )
             for fragment, tokens in fragments
@@ -188,20 +219,24 @@ def subdivide_verified_context_rejection(
         _observation(
             left,
             f"{unit_id}.1",
-            policy,
-            estimator,
-            plan.policy_fingerprint,
-            inventory_digest,
-            group_members,
+            _PlannerContext(
+                policy,
+                estimator,
+                plan.policy_fingerprint,
+                inventory_digest,
+                group_members,
+            ),
         ),
         _observation(
             right,
             f"{unit_id}.2",
-            policy,
-            estimator,
-            plan.policy_fingerprint,
-            inventory_digest,
-            group_members,
+            _PlannerContext(
+                policy,
+                estimator,
+                plan.policy_fingerprint,
+                inventory_digest,
+                group_members,
+            ),
         ),
     )
     if any(
@@ -233,17 +268,30 @@ def _validate_policy(policy: ResearchResolverPolicy) -> None:
         policy.max_description_chars,
         policy.overlap_chars,
     )
-    if (
-        not policy.model_id
-        or not policy.provider_identity
-        or any(value < 0 for value in integer_values)
-        or policy.schema_version < 1
-        or policy.max_serialized_request_bytes < 1
-        or _token_budget(policy) < 1
-    ):
+    if _invalid_identity(policy) or _invalid_budget(policy, integer_values):
         raise ResearchResolverPolicyError(
             "Research resolver policy is invalid."
         )
+
+
+def _invalid_identity(policy: ResearchResolverPolicy) -> bool:
+    """Return whether the versioned model/provider binding is incomplete."""
+    return (
+        not policy.model_id
+        or not policy.provider_identity
+        or policy.schema_version < 1
+    )
+
+
+def _invalid_budget(
+    policy: ResearchResolverPolicy, values: tuple[int, ...]
+) -> bool:
+    """Return whether caps are negative or cannot hold any request token."""
+    return (
+        any(value < 0 for value in values)
+        or policy.max_serialized_request_bytes < 1
+        or _token_budget(policy) < 1
+    )
 
 
 def _token_budget(policy: ResearchResolverPolicy) -> int:
@@ -260,11 +308,7 @@ def _token_budget(policy: ResearchResolverPolicy) -> int:
 
 def _fit_evidence_unit(
     evidence: ResearchEvidenceUnit,
-    policy: ResearchResolverPolicy,
-    estimator: TokenEstimator,
-    fingerprint: str,
-    inventory_digest: str,
-    group_members: tuple[str, ...],
+    context: _PlannerContext,
 ) -> tuple[tuple[_Fragment, int], ...]:
     """Split one unit while retaining every text suffix and source boundary."""
     pending = [_fragment_from_evidence(evidence)]
@@ -273,16 +317,16 @@ def _fit_evidence_unit(
         fragment = pending.pop(0)
         serialized = _serialized_payload(
             fragment,
-            policy,
-            fingerprint,
-            inventory_digest,
-            group_members,
+            context.policy,
+            context.fingerprint,
+            context.inventory_digest,
+            context.group_members,
         )
-        tokens = estimator.estimate(serialized)
+        tokens = context.estimator.estimate(serialized)
         if (
-            len(serialized) <= policy.max_serialized_request_bytes
-            and tokens <= _token_budget(policy)
-            and len(fragment.text) <= policy.max_description_chars
+            len(serialized) <= context.policy.max_serialized_request_bytes
+            and tokens <= _token_budget(context.policy)
+            and len(fragment.text) <= context.policy.max_description_chars
         ):
             fitted.append((fragment, tokens))
             continue
@@ -290,7 +334,7 @@ def _fit_evidence_unit(
             raise ResearchResolverPolicyError(
                 "Research evidence exceeds request budget."
             )
-        left, right = _split_fragment(fragment, policy.overlap_chars)
+        left, right = _split_fragment(fragment, context.policy.overlap_chars)
         pending[0:0] = [left, right]
     return tuple(fitted)
 
@@ -310,30 +354,28 @@ def _fragment_from_evidence(evidence: ResearchEvidenceUnit) -> _Fragment:
 def _observation(
     fragment: _Fragment,
     unit_id: str,
-    policy: ResearchResolverPolicy,
-    estimator: TokenEstimator,
-    fingerprint: str,
-    inventory_digest: str,
-    group_members: tuple[str, ...],
+    context: _PlannerContext,
     *,
     estimated_tokens: int | None = None,
 ) -> ResearchResolverObservationUnit:
     """Build one already-validated immutable provider observation unit."""
     serialized = _serialized_payload(
         fragment,
-        policy,
-        fingerprint,
-        inventory_digest,
-        group_members,
+        context.policy,
+        context.fingerprint,
+        context.inventory_digest,
+        context.group_members,
     )
     tokens = (
-        estimator.estimate(serialized)
+        context.estimator.estimate(serialized)
         if estimated_tokens is None
         else estimated_tokens
     )
     if len(
         serialized
-    ) > policy.max_serialized_request_bytes or tokens > _token_budget(policy):
+    ) > context.policy.max_serialized_request_bytes or tokens > _token_budget(
+        context.policy
+    ):
         raise ResearchResolverPolicyError(
             "Research evidence exceeds request budget."
         )
@@ -369,6 +411,7 @@ def _serialized_payload(
                 }
             ],
             "model_id": policy.model_id,
+            "policy_fingerprint": fingerprint,
             "inventory_digest": inventory_digest,
             "group_members": group_members,
             "schema_version": policy.schema_version,
