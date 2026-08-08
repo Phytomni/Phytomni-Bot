@@ -144,8 +144,9 @@ class DirectResearchObjectMetadataPort:
         self, request: ResearchObjectResolveRequest
     ) -> tuple[ResearchObjectAuthority, ...]:
         """Resolve request objects with one client and no object-body I/O."""
-        client = self._client_factory()
+        client = self._client()
         authorities: list[ResearchObjectAuthority] = []
+        records: dict[str, _AuthorityRecord] = {}
         for candidate in request.objects:
             object_key = _normalized_object_key(candidate, self._bucket)
             snapshot = _read_snapshot(
@@ -158,20 +159,21 @@ class DirectResearchObjectMetadataPort:
                 authority_id=secrets.token_urlsafe(24),
                 snapshot=snapshot,
             )
-            self._authorities[authority.authority_id] = _AuthorityRecord(
+            records[authority.authority_id] = _AuthorityRecord(
                 parent_run_id=request.parent_run_id,
                 execution_fingerprint=request.execution_fingerprint,
                 object_key=object_key,
                 authority=authority,
             )
             authorities.append(authority)
+        self._authorities.update(records)
         return tuple(authorities)
 
     async def verify(
         self, request: ResearchObjectVerifyRequest
     ) -> tuple[ResearchObjectAuthority, ...]:
         """Re-HEAD each private authority and reject changed snapshots."""
-        client = self._client_factory()
+        client = self._client()
         verified: list[ResearchObjectAuthority] = []
         for authority in request.authorities:
             record = self._matching_record(
@@ -198,6 +200,13 @@ class DirectResearchObjectMetadataPort:
                 record, request.parent_run_id, request.execution_fingerprint
             ):
                 self._authorities.pop(authority_id, None)
+
+    def _client(self) -> Any:
+        """Build a client while suppressing factory failure details."""
+        try:
+            return self._client_factory()
+        except Exception:
+            raise ResearchObjectMetadataError() from None
 
     def _matching_record(
         self,

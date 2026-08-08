@@ -11,6 +11,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from mcp_server_phytomni.storage import (
+    research_objects as research_objects_module,
+)
 from mcp_server_phytomni.storage.research_objects import (
     DirectResearchObjectMetadataPort,
     ResearchObjectAuthority,
@@ -134,6 +137,19 @@ def _port(fake_obs: FakeObsClient) -> DirectResearchObjectMetadataPort:
     )
 
 
+def _assert_no_factory_details(
+    error: ResearchObjectMetadataError,
+    caplog: pytest.LogCaptureFixture,
+    sentinel: str,
+) -> None:
+    """Assert the public failure projection suppresses factory internals."""
+    assert str(error) != sentinel
+    assert sentinel not in str(error)
+    assert sentinel not in caplog.text
+    assert error.__cause__ is None
+    assert error.__suppress_context__ is True
+
+
 async def test_direct_resolve_uses_exact_metadata_head_only() -> None:
     """Resolve normalizes only for HEAD and captures its stable snapshot."""
     fake_obs = FakeObsClient()
@@ -154,6 +170,65 @@ async def test_direct_resolve_uses_exact_metadata_head_only() -> None:
     assert "a.vcf" not in resolved[0].authority_id
 
 
+async def test_direct_resolve_sanitizes_client_factory_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Resolve maps every client-factory failure to its safe public error."""
+    sentinel = (
+        "https://endpoint.example token=credential "
+        "bucket=dev-bucket key=private/a.vcf"
+    )
+
+    def raise_factory_error() -> FakeObsClient:
+        """Simulate a credentialed client factory failure."""
+        raise RuntimeError(sentinel)
+
+    port = DirectResearchObjectMetadataPort(
+        bucket="dev-bucket", client_factory=raise_factory_error
+    )
+
+    with pytest.raises(ResearchObjectMetadataError) as captured:
+        await port.resolve(_resolve_request("obs://dev-bucket/a.vcf"))
+
+    _assert_no_factory_details(captured.value, caplog, sentinel)
+
+
+async def test_direct_verify_sanitizes_client_factory_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify maps every client-factory failure to its safe public error."""
+    fake_obs = FakeObsClient()
+    fail_factory = False
+    sentinel = (
+        "https://endpoint.example token=credential "
+        "bucket=dev-bucket key=private/a.vcf"
+    )
+
+    def client_factory() -> FakeObsClient:
+        """Return a fake once, then simulate a credentialed factory failure."""
+        if fail_factory:
+            raise RuntimeError(sentinel)
+        return fake_obs
+
+    port = DirectResearchObjectMetadataPort(
+        bucket="dev-bucket", client_factory=client_factory
+    )
+    request = _resolve_request("obs://dev-bucket/a.vcf")
+    authority = (await port.resolve(request))[0]
+    fail_factory = True
+
+    with pytest.raises(ResearchObjectMetadataError) as captured:
+        await port.verify(
+            ResearchObjectVerifyRequest(
+                parent_run_id=request.parent_run_id,
+                execution_fingerprint=request.execution_fingerprint,
+                authorities=(authority,),
+            )
+        )
+
+    _assert_no_factory_details(captured.value, caplog, sentinel)
+
+
 async def test_direct_resolve_rejects_missing_or_placeholder_objects() -> None:
     """Missing and zero-byte placeholders never become authorities."""
     missing_fake = FakeObsClient()
@@ -171,6 +246,60 @@ async def test_direct_resolve_rejects_missing_or_placeholder_objects() -> None:
 
     assert missing_fake.calls == [("head", "dev-bucket", "missing.vcf")]
     assert placeholder_fake.calls == [("head", "dev-bucket", "a.vcf")]
+
+
+async def test_direct_resolve_rolls_back_later_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A later candidate failure atomically rolls back earlier authorities."""
+    monkeypatch.setattr(
+        research_objects_module.secrets,
+        "token_urlsafe",
+        lambda _size: "authority-first",
+    )
+    expected_authority = (
+        await _port(FakeObsClient()).resolve(
+            _resolve_request("obs://dev-bucket/a.vcf")
+        )
+    )[0]
+    fake_obs = FakeObsClient()
+    port = _port(fake_obs)
+    request = ResearchObjectResolveRequest(
+        parent_run_id="run-parent",
+        execution_fingerprint="exec-fingerprint",
+        objects=(
+            ResearchObjectCandidate(
+                dataset_id="dataset-1",
+                exact_reference="obs://dev-bucket/a.vcf",
+                compound_suffix=".vcf",
+            ),
+            ResearchObjectCandidate(
+                dataset_id="dataset-2",
+                exact_reference="obs://dev-bucket/missing.vcf",
+                compound_suffix=".vcf",
+            ),
+        ),
+    )
+
+    with pytest.raises(ResearchObjectMetadataError):
+        await port.resolve(request)
+
+    assert fake_obs.calls == [
+        ("head", "dev-bucket", "a.vcf"),
+        ("head", "dev-bucket", "missing.vcf"),
+    ]
+    with pytest.raises(ResearchObjectMetadataError):
+        await port.verify(
+            ResearchObjectVerifyRequest(
+                parent_run_id=request.parent_run_id,
+                execution_fingerprint=request.execution_fingerprint,
+                authorities=(expected_authority,),
+            )
+        )
+    assert fake_obs.calls == [
+        ("head", "dev-bucket", "a.vcf"),
+        ("head", "dev-bucket", "missing.vcf"),
+    ]
 
 
 async def test_direct_digest_is_deterministic_with_missing_identity() -> None:
