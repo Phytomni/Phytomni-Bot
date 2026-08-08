@@ -10,7 +10,9 @@ from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, NotRequired, TypedDict, Unpack
+from typing import Any, Literal, NotRequired, TypedDict, Unpack
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..agents.shared.a2ui import (
     A2uiSurfaceValidationError,
@@ -26,9 +28,14 @@ from ..runtime.deep_genome_store_projection import (
 )
 from ..runtime.execution_defaults import empty_execution_projection
 from ..runtime.locale import SupportedLocale, message_for
+from ..runtime.run_registry_models import (
+    RESEARCH_FAILURE_CODES,
+    RESEARCH_FAILURE_MESSAGES,
+)
 
 __all__ = [
     "LifecycleInvariantError",
+    "ResearchFailureDetail",
     "SafeApiError",
     "SafeErrorCode",
     "build_agent_run_response",
@@ -37,6 +44,7 @@ __all__ = [
     "conversation_context_unavailable_error",
     "empty_agent_result",
     "expert_safe_error",
+    "project_research_lifecycle",
     "run_persistence_error",
 ]
 
@@ -57,6 +65,20 @@ class SafeErrorCode(StrEnum):
     UPSTREAM_FAILED = "upstream_failed"
     UPSTREAM_TIMEOUT = "upstream_timeout"
     CONVERSATION_CONTEXT_UNAVAILABLE = "conversation_context_unavailable"
+
+
+class ResearchFailureDetail(BaseModel):
+    """Bounded, public-safe detail for one durable Research failure."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=1, max_length=128)
+    message: str = Field(min_length=1, max_length=512)
+    stage: Literal[
+        "input_resolution", "planning", "execution", "report_assembly"
+    ]
+    retryable: bool
+    http_status_hint: int = Field(ge=400, le=599)
 
 
 class LifecycleInvariantError(RuntimeError):
@@ -178,6 +200,40 @@ _DEEP_GENOME_PRIVATE_DEBUG_FIELDS = (
     "live_status",
     "artifacts",
 )
+_STAGES = {"input_resolution", "planning", "execution", "report_assembly"}
+
+
+def project_research_lifecycle(
+    status: Any, current_stage: Any, failure: Any
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Decode private Research lifecycle fields into one safe projection."""
+    stage = (
+        current_stage
+        if status == "running" and current_stage in _STAGES
+        else None
+    )
+    if status not in {"failed", "cancelled"} or not isinstance(
+        failure, Mapping
+    ):
+        return stage, None
+    code = failure.get("code")
+    if not isinstance(code, str) or code not in RESEARCH_FAILURE_CODES:
+        return stage, None
+    candidate_stage = failure.get("stage")
+    if candidate_stage not in _STAGES:
+        candidate_stage = current_stage
+    candidate = {
+        "code": code,
+        "message": RESEARCH_FAILURE_MESSAGES[code],
+        "stage": candidate_stage,
+        "retryable": failure.get("retryable"),
+        "http_status_hint": failure.get("http_status_hint"),
+    }
+    try:
+        detail = ResearchFailureDetail.model_validate(candidate)
+    except (TypeError, ValueError):
+        return stage, None
+    return stage, detail.model_dump()
 
 
 def empty_agent_result(*, degraded: bool = False) -> dict[str, Any]:
@@ -442,6 +498,13 @@ def canonicalize_run_record(
         )
     canonical = canonicalize_agent_run_body(source)
     projected = _project_scalar_fields(record, _PUBLIC_RUN_HISTORY_FIELDS)
+    if record.get("agent") == "research":
+        stage, failure = project_research_lifecycle(
+            record.get("status"), record.get("stage"), record.get("failure")
+        )
+        projected["stage"] = stage
+        if failure is not None:
+            projected["failure"] = failure
     projected["id"] = run_id
     projected["run_id"] = run_id
     if canonical["status"] == "input_required":

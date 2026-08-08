@@ -21,6 +21,28 @@ _SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
 _FAILURE_STATUSES = frozenset({"failed", "error"})
 _TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 _NON_POLLABLE_RUN_STATUSES = _TERMINAL_RUN_STATUSES | {"input_required"}
+RESEARCH_FAILURE_CODES = frozenset(
+    {
+        "research_idempotency_key_required",
+        "research_idempotency_conflict",
+        "research_data_block_invalid",
+        "research_dataset_path_invalid",
+        "research_dataset_not_found",
+        "research_dataset_duplicate",
+        "research_dataset_format_unsupported",
+        "research_input_limit_exceeded",
+        "research_document_extraction_failed",
+        "research_input_resolution_failed",
+        "research_input_resolution_unavailable",
+        "research_run_tracking_failed",
+        "research_input_protocol_unavailable",
+        "research_cancel_conflict",
+    }
+)
+RESEARCH_FAILURE_MESSAGES = {
+    code: "Research request could not be completed."
+    for code in RESEARCH_FAILURE_CODES
+}
 
 _CREATE_RUNS_DDL = """
 CREATE TABLE IF NOT EXISTS runs (

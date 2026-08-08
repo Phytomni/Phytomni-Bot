@@ -353,11 +353,20 @@ def _row_to_record(row: sqlite3.Row, task_rows: list[Any]) -> RunRecord:
             ),
         ),
         stage=row["stage"],
-        failure=(
-            json.loads(row["failure_json"]) if row["failure_json"] else None
-        ),
+        failure=_safe_failure(row["failure_json"]),
         revision=row["revision"],
     )
+
+
+def _safe_failure(value: object) -> dict[str, Any] | None:
+    """Load private failure JSON without making reads fail closed."""
+    if not isinstance(value, str):
+        return None
+    try:
+        decoded = json.loads(value)
+    except (TypeError, ValueError):
+        return None
+    return dict(decoded) if isinstance(decoded, dict) else None
 
 
 def _build_list_where(

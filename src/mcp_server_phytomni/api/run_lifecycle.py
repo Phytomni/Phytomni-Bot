@@ -44,6 +44,7 @@ from ..runtime.run_registry import (
 from ..runtime.run_registry_delivery import result_delivery_from_result
 from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
+from .lifecycle_contract import project_research_lifecycle
 
 __all__ = [
     "ResolvedRemoteRun",
@@ -400,6 +401,13 @@ def run_record_to_dict(record: Any) -> dict[str, Any]:
     }
     if _result_tracking_is_degraded(result):
         payload["degraded_tracking"] = True
+    if record.spec.agent == "research":
+        stage, failure = project_research_lifecycle(
+            record.status, record.stage, record.failure
+        )
+        payload["stage"] = stage
+        if failure is not None:
+            payload["failure"] = failure
     return payload
 
 
