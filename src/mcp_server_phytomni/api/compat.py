@@ -260,6 +260,7 @@ def _settle_a2ui_stream_failure(
     run_id: str,
     owner: str,
     settled_terminal: list[bool],
+    expected_revision: int,
 ) -> None:
     """Compatibility seam for failed A2UI stream settlement."""
     a2ui_runtime.settle_a2ui_stream_failure(
@@ -267,6 +268,7 @@ def _settle_a2ui_stream_failure(
         owner,
         settled_terminal,
         dependencies=_a2ui_runtime_dependencies(),
+        expected_revision=expected_revision,
     )
 
 
