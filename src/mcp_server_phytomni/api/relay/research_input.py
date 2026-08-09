@@ -34,9 +34,8 @@ from starlette.requests import Request
 
 from ...agents.research.scientific_formats import classify_scientific_reference
 from ...config.defaults import ApiConfig, ServerConfig
-from ...config.settings import get_sensitive_config
 from ...runtime.request_context import current_request_id
-from ...storage.obs_client import ObsClient
+from ...storage.obs_relay_ops import operator_obs_client
 from ...storage.obs_storage import ObsPathError, normalize_obs_object_key
 from ...storage.research_objects import (
     DirectResearchObjectMetadataPort,
@@ -242,16 +241,6 @@ class _RevokePayload(_StrictGrantModel):
         return value
 
 
-def _operator_obs_client(obs_server: str) -> ObsClient:
-    """Build an operator-only OBS SDK client lazily for metadata HEADs."""
-    access_key, secret_key = get_sensitive_config().obs_credentials()
-    return ObsClient(
-        access_key_id=access_key,
-        secret_access_key=secret_key,
-        server=obs_server,
-    )
-
-
 @cache
 def _cached_metadata_port(
     bucket: str, obs_server: str
@@ -259,7 +248,7 @@ def _cached_metadata_port(
     """Keep source authority state stable across route calls in one worker."""
     return DirectResearchObjectMetadataPort(
         bucket=bucket,
-        client_factory=partial(_operator_obs_client, obs_server),
+        client_factory=partial(operator_obs_client, obs_server),
     )
 
 

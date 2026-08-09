@@ -35,6 +35,7 @@ __all__ = [
     "ObsObjectMetadataError",
     "ObsObjectNotFoundError",
     "head_object_metadata",
+    "operator_obs_client",
     "put_object_bytes",
     "put_object_bytes_if_absent",
     "put_object_file",
@@ -122,7 +123,7 @@ def _optional_metadata_value(body: Any, attribute: str) -> str | None:
     return None if value is None else str(value)
 
 
-def _obs_client(obs_server: str) -> ObsClient:
+def operator_obs_client(obs_server: str) -> ObsClient:
     """Build an operator-credentialed OBS SDK client for ``obs_server``."""
     access_key, secret_key = get_sensitive_config().obs_credentials()
     return ObsClient(
@@ -190,7 +191,7 @@ def put_object_bytes(
         destination.write_bytes(content)
 
     def _sdk() -> None:
-        response = _obs_client(obs_server).putContent(
+        response = operator_obs_client(obs_server).putContent(
             bucketName=bucket, objectKey=safe_key, content=content
         )
         _require_ok(response, "upload")
@@ -228,7 +229,7 @@ def put_object_bytes_if_absent(
             ) from None
 
     def _sdk() -> None:
-        response = _obs_client(obs_server).putContent(
+        response = operator_obs_client(obs_server).putContent(
             bucketName=bucket,
             objectKey=safe_key,
             content=content,
@@ -270,7 +271,7 @@ def put_object_file(
         shutil.copyfile(source, destination)
 
     def _sdk() -> None:
-        response = _obs_client(obs_server).putFile(
+        response = operator_obs_client(obs_server).putFile(
             bucketName=bucket,
             objectKey=safe_key,
             file_path=str(source),
@@ -313,7 +314,7 @@ def put_dir_marker(
         )
 
     def _sdk() -> None:
-        response = _obs_client(obs_server).putContent(
+        response = operator_obs_client(obs_server).putContent(
             bucketName=bucket, objectKey=safe_key, content=None
         )
         _require_ok(response, "mkdir")
@@ -354,7 +355,7 @@ def object_size(
         # The obs SDK ships no reliable type info (pyright marks
         # getObject's downloadPath required and does not know
         # getObjectMetadata), so bind the client as Any at the call.
-        client: Any = _obs_client(obs_server)
+        client: Any = operator_obs_client(obs_server)
         response = client.getObjectMetadata(
             bucketName=bucket, objectKey=safe_key
         )
@@ -417,7 +418,7 @@ def _iter_sdk_chunks(
     """Stream an object through the OBS SDK in ``chunk_size`` pieces."""
     # Bind as Any: the obs SDK ships no reliable type info, so pyright
     # wrongly marks getObject's downloadPath as required.
-    client: Any = _obs_client(obs_server)
+    client: Any = operator_obs_client(obs_server)
     response = client.getObject(
         bucketName=bucket, objectKey=safe_key, loadStreamInMemory=False
     )
@@ -488,7 +489,7 @@ def list_object_keys(
         OSError: If a list page returns a non-2xx status.
     """
     safe_prefix = normalize_obs_object_key(prefix, bucket)
-    client = _obs_client(obs_server)
+    client = operator_obs_client(obs_server)
     keys: list[str] = []
     marker: Any = None
     while True:
