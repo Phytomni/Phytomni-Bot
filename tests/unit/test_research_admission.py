@@ -35,6 +35,9 @@ from mcp_server_phytomni.runtime.conversation_context.models import (
 from mcp_server_phytomni.runtime.research_input_store import (
     ResearchAdmissionReservation,
 )
+from mcp_server_phytomni.runtime.research_input_store_support import (
+    AdmissionLaunchFailure,
+)
 from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
 
 pytestmark = pytest.mark.unit
@@ -351,6 +354,46 @@ def test_identical_first_admissions_share_one_root_and_run(
             "SELECT COUNT(*) FROM research_work_units WHERE run_id = ?",
             (run_id,),
         ).fetchone() == (1,)
+
+
+def test_retry_admission_cas_grants_one_of_eight_workers(
+    tmp_path: Path,
+) -> None:
+    """A retryable root failure can be reclaimed by exactly one owner."""
+    store, database = _store(tmp_path)
+    request = _request("retry-cas-key")
+    admitted = admit_research_request(request, store)
+    failure = AdmissionLaunchFailure(
+        code="research_input_resolution_unavailable",
+        retryable=True,
+        status_hint=503,
+        stage="input_resolution",
+    )
+    assert store.mark_admission_launch_failed(admitted.run_id, failure)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        outcomes = list(
+            pool.map(
+                lambda _index: store.retry_admission(
+                    admitted.run_id,
+                    request.owner,
+                    request.identity.canonical_digest,
+                    request.client_fingerprint,
+                ),
+                range(8),
+            )
+        )
+
+    owners = [outcome for outcome in outcomes if outcome is not None]
+    assert owners == [
+        ResearchAdmissionReservation(admitted.run_id, False, "running")
+    ]
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT status, error, stage, failure_json, expires_at, revision "
+            "FROM runs WHERE run_id = ?",
+            (admitted.run_id,),
+        ).fetchone() == ("running", None, "input_resolution", None, None, 2)
 
 
 def test_admission_validates_query_digest_and_hides_public_query(
