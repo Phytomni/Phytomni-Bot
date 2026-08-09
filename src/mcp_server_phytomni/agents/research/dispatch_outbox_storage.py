@@ -13,6 +13,7 @@ from importlib import import_module
 from typing import Any, NamedTuple, cast
 
 from ...runtime.sqlite import sqlite_transaction
+from ...storage.research_objects import RESEARCH_OBJECT_SNAPSHOT_FIELD_NAMES
 
 
 class SqlContext(NamedTuple):
@@ -301,15 +302,7 @@ def _research_grants(
                 **values,
                 "snapshot": {
                     name: getattr(snapshot, name)
-                    for name in (
-                        "dataset_id",
-                        "size_bytes",
-                        "etag",
-                        "version_id",
-                        "last_modified",
-                        "placeholder",
-                        "snapshot_digest",
-                    )
+                    for name in RESEARCH_OBJECT_SNAPSHOT_FIELD_NAMES
                 },
             }
         )

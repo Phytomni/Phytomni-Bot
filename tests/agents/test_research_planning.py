@@ -11,7 +11,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -187,7 +187,7 @@ async def test_plan_is_ordered_deterministic_and_side_effect_free() -> None:
     assert first.children[0].thread_id == "thread-0-run-123"
     assert first.children[0].data_list == _prepared().data_list
     with pytest.raises(TypeError):
-        first.children[0].data_list["new"] = "mutation"  # type: ignore[index]
+        cast(Any, first.children[0].data_list)["new"] = "mutation"
     assert [item.name for item in fields(first.children[0])] == [
         "ordinal",
         "task_name",

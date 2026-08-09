@@ -444,7 +444,7 @@ def _split_fragment(
         ),
         replace(
             fragment,
-            text=fragment.text[cut - actual_overlap :],  # noqa: E203
+            text=fragment.text[slice(cut - actual_overlap, None)],
             overlap_chars=actual_overlap,
         ),
     )

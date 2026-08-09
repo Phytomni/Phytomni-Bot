@@ -17,13 +17,15 @@ from mcp_server_phytomni.agents.research.document_evidence import (
     ResearchEvidenceRequest,
     evidence_persistence_metadata,
     extract_research_evidence,
+    research_evidence_coverage_digest,
 )
 from mcp_server_phytomni.agents.research.input_contracts import SourceSpan
 from mcp_server_phytomni.agents.research.input_inventory import (
-    ResearchInputInventory,
     ResearchInputSnapshot,
     ResearchInventoryEntry,
+    research_inventory_partitions,
 )
+from tests.support.research_fakes import research_inventory_entry
 
 pytestmark = pytest.mark.agent
 
@@ -45,23 +47,10 @@ def _entry(
 ) -> ResearchInventoryEntry:
     """Build an owner-validated inventory entry without storage I/O."""
     options = options or _EntryOptions()
-    snapshot = ResearchInputSnapshot(
-        lane="managed" if purpose == "document" else "pasted",
-        size_bytes=size,
-        state_version=1 if purpose == "document" else None,
-        completed_at=(
-            "2026-08-08T00:00:00+00:00" if purpose == "document" else None
-        ),
-        etag="etag" if purpose == "document" else None,
-        version_id="v1" if purpose == "document" else None,
-        last_modified=None,
-        placeholder=False,
-        purpose=purpose,  # type: ignore[arg-type]
-        snapshot_digest=f"snapshot-{dataset_id}",
-    )
-    return ResearchInventoryEntry(
+    document = purpose == "document"
+    return research_inventory_entry(
         dataset_id=dataset_id,
-        lane=snapshot.lane,
+        lane="managed" if document else "pasted",
         lane_ordinal=options.ordinal,
         exact_reference=f"obs://bucket/{name}",
         comparison_digest=f"comparison-{dataset_id}",
@@ -73,7 +62,7 @@ def _entry(
             if name.endswith(".pdf")
             else "application/octet-stream"
         ),
-        purpose=purpose,  # type: ignore[arg-type]
+        purpose=purpose,
         user_hint=options.hint,
         source_span=(
             SourceSpan(
@@ -84,7 +73,10 @@ def _entry(
             if options.hint
             else None
         ),
-        snapshot=snapshot,
+        state_version=1 if document else None,
+        completed_at="2026-08-08T00:00:00+00:00" if document else None,
+        etag="etag" if document else None,
+        version_id="v1" if document else None,
         authority_id=None,
     )
 
@@ -95,15 +87,8 @@ def _request(
 ) -> ResearchEvidenceRequest:
     """Build the immutable request consumed by the extractor."""
     return ResearchEvidenceRequest(
-        inventory=ResearchInputInventory(
-            entries=entries,
-            documents=tuple(
-                entry for entry in entries if entry.purpose == "document"
-            ),
-            datasets=tuple(
-                entry for entry in entries if entry.purpose == "dataset"
-            ),
-            digest="inventory-digest",
+        inventory=research_inventory_partitions(
+            entries, digest="inventory-digest"
         ),
         effective_query=query,
         effective_to_original=tuple(range(len(query))),
@@ -400,3 +385,9 @@ async def test_persistence_projection_excludes_plaintext() -> None:
     assert "secret text" not in serialized
     assert "obs://" not in serialized
     assert set(metadata) == {"units", "document_digests", "coverage_digest"}
+    assert (
+        research_evidence_coverage_digest(
+            evidence.units, evidence.document_digests
+        )
+        == evidence.coverage_digest
+    )

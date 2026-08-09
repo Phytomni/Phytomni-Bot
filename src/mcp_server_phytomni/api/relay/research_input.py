@@ -47,6 +47,7 @@ from ...storage.research_objects import (
     ResearchObjectRevokeRequest,
     ResearchObjectSnapshot,
     ResearchObjectVerifyRequest,
+    research_object_snapshot_payload,
 )
 from ..auth import RELAY_RESEARCH_INPUT_SERVICE, ApiPrincipal
 from .audit import RelayAuditRecord, get_audit_store
@@ -289,25 +290,12 @@ def _snapshot_from_payload(
     )
 
 
-def _snapshot_payload(snapshot: ResearchObjectSnapshot) -> dict[str, object]:
-    """Project safe immutable snapshot fields without an object reference."""
-    return {
-        "dataset_id": snapshot.dataset_id,
-        "size_bytes": snapshot.size_bytes,
-        "etag": snapshot.etag,
-        "version_id": snapshot.version_id,
-        "last_modified": snapshot.last_modified,
-        "placeholder": snapshot.placeholder,
-        "snapshot_digest": snapshot.snapshot_digest,
-    }
-
-
 def _grant_payload(record: ResearchGrantRecord) -> dict[str, object]:
     """Project one safe opaque grant response without private key material."""
     return {
         "dataset_id": record.dataset_id,
         "grant_id": record.grant_id,
-        "snapshot": _snapshot_payload(record.snapshot),
+        "snapshot": research_object_snapshot_payload(record.snapshot),
         "expires_at": record.expires_at.isoformat(),
         "revision": record.revision,
     }

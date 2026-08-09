@@ -34,6 +34,7 @@ from ...storage.research_objects import (
     ResearchObjectRevokeRequest,
     ResearchObjectSnapshot,
     ResearchObjectVerifyRequest,
+    research_object_snapshot_payload,
 )
 from .dispatch_outbox import (
     ResearchDispatchOutbox,
@@ -235,7 +236,9 @@ def _rotate_grants(
                 "compound_suffix": suffix,
                 "grant_id": authority.authority_id,
                 "snapshot_digest": snapshot.snapshot_digest,
-                "snapshot": _snapshot_payload(authority.snapshot),
+                "snapshot": research_object_snapshot_payload(
+                    authority.snapshot
+                ),
             }
         )
     return rotated, grant_ids
@@ -338,16 +341,3 @@ def _snapshot_from_payload(value: object) -> ResearchObjectSnapshot:
     ):
         raise ResearchObjectMetadataError()
     return snapshot
-
-
-def _snapshot_payload(snapshot: ResearchObjectSnapshot) -> dict[str, Any]:
-    """Project a typed snapshot back into the private JSON binding."""
-    return {
-        "dataset_id": snapshot.dataset_id,
-        "size_bytes": snapshot.size_bytes,
-        "etag": snapshot.etag,
-        "version_id": snapshot.version_id,
-        "last_modified": snapshot.last_modified,
-        "placeholder": snapshot.placeholder,
-        "snapshot_digest": snapshot.snapshot_digest,
-    }

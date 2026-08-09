@@ -41,6 +41,7 @@ __all__ = [
     "ResearchEvidenceUnit",
     "extract_research_evidence",
     "evidence_persistence_metadata",
+    "research_evidence_coverage_digest",
 ]
 
 MAX_DOCUMENT_BYTES = 25 * 1024**2
@@ -192,7 +193,9 @@ async def extract_research_evidence(
     return ExtractedResearchEvidence(
         units=frozen_units,
         document_digests=tuple(document_digests),
-        coverage_digest=_coverage_digest(frozen_units, document_digests),
+        coverage_digest=research_evidence_coverage_digest(
+            frozen_units, document_digests
+        ),
     )
 
 
@@ -552,7 +555,7 @@ def _unit(spec: _UnitSpec) -> ResearchEvidenceUnit:
     )
 
 
-def _coverage_digest(
+def research_evidence_coverage_digest(
     units: Sequence[ResearchEvidenceUnit],
     documents: Sequence[DocumentEvidenceDigest],
 ) -> str:

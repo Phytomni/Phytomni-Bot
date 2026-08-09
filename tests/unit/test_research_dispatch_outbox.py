@@ -21,6 +21,7 @@ import pytest
 from tests.agents import (
     test_research_input_coordinator as coordinator_fixtures,
 )
+from tests.support.research_fakes import persist_research_resolution
 
 from mcp_server_phytomni.agents.research import (
     dispatch_outbox,
@@ -95,17 +96,7 @@ def _store(tmp_path: Path) -> ResearchInputStore:
         )
     )
     store = ResearchInputStore(database)
-    assert store.persist_resolution(
-        "run-1",
-        original_query_digest="q" * 64,
-        original_query_length=5,
-        effective_query="query",
-        source_map={},
-        parsed_candidates=[],
-        managed_snapshot=[],
-        evidence_digest="e" * 64,
-        work_digest="w" * 64,
-    )
+    persist_research_resolution(store, "run-1", query_length=5)
     return store
 
 

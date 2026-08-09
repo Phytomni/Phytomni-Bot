@@ -10,21 +10,44 @@ from dataclasses import dataclass, fields
 from types import SimpleNamespace
 
 import pytest
+from tests.support.research_fakes import research_relay_snapshot_payload
 
 from mcp_server_phytomni.storage import (
     research_objects as research_objects_module,
 )
 from mcp_server_phytomni.storage.research_objects import (
+    RESEARCH_OBJECT_SNAPSHOT_FIELDS,
     DirectResearchObjectMetadataPort,
     ResearchObjectAuthority,
     ResearchObjectCandidate,
     ResearchObjectMetadataError,
     ResearchObjectResolveRequest,
     ResearchObjectRevokeRequest,
+    ResearchObjectSnapshot,
     ResearchObjectVerifyRequest,
+    research_object_snapshot_payload,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_snapshot_payload_projects_exact_immutable_fields() -> None:
+    """The shared relay projection preserves every safe snapshot field."""
+    snapshot = ResearchObjectSnapshot(
+        dataset_id="dataset_001",
+        size_bytes=17,
+        etag="etag-17",
+        version_id="version-1",
+        last_modified="2026-08-08T00:00:00Z",
+        placeholder=False,
+        snapshot_digest="digest-001",
+    )
+
+    payload = research_object_snapshot_payload(snapshot)
+    assert payload == research_relay_snapshot_payload(
+        "dataset_001", snapshot_digest="digest-001"
+    )
+    assert frozenset(payload) == RESEARCH_OBJECT_SNAPSHOT_FIELDS
 
 
 @dataclass(frozen=True, slots=True)

@@ -10,7 +10,7 @@ import asyncio
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pytest
 
@@ -44,14 +44,16 @@ def _capability(
     *,
     versions: tuple[int, ...] = (1,),
     max_objects: int = 256,
-    scope: str = "relay:research-input",
+    scope: Literal["relay:research-input", "relay:*"] = (
+        "relay:research-input"
+    ),
     expires_at: datetime | None = None,
 ) -> ResearchRelayCapabilities:
     """Build a bounded relay capability for cache tests."""
     return ResearchRelayCapabilities(
         protocol_versions=versions,
         max_objects=max_objects,
-        authorized_scope=scope,  # type: ignore[arg-type]
+        authorized_scope=scope,
         obtained_at=now,
         expires_at=expires_at or now + timedelta(seconds=300),
     )

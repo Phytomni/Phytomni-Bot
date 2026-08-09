@@ -27,6 +27,7 @@ from starlette.requests import Request
 
 from ...agents.shared.gauss import gauss_query
 from ...auth.iam import get_token
+from ...common.relay_client import is_opaque_relay_text
 from ...config.defaults import ApiConfig, DeepGenomeConfig
 from ...config.settings import get_sensitive_config
 from ...runtime.request_context import current_request_id
@@ -304,8 +305,8 @@ def _parse_research_sidecar(
     objects = sidecar["objects"]
     if (
         sidecar["schema_version"] != 1
-        or not _safe_sidecar_text(parent_run_id)
-        or not _safe_sidecar_text(execution_fingerprint)
+        or not is_opaque_relay_text(parent_run_id)
+        or not is_opaque_relay_text(execution_fingerprint)
         or not isinstance(objects, list)
         or not objects
     ):
@@ -352,7 +353,7 @@ def _parse_research_sidecar_object(
             "snapshot_digest",
         )
     )
-    if not all(_safe_sidecar_text(value) for value in values):
+    if not all(is_opaque_relay_text(value) for value in values):
         raise _invalid_research_sidecar()
     dataset_id, exact_reference, grant_id, snapshot_digest = values
     return grant_id, (dataset_id, exact_reference, snapshot_digest)
@@ -413,19 +414,6 @@ def _read_research_grant_rows(
             return list(connection.execute(query, grant_ids))
     except (OSError, sqlite3.Error):
         raise _invalid_research_sidecar() from None
-
-
-def _safe_sidecar_text(value: object) -> bool:
-    """Return whether one opaque sidecar text value is bounded and safe."""
-    return (
-        isinstance(value, str)
-        and bool(value)
-        and len(value) <= 4096
-        and all(
-            ord(character) >= 32 and ord(character) != 127
-            for character in value
-        )
-    )
 
 
 def _grant_is_unexpired(expires_at: object, now: str) -> bool:

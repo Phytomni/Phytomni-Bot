@@ -1,3 +1,6 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
 """Deterministic, sanitized contract fixtures for Research input resolution."""
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from scripts.generate_research_input_contracts import (
     LIFECYCLE_FILES,
     generate_contracts,
 )
+from tests.support.research_fakes import RESEARCH_CONTRACT_FORBIDDEN_MARKERS
 
 from mcp_server_phytomni.agents.research.scientific_formats import (
     advertised_research_formats,
@@ -34,12 +38,7 @@ from mcp_server_phytomni.runtime.run_registry_models import (
     RESEARCH_FAILURE_MESSAGES,
 )
 
-FORBIDDEN_MARKERS = (
-    "bearer ",
-    "obs://",
-    "http://",
-    "https://",
-    "/home/",
+FORBIDDEN_MARKERS = RESEARCH_CONTRACT_FORBIDDEN_MARKERS + (
     "/tmp/",
     "agent_data/",
     "s3://",

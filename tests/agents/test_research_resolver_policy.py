@@ -14,7 +14,10 @@ from mcp_server_phytomni.agents.research.document_evidence import (
     ExtractedResearchEvidence,
     ResearchEvidenceUnit,
 )
-from mcp_server_phytomni.agents.research.input_contracts import SourceSpan
+from mcp_server_phytomni.agents.research.input_contracts import (
+    EvidenceSourceKind,
+    SourceSpan,
+)
 from mcp_server_phytomni.agents.research.input_inventory import (
     ResearchInputInventory,
 )
@@ -25,6 +28,7 @@ from mcp_server_phytomni.agents.research.resolver_policy import (
     plan_resolver_work,
     subdivide_verified_context_rejection,
 )
+from tests.support.research_fakes import resolver_policy
 
 pytestmark = pytest.mark.agent
 
@@ -48,38 +52,28 @@ class _ExactEstimator:
 
 
 def _policy(**changes: object) -> ResearchResolverPolicy:
-    """Build a small but usable policy without provider/tokenizer access."""
-    values: dict[str, object] = {
-        "schema_version": 1,
-        "model_id": "phyto-research",
-        "context_token_limit": 256,
-        "output_token_reserve": 16,
-        "prompt_token_overhead": 8,
-        "schema_token_overhead": 8,
-        "safety_margin_tokens": 8,
-        "max_serialized_request_bytes": 512,
-        "max_description_chars": 200,
+    """Build the policy-specific defaults required by planning tests."""
+    defaults: dict[str, object] = {
         "overlap_chars": 12,
-        "provider_identity": "test-provider",
         "provider_idempotency_supported": True,
         "provider_status_query_supported": True,
     }
-    values.update(changes)
-    return ResearchResolverPolicy(**values)  # type: ignore[arg-type]
+    defaults.update(changes)
+    return resolver_policy(**defaults)
 
 
 def _unit(
     evidence_id: str,
     text: str,
     *,
-    kind: str = "document_section",
+    kind: EvidenceSourceKind = "document_section",
     ordinal: int = 0,
     span: SourceSpan | None = None,
 ) -> ResearchEvidenceUnit:
     """Build one opaque evidence unit with deliberate source metadata."""
     return ResearchEvidenceUnit(
         evidence_id=evidence_id,
-        source_kind=kind,  # type: ignore[arg-type]
+        source_kind=kind,
         source_ordinal=ordinal,
         source_span=span,
         content_digest=f"digest-{evidence_id}",
@@ -103,7 +97,7 @@ def _inventory() -> ResearchInputInventory:
 def _covered_text(plan) -> str:
     """Recover ordered fragment text from the exact canonical requests."""
     return "".join(
-        fragment["text"][fragment["overlap_chars"] :]  # noqa: E203
+        fragment["text"][slice(fragment["overlap_chars"], None)]
         for observation in plan.observation_units
         for fragment in json.loads(observation.serialized_request)["evidence"]
     )

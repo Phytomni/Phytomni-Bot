@@ -20,6 +20,7 @@ from ...runtime.research_input_store import ResearchInputStore
 from ...runtime.sqlite import sqlite_transaction
 from . import dispatch_outbox_storage as _storage
 from .input_contracts import ResearchErrorCode, ResearchInputFailure
+from .resolver_policy import canonical_json_bytes
 
 __all__ = [
     "ResearchDispatchDisposition",
@@ -969,12 +970,7 @@ def _schedule_awaitable(value: Awaitable[object]) -> None:
 
 def _canonical_json(value: object) -> str:
     try:
-        return json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
+        return canonical_json_bytes(value).decode("utf-8")
     except (TypeError, ValueError, OverflowError) as error:
         raise ResearchPlanCommitError() from error
 

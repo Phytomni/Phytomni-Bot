@@ -17,6 +17,11 @@ from typing import (
     Unpack,
 )
 
+from ...runtime.research_failure_codes import (
+    ResearchFailureCode,
+    is_research_failure_code,
+)
+
 __all__ = [
     "EvidenceSourceKind",
     "ParsedResearchInput",
@@ -53,22 +58,7 @@ class TokenEstimator(Protocol):
         return "research_token_estimator"
 
 
-ResearchErrorCode = Literal[
-    "research_idempotency_key_required",
-    "research_idempotency_conflict",
-    "research_data_block_invalid",
-    "research_dataset_path_invalid",
-    "research_dataset_not_found",
-    "research_dataset_duplicate",
-    "research_dataset_format_unsupported",
-    "research_input_limit_exceeded",
-    "research_document_extraction_failed",
-    "research_input_resolution_failed",
-    "research_input_resolution_unavailable",
-    "research_run_tracking_failed",
-    "research_input_protocol_unavailable",
-    "research_cancel_conflict",
-]
+ResearchErrorCode = ResearchFailureCode
 ResearchFailureStage = Literal[
     "request_validation",
     "input_resolution",
@@ -76,24 +66,6 @@ ResearchFailureStage = Literal[
     "execution",
     "report_assembly",
 ]
-_RESEARCH_ERROR_CODES = frozenset(
-    {
-        "research_idempotency_key_required",
-        "research_idempotency_conflict",
-        "research_data_block_invalid",
-        "research_dataset_path_invalid",
-        "research_dataset_not_found",
-        "research_dataset_duplicate",
-        "research_dataset_format_unsupported",
-        "research_input_limit_exceeded",
-        "research_document_extraction_failed",
-        "research_input_resolution_failed",
-        "research_input_resolution_unavailable",
-        "research_run_tracking_failed",
-        "research_input_protocol_unavailable",
-        "research_cancel_conflict",
-    }
-)
 
 
 class _ResearchInputFailureArguments(TypedDict):
@@ -123,7 +95,7 @@ class ResearchInputFailureError(ValueError):
         self, **arguments: Unpack[_ResearchInputFailureArguments]
     ) -> None:
         code = arguments["code"]
-        if code not in _RESEARCH_ERROR_CODES:
+        if not is_research_failure_code(code):
             raise ValueError("unknown Research input failure code")
         super().__init__(arguments["safe_message"])
         self.code = code

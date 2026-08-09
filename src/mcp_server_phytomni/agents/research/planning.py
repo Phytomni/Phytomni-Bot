@@ -11,7 +11,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Protocol
+from typing import Protocol
 
 from pydantic import ValidationError
 
@@ -22,6 +22,7 @@ from .document_evidence import (
     DocumentEvidenceDigest,
     ExtractedResearchEvidence,
     ResearchEvidenceUnit,
+    research_evidence_coverage_digest,
 )
 from .input_contracts import (
     ResearchInputFailure,
@@ -296,7 +297,12 @@ def _validate_evidence(evidence: ExtractedResearchEvidence) -> None:
     }
     if document_unit_ids != set(covered_document_ids):
         raise _planning_failure()
-    if _evidence_coverage_digest(evidence) != evidence.coverage_digest:
+    if (
+        research_evidence_coverage_digest(
+            evidence.units, evidence.document_digests
+        )
+        != evidence.coverage_digest
+    ):
         raise _planning_failure()
 
 
@@ -460,40 +466,6 @@ def _invalid_source_span(span: object) -> bool:
         or span.end <= span.start
         or span.grammar not in _SOURCE_SPAN_GRAMMARS
     )
-
-
-def _evidence_coverage_digest(evidence: ExtractedResearchEvidence) -> str:
-    """Recompute the extractor's identity-only coverage digest."""
-    return _digest(
-        {
-            "units": [
-                {
-                    "evidence_id": unit.evidence_id,
-                    "source_kind": unit.source_kind,
-                    "source_ordinal": unit.source_ordinal,
-                    "source_span": _source_span_metadata(unit.source_span),
-                    "content_digest": unit.content_digest,
-                    "dataset_ids": unit.dataset_ids,
-                }
-                for unit in evidence.units
-            ],
-            "documents": [
-                {
-                    "document_id": document.document_id,
-                    "content_digest": document.content_digest,
-                    "evidence_ids": document.evidence_ids,
-                }
-                for document in evidence.document_digests
-            ],
-        }
-    )
-
-
-def _source_span_metadata(span: SourceSpan | None) -> dict[str, Any] | None:
-    """Project a source span to the extractor's canonical hash shape."""
-    if span is None:
-        return None
-    return {"start": span.start, "end": span.end, "grammar": span.grammar}
 
 
 def _sha256_text(text: str) -> str:

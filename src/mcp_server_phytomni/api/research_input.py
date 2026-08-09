@@ -11,7 +11,6 @@ import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass
 from typing import Any, Literal, cast
-from uuid import uuid4
 
 from ..agents.analyst.agent import AnalystAgent
 from ..agents.analyst.defaults import ANALYST_CONFIG
@@ -39,6 +38,7 @@ from ..runtime.research_input_store import (
     ResearchAdmissionReservation,
     ResearchInputStore,
 )
+from ..storage.path_policy import IdFactory
 from .research_launch import launch_worker
 
 __all__ = [
@@ -162,7 +162,9 @@ async def _run_production_coordinator_root(
     runner = getattr(root_coordinator, "run", None)
     if not callable(runner):
         return False
-    result = runner(run_id, f"research-http-{uuid4().hex}")
+    result = runner(
+        run_id, f"research-http-{IdFactory().new_id('research-worker')}"
+    )
     if inspect.isawaitable(result):
         await result
     return True
@@ -749,7 +751,7 @@ def admit_research_request(
     )
     parsed = request.parsed_input
     reservation = store.reserve_admission(
-        run_id=str(uuid4()),
+        run_id=IdFactory().new_id("run", "research"),
         owner=request.owner,
         identity_digest=request.identity.canonical_digest,
         identity_kind=request.identity.kind,

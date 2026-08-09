@@ -34,12 +34,27 @@ __all__ = [
     "ResearchObjectRevokeRequest",
     "ResearchObjectSnapshot",
     "ResearchObjectVerifyRequest",
+    "RESEARCH_OBJECT_SNAPSHOT_FIELDS",
+    "RESEARCH_OBJECT_SNAPSHOT_FIELD_NAMES",
     "RelayResearchObjectMetadataPort",
+    "research_object_snapshot_payload",
 ]
 
 _SNAPSHOT_SCHEMA = "research-object-snapshot/v1"
 _METADATA_FAILURE = "Research object metadata could not be verified."
 _MAX_RELAY_TEXT_LENGTH = 512
+RESEARCH_OBJECT_SNAPSHOT_FIELD_NAMES = (
+    "dataset_id",
+    "size_bytes",
+    "etag",
+    "version_id",
+    "last_modified",
+    "placeholder",
+    "snapshot_digest",
+)
+RESEARCH_OBJECT_SNAPSHOT_FIELDS = frozenset(
+    RESEARCH_OBJECT_SNAPSHOT_FIELD_NAMES
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +86,21 @@ class ResearchObjectSnapshot:
     last_modified: str | None
     placeholder: bool
     snapshot_digest: str
+
+
+def research_object_snapshot_payload(
+    snapshot: ResearchObjectSnapshot,
+) -> dict[str, object]:
+    """Project one immutable snapshot into a transport-safe DTO."""
+    return {
+        "dataset_id": snapshot.dataset_id,
+        "size_bytes": snapshot.size_bytes,
+        "etag": snapshot.etag,
+        "version_id": snapshot.version_id,
+        "last_modified": snapshot.last_modified,
+        "placeholder": snapshot.placeholder,
+        "snapshot_digest": snapshot.snapshot_digest,
+    }
 
 
 @dataclass(frozen=True, slots=True)

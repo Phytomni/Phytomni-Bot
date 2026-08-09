@@ -12,7 +12,6 @@ import hashlib
 import inspect
 import json
 import sqlite3
-import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -26,6 +25,7 @@ from ...runtime.research_input_store import (
     _to_record,
 )
 from ...runtime.sqlite import sqlite_transaction
+from ...storage.path_policy import IdFactory
 from . import recovery_support as _recovery_support
 from .dispatch_outbox import recover_dispatch_outbox
 from .dispatch_outbox_storage import recovery_outbox as _out
@@ -831,8 +831,8 @@ class ResearchRecoveryService:
         self.now = resolved.now
         self.result_validator = resolved.result_validator
         self.batch_size = max(0, int(resolved.batch_size))
-        self.lease_owner = (
-            resolved.lease_owner or f"research-recovery-{uuid.uuid4().hex}"
+        self.lease_owner = resolved.lease_owner or IdFactory().new_id(
+            "recovery"
         )
         register_grant_revoke(self.store, resolved.grant_revoke)
         self.outbox = outbox

@@ -20,6 +20,7 @@ import httpx
 import pytest
 from mcp.shared.exceptions import McpError
 from pydantic import SecretStr
+from tests.support.research_fakes import research_relay_snapshot_payload
 
 from mcp_server_phytomni.common import relay_client as rc
 from mcp_server_phytomni.config.defaults import ServerConfig
@@ -35,6 +36,12 @@ from mcp_server_phytomni.storage.research_objects import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_opaque_relay_text_rejects_control_characters() -> None:
+    """A shared relay guard accepts bounded visible identifiers only."""
+    assert rc.is_opaque_relay_text("run-001")
+    assert not rc.is_opaque_relay_text("run\x7f001")
 
 
 def _client(api_key: str = "relay-secret-value") -> rc.RelayClient:
@@ -378,15 +385,7 @@ async def test_get_obs_object_to_path_raises_on_error_status(
 
 def _snapshot(dataset_id: str) -> dict[str, object]:
     """Return one safe relay snapshot DTO."""
-    return {
-        "dataset_id": dataset_id,
-        "size_bytes": 17,
-        "etag": "etag-17",
-        "version_id": "version-1",
-        "last_modified": "2026-08-08T00:00:00Z",
-        "placeholder": False,
-        "snapshot_digest": f"digest-{dataset_id}",
-    }
+    return research_relay_snapshot_payload(dataset_id)
 
 
 def _resolve_request() -> ResearchObjectResolveRequest:

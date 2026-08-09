@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import asdict, dataclass, replace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -40,10 +40,10 @@ from mcp_server_phytomni.agents.research.input_coordinator import (
 from mcp_server_phytomni.agents.research.input_inventory import (
     ManagedResearchAssetSnapshot,
     ResearchInputInventory,
-    ResearchInputSnapshot,
     ResearchInventoryEntry,
     ResearchInventoryRequest,
     build_research_inventory,
+    research_inventory_partitions,
     revalidate_research_inventory,
 )
 from mcp_server_phytomni.agents.research.input_preparation import (
@@ -58,6 +58,7 @@ from mcp_server_phytomni.storage.research_objects import (
     ResearchObjectAuthority,
     ResearchObjectSnapshot,
 )
+from tests.support.research_fakes import research_inventory_entry
 
 pytestmark = pytest.mark.agent
 
@@ -70,23 +71,9 @@ def _entry(
     lane: str = "pasted",
 ) -> ResearchInventoryEntry:
     """Build a trusted inventory entry with opaque identity."""
-    snapshot = ResearchInputSnapshot(
-        lane=lane,  # type: ignore[arg-type]
-        size_bytes=10,
-        state_version=1 if lane == "managed" else None,
-        completed_at=(
-            "2026-08-08T00:00:00+00:00" if lane == "managed" else None
-        ),
-        etag="etag" if lane == "managed" else None,
-        version_id="v1" if lane == "managed" else None,
-        last_modified=None,
-        placeholder=False,
-        purpose=purpose,  # type: ignore[arg-type]
-        snapshot_digest=f"snapshot-{dataset_id}",
-    )
-    return ResearchInventoryEntry(
+    return research_inventory_entry(
         dataset_id=dataset_id,
-        lane=lane,  # type: ignore[arg-type]
+        lane=lane,
         lane_ordinal=ordinal,
         exact_reference=f"obs://trusted/{dataset_id}.tsv",
         comparison_digest=f"comparison-{dataset_id}",
@@ -94,26 +81,22 @@ def _entry(
         compound_suffix=".tsv",
         size_bytes=10,
         media_hint="text/tab-separated-values",
-        purpose=purpose,  # type: ignore[arg-type]
+        purpose=purpose,
         user_hint=None,
         source_span=None,
-        snapshot=snapshot,
+        state_version=1 if lane == "managed" else None,
+        completed_at=(
+            "2026-08-08T00:00:00+00:00" if lane == "managed" else None
+        ),
+        etag="etag" if lane == "managed" else None,
+        version_id="v1" if lane == "managed" else None,
         authority_id=f"authority-{dataset_id}" if lane == "pasted" else None,
     )
 
 
 def _inventory(*entries: ResearchInventoryEntry) -> ResearchInputInventory:
     """Build an ordered immutable inventory."""
-    return ResearchInputInventory(
-        entries=entries,
-        documents=tuple(
-            entry for entry in entries if entry.purpose == "document"
-        ),
-        datasets=tuple(
-            entry for entry in entries if entry.purpose == "dataset"
-        ),
-        digest="inventory-digest",
-    )
+    return research_inventory_partitions(entries, digest="inventory-digest")
 
 
 def _resolution(*items: tuple[str, str]) -> ResearchResolutionResponse:
@@ -161,9 +144,7 @@ def test_join_keeps_inventory_order_and_frozen_trusted_references() -> None:
     assert prepared.authority_ids == (first.authority_id, second.authority_id)
     assert prepared.execution_fingerprint
     with pytest.raises(TypeError):
-        prepared.data_list["obs://model-added/path"] = (  # type: ignore[index]
-            "unsafe"
-        )
+        cast(Any, prepared.data_list)["obs://model-added/path"] = "unsafe"
 
 
 def test_join_carries_exact_private_authority_binding() -> None:

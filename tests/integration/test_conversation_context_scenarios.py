@@ -15,6 +15,7 @@ from uuid import UUID
 
 import pytest
 import tests.conftest as test_config
+from tests.support.research_fakes import local_server_pytest_generate_tests
 
 from mcp_server_phytomni.agents.brief_gene.conversation import (
     BriefGeneConversationAdapter,
@@ -48,16 +49,9 @@ pytestmark = pytest.mark.server
 _original_layer_marker = getattr(test_config, "_layer_marker_for_item")
 
 
-def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
-    """Keep this fake-boundary module out of the live integration skip gate."""
-    del metafunc
-
-    def _layer_marker(item: pytest.Item) -> str | None:
-        if Path(item.path).resolve() == Path(__file__).resolve():
-            return "server"
-        return _original_layer_marker(item)
-
-    setattr(test_config, "_layer_marker_for_item", _layer_marker)
+pytest_generate_tests = local_server_pytest_generate_tests(
+    _original_layer_marker, __file__, test_config
+)
 
 
 _CANONICAL_AGENT_IDS = tuple(

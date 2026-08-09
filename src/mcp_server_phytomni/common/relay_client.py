@@ -32,12 +32,14 @@ from ..api.research_capabilities import (
 from ..config.defaults import ServerConfig
 from ..config.settings import SensitiveConfig, get_sensitive_config
 from ..storage.research_objects import (
+    RESEARCH_OBJECT_SNAPSHOT_FIELDS,
     ResearchObjectAuthority,
     ResearchObjectCandidate,
     ResearchObjectResolveRequest,
     ResearchObjectRevokeRequest,
     ResearchObjectSnapshot,
     ResearchObjectVerifyRequest,
+    research_object_snapshot_payload,
 )
 from .http import (
     JsonPostRequest,
@@ -52,6 +54,7 @@ __all__ = [
     "ResearchRelayCapabilities",
     "build_relay_client",
     "current_relay_client",
+    "is_opaque_relay_text",
 ]
 
 _RELAY_PREFIX = "v1/relay"
@@ -62,17 +65,6 @@ _MAX_RESEARCH_OBJECTS = 256
 _MAX_RELAY_RESPONSE_TEXT_LENGTH = 512
 _RESEARCH_CAPABILITY_MESSAGE = "relay research capability request failed"
 _RESEARCH_GRANT_MESSAGE = "relay research object grant request failed"
-_SNAPSHOT_FIELDS = frozenset(
-    {
-        "dataset_id",
-        "size_bytes",
-        "etag",
-        "version_id",
-        "last_modified",
-        "placeholder",
-        "snapshot_digest",
-    }
-)
 _GRANT_FIELDS = frozenset(
     {"dataset_id", "grant_id", "snapshot", "expires_at", "revision"}
 )
@@ -328,7 +320,9 @@ class RelayClient:
                 {
                     "dataset_id": authority.dataset_id,
                     "grant_id": authority.authority_id,
-                    "expected_snapshot": _snapshot_payload(authority.snapshot),
+                    "expected_snapshot": research_object_snapshot_payload(
+                        authority.snapshot
+                    ),
                 }
                 for authority in authorities
             ],
@@ -601,7 +595,10 @@ def _decode_grants(
 
 def _decode_snapshot(payload: object) -> ResearchObjectSnapshot:
     """Decode an immutable metadata snapshot from an untrusted response."""
-    if not isinstance(payload, dict) or set(payload) != _SNAPSHOT_FIELDS:
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != RESEARCH_OBJECT_SNAPSHOT_FIELDS
+    ):
         raise ValueError
     dataset_id = payload["dataset_id"]
     size_bytes = payload["size_bytes"]
@@ -631,19 +628,6 @@ def _decode_snapshot(payload: object) -> ResearchObjectSnapshot:
         placeholder=placeholder,
         snapshot_digest=snapshot_digest,
     )
-
-
-def _snapshot_payload(snapshot: ResearchObjectSnapshot) -> dict[str, object]:
-    """Project one immutable snapshot into the relay verification DTO."""
-    return {
-        "dataset_id": snapshot.dataset_id,
-        "size_bytes": snapshot.size_bytes,
-        "etag": snapshot.etag,
-        "version_id": snapshot.version_id,
-        "last_modified": snapshot.last_modified,
-        "placeholder": snapshot.placeholder,
-        "snapshot_digest": snapshot.snapshot_digest,
-    }
 
 
 def _valid_grant_fields(
@@ -717,8 +701,8 @@ def _resolve_candidates(
         not isinstance(request, ResearchObjectResolveRequest)
         or not isinstance(request.objects, tuple)
         or not request.objects
-        or not _opaque_text(request.parent_run_id)
-        or not _opaque_text(request.execution_fingerprint)
+        or not is_opaque_relay_text(request.parent_run_id)
+        or not is_opaque_relay_text(request.execution_fingerprint)
     ):
         raise McpError(
             ErrorData(code=INTERNAL_ERROR, message=_RESEARCH_GRANT_MESSAGE)
@@ -732,7 +716,7 @@ def _resolve_candidates(
             )
         if (
             not all(
-                _opaque_text(value)
+                is_opaque_relay_text(value)
                 for value in (
                     candidate.dataset_id,
                     candidate.exact_reference,
@@ -761,8 +745,8 @@ def _verify_authorities(
         not isinstance(request, ResearchObjectVerifyRequest)
         or not isinstance(request.authorities, tuple)
         or not request.authorities
-        or not _opaque_text(request.parent_run_id)
-        or not _opaque_text(request.execution_fingerprint)
+        or not is_opaque_relay_text(request.parent_run_id)
+        or not is_opaque_relay_text(request.execution_fingerprint)
     ):
         raise McpError(
             ErrorData(code=INTERNAL_ERROR, message=_RESEARCH_GRANT_MESSAGE)
@@ -798,9 +782,9 @@ def _valid_verify_authority(authority: object, existing_ids: set[str]) -> bool:
     """Validate one verify authority and its immutable snapshot."""
     if not isinstance(authority, ResearchObjectAuthority):
         return False
-    valid = _opaque_text(authority.dataset_id) and _opaque_text(
-        authority.authority_id
-    )
+    valid = is_opaque_relay_text(
+        authority.dataset_id
+    ) and is_opaque_relay_text(authority.authority_id)
     if valid:
         valid = authority.authority_id not in existing_ids
     if not isinstance(authority.snapshot, ResearchObjectSnapshot):
@@ -813,7 +797,7 @@ def _valid_verify_authority(authority: object, existing_ids: set[str]) -> bool:
         )
     if valid:
         try:
-            _decode_snapshot(_snapshot_payload(snapshot))
+            _decode_snapshot(research_object_snapshot_payload(snapshot))
         except ValueError:
             valid = False
     return valid
@@ -828,19 +812,19 @@ def _valid_revoke_request(request: object) -> bool:
         or not request.authority_ids
     ):
         return False
-    if not _opaque_text(request.parent_run_id) or not _opaque_text(
-        request.execution_fingerprint
-    ):
+    if not is_opaque_relay_text(
+        request.parent_run_id
+    ) or not is_opaque_relay_text(request.execution_fingerprint):
         return False
     return (
-        all(_opaque_text(value) for value in request.authority_ids)
+        all(is_opaque_relay_text(value) for value in request.authority_ids)
         and len(set(request.authority_ids)) == len(request.authority_ids)
         and len(request.authority_ids) <= _MAX_RESEARCH_OBJECTS
     )
 
 
-def _opaque_text(value: object) -> bool:
-    """Return whether one binding/identifier is bounded non-control text."""
+def is_opaque_relay_text(value: object) -> bool:
+    """Return whether one relay binding is bounded non-control text."""
     return (
         isinstance(value, str)
         and bool(value)

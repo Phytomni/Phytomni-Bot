@@ -9,9 +9,11 @@ import asyncio
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
+from tests.support.research_fakes import persist_research_resolution
 
 from mcp_server_phytomni.agents.research.recovery import (
     ResearchContextLengthRejected,
@@ -142,13 +144,15 @@ def _record(**changes: object) -> ResearchWorkUnitRecord:
         "evidence_digest": "evidence-1",
     }
     values.update(changes)
-    return ResearchWorkUnitRecord(**values)  # type: ignore[arg-type]
+    return cast(Any, ResearchWorkUnitRecord)(**values)
 
 
 class _Provider:
     """Provider fixture with explicit acceptance and query behavior."""
 
-    def __init__(self, *, query_result: object = None) -> None:
+    def __init__(
+        self, *, query_result: dict[str, object] | None = None
+    ) -> None:
         self.query_result = query_result
         self.invocations = 0
         self.queries = 0
@@ -164,7 +168,7 @@ class _Provider:
         """Return the configured provider status result."""
         del request_identity
         self.queries += 1
-        return self.query_result  # type: ignore[return-value]
+        return self.query_result
 
 
 class _BlockingProvider(_Provider):
@@ -527,17 +531,7 @@ def test_cancel_requested_is_a_work_cas_barrier(tmp_path: Path) -> None:
     store.add_work_unit(_record())
     claimed = store.claim_work("unit-1", "worker-a", _NOW)
     assert claimed is not None
-    assert store.persist_resolution(
-        "run-1",
-        original_query_digest="q" * 64,
-        original_query_length=1,
-        effective_query="query",
-        source_map={},
-        parsed_candidates=[],
-        managed_snapshot=[],
-        evidence_digest="e" * 64,
-        work_digest="w" * 64,
-    )
+    persist_research_resolution(store, "run-1", query_length=1)
     with sqlite3.connect(store.db_path) as connection:
         connection.execute(
             "UPDATE research_input_resolutions SET cancel_requested = 1 "

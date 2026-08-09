@@ -14,6 +14,7 @@ from typing import Any, Literal
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
 from tests.support.attachment_fakes import EXPERT_ATTACHMENT_ALLOWED_TOOLS
+from tests.support.research_fakes import RESEARCH_CONTRACT_FORBIDDEN_MARKERS
 
 from mcp_server_phytomni.api.agent_capabilities import (
     AttachmentCapability,
@@ -68,12 +69,7 @@ _FORBIDDEN_JSON_KEYS = frozenset(
         "purpose",
     }
 )
-_FORBIDDEN_MARKERS = (
-    "bearer ",
-    "obs://",
-    "http://",
-    "https://",
-    "/home/",
+_FORBIDDEN_MARKERS = RESEARCH_CONTRACT_FORBIDDEN_MARKERS + (
     "agent_data/uploads",
 )
 

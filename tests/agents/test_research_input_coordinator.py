@@ -44,6 +44,7 @@ from mcp_server_phytomni.storage.research_objects import (
     ResearchObjectSnapshot,
     ResearchObjectVerifyRequest,
 )
+from tests.support.research_fakes import research_callbacks_through
 
 pytestmark = pytest.mark.agent
 
@@ -394,13 +395,7 @@ async def test_final_validation_precedes_planning_or_child_work() -> None:
             "run-001", "lease-001"
         )
     assert getattr(caught.value, "code") == "research_input_resolution_failed"
-    assert harness.calls == [
-        "metadata",
-        "extract",
-        "resolve",
-        "revalidate",
-        "validate_native",
-    ]
+    assert harness.calls == research_callbacks_through("validate_native")
     assert not harness.outbox_rows
     assert not harness.child_submissions
 

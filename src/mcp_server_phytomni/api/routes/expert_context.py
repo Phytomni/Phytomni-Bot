@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
@@ -31,10 +30,11 @@ from ..agent_capabilities import (
 from ..app_support import resolve_http_locale
 from ..attachments import redact_managed_attachment_values
 from ..lifecycle_contract import SafeApiError
+from ..research_fingerprint import (
+    research_client_fingerprint_for_http_input,
+)
 from ..research_input import (
-    ResearchClientFingerprintInput,
     ResearchHttpAdmissionInput,
-    compute_research_client_fingerprint,
     lookup_research_admission,
     parse_idempotency_identity,
 )
@@ -279,17 +279,8 @@ def _attach_research_replay_alias(
         identity = parse_idempotency_identity(
             request.idempotency_key, request.conversation
         )
-        query = request.original_query.encode("utf-8")
-        fingerprint = compute_research_client_fingerprint(
-            ResearchClientFingerprintInput(
-                original_query_digest=hashlib.sha256(query).hexdigest(),
-                original_query_length=len(request.original_query),
-                managed_asset_ids=request.managed_asset_ids,
-                locale=request.locale,
-                interop_mode=request.interop_mode,
-                interop_targets=request.interop_targets,
-                conversation_identity_digest=identity.canonical_digest,
-            )
+        fingerprint = research_client_fingerprint_for_http_input(
+            request, identity.canonical_digest
         )
         lookup_research_admission(
             owner=request.owner,

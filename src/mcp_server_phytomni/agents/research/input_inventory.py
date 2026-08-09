@@ -40,6 +40,7 @@ __all__ = [
     "build_research_inventory",
     "validate_research_inventory",
     "revalidate_research_inventory",
+    "research_inventory_partitions",
     "same_research_inventory_snapshot",
 ]
 
@@ -665,11 +666,13 @@ def _entry_snapshot(
     )
 
 
-def _inventory(
+def research_inventory_partitions(
     entries: tuple[ResearchInventoryEntry, ...],
+    *,
+    digest: str,
     authorities: tuple[ResearchObjectAuthority, ...] = (),
 ) -> ResearchInputInventory:
-    """Build immutable purpose partitions and a non-secret digest."""
+    """Build immutable purpose partitions from already trusted entries."""
     return ResearchInputInventory(
         entries=entries,
         documents=tuple(
@@ -678,20 +681,31 @@ def _inventory(
         datasets=tuple(
             entry for entry in entries if entry.purpose == "dataset"
         ),
-        digest=_digest(
-            [
-                {
-                    "comparison_digest": entry.comparison_digest,
-                    "dataset_id": entry.dataset_id,
-                    "lane": entry.lane,
-                    "lane_ordinal": entry.lane_ordinal,
-                    "purpose": entry.purpose,
-                    "snapshot_digest": entry.snapshot.snapshot_digest,
-                }
-                for entry in entries
-            ]
-        ),
+        digest=digest,
         authorities=authorities,
+    )
+
+
+def _inventory(
+    entries: tuple[ResearchInventoryEntry, ...],
+    authorities: tuple[ResearchObjectAuthority, ...] = (),
+) -> ResearchInputInventory:
+    """Build immutable purpose partitions and a non-secret digest."""
+    digest = _digest(
+        [
+            {
+                "comparison_digest": entry.comparison_digest,
+                "dataset_id": entry.dataset_id,
+                "lane": entry.lane,
+                "lane_ordinal": entry.lane_ordinal,
+                "purpose": entry.purpose,
+                "snapshot_digest": entry.snapshot.snapshot_digest,
+            }
+            for entry in entries
+        ]
+    )
+    return research_inventory_partitions(
+        entries, digest=digest, authorities=authorities
     )
 
 

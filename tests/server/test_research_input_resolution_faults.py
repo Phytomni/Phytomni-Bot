@@ -14,6 +14,7 @@ from types import MappingProxyType
 from typing import Any, cast
 
 import pytest
+from tests.support.research_fakes import research_callbacks_through
 
 from mcp_server_phytomni.agents.research.input_contracts import (
     ResearchCoordinatorDependencies,
@@ -38,6 +39,9 @@ from mcp_server_phytomni.api.attachments import (
     validate_research_attachment_bundle,
 )
 from mcp_server_phytomni.api.lifecycle_contract import SafeApiError
+from mcp_server_phytomni.api.research_fingerprint import (
+    research_client_fingerprint_for_http_input,
+)
 from mcp_server_phytomni.api.research_input import (
     ResearchAdmissionRequest,
     ResearchClientFingerprintInput,
@@ -67,6 +71,43 @@ from mcp_server_phytomni.runtime.attachment_assets import (
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
+
+
+def test_fingerprint_http_input_helper_matches_typed_contract() -> None:
+    """The HTTP-input helper preserves the versioned fingerprint shape."""
+    query = "summarize rice drought"
+    identity = parse_idempotency_identity("fingerprint-values", None)
+    expected = compute_research_client_fingerprint(
+        ResearchClientFingerprintInput(
+            original_query_digest=hashlib.sha256(
+                query.encode("utf-8")
+            ).hexdigest(),
+            original_query_length=len(query),
+            managed_asset_ids=("asset-1",),
+            locale="en-US",
+            interop_mode="off",
+            interop_targets=(),
+            conversation_identity_digest=identity.canonical_digest,
+        )
+    )
+
+    assert (
+        research_client_fingerprint_for_http_input(
+            ResearchHttpAdmissionInput(
+                original_query=query,
+                original_query_digest=hashlib.sha256(
+                    query.encode("utf-8")
+                ).hexdigest(),
+                original_query_length=len(query),
+                managed_asset_ids=("asset-1",),
+                locale="en-US",
+                interop_mode="off",
+                interop_targets=(),
+            ),
+            identity.canonical_digest,
+        )
+        == expected
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -620,22 +661,7 @@ async def test_post_acceptance_failures_preserve_safe_replay_contract(
         caught.value.retryable,
         caught.value.stage,
     ) == (case.code, case.status, case.retryable, "input_resolution")
-    assert (
-        callbacks
-        == {
-            "metadata": ["metadata"],
-            "extract": ["metadata", "extract"],
-            "resolve": ["metadata", "extract", "resolve"],
-            "revalidate": ["metadata", "extract", "resolve", "revalidate"],
-            "validate_native": [
-                "metadata",
-                "extract",
-                "resolve",
-                "revalidate",
-                "validate_native",
-            ],
-        }[case.callback]
-    )
+    assert callbacks == research_callbacks_through(case.callback)
     row, root = _failed_admission_rows(store)
     failure = json.loads(row[2])
     assert failure == {

@@ -36,29 +36,12 @@ from mcp_server_phytomni.agents.research.resolver_policy import (
     ResearchResolverWorkPlan,
     canonical_json_bytes,
 )
+from tests.support.research_fakes import resolver_policy
 
 pytestmark = pytest.mark.agent
 
 
-def _policy(**changes: object) -> ResearchResolverPolicy:
-    """Build a small deterministic policy for resolver tests."""
-    values: dict[str, object] = {
-        "schema_version": 1,
-        "model_id": "phyto-research",
-        "context_token_limit": 256,
-        "output_token_reserve": 16,
-        "prompt_token_overhead": 8,
-        "schema_token_overhead": 8,
-        "safety_margin_tokens": 8,
-        "max_serialized_request_bytes": 512,
-        "max_description_chars": 200,
-        "overlap_chars": 8,
-        "provider_identity": "test-provider",
-        "provider_idempotency_supported": False,
-        "provider_status_query_supported": False,
-    }
-    values.update(changes)
-    return ResearchResolverPolicy(**values)  # type: ignore[arg-type]
+_policy = resolver_policy
 
 
 def _entry(dataset_id: str, ordinal: int) -> ResearchInventoryEntry:
