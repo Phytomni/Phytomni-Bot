@@ -378,6 +378,12 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
   **Operational use:** Owner-scoped run lookup.
 
 - **Method:** `POST`
+  **Path:** `/v1/runs/{run_id}/cancel`
+  **Auth:** yes
+  **Operational use:** Cancel an owner-scoped Research run before remote
+  dispatch.
+
+- **Method:** `POST`
   **Path:** `/v1/runs/{run_id}/delivery/retry`
   **Auth:** yes
   **Operational use:** Retry a retryable result-archive publication for an
@@ -465,6 +471,28 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
   **Auth:** yes
   **Operational use:** Liveness probe for the relay; returns `{"status": "ok"}`
   when relay is enabled.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/capabilities`
+  **Auth:** relay
+  **Operational use:** Return sanitized Research input object-grant protocol
+  capabilities; requires the `relay:research-input` scope.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/research-input/object-grants`
+  **Auth:** relay
+  **Operational use:** Resolve exact Research object metadata and create or
+  replay bound grants.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/research-input/object-grants/verify`
+  **Auth:** relay
+  **Operational use:** Revalidate or rotate exact-key Research object grants.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/research-input/object-grants/revoke`
+  **Auth:** relay
+  **Operational use:** Idempotently revoke exact-key Research object grants.
 
 - **Method:** `POST`
   **Path:** `/v1/relay/llm/chat/completions`

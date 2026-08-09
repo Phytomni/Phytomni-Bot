@@ -259,6 +259,11 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
   **Purpose:** Returns one owner-isolated run state.
 
 - **Method:** `POST`
+  **Path:** `/v1/runs/{run_id}/cancel`
+  **Auth:** yes
+  **Purpose:** Cancels an owner-scoped Research run before remote dispatch.
+
+- **Method:** `POST`
   **Path:** `/v1/runs/{run_id}/delivery/retry`
   **Auth:** yes
   **Purpose:** Retries a retryable result-archive publication for an owner-
@@ -349,6 +354,28 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
   guard; returns `{"status": "ok"}` when relay is enabled and `404`
   when relay is
   disabled.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/capabilities`
+  **Auth:** relay
+  **Purpose:** Returns the sanitized Research input object-grant protocol
+  capabilities; requires the `relay:research-input` scope.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/research-input/object-grants`
+  **Auth:** relay
+  **Purpose:** Resolves exact Research object metadata and creates or replays
+  bound grants.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/research-input/object-grants/verify`
+  **Auth:** relay
+  **Purpose:** Revalidates or rotates exact-key Research object grants.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/research-input/object-grants/revoke`
+  **Auth:** relay
+  **Purpose:** Idempotently revokes exact-key Research object grants.
 
 - **Method:** `POST`
   **Path:** `/v1/relay/llm/chat/completions`
