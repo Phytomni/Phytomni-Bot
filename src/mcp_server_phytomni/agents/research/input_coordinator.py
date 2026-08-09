@@ -28,6 +28,10 @@ from .input_preparation import (
     with_execution_fingerprint,
 )
 from .recovery import recover_registered_request
+from .recovery_support import (
+    register_research_task,
+    unregister_research_task,
+)
 
 __all__ = [
     "ResearchInputCoordinator",
@@ -51,6 +55,7 @@ class _DispatchBinding(NamedTuple):
 
     recovery: Any | None
     auto_dispatch: bool
+    store: Any | None
 
 
 class ResearchInputCoordinator:
@@ -78,22 +83,25 @@ class ResearchInputCoordinator:
         self.plan = ports.pop("plan", None)
         self.plan_builder = ports.pop("plan_builder", None)
         self.outbox = ports.pop("outbox", None)
-        self._dispatch_binding = _DispatchBinding(None, False)
+        store = ports.pop("store", None)
+        self._dispatch_binding = _DispatchBinding(None, False, store)
         runtime = ports.pop("dispatch_runtime", None)
         if runtime is not None:
             if self.outbox is not None:
                 raise TypeError("dispatch_runtime cannot combine with outbox")
             self.outbox = getattr(runtime, "outbox", None)
+            runtime_store = getattr(self.outbox, "store", store)
             self._dispatch_binding = _DispatchBinding(
-                getattr(runtime, "recovery", None), True
+                getattr(runtime, "recovery", None), True, runtime_store
             )
             if self.outbox is None:
                 raise TypeError("dispatch_runtime must provide an outbox")
             self._dispatch_binding = _DispatchBinding(
-                self._dispatch_binding.recovery, True
+                self._dispatch_binding.recovery,
+                True,
+                self._dispatch_binding.store,
             )
         self.expected_revision = ports.pop("expected_revision", 0)
-        store = ports.pop("store", None)
         if self.outbox is None and store is not None:
             submit = ports.pop("dispatch_submit", None)
             if submit is None:
@@ -111,7 +119,9 @@ class ResearchInputCoordinator:
                     attach_task=ports.pop("attach_task", None),
                 )
                 self._dispatch_binding = _DispatchBinding(
-                    self._dispatch_binding.recovery, True
+                    self._dispatch_binding.recovery,
+                    True,
+                    store,
                 )
         self._validate_optional_ports()
         self.dependencies = dependencies or (
@@ -183,6 +193,7 @@ class ResearchInputCoordinator:
         """Reload only private metadata and rebuild all transient evidence."""
         if not run_id or not lease_owner or not callable(loader):
             raise _failure("request_validation", last_stage="restart")
+        self._ensure_not_cancelled(run_id, "restart")
         try:
             request = await loader(run_id)
         except ResearchInputFailure:
@@ -195,6 +206,7 @@ class ResearchInputCoordinator:
             raise _failure("request_validation", last_stage="restart")
         if request.run_id != run_id:
             raise _failure("request_validation", last_stage="restart")
+        self._ensure_not_cancelled(run_id, "restart")
         await self._run_request(request, run_id, lease_owner, resumed=True)
 
     async def _run_request(
@@ -205,32 +217,73 @@ class ResearchInputCoordinator:
         *,
         resumed: bool = False,
     ) -> None:
+        """Track one coordinator task while running the ordered sequence."""
+        register_research_task(run_id)
+        try:
+            await self._run_request_impl(
+                request, run_id, lease_owner, resumed=resumed
+            )
+        finally:
+            unregister_research_task(run_id)
+
+    async def _run_request_impl(
+        self,
+        request: ResearchCoordinatorRequest,
+        run_id: str,
+        lease_owner: str,
+        *,
+        resumed: bool = False,
+    ) -> None:
         """Run one fresh or restart-rebuilt preparation sequence."""
+        self._ensure_not_cancelled(run_id, "input_resolution")
         await recover_registered_request()
+        self._ensure_not_cancelled(run_id, "input_resolution")
         dependencies = self.dependencies
         if dependencies == ResearchCoordinatorDependencies():
             dependencies = request.dependencies
             self.dependencies = dependencies
         context = request
         inventory = await self._metadata(dependencies, context)
+        self._ensure_not_cancelled(run_id, "metadata")
         context = context._replace(inventory_request=inventory)
         evidence = await self._extract(dependencies, context)
+        self._ensure_not_cancelled(run_id, "extraction")
         if resumed:
             _compare_resumed_evidence(request.evidence, evidence)
         context = context._replace(evidence=evidence)
         resolution = await self._resolve(dependencies, context)
+        self._ensure_not_cancelled(run_id, "resolver")
         context = context._replace(resolution=resolution)
         prepared = self._join(dependencies, inventory, resolution)
+        self._ensure_not_cancelled(run_id, "join")
         if request.effective_query and (
             prepared.effective_query != request.effective_query
         ):
             raise _failure("input_resolution", last_stage="join")
         prepared = _bind_request_identity(prepared, context)
         refreshed = await self._revalidate(dependencies, context)
+        self._ensure_not_cancelled(run_id, "revalidation")
         if not same_research_inventory_snapshot(inventory, refreshed):
             raise _snapshot_drift()
         prepared = await self._validate_native(dependencies, prepared, context)
+        self._ensure_not_cancelled(run_id, "native_validation")
         await self._persist(run_id, prepared, context, lease_owner)
+
+    def _ensure_not_cancelled(self, run_id: str, last_stage: str) -> None:
+        """Reject late callback results after the durable cancel barrier."""
+        store = self._dispatch_binding.store or getattr(
+            self.outbox, "store", None
+        )
+        checker = getattr(store, "is_cancel_requested", None)
+        if callable(checker) and checker(run_id):
+            raise research_input_failure(
+                "research_cancel_conflict",
+                "Research run cancellation is no longer available.",
+                http_status_hint=409,
+                retryable=False,
+                stage="execution",
+                last_stage=last_stage,
+            )
 
     async def _metadata(
         self,
@@ -333,7 +386,9 @@ class ResearchInputCoordinator:
         request: ResearchCoordinatorRequest,
         lease_owner: str,
     ) -> None:
+        self._ensure_not_cancelled(run_id, "planning")
         plan = await self._build_plan(prepared, request)
+        self._ensure_not_cancelled(run_id, "planning")
         dependencies = self.dependencies
         callback = dependencies.persist_planning
         try:
@@ -345,6 +400,7 @@ class ResearchInputCoordinator:
                     prepared,
                     plan,
                 )
+                self._ensure_not_cancelled(run_id, "planning")
                 if callback is not None:
                     result = callback(
                         run_id,
@@ -357,6 +413,7 @@ class ResearchInputCoordinator:
                     )
                     if inspect.isawaitable(result):
                         await result
+                    self._ensure_not_cancelled(run_id, "planning")
                 if self._auto_dispatch:
                     await self._dispatch_records(records, lease_owner)
             else:
@@ -374,6 +431,8 @@ class ResearchInputCoordinator:
                 if inspect.isawaitable(result):
                     await result
         except ResearchInputFailure as error:
+            if error.code == "research_cancel_conflict":
+                raise
             raise _restate(error, "planning") from None
         except Exception as error:
             raise _stage_failure("planning", error) from None
@@ -385,6 +444,7 @@ class ResearchInputCoordinator:
         if self.outbox is None:
             return
         for record in records:
+            self._ensure_not_cancelled(record.run_id, "execution")
             outcome = await self.outbox.dispatch_once(
                 record.dispatch_id, lease_owner
             )

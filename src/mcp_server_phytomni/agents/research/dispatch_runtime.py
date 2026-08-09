@@ -31,6 +31,7 @@ from ...storage.research_objects import (
     ResearchObjectMetadataError,
     ResearchObjectMetadataPort,
     ResearchObjectResolveRequest,
+    ResearchObjectRevokeRequest,
     ResearchObjectSnapshot,
     ResearchObjectVerifyRequest,
 )
@@ -39,6 +40,7 @@ from .dispatch_outbox import (
     ResearchDispatchRecord,
 )
 from .recovery import ResearchRecoveryService, ResearchWorkProvider
+from .recovery_support import ResearchGrantRevocation
 
 __all__ = [
     "ResearchDispatchRuntime",
@@ -131,6 +133,16 @@ class _RuntimeBindings:
             return None
         return {"task_id": row.remote_task_id, **dict(response)}
 
+    async def revoke(self, request: ResearchGrantRevocation) -> None:
+        """Revoke persisted direct or relay authorities after cancellation."""
+        await self.metadata_port.revoke(
+            ResearchObjectRevokeRequest(
+                parent_run_id=request.parent_run_id,
+                execution_fingerprint=request.execution_fingerprint,
+                authority_ids=request.grant_ids,
+            )
+        )
+
     async def verify(
         self, row: ResearchDispatchRecord
     ) -> ResearchDispatchRecord:
@@ -199,6 +211,7 @@ def build_research_dispatch_runtime(
         outbox=outbox,
         now=clock,
         lease_owner=options.get("lease_owner"),
+        grant_revoke=bindings.revoke,
     )
     return ResearchDispatchRuntime(outbox=outbox, recovery=recovery)
 

@@ -2,12 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Lease-safe execution and bounded recovery for Research work units.
-The store is deliberately used as a short transaction boundary.  In
-particular, provider preparation, invocation, and status queries happen
-after the claim or state transition has committed; a provider call is never
-made while an SQLite transaction is held open.
-"""
+"""Lease-safe execution and bounded recovery for Research work units."""
 
 from __future__ import annotations
 
@@ -37,19 +32,21 @@ from .dispatch_outbox_storage import recovery_outbox as _out
 from .input_contracts import ResearchErrorCode
 from .recovery_support import (
     ContextSubdivider,
+    GrantRevoke,
     ResearchContextLengthRejected,
     ResearchContextLengthRejectedError,
     ResearchWorkBinding,
     build_context_subdivider,
-    recover_registered_request,
-    recover_registered_startup,
+    recover_pending_grants,
+    register_grant_revoke,
     register_recovery_service,
     selected_output_binding,
 )
 
-_execute_resolver_work = _recovery_support.execute_resolver_work
 _bindings_match = _recovery_support.bindings_match
-
+_execute_resolver_work = _recovery_support.execute_resolver_work
+recover_registered_request = _recovery_support.recover_registered_request
+recover_registered_startup = _recovery_support.recover_registered_startup
 __all__ = [
     "ResearchRecoveryService",
     "ResearchContextLengthRejected",
@@ -61,8 +58,6 @@ __all__ = [
     "ResearchRecoverySummary",
     "WorkDisposition",
     "build_context_subdivider",
-    "recover_registered_request",
-    "recover_registered_startup",
 ]
 WorkDispositionState = Literal[
     "reclaimed", "reconciled", "reused", "ambiguous", "terminal_failed"
@@ -301,6 +296,7 @@ class _RecoveryOptions:
     result_validator: ResultValidator | None = None
     batch_size: int = RESEARCH_RECOVERY_BATCH_SIZE
     lease_owner: str | None = None
+    grant_revoke: GrantRevoke | None = None
 
     @classmethod
     def from_kwargs(cls, values: Mapping[str, object]) -> _RecoveryOptions:
@@ -310,6 +306,8 @@ class _RecoveryOptions:
             "result_validator",
             "batch_size",
             "lease_owner",
+            "grant_revoke",
+            "revoke",
         }
         unknown = set(values).difference(allowed)
         if unknown:
@@ -326,6 +324,10 @@ class _RecoveryOptions:
                 values.get("batch_size", RESEARCH_RECOVERY_BATCH_SIZE),
             ),
             lease_owner=cast(str | None, values.get("lease_owner")),
+            grant_revoke=cast(
+                GrantRevoke | None,
+                values.get("grant_revoke", values.get("revoke")),
+            ),
         )
 
 
@@ -385,10 +387,7 @@ def _is_terminal(status: str | None) -> bool:
 
 
 def _query_payload(value: object) -> dict[str, Any] | None:
-    """Project a provider status response to a bounded result mapping.
-    Providers may return a direct result or successful status envelope.
-    Non-success statuses remain unresolved and are classified as ambiguous.
-    """
+    """Project a provider status response to a bounded result mapping."""
     if not isinstance(value, Mapping):
         return None
     status = value.get("status")
@@ -835,6 +834,7 @@ class ResearchRecoveryService:
         self.lease_owner = (
             resolved.lease_owner or f"research-recovery-{uuid.uuid4().hex}"
         )
+        register_grant_revoke(self.store, resolved.grant_revoke)
         self.outbox = outbox
         register_recovery_service(self)
 
@@ -867,7 +867,7 @@ class ResearchRecoveryService:
                 self.store, now, self.recovery_limit
             )
         except _RECOVERY_FAILURES:
-            return ResearchRecoverySummary(**counts)
+            candidates = []
         for candidate in candidates:
             try:
                 outcome = await self._recover_candidate(candidate, now)
@@ -889,6 +889,7 @@ class ResearchRecoveryService:
             counts["reconciled"] += outcomes.count("reconciled")
             counts["ambiguous"] += outcomes.count("ambiguous")
             counts["terminal_failed"] += outcomes.count("cancelled")
+        await recover_pending_grants(self, now)
         return ResearchRecoverySummary(**counts)
 
     async def _recover_candidate(
@@ -974,12 +975,11 @@ class ResearchRecoveryService:
         payload = _query_payload(queried)
         if payload is None:
             return None
-        if self.result_validator is None:
+        validator = self.result_validator
+        if validator is None:
             return payload
         try:
-            validated = await _maybe_await(
-                self.result_validator(payload, record)
-            )
+            validated = await _maybe_await(validator(payload, record))
             return _normalise_output(validated)
         except _RECOVERY_FAILURES:
             return None

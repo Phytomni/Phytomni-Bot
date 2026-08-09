@@ -14,22 +14,27 @@ from importlib import import_module
 from sqlite3 import Connection, Cursor, Row
 from typing import Any, cast
 
-from .research_input_store_support import _ResearchInputStoreBindings
+from . import research_input_store_support as _s
+from .research_input_store_support import (
+    RESEARCH_GRANT_REVOKE_TABLE,
+    _ResearchInputStoreBindings,
+    _split_words,
+    _utc_iso,
+)
 from .research_input_types import (
     ResearchAdmissionReservation,
     ResearchWorkUnitRecord,
 )
 from .sqlite import sqlite_transaction
 
-
-def _split_words(value: str, separator: str | None = None) -> tuple[str, ...]:
-    return tuple(value.split(separator))
-
+ResearchCancellationConflict = _s.ResearchCancellationConflict
+ResearchCancellationNotFound = _s.ResearchCancellationNotFound
+ResearchCancellationUnsupported = _s.ResearchCancellationUnsupported
+cancel_research_run = _s.cancel_research_run
 
 RESEARCH_WORK_LEASE = timedelta(seconds=60)
 RESEARCH_HEARTBEAT_INTERVAL = timedelta(seconds=20)
-RESEARCH_RECOVERY_BATCH_SIZE = 32
-RESEARCH_SCHEMA_VERSION = 1
+RESEARCH_RECOVERY_BATCH_SIZE, RESEARCH_SCHEMA_VERSION = 32, 1
 RESEARCH_SCHEMA_VERSION_TABLE = "research_input_schema_version"
 RESEARCH_OPERATION = "research_input_resolution_v1"
 PUBLIC_RESEARCH_STAGES = frozenset(
@@ -375,9 +380,7 @@ def _ensure_schema_version(connection: Connection) -> None:
         f"SELECT version FROM {RESEARCH_SCHEMA_VERSION_TABLE} WHERE id = 1"
     ).fetchone()
     if row is not None and int(row[0]) > RESEARCH_SCHEMA_VERSION:
-        raise sqlite3.DatabaseError(
-            "research schema is newer than this worker"
-        )
+        raise sqlite3.DatabaseError("newer research schema")
 
 
 def _ensure_private_tables(connection: Connection) -> None:
@@ -434,7 +437,8 @@ def purge_research_children(
     tables = dict.fromkeys(
         _split_words(
             "research_dispatch_outbox research_work_units "
-            "research_input_resolutions research_idempotency_bindings"
+            "research_input_resolutions research_idempotency_bindings "
+            "research_grant_revocations"
         ),
         "run_id",
     )
@@ -616,11 +620,6 @@ def _to_record(row: Row) -> ResearchWorkUnitRecord:
         sent_at=_parse_iso(row["sent_at"]),
         completed_at=_parse_iso(row["completed_at"]),
     )
-
-
-def _utc_iso(value: datetime) -> str:
-    value = value.replace(tzinfo=UTC) if value.tzinfo is None else value
-    return value.astimezone(UTC).isoformat()
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -980,6 +979,7 @@ _PRIVATE_TABLES = (
         ",PRIMARY KEY(outbox_id),FOREIGN KEY(run_id)REFERENCES runs(run_id),"
         "FOREIGN KEY(unit_id)REFERENCES research_work_units(unit_id)",
     ),
+    RESEARCH_GRANT_REVOKE_TABLE,
 )
 _INDEX_DDLS = _split_words(
     """CREATE UNIQUE INDEX IF NOT EXISTS

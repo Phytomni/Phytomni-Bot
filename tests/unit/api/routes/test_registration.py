@@ -204,6 +204,7 @@ def test_admin_and_run_registration_preserve_public_contract() -> None:
         ("/v1/runs/{run_id}/logs", ("GET",)),
         ("/v1/runs/{run_id}", ("GET",)),
         ("/v1/runs/{run_id}/delivery/retry", ("POST",)),
+        ("/v1/runs/{run_id}/cancel", ("POST",)),
         ("/v1/runs/{run_id}/a2ui-actions", ("POST",)),
         ("/v1/runs/{thread_id}/resume", ("POST",)),
         ("/v1/runs", ("GET",)),

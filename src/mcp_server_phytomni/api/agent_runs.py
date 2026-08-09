@@ -32,7 +32,7 @@ from ..agents.network.resolve_query import resolve_network_user_query
 from ..agents.research.input_inventory import (
     ManagedResearchAssetSnapshot,
     ResearchInventoryRequest,
-    build_research_inventory,
+    validate_research_inventory,
 )
 from ..config.defaults import ApiConfig, ServerConfig
 from ..mcp.app import invoke_tool_enveloped, validate_tool_arguments
@@ -388,7 +388,7 @@ def _direct_inventory_validator(
             bucket=source.BUCKET_NAME,
             client_factory=partial(operator_obs_client, source.OBS_SERVER),
         )
-        await build_research_inventory(
+        await validate_research_inventory(
             ResearchInventoryRequest(
                 parsed_input=parsed,
                 managed_assets=snapshots,

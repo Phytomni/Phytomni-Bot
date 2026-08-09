@@ -25,6 +25,10 @@ from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
 
+from ..agents.research.recovery_support import (
+    cancel_registered_research_tasks,
+    revoke_registered_research_run,
+)
 from ..mcp.formatting.models import ResultDelivery
 from ..mcp.formatting.redaction import strip_agent_result
 from ..runtime.async_utils import wait_for_thread_event
@@ -33,6 +37,12 @@ from ..runtime.checkpoint_backend import build_default_checkpointer
 from ..runtime.conversation_context.store import ConversationContextStore
 from ..runtime.deep_genome_store import DeepGenomeStore
 from ..runtime.deep_genome_store_projection import snapshot_to_canonical_result
+from ..runtime.research_input_store import (
+    ResearchCancellationConflict,
+    ResearchCancellationNotFound,
+    ResearchCancellationUnsupported,
+    ResearchInputStore,
+)
 from ..runtime.run_registry import (
     RunFilter,
     RunOutcome,
@@ -44,7 +54,7 @@ from ..runtime.run_registry import (
 from ..runtime.run_registry_delivery import result_delivery_from_result
 from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
-from .lifecycle_contract import project_research_lifecycle
+from .lifecycle_contract import SafeApiError, project_research_lifecycle
 
 __all__ = [
     "ResolvedRemoteRun",
@@ -53,6 +63,7 @@ __all__ = [
     "RunPersistenceError",
     "agent_run_response",
     "claim_run_gc",
+    "cancel_research_run",
     "create_running_stream_run",
     "fetch_owner_run",
     "retry_owner_delivery",
@@ -553,6 +564,52 @@ async def fetch_owner_run(
     if record is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
     return project_public_run_record(record, debug=debug, db_path=db_path)
+
+
+async def cancel_research_run(
+    run_id: str,
+    *,
+    owner: str,
+    expected_revision: int | None = None,
+    db_path: str | None = None,
+    registry_factory: RegistryFactory = RunRegistry,
+) -> dict[str, Any]:
+    """Cancel one owner-scoped Research run before a remote send."""
+    path = _database_path(db_path)
+    registry = registry_factory(path)
+    current = registry.get_run(run_id, owner=owner)
+    if current is None:
+        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+    if current.spec.agent != "research":
+        raise HTTPException(
+            status_code=409,
+            detail="run cancellation is not supported for this agent",
+        )
+    revision = (
+        current.revision if expected_revision is None else expected_revision
+    )
+    try:
+        ResearchInputStore(path).cancel_research_run(run_id, owner, revision)
+    except ResearchCancellationNotFound as exc:
+        raise HTTPException(
+            status_code=404, detail=f"run not found: {run_id}"
+        ) from exc
+    except ResearchCancellationUnsupported as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ResearchCancellationConflict as exc:
+        raise SafeApiError(
+            status_code=409,
+            code="research_cancel_conflict",
+            message="Research run cancellation is no longer available.",
+            stage="execution",
+            retryable=False,
+        ) from exc
+    cancel_registered_research_tasks(run_id)
+    await revoke_registered_research_run(run_id)
+    updated = registry.get_run(run_id, owner=owner)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+    return project_public_run_record(updated, db_path=path)
 
 
 def _public_result_delivery(delivery: ResultDelivery) -> dict[str, Any]:

@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import Literal
@@ -20,6 +20,7 @@ from ...storage.research_objects import (
     ResearchObjectMetadataError,
     ResearchObjectMetadataPort,
     ResearchObjectResolveRequest,
+    ResearchObjectRevokeRequest,
 )
 from .input_contracts import (
     ParsedResearchInput,
@@ -37,6 +38,7 @@ __all__ = [
     "ResearchInventoryEntry",
     "ResearchInventoryRequest",
     "build_research_inventory",
+    "validate_research_inventory",
     "revalidate_research_inventory",
     "same_research_inventory_snapshot",
 ]
@@ -189,6 +191,51 @@ async def build_research_inventory(
             for entry in entries
             if entry.dataset_id in authorities
         ),
+    )
+
+
+async def validate_research_inventory(
+    request: ResearchInventoryRequest,
+    object_port: ResearchObjectMetadataPort,
+) -> None:
+    """Validate metadata and release provisional authorities immediately.
+
+    Admission validation runs before a durable parent scope exists.  The
+    metadata port therefore receives a deterministic provisional scope; its
+    authorities must not survive that synchronous validation boundary.  The
+    coordinator performs the retained, run-scoped resolution later.
+    """
+    drafts = _preflight(request)
+    authorities: dict[str, ResearchObjectAuthority] = {}
+    try:
+        authorities = await _resolve_drafts(drafts, object_port)
+        _entries_from_drafts(drafts, authorities)
+    except BaseException:
+        if authorities:
+            await _revoke_provisional(
+                object_port, _metadata_scope(drafts), authorities
+            )
+        raise
+    if authorities:
+        await _revoke_provisional(
+            object_port, _metadata_scope(drafts), authorities
+        )
+
+
+async def _revoke_provisional(
+    object_port: ResearchObjectMetadataPort,
+    scope: str,
+    authorities: Mapping[str, ResearchObjectAuthority],
+) -> None:
+    """Release one preflight authority set under its original scope."""
+    await object_port.revoke(
+        ResearchObjectRevokeRequest(
+            parent_run_id=f"inventory-{scope}",
+            execution_fingerprint=scope,
+            authority_ids=tuple(
+                authority.authority_id for authority in authorities.values()
+            ),
+        )
     )
 
 
@@ -462,12 +509,7 @@ async def _resolve_drafts(
     )
     if not candidates:
         return {}
-    scope = _digest(
-        [
-            (candidate.dataset_id, candidate.exact_reference)
-            for candidate in candidates
-        ]
-    )
+    scope = _metadata_scope(drafts)
     try:
         authorities = await object_port.resolve(
             ResearchObjectResolveRequest(
@@ -503,6 +545,17 @@ async def _resolve_drafts(
             "Research dataset metadata could not be verified.",
         )
     return authorities_by_dataset
+
+
+def _metadata_scope(drafts: tuple[_DraftEntry, ...]) -> str:
+    """Return the deterministic scope used by provisional metadata grants."""
+    return _digest(
+        [
+            (draft.dataset_id, draft.exact_reference)
+            for draft in drafts
+            if draft.purpose == "dataset"
+        ]
+    )
 
 
 def _invalid_authority(

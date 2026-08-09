@@ -249,6 +249,31 @@ async def test_reconcile_cancelled_run_does_not_poll(
     assert record.status == "cancelled"
 
 
+def test_terminal_cancellation_rejects_late_compatibility_settlement(
+    tmp_path: Path,
+) -> None:
+    """Legacy terminal writers cannot revive a cancelled Research row."""
+    registry, _, _ = _make_registry(tmp_path)
+    registry.create_run(
+        RunSpec("run-cancelled-cas", "alice", "research", "api"),
+        outcome=RunOutcome(status="cancelled", result={"status": "cancelled"}),
+    )
+    current = registry.get_run("run-cancelled-cas", owner="alice")
+    assert current is not None
+    assert not registry.settle_run(
+        "run-cancelled-cas",
+        owner="alice",
+        status="succeeded",
+        result={"answer": "late"},
+        expected_revision=current.revision,
+    )
+    updated = registry.get_run("run-cancelled-cas", owner="alice")
+    assert updated is not None
+    assert updated.status == "cancelled"
+    assert updated.stage is None
+    assert updated.result == {"status": "cancelled"}
+
+
 @pytest.mark.asyncio
 async def test_reconcile_aggregates_all_succeeded_into_terminal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

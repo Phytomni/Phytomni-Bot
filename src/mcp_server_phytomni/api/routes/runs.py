@@ -7,12 +7,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from importlib import import_module
 from typing import Any, TypedDict, cast
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ...mcp.result_formatting import resolve_debug, strip_agent_result
+from .. import run_lifecycle
 from ..a2ui_limits import (
     A2uiPayloadError,
     A2uiPayloadTooLargeError,
@@ -22,6 +24,12 @@ from ..a2ui_limits import (
 from ..auth import ApiPrincipal
 from ..schemas import ResumeRequest
 from . import _paging_values
+
+
+def _tasks_db_path() -> str:
+    """Resolve the app DB without importing the app at module load."""
+    app_module = import_module("mcp_server_phytomni.api.app")
+    return cast(Callable[[], str], app_module.resolve_tasks_db_path)()
 
 
 @dataclass(frozen=True)
@@ -48,6 +56,7 @@ class RunProjectionDependencies:
     retry_owner_delivery: Callable[..., Awaitable[dict[str, Any]]]
     list_owner_runs: Callable[[RunListRequest], dict[str, Any]]
     strip_run_result: Callable[[dict[str, Any]], dict[str, Any]]
+    cancel_research_run: Callable[..., Awaitable[dict[str, Any]]] | None = None
 
 
 @dataclass(frozen=True)
@@ -217,6 +226,34 @@ def _register_status_routes(
         return JSONResponse(
             await dependencies.projection.retry_owner_delivery(run_id)
         )
+
+    @app.post("/v1/runs/{run_id}/cancel")
+    async def cancel_run(
+        run_id: str,
+        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
+        expected_revision: int | None = None,
+    ) -> JSONResponse:
+        """Cancel an owner-scoped Research run before remote dispatch."""
+        owner = (
+            principal.user_id
+            or dependencies.context.current_user()
+            or "anonymous"
+        )
+        callback = dependencies.projection.cancel_research_run
+        if callback is None:
+            body = await run_lifecycle.cancel_research_run(
+                run_id,
+                owner=owner,
+                expected_revision=expected_revision,
+                db_path=_tasks_db_path(),
+            )
+        else:
+            body = await callback(
+                run_id,
+                owner=owner,
+                expected_revision=expected_revision,
+            )
+        return JSONResponse(body)
 
 
 def _register_pause_routes(

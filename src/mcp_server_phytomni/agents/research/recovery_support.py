@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
@@ -140,6 +141,96 @@ class ResearchContextLengthRejectedError(RuntimeError):
 ResearchContextLengthRejected = ResearchContextLengthRejectedError
 _recovery_failures: tuple[type[Exception], ...] = (Exception,)
 _SERVICES: list[Any] = []
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchGrantRevocation:
+    """Opaque durable grant-revocation request for one cancelled parent."""
+
+    parent_run_id: str
+    execution_fingerprint: str
+    grant_ids: tuple[str, ...]
+
+
+GrantRevoke = Callable[[ResearchGrantRevocation], object]
+_ACTIVE_RESEARCH_TASKS: dict[str, set[asyncio.Task[Any]]] = {}
+_GRANT_REVOKERS: dict[str, GrantRevoke | None] = {}
+
+
+def register_grant_revoke(store: Any, callback: GrantRevoke | None) -> None:
+    """Bind one process-local revoke callback."""
+    key = getattr(store, "db_path", "")
+    if key:
+        _GRANT_REVOKERS[key] = callback
+
+
+def register_research_task(
+    run_id: str, task: asyncio.Task[Any] | None = None
+) -> None:
+    """Track one in-process coordinator task behind a durable run id."""
+    current = task or asyncio.current_task()
+    if current is not None and run_id:
+        _ACTIVE_RESEARCH_TASKS.setdefault(run_id, set()).add(current)
+
+
+def unregister_research_task(
+    run_id: str, task: asyncio.Task[Any] | None = None
+) -> None:
+    """Remove one completed coordinator task from the process-local index."""
+    current = task or asyncio.current_task()
+    tasks = _ACTIVE_RESEARCH_TASKS.get(run_id)
+    if tasks is None or current is None:
+        return
+    tasks.discard(current)
+    if not tasks:
+        _ACTIVE_RESEARCH_TASKS.pop(run_id, None)
+
+
+def cancel_registered_research_tasks(run_id: str) -> int:
+    """Cancel owned in-process work after the durable CAS has committed."""
+    current = asyncio.current_task()
+    cancelled = 0
+    for task in tuple(_ACTIVE_RESEARCH_TASKS.get(run_id, ())):
+        if task is not current and not task.done() and task.cancel():
+            cancelled += 1
+    return cancelled
+
+
+async def revoke_registered_research_run(
+    run_id: str, now: datetime | None = None
+) -> None:
+    """Run post-commit revoke hooks for one cancelled Research parent."""
+    for service in tuple(_SERVICES):
+        await recover_pending_grants(service, now or datetime.now(), run_id)
+
+
+async def recover_pending_grants(
+    service: Any, now: datetime, run_id: str | None = None
+) -> None:
+    """Retry bounded grant revocation without reopening a cancelled parent."""
+    callback = _GRANT_REVOKERS.get(getattr(service.store, "db_path", ""))
+    if callback is None:
+        return
+    try:
+        pending = service.store.pending_grant_revocations(
+            service.recovery_limit
+        )
+    except _recovery_failures:
+        return
+    for parent, fingerprint, grant_ids in pending:
+        if run_id is not None and parent != run_id:
+            continue
+        request = ResearchGrantRevocation(parent, fingerprint, grant_ids)
+        try:
+            result = callback(request)
+            if inspect.isawaitable(result):
+                result = await result
+            if result is not False:
+                service.store.mark_grant_revoked(
+                    parent, fingerprint, grant_ids, now
+                )
+        except _recovery_failures:
+            continue
 
 
 def register_recovery_service(service: Any) -> None:

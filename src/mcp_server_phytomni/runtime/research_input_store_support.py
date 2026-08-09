@@ -8,11 +8,11 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from sqlite3 import Row
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from .research_input_types import (
     ResearchAdmissionReservation,
@@ -23,6 +23,32 @@ from .task_manager import _expires_at_for
 
 if TYPE_CHECKING:
     from .research_input_store import ResearchInputStore
+
+
+_GRANT_REVOKE_COLUMNS = (
+    ("run_id", "TEXT NOT NULL"),
+    ("execution_fingerprint", "TEXT NOT NULL"),
+    ("grant_ids_json", "TEXT NOT NULL"),
+    ("state", "TEXT NOT NULL DEFAULT 'pending'"),
+    ("schema_version", "INTEGER NOT NULL DEFAULT 1"),
+    ("created_at", "TEXT NOT NULL DEFAULT ''"),
+    ("updated_at", "TEXT NOT NULL DEFAULT ''"),
+    ("revoked_at", "TEXT"),
+)
+_GRANT_REVOKE_CONSTRAINTS = (
+    ",PRIMARY KEY(run_id,execution_fingerprint),FOREIGN KEY(run_id)"
+    " REFERENCES runs(run_id)"
+)
+RESEARCH_GRANT_REVOKE_TABLE = (
+    "research_grant_revocations",
+    _GRANT_REVOKE_COLUMNS,
+    _GRANT_REVOKE_CONSTRAINTS,
+)
+
+
+def _split_words(value: str, separator: str | None = None) -> tuple[str, ...]:
+    return tuple(value.split(separator))
+
 
 _VALIDATED_OUTPUT_SQL = (
     "SELECT output_json FROM research_work_units WHERE unit_id = ? AND "
@@ -39,6 +65,39 @@ class AdmissionLaunchFailure:
     retryable: bool
     status_hint: int
     stage: str
+
+
+class ResearchCancellationNotFoundError(LookupError):
+    """Raised when an owner cannot see the requested run."""
+
+
+ResearchCancellationNotFound = ResearchCancellationNotFoundError
+
+
+class ResearchCancellationUnsupportedError(ValueError):
+    """Raised when cancellation is requested for a non-Research run."""
+
+
+ResearchCancellationUnsupported = ResearchCancellationUnsupportedError
+
+
+class ResearchCancellationConflictError(ValueError):
+    """Raised when cancellation crossed a non-reversible boundary."""
+
+    code = "research_cancel_conflict"
+
+
+ResearchCancellationConflict = ResearchCancellationConflictError
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchCancellationOutcome:
+    """Durable, owner-scoped cancellation result."""
+
+    run_id: str
+    status: Literal["cancelled"]
+    replay: bool
+    revision: int
 
 
 class _ResearchInputStoreBindings:
@@ -92,6 +151,37 @@ class _ResearchInputStoreBindings:
         """Check retry eligibility without changing durable state."""
         return retry_admission_available(
             self, run_id, owner, identity_digest, client_fingerprint
+        )
+
+    def cancel_research_run(
+        self,
+        run_id: str,
+        owner: str,
+        expected_revision: int,
+    ) -> ResearchCancellationOutcome:
+        """Cancel one Research parent before a remote send boundary."""
+        return cancel_research_run(self, run_id, owner, expected_revision)
+
+    def is_cancel_requested(self, run_id: str) -> bool:
+        """Return whether the durable cancellation barrier is set."""
+        return is_cancel_requested(self, run_id)
+
+    def pending_grant_revocations(
+        self, limit: int = 32
+    ) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+        """Return a bounded opaque view of pending grant revocations."""
+        return pending_grant_revocations(self, limit)
+
+    def mark_grant_revoked(
+        self,
+        parent_run_id: str,
+        execution_fingerprint: str,
+        grant_ids: Sequence[str],
+        now: datetime | None = None,
+    ) -> int:
+        """Complete a pending grant revoke with a private CAS update."""
+        return mark_grant_revoked(
+            self, parent_run_id, execution_fingerprint, grant_ids, now
         )
 
 
@@ -227,6 +317,225 @@ def retry_admission_available(
         return _retryable_admission(
             connection, run_id, owner, identity_digest, client_fingerprint
         )
+
+
+def is_cancel_requested(store: Any, run_id: str) -> bool:
+    """Read the durable barrier used to discard late callback results."""
+    with sqlite_transaction(store.db_path) as connection:
+        row = connection.execute(
+            "SELECT status, EXISTS (SELECT 1 FROM "
+            "research_input_resolutions AS resolution WHERE "
+            "resolution.run_id = runs.run_id AND "
+            "COALESCE(resolution.cancel_requested, 0) <> 0) "
+            "FROM runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+    return row is not None and (row[0] == "cancelled" or bool(row[1]))
+
+
+def _grant_ids(value: object) -> tuple[str, ...]:
+    """Decode only bounded opaque grant identifiers from private JSON."""
+    try:
+        decoded = json.loads(value) if isinstance(value, str) else value
+    except (TypeError, ValueError):
+        return ()
+    if not isinstance(decoded, list):
+        return ()
+    return tuple(item for item in decoded if isinstance(item, str) and item)
+
+
+def _queue_grant_revocation(connection: Any, run_id: str, now: str) -> None:
+    """Persist grant IDs in Bot state, never in the operator grant store."""
+    resolution = connection.execute(
+        "SELECT execution_fingerprint, final_projection_json FROM "
+        "research_input_resolutions WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if resolution is None:
+        return
+    fingerprint = resolution[0]
+    if not isinstance(fingerprint, str) or not fingerprint:
+        return
+    grant_ids: set[str] = set()
+    try:
+        projection = json.loads(resolution[1] or "{}")
+    except (TypeError, ValueError):
+        projection = {}
+    if isinstance(projection, Mapping):
+        grant_ids.update(_grant_ids(projection.get("authority_ids")))
+    rows = connection.execute(
+        "SELECT grant_ids_json FROM research_dispatch_outbox "
+        "WHERE run_id = ? AND state = 'cancelled'",
+        (run_id,),
+    ).fetchall()
+    for row in rows:
+        grant_ids.update(_grant_ids(row[0]))
+    if not grant_ids:
+        return
+    encoded = json.dumps(sorted(grant_ids), separators=(",", ":"))
+    connection.execute(
+        "INSERT INTO research_grant_revocations ("
+        "run_id, execution_fingerprint, grant_ids_json, state, "
+        "schema_version, created_at, updated_at) VALUES (?, ?, ?, 'pending', "
+        "1, ?, ?) ON CONFLICT(run_id, execution_fingerprint) DO UPDATE SET "
+        "grant_ids_json = excluded.grant_ids_json, state = 'pending', "
+        "updated_at = excluded.updated_at, revoked_at = NULL",
+        (run_id, fingerprint, encoded, now, now),
+    )
+
+
+def pending_grant_revocations(
+    store: Any, limit: int = 32
+) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+    """Return bounded opaque grant groups awaiting revocation."""
+    if limit <= 0:
+        return ()
+    with sqlite_transaction(store.db_path) as connection:
+        rows = connection.execute(
+            "SELECT run_id, execution_fingerprint, grant_ids_json "
+            "FROM research_grant_revocations WHERE state = 'pending' "
+            "ORDER BY run_id LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return tuple(
+        (run_id, fingerprint, grant_ids)
+        for run_id, fingerprint, encoded in rows
+        if isinstance(run_id, str)
+        and run_id
+        and isinstance(fingerprint, str)
+        and fingerprint
+        and (grant_ids := _grant_ids(encoded))
+    )
+
+
+def mark_grant_revoked(
+    store: Any,
+    parent_run_id: str,
+    execution_fingerprint: str,
+    grant_ids: Sequence[str],
+    now: datetime | None = None,
+) -> int:
+    """Finish a pending grant revoke with an idempotent private CAS."""
+    if not grant_ids:
+        return 0
+    timestamp = _utc_iso(now or datetime.now(UTC))
+    with sqlite_transaction(store.db_path) as connection:
+        row = connection.execute(
+            "SELECT grant_ids_json FROM research_grant_revocations WHERE "
+            "run_id = ? AND execution_fingerprint = ? AND state = 'pending'",
+            (parent_run_id, execution_fingerprint),
+        ).fetchone()
+        if row is None or set(_grant_ids(row[0])) != set(grant_ids):
+            return 0
+        cursor = connection.execute(
+            "UPDATE research_grant_revocations SET state = 'revoked', "
+            "updated_at = ?, revoked_at = ? WHERE run_id = ? AND "
+            "execution_fingerprint = ? AND state = 'pending'",
+            (timestamp, timestamp, parent_run_id, execution_fingerprint),
+        )
+    return cursor.rowcount
+
+
+def _valid_cancel_arguments(
+    run_id: object, owner: object, expected_revision: object
+) -> bool:
+    """Validate owner and CAS arguments without widening the error surface."""
+    return (
+        isinstance(run_id, str)
+        and bool(run_id)
+        and isinstance(owner, str)
+        and bool(owner)
+        and isinstance(expected_revision, int)
+        and not isinstance(expected_revision, bool)
+        and expected_revision >= 0
+    )
+
+
+def cancel_research_run(
+    store: Any,
+    run_id: str,
+    owner: str,
+    expected_revision: int,
+) -> ResearchCancellationOutcome:
+    """CAS-cancel a Research parent before any remote send boundary."""
+    if not _valid_cancel_arguments(run_id, owner, expected_revision):
+        raise ResearchCancellationConflict()
+    now = _utc_iso(datetime.now(UTC))
+    expires_at = _expires_at_for("failed", now)
+    with sqlite_transaction(store.db_path, timeout=30.0) as connection:
+        connection.row_factory = Row
+        connection.execute("BEGIN IMMEDIATE")
+        parent = connection.execute(
+            "SELECT status, agent, revision FROM runs "
+            "WHERE run_id = ? AND user_id = ?",
+            (run_id, owner),
+        ).fetchone()
+        if parent is None:
+            raise ResearchCancellationNotFound(run_id)
+        status, agent, current_revision = (
+            cast(str, parent["status"]),
+            cast(str, parent["agent"]),
+            int(parent["revision"]),
+        )
+        if agent != "research":
+            raise ResearchCancellationUnsupported(
+                "run cancellation is supported only for Research"
+            )
+        if status == "cancelled":
+            return ResearchCancellationOutcome(
+                run_id, "cancelled", True, current_revision
+            )
+        if status != "running" or current_revision != expected_revision:
+            raise ResearchCancellationConflict()
+        forbidden = (
+            connection.execute(
+                "SELECT 1 FROM research_dispatch_outbox WHERE run_id = ? "
+                "AND state IN ('sent', 'ambiguous', 'accepted') LIMIT 1",
+                (run_id,),
+            ).fetchone()
+            or connection.execute(
+                "SELECT 1 FROM research_work_units WHERE run_id = ? AND ("
+                "state IN ('sent', 'ambiguous') OR (kind = 'dispatch' AND "
+                "state = 'succeeded')) LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        )
+        if forbidden is not None:
+            raise ResearchCancellationConflict()
+        connection.execute(
+            "UPDATE research_input_resolutions SET cancel_requested = 1, "
+            "status = 'cancelled', updated_at = ?, revision = revision + 1 "
+            "WHERE run_id = ? AND COALESCE(cancel_requested, 0) = 0",
+            (now, run_id),
+        )
+        connection.execute(
+            "UPDATE research_work_units SET state = 'cancelled', "
+            "lease_owner = NULL, lease_expires_at = NULL, completed_at = ?, "
+            "updated_at = ?, revision = revision + 1 WHERE run_id = ? "
+            "AND state IN ('pending', 'leased', 'retryable_failed')",
+            (now, now, run_id),
+        )
+        connection.execute(
+            "UPDATE research_dispatch_outbox SET state = 'cancelled', "
+            "lease_owner = NULL, lease_expires_at = NULL, completed_at = ?, "
+            "updated_at = ?, revision = revision + 1 WHERE run_id = ? "
+            "AND state IN ('pending', 'leased')",
+            (now, now, run_id),
+        )
+        _queue_grant_revocation(connection, run_id, now)
+        updated = connection.execute(
+            "UPDATE runs SET status = 'cancelled', stage = NULL, "
+            "error = NULL, "
+            "expires_at = ?, updated_at = ?, revision = revision + 1 "
+            "WHERE run_id = ? AND user_id = ? AND agent = 'research' "
+            "AND status = 'running' AND revision = ?",
+            (expires_at, now, run_id, owner, expected_revision),
+        )
+        if updated.rowcount != 1:
+            raise ResearchCancellationConflict()
+    return ResearchCancellationOutcome(
+        run_id, "cancelled", False, expected_revision + 1
+    )
 
 
 def _retryable_admission(
