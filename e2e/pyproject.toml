@@ -32,4 +32,6 @@ addopts = [
 ]
 markers = [
     "live: live e2e test against real backends.",
+    "integration: integration test against configured service boundaries.",
+    "network: test requiring network access to configured backends.",
 ]

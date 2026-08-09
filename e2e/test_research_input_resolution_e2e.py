@@ -36,6 +36,8 @@ from .helpers.research_input_resolution import (
 
 pytestmark = [
     pytest.mark.live,
+    pytest.mark.integration,
+    pytest.mark.network,
     pytest.mark.skipif(
         not research_input_e2e_enabled(),
         reason=(
