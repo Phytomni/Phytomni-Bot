@@ -129,3 +129,41 @@ async def test_extract_goals_from_evidence_does_not_download(
     assert [item.goal for item in result] == ["Investigate X"]
     subgraph_app_mock.ainvoke.assert_awaited_once()
     download.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        cast(ExtractedResearchEvidence, object()),
+        ExtractedResearchEvidence((), (), "coverage"),
+        ExtractedResearchEvidence(
+            units=(
+                ResearchEvidenceUnit(
+                    evidence_id="query_span_001",
+                    source_kind="query",
+                    source_ordinal=0,
+                    source_span=None,
+                    content_digest="digest",
+                    text=" ",
+                    dataset_ids=(),
+                ),
+            ),
+            document_digests=(),
+            coverage_digest="coverage",
+        ),
+    ],
+)
+async def test_evidence_goal_extraction_rejects_invalid_evidence_before_chat(
+    evidence: ExtractedResearchEvidence,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed retained evidence cannot reach the chat extraction seam."""
+    chat = _install_chat_app_mock(monkeypatch, {"response": _content([])})
+
+    with pytest.raises(Exception) as caught:
+        await _build_agent().extract_goals_from_evidence(evidence, "en-US")
+
+    assert getattr(caught.value, "code", None) == (
+        "research_input_resolution_failed"
+    )
+    chat.ainvoke.assert_not_awaited()

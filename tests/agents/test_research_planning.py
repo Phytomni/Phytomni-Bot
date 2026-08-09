@@ -28,6 +28,8 @@ from mcp_server_phytomni.agents.research.input_preparation import (
 from mcp_server_phytomni.agents.research.planning import (
     ResearchPlanningRequest,
     build_research_plan,
+    research_child_output_dir,
+    research_child_thread_id,
 )
 
 pytestmark = pytest.mark.agent
@@ -218,6 +220,101 @@ async def test_provider_order_that_is_not_canonical_fails_closed() -> None:
     assert getattr(caught.value, "code", None) == (
         "research_input_resolution_failed"
     )
+
+
+@pytest.mark.parametrize("ordinal", [-1, 20, True, "1"])
+def test_child_identifiers_reject_invalid_ordinals(ordinal: object) -> None:
+    """Only bounded integer child ordinals can derive durable identities."""
+    with pytest.raises(Exception) as caught:
+        research_child_output_dir("run-123", cast(Any, ordinal))
+
+    assert getattr(caught.value, "code", None) == (
+        "research_input_resolution_failed"
+    )
+    with pytest.raises(Exception):
+        research_child_thread_id("run-123", cast(Any, ordinal))
+
+
+def test_child_identifiers_project_stable_public_paths() -> None:
+    """A bounded run/ordinal pair projects deterministic child identities."""
+    assert research_child_output_dir("run-123", 0) == (
+        "research/run-123/children/part-001"
+    )
+    assert research_child_thread_id("run-123", 19) == "thread-19-run-123"
+
+
+async def test_planner_projects_provider_failures_without_child_work() -> None:
+    """Unexpected goal-provider errors become the stable planning failure."""
+
+    class BrokenProvider:
+        """Raise an implementation detail that must not escape planning."""
+
+        @property
+        def contract_name(self) -> str:
+            """Identify the intentionally broken provider fixture."""
+            return "broken"
+
+        async def extract(self, _evidence: object, _locale: object) -> object:
+            """Raise a provider detail for the planner to classify."""
+            raise RuntimeError("provider detail")
+
+    with pytest.raises(Exception) as caught:
+        await build_research_plan(_request(), cast(Any, BrokenProvider()))
+
+    assert getattr(caught.value, "code", None) == (
+        "research_input_resolution_failed"
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"locale": "fr-FR"},
+        {"compute_resource": ""},
+        {"interop_mode": "unsupported"},
+        {"interop_targets": cast(Any, ["target-a"])},
+        {"interop_targets": ("target-a", "target-a")},
+    ],
+)
+async def test_planner_rejects_invalid_public_execution_controls(
+    changes: dict[str, object],
+) -> None:
+    """Malformed locale, resource, and interop controls fail before I/O."""
+    provider = _GoalProvider((ResearchGoal(goal="Analyze"),))
+
+    with pytest.raises(Exception) as caught:
+        await build_research_plan(
+            replace(_request(), **cast(Any, changes)), provider
+        )
+
+    assert getattr(caught.value, "code", None) == (
+        "research_input_resolution_failed"
+    )
+    assert not provider.calls
+
+
+@pytest.mark.parametrize(
+    "prepared",
+    [
+        cast(Any, object()),
+        replace(_prepared(), effective_query=""),
+        replace(_prepared(), obs_file_list=cast(Any, ["obs://asset"])),
+        replace(_prepared(), data_list=cast(Any, {"obs://asset": "data"})),
+    ],
+)
+async def test_planner_rejects_invalid_final_native_projection(
+    prepared: PreparedResearchInput,
+) -> None:
+    """Only an immutable bounded final projection can reach goal planning."""
+    provider = _GoalProvider((ResearchGoal(goal="Analyze"),))
+
+    with pytest.raises(Exception) as caught:
+        await build_research_plan(_request(prepared=prepared), provider)
+
+    assert getattr(caught.value, "code", None) == (
+        "research_input_resolution_failed"
+    )
+    assert not provider.calls
 
 
 async def test_empty_goal_result_fails_before_any_child_work() -> None:

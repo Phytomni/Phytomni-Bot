@@ -44,6 +44,68 @@ pytestmark = pytest.mark.unit
 _NOW = datetime(2026, 8, 8, tzinfo=UTC)
 
 
+@pytest.mark.asyncio
+async def test_executor_rejects_missing_unit_or_lease_owner(
+    tmp_path: Path,
+) -> None:
+    """The public executor fails closed before claiming malformed work."""
+    executor = ResearchWorkExecutor(_store(tmp_path), _Provider())
+
+    missing = await executor.execute("", "worker")
+    no_owner = await executor.execute("missing-unit", "")
+
+    assert missing == WorkDisposition(
+        "", "terminal_failed", "research_input_resolution_failed"
+    )
+    assert no_owner == WorkDisposition(
+        "missing-unit", "terminal_failed", "research_input_resolution_failed"
+    )
+    assert executor.load_validated_output("missing-unit") is None
+
+
+async def test_executor_marks_invalid_provider_result_terminal(
+    tmp_path: Path,
+) -> None:
+    """A provider result rejected by validation cannot be retried blindly."""
+    store = _store(tmp_path)
+    store.add_work_unit(_record())
+
+    async def reject_result(
+        _result: object, _record: ResearchWorkUnitRecord
+    ) -> object:
+        raise ValueError("invalid provider output")
+
+    outcome = await ResearchWorkExecutor(
+        store, _Provider(), result_validator=reject_result, now=lambda: _NOW
+    ).execute("unit-1", "worker")
+
+    assert outcome.state == "terminal_failed"
+    current = _get_work_unit(store, "unit-1")
+    assert current is not None
+    assert current.state == "terminal_failed"
+
+
+async def test_recovery_honors_zero_batch_without_provider_calls(
+    tmp_path: Path,
+) -> None:
+    """A zero recovery budget reports no work and never invokes a provider."""
+    store = _store(tmp_path)
+    service = ResearchRecoveryService(
+        store, _Provider(), batch_size=0, now=lambda: _NOW
+    )
+
+    summary = await service.recover_startup()
+
+    assert (
+        summary.reclaimed,
+        summary.reconciled,
+        summary.reused,
+        summary.ambiguous,
+        summary.terminal_failed,
+    ) == (0, 0, 0, 0, 0)
+    assert service.recovery_limit == 0
+
+
 class _ContextEstimator:
     """Deterministic byte estimator for the subdivision fixture."""
 
@@ -348,6 +410,38 @@ async def test_recovery_reconciles_queryable_sent_call(tmp_path: Path) -> None:
     assert summary.reconciled == 1
     assert provider.invocations == 0
     assert provider.queries == 1
+
+
+@pytest.mark.asyncio
+async def test_recovery_marks_invalid_query_status_ambiguous(
+    tmp_path: Path,
+) -> None:
+    """A non-success provider status cannot be treated as recovered."""
+    store = _store(tmp_path)
+    store.add_work_unit(_record())
+    claimed = store.claim_work(
+        "unit-1", "crashed-worker", _NOW - timedelta(seconds=61)
+    )
+    assert claimed is not None
+    assert (
+        store.mark_sent(
+            "unit-1",
+            "crashed-worker",
+            claimed.revision,
+            provider_request_digest="request-1",
+            now=_NOW - timedelta(seconds=60),
+        )
+        is not None
+    )
+
+    summary = await ResearchRecoveryService(
+        store, _Provider(query_result={"status": "FAILED"}), now=lambda: _NOW
+    ).recover_once(_NOW)
+
+    assert summary.ambiguous == 1
+    current = _get_work_unit(store, "unit-1")
+    assert current is not None
+    assert current.state == "ambiguous"
 
 
 @pytest.mark.asyncio
