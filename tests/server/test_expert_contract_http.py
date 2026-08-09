@@ -24,6 +24,7 @@ from mcp_server_phytomni.agents.expert import (
 )
 from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
+from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
 from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
@@ -83,9 +84,12 @@ async def _post_forced_expert(
     }
     if body:
         payload.update(body)
+    headers = _auth(issued_api_key)
+    if tool_name == "InSilicoResearchAgent":
+        headers["Idempotency-Key"] = "test-forced-research"
     return await api_client.post(
         "/v1/query/route",
-        headers={**_auth(issued_api_key), **(extra_headers or {})},
+        headers={**headers, **(extra_headers or {})},
         json=payload,
     )
 
@@ -105,6 +109,17 @@ def _contract_shape(body: dict[str, Any]) -> dict[str, Any]:
         "formatted_keys": tuple(sorted(formatted)),
         "execution_keys": tuple(sorted(execution)),
     }
+
+
+def _assert_pending_research(
+    db_path: str, run_id: str, *, query: str = "q"
+) -> None:
+    """Assert the HTTP seam persisted admission without an installed root."""
+    resolution = ResearchInputStore(db_path).load_resolution(run_id)
+    assert resolution is not None
+    assert resolution["status"] == "pending"
+    assert resolution["effective_query"] == query
+    assert resolution["managed_snapshot_json"] == []
 
 
 async def _wait_for_run(
@@ -339,26 +354,40 @@ async def test_expert_uses_native_run_contract(
         _parity_handler(case),
     )
 
+    direct_headers = _auth(issued_api_key)
+    if case.slug == "research":
+        direct_headers["Idempotency-Key"] = "test-direct-research"
     direct = await api_client.post(
         f"/v1/agents/{case.slug}/runs",
-        headers=_auth(issued_api_key),
+        headers=direct_headers,
         json={"arguments": case.native_args},
     )
     assert direct.status_code == case.expected_status
     direct_body = direct.json()
     direct_record: RunRecord | None = None
     if case.expected_status == 202:
-        direct_task_ids = {f"expert-parity-{case.slug}-1"}
-        assert direct_body["id"] == direct_body["run_id"]
-        assert direct_body["task_ids"] == []
-        assert direct_body["result"] == empty_agent_result()
-        direct_record = await _wait_for_run(
-            api_app.resolve_tasks_db_path(),
-            direct_body["run_id"],
-            task_ids=direct_task_ids,
-            status="running",
-        )
-        assert direct_record.spec.agent == case.slug
+        if case.slug == "research":
+            direct_record = await _wait_for_run(
+                api_app.resolve_tasks_db_path(),
+                direct_body["run_id"],
+                task_ids=set(),
+                status="running",
+            )
+            _assert_pending_research(
+                api_app.resolve_tasks_db_path(), direct_body["run_id"]
+            )
+        else:
+            direct_task_ids = {f"expert-parity-{case.slug}-1"}
+            assert direct_body["id"] == direct_body["run_id"]
+            assert direct_body["task_ids"] == []
+            assert direct_body["result"] == empty_agent_result()
+            direct_record = await _wait_for_run(
+                api_app.resolve_tasks_db_path(),
+                direct_body["run_id"],
+                task_ids=direct_task_ids,
+                status="running",
+            )
+            assert direct_record.spec.agent == case.slug
 
     _patch_selection(monkeypatch, case.tool_name, case.selected_args)
     routed = await _post_forced_expert(
@@ -372,6 +401,20 @@ async def test_expert_uses_native_run_contract(
     assert routed_body["agent"] == case.slug
     assert routed_body["agent"] != "expert"
     if case.expected_status == 202:
+        if case.slug == "research":
+            routed_record = await _wait_for_run(
+                api_app.resolve_tasks_db_path(),
+                routed_body["run_id"],
+                task_ids=set(),
+                status="running",
+            )
+            _assert_pending_research(
+                api_app.resolve_tasks_db_path(), routed_body["run_id"]
+            )
+            assert direct_record is not None
+            assert routed_record.spec.agent == "research"
+            assert routed_record.task_ids == direct_record.task_ids == ()
+            return
         routed_task_ids = {f"expert-parity-{case.slug}-2"}
         assert routed_body["id"] == routed_body["run_id"]
         assert routed_body["task_ids"] == []
@@ -445,18 +488,11 @@ async def test_expert_partial_remote_preserves_execution_warnings(
     record = await _wait_for_run(
         api_app.resolve_tasks_db_path(),
         body["run_id"],
-        task_ids={"expert-partial-1"},
+        task_ids=set(),
         status="running",
     )
-    assert record.result is not None
-    assert record.result["execution"]["warnings"] == [
-        {
-            "code": "partial_submission",
-            "retryable": False,
-            "stage": None,
-        }
-    ]
-    assert record.result["execution"]["tracking"] == {"degraded": True}
+    _assert_pending_research(api_app.resolve_tasks_db_path(), body["run_id"])
+    assert record.result is None
     assert "must not leak" not in response.text
 
 

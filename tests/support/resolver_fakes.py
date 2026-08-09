@@ -149,9 +149,12 @@ async def post_native_run(
     payload: dict[str, Any] = {"arguments": arguments}
     if dialogue_id is not None:
         payload["dialogue_id"] = dialogue_id
+    headers = {"Authorization": f"Bearer {issued_api_key}"}
+    if agent_slug == "research":
+        headers["Idempotency-Key"] = "test-native-research"
     return await api_client.post(
         f"/v1/agents/{agent_slug}/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
+        headers=headers,
         json=payload,
     )
 

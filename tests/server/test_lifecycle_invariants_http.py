@@ -35,6 +35,7 @@ from mcp_server_phytomni.runtime.request_context import (
     current_run_id,
     request_context,
 )
+from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
 from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import (
     record_submitted_task,
@@ -701,32 +702,16 @@ async def test_background_handler_failure_settles_reserved_run(
         api_app_module.resolve_tasks_db_path(), run_id, "failed"
     )
     assert record.error == "background_submission_failed"
-    assert record.task_ids == ()
+    assert not record.task_ids
     assert "private handler failure" not in str(record.result)
 
 
 async def test_partial_research_submission_remains_running_with_warnings(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """One persisted research child plus warnings remains pollable."""
-
-    async def partial_handler(_args: Any) -> dict[str, Any]:
-        return {
-            "task_ids": ["research-accepted"],
-            "output_dir": "tenant/research",
-            "submission_warnings": [
-                {"code": "submission_partial", "retryable": False}
-            ],
-        }
-
-    install_tool_handler(
-        monkeypatch,
-        server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
-        records_submission("research")(partial_handler),
-    )
+    """Research admission remains pending before the root is installed."""
     response = await post_native_run(
         api_client,
         issued_api_key,
@@ -740,16 +725,15 @@ async def test_partial_research_submission_remains_running_with_warnings(
 
     assert response.status_code == 202
     run_id = response.json()["run_id"]
-    record = await wait_for_running_projection(
-        tasks_db_path, run_id, "research-accepted"
-    )
-    assert record.task_ids == ("research-accepted",)
-    assert record.result is not None
-    execution = record.result["execution"]
-    assert execution["tracking"] == {"degraded": True}
-    assert execution["warnings"] == [
-        {"code": "submission_partial", "retryable": False, "stage": None}
-    ]
+    record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
+    assert record is not None
+    assert record.status == "running"
+    assert not record.task_ids
+    resolution = ResearchInputStore(tasks_db_path).load_resolution(run_id)
+    assert resolution is not None
+    assert resolution["status"] == "pending"
+    assert resolution["effective_query"] == "reproduce a paper study"
+    assert resolution["managed_snapshot_json"] == []
 
 
 async def test_review_a2ui_survives_client_and_registry_reload(

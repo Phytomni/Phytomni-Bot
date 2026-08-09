@@ -2,11 +2,10 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""FastAPI application construction and route wiring.
+"""FastAPI construction and lazily wired routes.
 
-The public :func:`api.app.create_app` facade stays in ``app.py`` for import
-compatibility. This module owns wiring and resolves app-local seams lazily,
-preserving established test and deployment patch points.
+``api.app.create_app`` stays in ``app.py``; this module preserves lazy
+test and deployment seams.
 """
 
 from __future__ import annotations
@@ -99,9 +98,7 @@ from .schemas import (
     MemoryResponse,
     ResumeRequest,
 )
-from .stage_errors import (
-    safe_api_error_for_lifecycle as _safe_api_error_for_lifecycle,
-)
+from .stage_errors import safe_api_error_for_lifecycle as _safe_error
 from .upload_runtime import (
     UploadRuntime,
     install_upload_cors,
@@ -109,7 +106,6 @@ from .upload_runtime import (
 )
 
 __all__ = ["build_app"]
-
 logger = logging.getLogger(__name__)
 
 
@@ -917,7 +913,7 @@ def _register_error_handlers(app: FastAPI) -> None:
         exc: LifecycleInvariantError,
     ) -> JSONResponse:
         """Render lifecycle violations as safe internal error envelopes."""
-        safe_error = _safe_api_error_for_lifecycle(exc)
+        safe_error = _safe_error(exc)
         return _app_attr("_error_response")(
             safe_error.status_code,
             safe_error.message,
@@ -974,7 +970,11 @@ def build_app(
     scope = partial(build_scope_dependency, runtime.authorized)
     adapters = _RouteAdapters(
         runtime,
-        run_registry_factory=run_registry_factory or RunRegistry,
+        run_registry_factory=(
+            RunRegistry
+            if run_registry_factory is None
+            else run_registry_factory
+        ),
         research_input_runtime_required=research_input_runtime_required,
     )
     context_executor = context_executor or build_context_executor(
