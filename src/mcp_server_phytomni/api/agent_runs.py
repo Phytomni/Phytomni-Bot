@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass
 from functools import partial
 from importlib import import_module
 from inspect import Parameter, Signature
-from typing import Any
+from typing import Any, cast
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
@@ -53,7 +53,7 @@ from ..runtime.submission_outcome import (
 )
 from ..storage.obs_relay_ops import operator_obs_client
 from ..storage.research_objects import DirectResearchObjectMetadataPort
-from . import run_lifecycle
+from . import research_capabilities, run_lifecycle
 from .attachments import (
     AttachmentContractError,
     ManagedAttachmentEvidence,
@@ -72,10 +72,22 @@ from .research_input import (
     ResearchHttpAdmissionInput,
     ResearchInventoryValidator,
     ResearchRoutePreflight,
+    launch_research_input_worker,
+    research_input_root_worker_ready,
 )
 from .resolvers import ResolverDispatch, apply_runs_resolver
-from .routes.attachment_inputs import resolve_attachment_input
+from .resumable_uploads import UploadContractError
 from .routes.context_helpers import safe_native_request_json
+
+_default_research_input_worker = launch_research_input_worker
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchHttpRuntimeOptions:
+    """Runtime policy for the private Research HTTP adapter seam."""
+
+    allow_uninstalled: bool = True
+
 
 __all__ = [
     "BackgroundSubmissionLaunchError",
@@ -103,6 +115,7 @@ __all__ = [
     "_sync_agent_run_response",
     "execute_native_research_http",
     "invoke_research_http_run",
+    "ResearchHttpRuntimeOptions",
 ]
 
 
@@ -135,11 +148,31 @@ async def execute_native_research_http(**options: Any) -> JSONResponse:
             stage="request_validation",
             retryable=False,
         )
-    resolved_input = resolve_attachment_input(
-        payload.attachments,
-        attachment_owner=attachment_owner,
-        resolver=dependencies.upload.asset_resolver,
-    )
+    managed_asset_ids = _opaque_attachment_ids(payload.attachments)
+
+    def resolve_bundle(_asset_ids: tuple[str, ...]) -> Any:
+        """Resolve managed assets only after the durable replay lookup."""
+        resolver = dependencies.upload.asset_resolver
+        if callable(resolver):
+            resolver = resolver()
+        resolved = cast(Any, resolver).resolve_bundle(
+            [{"asset_id": asset_id} for asset_id in _asset_ids],
+            attachment_owner,
+        )
+        resolved_ids = tuple(
+            getattr(asset, "asset_id", None)
+            for asset in getattr(resolved, "all_assets", ())
+        )
+        if resolved_ids != _asset_ids:
+            raise SafeApiError(
+                status_code=422,
+                code="invalid_upload_metadata",
+                message="The attachment reference is invalid.",
+                stage="request_validation",
+                retryable=False,
+            )
+        return resolved
+
     admission = ResearchHttpAdmissionInput(
         owner=attachment_owner,
         idempotency_key=request.headers.get("Idempotency-Key"),
@@ -153,9 +186,7 @@ async def execute_native_research_http(**options: Any) -> JSONResponse:
             ),
             "",
         ),
-        managed_asset_ids=tuple(
-            asset.asset_id for asset in resolved_input.bundle.all_assets
-        ),
+        managed_asset_ids=managed_asset_ids,
         locale=current_effective_locale(),
         interop_mode=arguments.get("interop_mode", "off"),
         interop_targets=tuple(arguments.get("interop_targets", ())),
@@ -180,9 +211,62 @@ async def execute_native_research_http(**options: Any) -> JSONResponse:
         ),
         attachment_evidence=None,
         research_http_input=admission,
-        research_attachment_bundle=resolved_input.bundle,
+        research_attachment_bundle=resolve_bundle,
     )
     return JSONResponse(body, status_code=status_code)
+
+
+def _opaque_attachment_ids(attachments: Any) -> tuple[str, ...]:
+    """Read only opaque managed IDs without touching upload or OBS state."""
+    if attachments in (None, ()):
+        return ()
+    if isinstance(attachments, (str, bytes, bytearray)) or not isinstance(
+        attachments, (list, tuple)
+    ):
+        raise SafeApiError(
+            status_code=422,
+            code="invalid_upload_metadata",
+            message="The attachment reference is invalid.",
+            stage="request_validation",
+            retryable=False,
+        )
+    asset_ids: list[str] = []
+    for item in attachments:
+        if isinstance(item, Mapping):
+            asset_id = item.get("asset_id")
+        else:
+            asset_id = getattr(item, "asset_id", None)
+        if not isinstance(asset_id, str) or not asset_id:
+            raise SafeApiError(
+                status_code=422,
+                code="invalid_upload_metadata",
+                message="The attachment reference is invalid.",
+                stage="request_validation",
+                retryable=False,
+            )
+        asset_ids.append(asset_id)
+    return tuple(asset_ids)
+
+
+def _resolve_attachment_bundle(
+    source: Any,
+    asset_ids: tuple[str, ...],
+) -> Any:
+    """Call either a fresh resolver seam or a test-injected bundle source."""
+    if not callable(source):
+        return source
+    try:
+        parameters = Signature.from_callable(source).parameters.values()
+        accepts_argument = any(
+            parameter.kind
+            in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+            for parameter in parameters
+        )
+    except (TypeError, ValueError):
+        accepts_argument = True
+    if accepts_argument:
+        return source(asset_ids)
+    return source()
 
 
 async def invoke_research_http_run(
@@ -191,37 +275,81 @@ async def invoke_research_http_run(
     *,
     config: ApiConfig,
     db_path: str,
-    debug: bool = False,
+    runtime_options: ResearchHttpRuntimeOptions = ResearchHttpRuntimeOptions(),
 ) -> tuple[dict[str, Any], int]:
-    """Admit one Research HTTP request without generic reservation."""
-    del debug
-    try:
-        snapshots = validate_research_attachment_bundle(
-            attachment_bundle, config
-        )
-    except AttachmentContractError as exc:
-        code = (
-            "research_input_limit_exceeded"
-            if exc.code == "attachment_limit_exceeded"
-            else exc.code
-        )
-        status = 413 if code == "research_input_limit_exceeded" else 422
-        raise SafeApiError(
-            status_code=status,
-            code=code,
-            message=str(exc),
-            stage="request_validation",
-            retryable=False,
-        ) from exc
+    """Admit one Research HTTP request without generic reservation.
+
+    Direct adapter callers retain an explicit permissive option. The serving
+    factory supplies the strict production option.
+    """
     RunRegistry(db_path)
+    allow_uninstalled = runtime_options.allow_uninstalled
+
+    def resolve_snapshots(
+        asset_ids: tuple[str, ...],
+    ) -> tuple[ManagedResearchAssetSnapshot, ...]:
+        """Resolve and validate assets only for a fresh admission."""
+        try:
+            bundle = _resolve_attachment_bundle(attachment_bundle, asset_ids)
+            resolved_ids = tuple(
+                getattr(asset, "asset_id", None)
+                for asset in getattr(bundle, "all_assets", ())
+            )
+            if resolved_ids != asset_ids:
+                raise SafeApiError(
+                    status_code=422,
+                    code="invalid_upload_metadata",
+                    message="The attachment reference is invalid.",
+                    stage="request_validation",
+                    retryable=False,
+                )
+            return validate_research_attachment_bundle(bundle, config)
+        except UploadContractError as exc:
+            raise SafeApiError(
+                status_code=exc.status_code,
+                code=exc.code,
+                message="The attachment reference is invalid.",
+                stage="request_validation",
+                retryable=exc.retryable,
+            ) from exc
+        except AttachmentContractError as exc:
+            code = (
+                "research_input_limit_exceeded"
+                if exc.code == "attachment_limit_exceeded"
+                else exc.code
+            )
+            status = 413 if code == "research_input_limit_exceeded" else 422
+            raise SafeApiError(
+                status_code=status,
+                code=code,
+                message=str(exc),
+                stage="request_validation",
+                retryable=False,
+            ) from exc
+
     preflight = ResearchRoutePreflight(
         store=ResearchInputStore(db_path),
         config=config,
-        managed_snapshot_resolver=lambda _asset_ids: snapshots,
+        managed_snapshot_resolver=resolve_snapshots,
         inventory_validator=_direct_inventory_validator(config),
-        runtime_ready=lambda: research_input_runtime_capability(
-            config, None
-        ).ready,
+        worker_launcher=(
+            None
+            if (
+                allow_uninstalled
+                and launch_research_input_worker
+                is _default_research_input_worker
+            )
+            else launch_research_input_worker
+        ),
+        runtime_ready=lambda: (
+            allow_uninstalled or research_input_root_worker_ready()
+        )
+        and (
+            research_input_runtime_capability(
+                config,
+                research_capabilities.current_research_relay_snapshot(config),
+            ).ready
+        ),
     )
     try:
         outcome = await preflight.admit(request)

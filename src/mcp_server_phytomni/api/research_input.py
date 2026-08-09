@@ -15,8 +15,10 @@ from uuid import uuid4
 
 from ..agents.analyst.agent import AnalystAgent
 from ..agents.analyst.defaults import ANALYST_CONFIG
+from ..agents.research.dispatch_runtime import ResearchDispatchRuntime
 from ..agents.research.input_contracts import (
     ParsedResearchInput,
+    ResearchCoordinatorRequest,
     ResearchInputFailure,
     ResearchInteropMode,
     research_input_failure,
@@ -37,6 +39,7 @@ from ..runtime.research_input_store import (
     ResearchAdmissionReservation,
     ResearchInputStore,
 )
+from .research_launch import launch_worker
 
 __all__ = [
     "ResearchAdmissionOutcome",
@@ -47,6 +50,8 @@ __all__ = [
     "ResearchRoutePreflight",
     "build_research_input_coordinator",
     "ensure_research_input_runtime",
+    "launch_research_input_worker",
+    "research_input_root_worker_ready",
     "ResearchRequestIdentity",
     "admit_research_request",
     "compute_research_client_fingerprint",
@@ -65,9 +70,26 @@ class _ResearchInputRuntime:
 
     coordinator: Any
     recovery: Any
+    root_worker: Callable[[str, ResearchAdmissionRequest], Any] | None = None
+    root_request_factory: (
+        Callable[[ResearchAdmissionRequest], ResearchCoordinatorRequest] | None
+    ) = None
 
 
 _RUNTIME_STATE: dict[str, _ResearchInputRuntime | None] = {"current": None}
+
+
+def research_input_root_worker_ready(
+    *, allow_uninstalled: bool = False
+) -> bool:
+    """Return production readiness; direct adapters may opt in explicitly."""
+
+    runtime = _RUNTIME_STATE["current"]
+    if runtime is None:
+        return allow_uninstalled
+    return callable(runtime.root_worker) and callable(
+        runtime.root_request_factory
+    )
 
 
 class _UnavailableResearchWorkProvider:
@@ -95,6 +117,8 @@ def build_research_input_coordinator(
     HTTP admission and lifespan recovery the same coordinator instance while
     leaving MCP dispatch independent of this HTTP-only path.
     """
+    root_worker = ports.pop("root_worker", None)
+    root_request_factory = ports.pop("root_request_factory", None)
     coordinator = ResearchInputCoordinator.from_production(
         request,
         **ports,
@@ -102,13 +126,54 @@ def build_research_input_coordinator(
     recovery = coordinator.recovery
     if recovery is None:
         raise RuntimeError("Research production runtime has no recovery")
-    _RUNTIME_STATE["current"] = _ResearchInputRuntime(coordinator, recovery)
+    _RUNTIME_STATE["current"] = _ResearchInputRuntime(
+        coordinator, recovery, root_worker, root_request_factory
+    )
     register_recovery_service(recovery)
     return coordinator
 
 
+async def _run_production_coordinator_root(
+    run_id: str,
+    admission: ResearchAdmissionRequest,
+) -> bool:
+    """Run the factory-built coordinator root after admission."""
+
+    runtime = _RUNTIME_STATE["current"]
+    if runtime is None:
+        return False
+    coordinator = runtime.coordinator
+    factory = runtime.root_request_factory
+    request_value = None
+    if callable(factory):
+        request_value = factory(admission)
+        if inspect.isawaitable(request_value):
+            request_value = await request_value
+    if not isinstance(request_value, ResearchCoordinatorRequest):
+        return False
+    outbox = getattr(coordinator, "outbox", None)
+    recovery = getattr(coordinator, "recovery", None)
+    if outbox is None or recovery is None:
+        return False
+    root_coordinator = ResearchInputCoordinator(
+        request_value,
+        dispatch_runtime=ResearchDispatchRuntime(outbox, recovery),
+    )
+    runner = getattr(root_coordinator, "run", None)
+    if not callable(runner):
+        return False
+    result = runner(run_id, f"research-http-{uuid4().hex}")
+    if inspect.isawaitable(result):
+        await result
+    return True
+
+
 def ensure_research_input_runtime(
     db_path: str | None = None,
+    *,
+    root_request_factory: (
+        Callable[[ResearchAdmissionRequest], ResearchCoordinatorRequest] | None
+    ) = None,
 ) -> Any:
     """Construct the HTTP Research worker before lifespan recovery."""
     runtime = _RUNTIME_STATE["current"]
@@ -125,7 +190,28 @@ def ensure_research_input_runtime(
         analyst_agent=analyst_agent,
         analyst_config=ANALYST_CONFIG,
         sensitive_config=sensitive_config,
+        root_worker=_run_production_coordinator_root,
+        root_request_factory=root_request_factory,
     )
+
+
+async def launch_research_input_worker(
+    request: Any,
+    outcome: ResearchAdmissionOutcome,
+    admission: ResearchAdmissionRequest | None = None,
+) -> bool:
+    """Launch the factory-bound root only for the durable owner."""
+
+    del request
+    if not outcome.worker_owner:
+        return True
+    runtime = _RUNTIME_STATE["current"]
+    if runtime is None or admission is None or runtime.root_worker is None:
+        return False
+    launched = runtime.root_worker(outcome.run_id, admission)
+    if inspect.isawaitable(launched):
+        launched = await launched
+    return launched is True
 
 
 def _default_tasks_db_path() -> str:
@@ -254,13 +340,12 @@ class _ResearchPreflightContext:
 
 
 type ResearchInputParser = Callable[[str, str], ParsedResearchInput]
+
+
 type ManagedSnapshotResolver = Callable[
     [tuple[str, ...]], tuple[ManagedResearchAssetSnapshot, ...]
 ]
-type ResearchWorkerLauncher = Callable[
-    [ResearchHttpAdmissionInput, ResearchAdmissionOutcome],
-    Any | Awaitable[Any],
-]
+type ResearchWorkerLauncher = Callable[..., Any | Awaitable[Any]]
 type ResearchInventoryValidator = Callable[
     [ParsedResearchInput, tuple[ManagedResearchAssetSnapshot, ...]],
     Any | Awaitable[Any],
@@ -329,7 +414,16 @@ class ResearchRoutePreflight:
             client_fingerprint=fingerprint,
             store=context.store,
         )
-        if replay is not None:
+        retryable = (
+            replay is not None
+            and context.store.retry_admission_available(
+                replay.run_id,
+                request.owner,
+                identity.canonical_digest,
+                fingerprint,
+            )
+        )
+        if replay is not None and not retryable:
             return replay
         self._ensure_runtime_ready()
         if query_length > context.config.API_MAX_USER_QUERY_CHARS:
@@ -343,33 +437,59 @@ class ResearchRoutePreflight:
         )
         self._validate_input_counts(parsed, managed_snapshot)
         await self._validate_inventory(parsed, managed_snapshot)
-        admitted = admit_research_request(
-            ResearchAdmissionRequest(
-                owner=request.owner,
-                identity=identity,
-                client_fingerprint=fingerprint,
-                original_query=request.original_query,
-                managed_asset_ids=request.managed_asset_ids,
-                locale=locale,
-                interop_mode=request.interop_mode,
-                interop_targets=request.interop_targets,
-                route_source=request.route_source,
-                parsed_input=parsed,
-                managed_snapshot=managed_snapshot,
-            ),
+        retry = None
+        if retryable:
+            assert replay is not None
+            retry = context.store.retry_admission(
+                replay.run_id,
+                request.owner,
+                identity.canonical_digest,
+                fingerprint,
+            )
+            if retry is None:
+                return (
+                    lookup_research_admission(
+                        owner=request.owner,
+                        identity=identity,
+                        client_fingerprint=fingerprint,
+                        store=context.store,
+                    )
+                    or replay
+                )
+        admission_request = ResearchAdmissionRequest(
+            owner=request.owner,
+            identity=identity,
+            client_fingerprint=fingerprint,
+            original_query=request.original_query,
+            managed_asset_ids=request.managed_asset_ids,
+            locale=locale,
+            interop_mode=request.interop_mode,
+            interop_targets=request.interop_targets,
+            route_source=request.route_source,
+            parsed_input=parsed,
+            managed_snapshot=managed_snapshot,
+        )
+        admitted = (
+            _admission_outcome(retry)
+            if retry is not None
+            else admit_research_request(admission_request, context.store)
+        )
+        await launch_worker(
+            context.worker_launcher,
+            request,
+            admitted,
+            admission_request,
             context.store,
         )
-        await self._launch_worker(request, admitted)
         return admitted
 
     async def preflight(
         self, request: ResearchHttpAdmissionInput
     ) -> ResearchAdmissionOutcome:
-        """Alias for callers that name the replay-first boundary explicitly."""
+        """Preserve the explicit replay-first preflight entry point."""
         return await self.admit(request)
 
     def _ensure_runtime_ready(self) -> None:
-        """Fail closed when the configured resolver runtime is unavailable."""
         runtime_ready = self._context.runtime_ready
         if runtime_ready is not None and not runtime_ready():
             raise research_input_failure(
@@ -413,19 +533,6 @@ class ResearchRoutePreflight:
                 http_status_hint=503,
                 retryable=True,
             ) from exc
-
-    async def _launch_worker(
-        self,
-        request: ResearchHttpAdmissionInput,
-        admitted: ResearchAdmissionOutcome,
-    ) -> None:
-        """Launch only the owner of a newly reserved durable root."""
-        launcher = self._context.worker_launcher
-        if not admitted.worker_owner or launcher is None:
-            return
-        launched = launcher(request, admitted)
-        if inspect.isawaitable(launched):
-            await launched
 
     def _validate_input_counts(
         self,

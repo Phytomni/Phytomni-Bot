@@ -10,12 +10,7 @@ from collections.abc import Mapping
 from dataclasses import asdict
 from typing import Any
 
-from fastapi import (
-    Depends,
-    FastAPI,
-    HTTPException,
-    Request,
-)
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 from ...config.defaults import ApiConfig
@@ -30,6 +25,7 @@ from ...runtime.conversation_context.service import (
 )
 from ...runtime.locale import SupportedLocale, current_effective_locale
 from ...runtime.stage_trace import DataStage, trace_data_stage
+from .. import research_capabilities
 from ..advertised_protocols import serialize_protocols
 from ..advertised_protocols import (
     serialize_research_input_descriptor as research_descriptor,
@@ -44,7 +40,7 @@ from ..attachments import (
     redact_streaming_attachment_response,
 )
 from ..auth import ApiPrincipal
-from ..research_capabilities import research_input_runtime_capability
+from ..research_input import research_input_root_worker_ready
 from ..schemas import (
     AgentRunRequest,
     ChatCompletionRequest,
@@ -147,10 +143,7 @@ def _register_chat_route(
         """
         tool_name = dependencies.chat.input.tool_for_model(payload.model)
         if tool_name is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"model not found: {payload.model}",
-            )
+            raise HTTPException(404, f"model not found: {payload.model}")
         attachment_owner = resolve_attachment_owner(
             principal, payload.owner_subject
         )
@@ -523,7 +516,13 @@ def _register_native_routes(
         """List the agents reachable via ``/v1/agents/{slug}/runs``."""
         del principal
         config = ApiConfig()
-        runtime_capability = research_input_runtime_capability(config, None)
+        research_ready = (
+            research_input_root_worker_ready()
+            and research_capabilities.research_input_runtime_capability(
+                config,
+                research_capabilities.current_research_relay_snapshot(config),
+            ).ready
+        )
         file_upload = dependencies.upload.serialize_file_upload_capability()
         agent_map = dependencies.catalog.agent_slug_to_tool
         payload: dict[str, Any] = {
@@ -547,12 +546,12 @@ def _register_native_routes(
                 }
                 for slug, tool in agent_map.items()
             ],
-            "protocols": serialize_protocols(
-                dependencies.catalog.conversation_context_enabled,
-                research_enabled=lambda: runtime_capability.ready,
-            ),
         }
-        if runtime_capability.ready:
+        payload["protocols"] = serialize_protocols(
+            dependencies.catalog.conversation_context_enabled,
+            research_enabled=lambda: research_ready,
+        )
+        if research_ready:
             payload["research_input_resolution"] = research_descriptor(config)
         return JSONResponse(payload)
 

@@ -145,7 +145,8 @@ async def test_list_agents_omits_disabled_context_protocol(
 
     The upload protocol (obs-multipart-v2) is always advertised in the
     top-level `protocols` map so the Web gateway can discover it via
-    SupportsProtocol; conversation_context only appears when its flag is on.
+    SupportsProtocol; the uninstalled Research root and default-off context
+    protocols stay absent.
     """
     response = await api_client.get(
         "/v1/agents",
@@ -156,8 +157,8 @@ async def test_list_agents_omits_disabled_context_protocol(
     protocols = response.json()["protocols"]
     assert "conversation_context" not in protocols
     assert protocols["obs-multipart-v2"] == [2]
-    assert protocols["research_input_resolution_v1"] == [1]
-    assert response.json()["research_input_resolution"]["dataset_formats"]
+    assert "research_input_resolution_v1" not in protocols
+    assert "research_input_resolution" not in response.json()
 
 
 async def test_list_agents_requires_auth(

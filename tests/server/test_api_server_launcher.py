@@ -16,8 +16,22 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.api import server as api_launcher
+from mcp_server_phytomni.api.research_input import ResearchCoordinatorRequest
 
 pytestmark = pytest.mark.server
+
+
+def test_build_app_forwards_explicit_research_root_factory() -> None:
+    """The normal server construction seam retains root composition input."""
+
+    def root_factory(_admission: Any) -> ResearchCoordinatorRequest:
+        return ResearchCoordinatorRequest("run", object())
+
+    app = api_launcher.build_app(
+        research_input_root_request_factory=root_factory
+    )
+
+    assert app.state.research_input_root_request_factory is root_factory
 
 
 def test_main_forwards_app_host_and_port_to_uvicorn(

@@ -5,10 +5,8 @@
 """FastAPI application construction and route wiring.
 
 The public :func:`api.app.create_app` facade stays in ``app.py`` for import
-compatibility. This module owns the wiring state so the facade does not also
-become a second route implementation. App-local functions are resolved lazily
-through ``api.app`` at request time; tests and deployments can therefore keep
-patching the established compatibility seams.
+compatibility. This module owns wiring and resolves app-local seams lazily,
+preserving established test and deployment patch points.
 """
 
 from __future__ import annotations
@@ -35,6 +33,7 @@ from google.protobuf import json_format
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ..agents.research.input_contracts import ResearchCoordinatorRequest
 from ..config.defaults import ApiConfig, BriefGeneConfig
 from ..config.settings import SensitiveConfig
 from ..interop.cache import DiscoveryCache
@@ -55,11 +54,11 @@ from ..runtime.memory import (
 )
 from ..runtime.run_registry import RunFilter, RunRegistry, RunRequestInfo
 from ..runtime.stage_trace import current_stage_trace
+from . import agent_runs as _agent_runs
 from . import run_lifecycle
 from . import stage_errors as _stage_errors
 from .a2a.executor import A2AHandlerOptions, A2ARequestHandler
 from .admin_auth import require_service_principal
-from .agent_runs import invoke_research_http_run
 from .app_support import _SAFE_DEFAULT_MESSAGES, _ErrorResponseOptions
 from .auth import (
     ApiPrincipal,
@@ -83,7 +82,10 @@ from .openai_mapping import (
     tool_accepts_obs,
     tool_for_model,
 )
-from .research_input import ResearchHttpAdmissionInput
+from .research_input import (
+    ResearchAdmissionRequest,
+    ResearchHttpAdmissionInput,
+)
 from .routes import admin as admin_routes
 from .routes import agents as agent_routes
 from .routes import conversation_context as conversation_context_routes
@@ -212,6 +214,7 @@ class _RouteAdapters:
 
     runtime: _RuntimeState
     run_registry_factory: Callable[[str], Any] = RunRegistry
+    research_input_runtime_required: bool = False
 
     def memory_write(self, owner: str, payload: Any) -> MemoryWrite:
         """Project a memory write through the app-level helper."""
@@ -397,12 +400,14 @@ class _RouteAdapters:
         if research_http_input is not None:
             if not isinstance(research_http_input, ResearchHttpAdmissionInput):
                 raise TypeError("invalid Research HTTP admission input")
-            return await invoke_research_http_run(
+            return await _agent_runs.invoke_research_http_run(
                 research_http_input,
                 research_attachment_bundle,
                 config=_api_config(),
                 db_path=_tasks_db_path(),
-                debug=options.pop("debug", False),
+                runtime_options=_agent_runs.ResearchHttpRuntimeOptions(
+                    allow_uninstalled=not self.research_input_runtime_required
+                ),
             )
         response_body, status_code = await _app_attr("_invoke_agent_run")(
             agent=agent, arguments=arguments, **options
@@ -948,18 +953,22 @@ def build_app(
     *,
     context_executor: ConversationContextExecutor | None = None,
     run_registry_factory: Callable[[str], Any] | None = None,
+    research_input_root_request_factory: (
+        Callable[[ResearchAdmissionRequest], ResearchCoordinatorRequest] | None
+    ) = None,
+    research_input_runtime_required: bool = False,
 ) -> FastAPI:
     """Build the complete FastAPI application from typed route seams."""
     app = _build_base_app()
+    app.state.research_input_root_request_factory = (
+        research_input_root_request_factory
+    )
     runtime = _RuntimeState(rate_limit=_app_attr("make_rate_limiter")())
     scope = partial(build_scope_dependency, runtime.authorized)
     adapters = _RouteAdapters(
         runtime,
-        run_registry_factory=(
-            run_registry_factory
-            if run_registry_factory is not None
-            else RunRegistry
-        ),
+        run_registry_factory=run_registry_factory or RunRegistry,
+        research_input_runtime_required=research_input_runtime_required,
     )
     context_executor = context_executor or build_context_executor(
         runtime,

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from fastapi import (
@@ -94,6 +94,10 @@ from .lifecycle_contract import (
 from .openai_mapping import (
     to_chat_completion,
     tool_accepts_stream,
+)
+from .research_input import (
+    ResearchAdmissionRequest,
+    ResearchCoordinatorRequest,
 )
 from .routes.attachment_inputs import (
     ResolvedAttachmentInput,
@@ -820,6 +824,10 @@ def create_app(
     *,
     context_executor: Any | None = None,
     run_registry_factory: Any | None = None,
+    research_input_root_request_factory: (
+        Callable[[ResearchAdmissionRequest], ResearchCoordinatorRequest] | None
+    ) = None,
+    research_input_runtime_required: bool = False,
 ) -> FastAPI:
     """Build the FastAPI application.
 
@@ -837,4 +845,8 @@ def create_app(
     return _factory.build_app(
         context_executor=context_executor,
         run_registry_factory=run_registry_factory,
+        research_input_root_request_factory=(
+            research_input_root_request_factory
+        ),
+        research_input_runtime_required=research_input_runtime_required,
     )

@@ -29,6 +29,8 @@ __all__ = [
     "ResearchInputRuntimeCapability",
     "ResearchRelayCapabilities",
     "ResearchRelayCapabilityCache",
+    "current_research_relay_snapshot",
+    "refresh_research_relay_capability",
     "research_input_runtime_capability",
 ]
 
@@ -37,6 +39,7 @@ RESEARCH_RELAY_REFRESH_COOLDOWN_SECONDS = 30
 _RESEARCH_PROTOCOL = "research_object_grant_v1"
 _RESEARCH_PROTOCOL_VERSION = 1
 _PUBLIC_PROTOCOL = "research_input_resolution_v1"
+_RELAY_REFRESH_TIMEOUT_SECONDS = 10.0
 _UNAVAILABLE: Literal["research_input_protocol_unavailable"] = (
     "research_input_protocol_unavailable"
 )
@@ -120,6 +123,14 @@ class ResearchRelayCapabilityCache:
         task.add_done_callback(_observe_refresh_task)
         return True
 
+    def abort_refresh(self) -> None:
+        """Cancel an over-budget handshake and clear its pending truth."""
+        task = self._refresh_task
+        if task is not None and not task.done():
+            task.cancel()
+        self._refresh_task = None
+        self._snapshot = None
+
     async def _refresh(
         self, client: RelayClient, now: datetime
     ) -> ResearchRelayCapabilities | None:
@@ -152,6 +163,63 @@ def _observe_refresh_task(
     """Consume a detached refresh exception without swallowing cancellation."""
     if not task.cancelled():
         task.exception()
+
+
+_RELAY_CAPABILITY_CACHE = ResearchRelayCapabilityCache()
+
+
+def current_research_relay_snapshot(
+    config: ApiConfig,
+    now: datetime | None = None,
+) -> ResearchRelayCapabilities | None:
+    """Return fresh authority and schedule one bounded refresh when stale."""
+    if not _relay_mode(config):
+        return None
+    effective_now = _aware_utc(now or datetime.now(UTC))
+    snapshot = _RELAY_CAPABILITY_CACHE.fresh_snapshot(effective_now)
+    if snapshot is not None:
+        return snapshot
+    try:
+        _RELAY_CAPABILITY_CACHE.schedule_refresh(
+            _current_relay_client(), effective_now
+        )
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return None
+    return None
+
+
+async def refresh_research_relay_capability(
+    config: ApiConfig,
+    now: datetime | None = None,
+) -> ResearchRelayCapabilities | None:
+    """Perform one bounded relay handshake before the child starts serving."""
+    if not _relay_mode(config):
+        return None
+    effective_now = _aware_utc(now or datetime.now(UTC))
+    try:
+        await asyncio.wait_for(
+            _RELAY_CAPABILITY_CACHE.refresh_once(
+                _current_relay_client(), effective_now
+            ),
+            timeout=_RELAY_REFRESH_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        _RELAY_CAPABILITY_CACHE.abort_refresh()
+        return None
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return None
+    return _RELAY_CAPABILITY_CACHE.fresh_snapshot(effective_now)
+
+
+def _current_relay_client() -> Any:
+    """Load the relay client lazily to keep the capability module acyclic."""
+    module = import_module("mcp_server_phytomni.common.relay_client")
+    return module.current_relay_client()
+
+
+def _relay_mode(config: ApiConfig) -> bool:
+    """Read the effective relay-child switch without making a network call."""
+    return bool(getattr(config, "RELAY_MODE", relay_mode_enabled()))
 
 
 def research_input_runtime_capability(

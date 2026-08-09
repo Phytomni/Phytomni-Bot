@@ -9,12 +9,37 @@ Public functions: main.
 
 from __future__ import annotations
 
-import uvicorn
+from collections.abc import Callable
 
+import uvicorn
+from fastapi import FastAPI
+
+from ..agents.research.input_contracts import ResearchCoordinatorRequest
 from ..config.defaults import ApiConfig
 from .app import create_app
+from .research_input import ResearchAdmissionRequest
 
-__all__ = ["main"]
+__all__ = ["build_app", "main"]
+
+
+def build_app(
+    *,
+    research_input_root_request_factory: (
+        Callable[[ResearchAdmissionRequest], ResearchCoordinatorRequest] | None
+    ) = None,
+) -> FastAPI:
+    """Build the serving app with its explicit Research root seam.
+
+    No repository-owned composition currently supplies the full coordinator
+    ports. Omitting the factory deliberately leaves Research HTTP admission
+    unavailable instead of accepting a root that cannot execute.
+    """
+    return create_app(
+        research_input_root_request_factory=(
+            research_input_root_request_factory
+        ),
+        research_input_runtime_required=True,
+    )
 
 
 def main() -> None:
@@ -25,7 +50,7 @@ def main() -> None:
     """
     config = ApiConfig()
     uvicorn.run(
-        create_app(),
+        build_app(),
         host=config.API_HOST,
         port=config.API_PORT,
         timeout_graceful_shutdown=config.API_GRACEFUL_SHUTDOWN,

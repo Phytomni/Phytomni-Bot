@@ -9,12 +9,17 @@ import json
 import sqlite3
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from sqlite3 import Row
 from typing import TYPE_CHECKING, Any
 
-from .research_input_types import ResearchWorkUnitRecord
+from .research_input_types import (
+    ResearchAdmissionReservation,
+    ResearchWorkUnitRecord,
+)
 from .sqlite import sqlite_transaction
+from .task_manager import _expires_at_for
 
 if TYPE_CHECKING:
     from .research_input_store import ResearchInputStore
@@ -24,6 +29,16 @@ _VALIDATED_OUTPUT_SQL = (
     "state = 'succeeded' AND input_digest = ? AND policy_digest = ? AND "
     "execution_fingerprint = ? AND evidence_digest = ?"
 )
+
+
+@dataclass(frozen=True, slots=True)
+class AdmissionLaunchFailure:
+    """Safe terminal classification for one committed root admission."""
+
+    code: str
+    retryable: bool
+    status_hint: int
+    stage: str
 
 
 class _ResearchInputStoreBindings:
@@ -46,6 +61,200 @@ class _ResearchInputStoreBindings:
     ) -> bool:
         """Atomically close a sent unit and enqueue verified children."""
         return replace_work_unit_with_children(self, record, children, now)
+
+    def mark_admission_launch_failed(
+        self: Any,
+        run_id: str,
+        failure: AdmissionLaunchFailure,
+    ) -> bool:
+        """Atomically expose a post-commit root-launch failure."""
+        return mark_admission_launch_failed(self, run_id, failure)
+
+    def retry_admission(
+        self: Any,
+        run_id: str,
+        owner: str,
+        identity_digest: str,
+        client_fingerprint: str,
+    ) -> ResearchAdmissionReservation | None:
+        """Atomically reclaim one retryable idempotent admission."""
+        return retry_admission(
+            self, run_id, owner, identity_digest, client_fingerprint
+        )
+
+    def retry_admission_available(
+        self: Any,
+        run_id: str,
+        owner: str,
+        identity_digest: str,
+        client_fingerprint: str,
+    ) -> bool:
+        """Check retry eligibility without changing durable state."""
+        return retry_admission_available(
+            self, run_id, owner, identity_digest, client_fingerprint
+        )
+
+
+def mark_admission_launch_failed(
+    store: ResearchInputStore,
+    run_id: str,
+    failure: AdmissionLaunchFailure,
+) -> bool:
+    """Set the parent, resolution, and root work to classified failure."""
+    if (
+        not run_id
+        or not isinstance(failure, AdmissionLaunchFailure)
+        or not failure.code
+        or not isinstance(failure.status_hint, int)
+        or not failure.stage
+    ):
+        return False
+    now = _utc_iso(datetime.now(UTC))
+    retry = int(failure.retryable)
+    failure_json = json.dumps(
+        {
+            "code": failure.code,
+            "http_status_hint": failure.status_hint,
+            "retryable": failure.retryable,
+            "stage": failure.stage,
+        },
+        sort_keys=True,
+    )
+    root_state = "retryable_failed" if failure.retryable else "terminal_failed"
+    with sqlite_transaction(store.db_path) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        parent = connection.execute(
+            "UPDATE runs SET status = 'failed', error = ?, stage = NULL, "
+            "failure_json = ?, revision = revision + 1, updated_at = ?, "
+            "expires_at = ? WHERE run_id = ? AND status = 'running'",
+            (
+                failure.code,
+                failure_json,
+                now,
+                _expires_at_for("failed", now),
+                run_id,
+            ),
+        )
+        if parent.rowcount != 1:
+            return False
+        resolution = connection.execute(
+            "UPDATE research_input_resolutions SET status = 'failed', "
+            "last_stage = ?, failure_code = ?, "
+            "failure_retryable = ?, "
+            "status_hint = ?, updated_at = ?, revision = revision + 1 "
+            "WHERE run_id = ? AND COALESCE(cancel_requested, 0) = 0",
+            (
+                failure.stage,
+                failure.code,
+                retry,
+                failure.status_hint,
+                now,
+                run_id,
+            ),
+        )
+        root = connection.execute(
+            "UPDATE research_work_units SET state = ?, lease_owner = NULL, "
+            "lease_expires_at = CASE WHEN ? = 1 THEN ? ELSE NULL END, "
+            "failure_code = ?, "
+            "failure_retryable = ?, updated_at = ?, revision = revision + 1 "
+            "WHERE run_id = ? AND kind = 'resolve_root' AND state = 'pending'",
+            (root_state, retry, now, failure.code, retry, now, run_id),
+        )
+        if resolution.rowcount != 1 or root.rowcount != 1:
+            connection.rollback()
+            return False
+    return True
+
+
+def retry_admission(
+    store: ResearchInputStore,
+    run_id: str,
+    owner: str,
+    identity_digest: str,
+    client_fingerprint: str,
+) -> ResearchAdmissionReservation | None:
+    """CAS one matching retryable failed root back to pending ownership."""
+    now = _utc_iso(datetime.now(UTC))
+    with sqlite_transaction(store.db_path) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        if not _retryable_admission(
+            connection, run_id, owner, identity_digest, client_fingerprint
+        ):
+            return None
+        parent = connection.execute(
+            "UPDATE runs SET status = 'running', error = NULL, "
+            "stage = 'input_resolution', failure_json = NULL, "
+            "expires_at = NULL, revision = revision + 1, updated_at = ? "
+            "WHERE run_id = ? AND status = 'failed'",
+            (now, run_id),
+        )
+        resolution = connection.execute(
+            "UPDATE research_input_resolutions SET status = 'pending', "
+            "last_stage = NULL, failure_code = NULL, "
+            "failure_retryable = NULL, "
+            "status_hint = NULL, updated_at = ?, revision = revision + 1 "
+            "WHERE run_id = ? AND status = 'failed' AND failure_retryable = 1",
+            (now, run_id),
+        )
+        root = connection.execute(
+            "UPDATE research_work_units SET state = 'pending', "
+            "lease_owner = NULL, lease_expires_at = NULL, "
+            "failure_code = NULL, failure_retryable = NULL, "
+            "updated_at = ?, revision = revision + 1 "
+            "WHERE run_id = ? AND kind = 'resolve_root' AND "
+            "state = 'retryable_failed' AND failure_retryable = 1",
+            (now, run_id),
+        )
+        if (
+            parent.rowcount != 1
+            or resolution.rowcount != 1
+            or root.rowcount != 1
+        ):
+            connection.rollback()
+            return None
+    return ResearchAdmissionReservation(run_id, False, "running")
+
+
+def retry_admission_available(
+    store: ResearchInputStore,
+    run_id: str,
+    owner: str,
+    identity_digest: str,
+    client_fingerprint: str,
+) -> bool:
+    """Read retry eligibility before request validation does more I/O."""
+    with sqlite_transaction(store.db_path) as connection:
+        return _retryable_admission(
+            connection, run_id, owner, identity_digest, client_fingerprint
+        )
+
+
+def _retryable_admission(
+    connection: Any,
+    run_id: str,
+    owner: str,
+    identity_digest: str,
+    client_fingerprint: str,
+) -> bool:
+    row = connection.execute(
+        "SELECT runs.run_id FROM runs JOIN research_idempotency_bindings "
+        "ON runs.run_id = research_idempotency_bindings.run_id JOIN "
+        "research_input_resolutions ON runs.run_id = "
+        "research_input_resolutions.run_id WHERE runs.run_id = ? AND "
+        "runs.status = 'failed' AND research_idempotency_bindings.owner = ? "
+        "AND research_idempotency_bindings.operation = ? AND "
+        "research_idempotency_bindings.idempotency_digest = ? AND "
+        "research_idempotency_bindings.client_fingerprint = ? AND "
+        "research_input_resolutions.failure_retryable = 1",
+        (
+            run_id,
+            owner,
+            "research_input_resolution_v1",
+            identity_digest,
+            client_fingerprint,
+        ),
+    ).fetchone()
+    return row is not None
 
 
 def load_validated_output(
