@@ -40,6 +40,7 @@ from mcp_server_phytomni import server
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
+from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
@@ -110,6 +111,9 @@ async def _post_asset_run(
     for key in ("owner_subject", "dataset_description", "debug"):
         if options.get(key) is not None:
             payload[key] = options[key]
+    headers = _auth(options.get("api_key") or context.api_key)
+    if options["slug"] == "research":
+        headers["Idempotency-Key"] = "attachment-research-run"
     async with open_asgi_client(
         context.monkeypatch,
         app,
@@ -117,7 +121,7 @@ async def _post_asset_run(
     ) as client:
         return await client.post(
             f"/v1/agents/{options['slug']}/runs",
-            headers=_auth(options.get("api_key") or context.api_key),
+            headers=headers,
             json=payload,
         )
 
@@ -309,6 +313,23 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
     )
 
     assert response.status_code == 202, response.text
+    if slug == "research":
+        resolution = ResearchInputStore(
+            asset_http_context.db_path
+        ).load_resolution(response.json()["run_id"])
+        assert resolution is not None
+        assert resolution["status"] == "pending"
+        assert resolution["effective_query"] == f"{slug} query"
+        snapshot = resolution["managed_snapshot_json"]
+        assert tuple(item["exact_reference"] for item in snapshot) == tuple(
+            references
+        )
+        assert tuple(item["purpose"] for item in snapshot) == (
+            "document",
+            "dataset",
+        )
+        assert not captured
+        return
     arguments = await wait_for_attachment_submission(
         captured=captured,
         db_path=asset_http_context.db_path,
@@ -582,8 +603,8 @@ async def test_managed_tsv_dataset_asset_reaches_native_data_mapping(
 async def test_managed_dataset_empty_value_still_submits(
     asset_http_context: AssetHttpTestContext,
 ) -> None:
-    """Managed evidence permits an empty native value to submit."""
-    _resolver, dataset_id, _document_id = _install_dataset_assets(
+    """Managed evidence is admitted without generic dispatch."""
+    resolver, dataset_id, _document_id = _install_dataset_assets(
         asset_http_context
     )
     captured: dict[str, Any] = {}
@@ -604,13 +625,18 @@ async def test_managed_dataset_empty_value_still_submits(
     )
 
     assert response.status_code == 202
-    arguments = await wait_for_attachment_submission(
-        captured=captured,
-        db_path=asset_http_context.db_path,
-        run_id=response.json()["run_id"],
-        case=case,
+    resolution = ResearchInputStore(
+        asset_http_context.db_path
+    ).load_resolution(response.json()["run_id"])
+    assert resolution is not None
+    assert resolution["status"] == "pending"
+    assert resolution["managed_snapshot_json"][0]["exact_reference"] == (
+        resolver.resolve_bundle([{"asset_id": dataset_id}], "u1")
+        .datasets[0]
+        .reference
     )
-    assert list(arguments.data_list.values()) == [""]
+    assert resolution["managed_snapshot_json"][0]["purpose"] == "dataset"
+    assert not captured
 
 
 async def test_delegated_asset_lookup_keeps_run_owner_as_principal(
