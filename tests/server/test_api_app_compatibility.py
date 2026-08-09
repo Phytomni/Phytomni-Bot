@@ -62,7 +62,7 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # contract in 97867888. The ``_normalized_openapi`` helper removes only
 # unstable version/server fields.
 _OPENAPI_HASH = (
-    "b534a97200b86febebb853f6a5482619026371fa9ad33f86ca906d11ffd231c5"
+    "0daecabef5685fba46b7f9d818c0f03d5791717bb5221e713f8e8247d949a71c"
 )
 
 
@@ -271,6 +271,14 @@ _DEFAULT_ROUTES = (
         "retry_run_delivery",
     ),
     _route(
+        "/v1/runs/{run_id}/cancel",
+        ("POST",),
+        200,
+        None,
+        ("agents",),
+        "cancel_run",
+    ),
+    _route(
         "/v1/runs/{run_id}/a2ui-actions",
         ("POST",),
         200,
@@ -301,6 +309,38 @@ _DEFAULT_ROUTES = (
         "dict[str, str]",
         ("relay_enabled",),
         "relay_healthz",
+    ),
+    _route(
+        "/v1/relay/capabilities",
+        ("GET",),
+        200,
+        "dict[str, dict[str, list[int] | int]]",
+        ("relay:research-input", "relay_enabled"),
+        "research_input_capabilities",
+    ),
+    _route(
+        "/v1/relay/research-input/object-grants",
+        ("POST",),
+        200,
+        "dict[str, object]",
+        ("relay:research-input", "relay_enabled"),
+        "resolve_research_object_grants",
+    ),
+    _route(
+        "/v1/relay/research-input/object-grants/verify",
+        ("POST",),
+        200,
+        "dict[str, object]",
+        ("relay:research-input", "relay_enabled"),
+        "verify_research_object_grants",
+    ),
+    _route(
+        "/v1/relay/research-input/object-grants/revoke",
+        ("POST",),
+        200,
+        "dict[str, int]",
+        ("relay:research-input", "relay_enabled"),
+        "revoke_research_object_grants",
     ),
     _route(
         "/v1/relay/llm/chat/completions",
@@ -519,9 +559,9 @@ def _all_flag_routes() -> tuple[_RouteContract, ...]:
         (_INTEROP_ROUTE,)
         + _DEFAULT_ROUTES[:3]
         + _MEMORY_ROUTES
-        + _DEFAULT_ROUTES[3:24]
+        + _DEFAULT_ROUTES[3:25]
         + _A2A_ROUTES
-        + _DEFAULT_ROUTES[24:]
+        + _DEFAULT_ROUTES[25:]
     )
 
 
@@ -569,7 +609,7 @@ def test_default_application_contract_is_literal() -> None:
     document = _normalized_openapi(app)
     if os.environ.get("PHYTOMNI_DEPENDENCY_FLOOR") != "1":
         assert _openapi_hash(app) == _OPENAPI_HASH
-    assert len(document["paths"]) == 38
+    assert len(document["paths"]) == 43
     assert len(document["components"]["schemas"]) == 26
     assert all(
         operation.get("operationId")
@@ -598,7 +638,7 @@ def test_optional_application_contract_is_literal(
     app = create_app()
 
     assert _route_manifest(app) == _all_flag_routes()
-    assert len(app.openapi()["paths"]) == 45
+    assert len(app.openapi()["paths"]) == 50
     assert _original_lifespan_name(app) == "_http_lifespan"
 
 
