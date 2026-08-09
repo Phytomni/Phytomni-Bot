@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
-from ...config.defaults import ApiConfig
+from ...config.defaults import ApiConfig, ServerConfig
 from ...runtime.conversation_context.adapters import ContextAgentInvocation
 from ...runtime.conversation_context.models import (
     ContextDelta,
@@ -46,7 +46,7 @@ from ..schemas import (
     ChatCompletionRequest,
     ExpertQueryRequest,
 )
-from . import agent_dependencies as _agent_dependencies
+from . import agent_dependencies as _deps
 from .agent_dependencies import (
     AgentRouteDependencies,
     ContextNativeExecutionRequest,
@@ -58,6 +58,7 @@ from .attachment_inputs import (
     prepare_native_attachment_arguments,
     resolve_attachment_input,
     resolve_attachment_owner,
+    restrict_expert_payload_for_research,
 )
 from .context_helpers import (
     context_response as _context_response,
@@ -78,23 +79,24 @@ from .context_types import (
 from .expert_context import ExpertContextHelpers, execute_context_expert
 from .uploads import AgentUploadDependencies, register_upload_routes
 
-AgentAuthDependencies = _agent_dependencies.AgentAuthDependencies
-AgentCatalogDependencies = _agent_dependencies.AgentCatalogDependencies
-AgentChatDependencies = _agent_dependencies.AgentChatDependencies
-AgentChatExecutionDependencies = (
-    _agent_dependencies.AgentChatExecutionDependencies
-)
-AgentChatInputDependencies = _agent_dependencies.AgentChatInputDependencies
-AgentChatProjectionDependencies = (
-    _agent_dependencies.AgentChatProjectionDependencies
-)
-AgentContextDependencies = _agent_dependencies.AgentContextDependencies
-AgentNativeDependencies = _agent_dependencies.AgentNativeDependencies
+__all__ = [
+    *_deps.__all__,
+    "AgentUploadDependencies",
+    "register_agent_routes",
+    "register_model_route",
+]
+AgentAuthDependencies = _deps.AgentAuthDependencies
+AgentCatalogDependencies = _deps.AgentCatalogDependencies
+AgentChatDependencies = _deps.AgentChatDependencies
+AgentChatExecutionDependencies = _deps.AgentChatExecutionDependencies
+AgentChatInputDependencies = _deps.AgentChatInputDependencies
+AgentChatProjectionDependencies = _deps.AgentChatProjectionDependencies
+AgentContextDependencies = _deps.AgentContextDependencies
+AgentNativeDependencies = _deps.AgentNativeDependencies
 
 
 def register_model_route(
-    app: FastAPI,
-    dependencies: AgentRouteDependencies,
+    app: FastAPI, dependencies: AgentRouteDependencies
 ) -> None:
     """Register the OpenAI-compatible model catalog endpoint."""
 
@@ -675,7 +677,11 @@ def _register_native_routes(
                 payload,
                 dependencies,
                 attachment_owner=attachment_owner,
+                idempotency_key=request.headers.get("Idempotency-Key"),
             )
+        payload = restrict_expert_payload_for_research(
+            payload, ServerConfig().BUCKET_NAME
+        )
         resolved_input = resolve_attachment_input(
             payload.attachments,
             attachment_owner=attachment_owner,
@@ -695,6 +701,7 @@ def _register_native_routes(
             payload,
             debug=dependencies.chat.projection.resolve_debug(None),
             attachment_input=resolved_input,
+            idempotency_key=request.headers.get("Idempotency-Key"),
         )
         return JSONResponse(body, status_code=status_code)
 
@@ -819,12 +826,14 @@ async def _execute_context_expert(
     dependencies: AgentRouteDependencies,
     *,
     attachment_owner: str,
+    idempotency_key: str | None = None,
 ) -> JSONResponse:
     """Delegate Expert context execution to the extracted helper module."""
     return await execute_context_expert(
         payload,
         dependencies,
         attachment_owner=attachment_owner,
+        idempotency_key=idempotency_key,
         helpers=ExpertContextHelpers(
             invoke_context_agent=_invoke_context_agent,
         ),
@@ -929,6 +938,7 @@ async def _invoke_context_agent(
     dispatch: ContextAgentInvocation,
     request: ContextAgentRequest,
     dependencies: AgentRouteDependencies,
+    research_admission: Any | None = None,
 ) -> AgentOutcome:
     """Invoke one selected agent and shape its context outcome."""
     slug = _slug_for_tool(selected_agent_id, dependencies)
@@ -945,19 +955,23 @@ async def _invoke_context_agent(
     arguments.update(request.attachment_arguments or {})
     private_agent_state = dict(dispatch.private_agent_state)
     adapter = _context_adapter(selected_agent_id, private_agent_state)
-    body, status_code = await dependencies.native.invoke_agent_run(
-        agent=slug,
-        arguments=arguments,
-        conversation_messages=dispatch.conversation_messages,
-        agent_thread_id=_context_execution_thread_id(
+    options: dict[str, Any] = {
+        "agent": slug,
+        "arguments": arguments,
+        "conversation_messages": dispatch.conversation_messages,
+        "agent_thread_id": _context_execution_thread_id(
             selected_agent_id, dispatch, adapter
         ),
-        private_agent_state=private_agent_state or None,
-        dialogue_id=request.dialogue_id,
-        request_json=request.request_json,
-        debug=request.debug,
-        attachment_evidence=request.attachment_evidence,
-    )
+        "private_agent_state": private_agent_state or None,
+        "dialogue_id": request.dialogue_id,
+        "request_json": request.request_json,
+        "debug": request.debug,
+        "attachment_evidence": request.attachment_evidence,
+    }
+    if research_admission is not None:
+        options["research_http_input"] = research_admission.request
+        options["research_attachment_bundle"] = research_admission.bundle
+    body, status_code = await dependencies.native.invoke_agent_run(**options)
     if status_code != 200 or body.get("status") != "succeeded":
         return AgentOutcome(result=body, status="running")
     return await _context_success_outcome(selected_agent_id, body, adapter)
@@ -965,35 +979,22 @@ async def _invoke_context_agent(
 
 def _clarification_agent_run(agent: str, message: str) -> dict[str, Any]:
     """Return a sync agent.run envelope for clarification-only turns."""
+    formatted: dict[str, Any] = {"answer": message}
+    formatted["follow_up_questions"], formatted["references"] = [], []
     return {
         "id": None,
         "object": "agent.run",
         "agent": agent,
         "status": "succeeded",
         "task_ids": [],
-        "result": {
-            "formatted": {
-                "answer": message,
-                "follow_up_questions": [],
-                "references": [],
-            }
-        },
+        "result": {"formatted": formatted},
     }
 
 
 def register_agent_routes(
-    app: FastAPI,
-    dependencies: AgentRouteDependencies,
+    app: FastAPI, dependencies: AgentRouteDependencies
 ) -> None:
     """Register primary agent routes in their legacy order."""
     _register_chat_route(app, dependencies)
     _register_native_routes(app, dependencies)
     register_upload_routes(app, dependencies.upload)
-
-
-__all__ = [
-    *_agent_dependencies.__all__,
-    "AgentUploadDependencies",
-    "register_agent_routes",
-    "register_model_route",
-]

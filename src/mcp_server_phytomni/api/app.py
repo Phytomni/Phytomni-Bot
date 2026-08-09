@@ -32,7 +32,7 @@ from ..agents.expert import (
     select_agent_tool,
 )
 from ..common import logging_config as _logging_config
-from ..config.defaults import ApiConfig
+from ..config.defaults import ApiConfig, ServerConfig
 from ..interop import a2a_discovery as _a2a_discovery
 from ..interop import capabilities as _interop_capabilities
 from ..interop import registry as _interop_registry
@@ -101,7 +101,9 @@ from .research_input import (
 )
 from .routes.attachment_inputs import (
     ResolvedAttachmentInput,
+    build_expert_research_admission,
     prepare_selected_expert_arguments,
+    restrict_expert_payload_for_research,
 )
 from .schemas import ChatCompletionRequest, ExpertQueryRequest, ResumeRequest
 from .stream_answer import resolve_stream_answer_max_bytes
@@ -314,8 +316,15 @@ async def _route_expert_query(
     *,
     debug: bool,
     attachment_input: ResolvedAttachmentInput | None = None,
+    idempotency_key: str | None = None,
+    research_runtime_options: _agent_runs.ResearchHttpRuntimeOptions = (
+        _agent_runs.ResearchHttpRuntimeOptions()
+    ),
 ) -> tuple[dict[str, Any], int]:
     """Route one constrained Expert request to a native agent run."""
+    payload = restrict_expert_payload_for_research(
+        payload, ServerConfig().BUCKET_NAME
+    )
     try:
         selection = await select_agent_tool(
             payload.user_query,
@@ -382,6 +391,19 @@ async def _route_expert_query(
         attachment_owner=current_request_user() or "anonymous",
         bundle=ResolvedAttachmentBundle(assets=()),
     )
+    if selection.tool_name == "InSilicoResearchAgent":
+        return await _agent_runs.invoke_research_http_run(
+            build_expert_research_admission(
+                payload,
+                resolved,
+                idempotency_key=idempotency_key,
+                route_source="expert",
+            ),
+            resolved.bundle,
+            config=ApiConfig(),
+            db_path=resolve_tasks_db_path(),
+            runtime_options=research_runtime_options,
+        )
     arguments, attachment_context = prepare_selected_expert_arguments(
         agent=slug,
         selected_arguments=selection.arguments,

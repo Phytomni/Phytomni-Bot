@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from ...agents.research.input_parser import has_explicit_research_data_syntax
 from ...runtime.attachment_assets import ResolvedAttachmentBundle
 from ...runtime.locale import current_effective_locale
 from ..agent_capabilities import (
@@ -34,12 +35,18 @@ from ..attachments import (
 )
 from ..auth import ApiPrincipal
 from ..lifecycle_contract import SafeApiError
+from ..research_input import (
+    ResearchAdmissionOutcome,
+    ResearchHttpAdmissionInput,
+    ResearchRoutePreflight,
+)
 from ..schemas import ChatCompletionRequest, ExpertQueryRequest
 
 __all__ = [
     "PreparedAttachmentContext",
     "ResolvedAttachmentInput",
     "attachment_not_supported_error",
+    "build_expert_research_admission",
     "expert_attachment_channels",
     "expert_attachment_requirement",
     "filter_expert_attachment_candidates",
@@ -49,9 +56,14 @@ __all__ = [
     "prepare_chat_attachments",
     "prepare_native_attachment_arguments",
     "prepare_selected_expert_arguments",
+    "admit_selected_research",
+    "restrict_expert_candidates_for_research",
+    "restrict_expert_payload_for_research",
     "resolve_attachment_input",
     "resolve_attachment_owner",
 ]
+
+_RESEARCH_EXPERT_TOOL = "InSilicoResearchAgent"
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,6 +287,81 @@ def filter_expert_attachment_candidates(
     ):
         raise attachment_not_supported_error()
     return payload.model_copy(update={"allowed_tools": list(filtered)})
+
+
+def build_expert_research_admission(
+    payload: ExpertQueryRequest,
+    resolved_input: ResolvedAttachmentInput,
+    *,
+    idempotency_key: str | None,
+    route_source: str,
+) -> ResearchHttpAdmissionInput:
+    """Build Research admission only from caller and resolved asset facts."""
+    asset_ids = tuple(
+        asset.asset_id for asset in resolved_input.bundle.all_assets
+    )
+    return ResearchHttpAdmissionInput(
+        owner=resolved_input.attachment_owner,
+        idempotency_key=idempotency_key,
+        conversation=payload.conversation,
+        original_query=payload.user_query,
+        managed_asset_ids=asset_ids,
+        locale=current_effective_locale(),
+        interop_mode="off",
+        interop_targets=(),
+        route_source=route_source,
+    )
+
+
+def restrict_expert_candidates_for_research(
+    original_query: str,
+    configured_bucket: str,
+    allowed_tools: Sequence[str],
+    forced_tool: str | None = None,
+) -> tuple[str, ...]:
+    """Return Research-only candidates on a positive syntax probe."""
+    ordered = tuple(allowed_tools)
+    if (
+        forced_tool not in {None, _RESEARCH_EXPERT_TOOL}
+        or _RESEARCH_EXPERT_TOOL not in ordered
+        or not has_explicit_research_data_syntax(
+            original_query, configured_bucket
+        )
+    ):
+        return ordered
+    return (_RESEARCH_EXPERT_TOOL,)
+
+
+def restrict_expert_payload_for_research(
+    payload: ExpertQueryRequest,
+    configured_bucket: str,
+) -> ExpertQueryRequest:
+    """Narrow an Expert request before any selector or attachment I/O."""
+    return payload.model_copy(
+        update={
+            "allowed_tools": list(
+                restrict_expert_candidates_for_research(
+                    payload.user_query,
+                    configured_bucket,
+                    payload.allowed_tools,
+                    payload.forced_tool,
+                )
+            )
+        }
+    )
+
+
+async def admit_selected_research(
+    original_request: ResearchHttpAdmissionInput,
+    selected_tool: str,
+    selector_arguments: Mapping[str, Any],
+    preflight: ResearchRoutePreflight,
+) -> ResearchAdmissionOutcome:
+    """Discard selector authority and admit only original caller input."""
+    del selector_arguments
+    if selected_tool != _RESEARCH_EXPERT_TOOL:
+        raise ValueError("selected tool is not Research")
+    return await preflight.admit(original_request)
 
 
 def prepare_selected_expert_arguments(

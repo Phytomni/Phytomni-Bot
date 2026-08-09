@@ -108,6 +108,8 @@ from .upload_runtime import (
     register_upload_error_handler,
 )
 
+__all__ = ["build_app"]
+
 logger = logging.getLogger(__name__)
 
 
@@ -420,12 +422,17 @@ class _RouteAdapters:
         *,
         debug: bool,
         attachment_input: Any | None = None,
+        idempotency_key: str | None = None,
     ) -> tuple[dict[str, Any], int]:
         """Route an Expert query through the app-level seam."""
         response_body, status_code = await _app_attr("_route_expert_query")(
             payload,
             debug=debug,
             attachment_input=attachment_input,
+            idempotency_key=idempotency_key,
+            research_runtime_options=_agent_runs.ResearchHttpRuntimeOptions(
+                allow_uninstalled=not self.research_input_runtime_required
+            ),
         )
         return canonicalize_agent_run_body(response_body), status_code
 
@@ -976,11 +983,8 @@ def build_app(
         api_config_factory=_api_config,
     )
     agent_dependencies = _build_agent_dependencies(
-        runtime,
-        adapters,
-        context_executor,
+        runtime, adapters, context_executor
     )
-
     _register_interop_route(app, runtime, scope)
     _register_health_routes(app)
     agent_routes.register_model_route(app, agent_dependencies)
@@ -994,6 +998,3 @@ def build_app(
     app.include_router(_app_attr("create_relay_router")())
     _register_error_handlers(app)
     return app
-
-
-__all__ = ["build_app"]

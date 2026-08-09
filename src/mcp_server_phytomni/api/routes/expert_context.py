@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
@@ -13,6 +14,8 @@ from typing import Any
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
+from ...agents.research.input_contracts import ResearchInputFailure
+from ...config.defaults import ServerConfig
 from ...runtime.conversation_context.adapters import ContextAgentInvocation
 from ...runtime.conversation_context.models import ConversationEnvelopeV1
 from ...runtime.conversation_context.service import (
@@ -20,20 +23,32 @@ from ...runtime.conversation_context.service import (
     AsyncAgentAcceptance,
 )
 from ...runtime.locale import current_effective_locale
+from ...runtime.research_input_store import ResearchInputStore
 from ..agent_capabilities import (
     agent_uses_user_query,
     filter_tools_for_attachment_channels,
 )
+from ..app_support import resolve_http_locale
 from ..attachments import redact_managed_attachment_values
+from ..lifecycle_contract import SafeApiError
+from ..research_input import (
+    ResearchClientFingerprintInput,
+    ResearchHttpAdmissionInput,
+    compute_research_client_fingerprint,
+    lookup_research_admission,
+    parse_idempotency_identity,
+)
 from ..schemas import ExpertQueryRequest
 from .agent_dependencies import AgentRouteDependencies
 from .attachment_inputs import (
     attachment_not_supported_error,
+    build_expert_research_admission,
     expert_attachment_channels,
     expert_attachment_requirement,
     filter_expert_attachment_candidates,
     prepare_selected_expert_arguments,
     resolve_attachment_input,
+    restrict_expert_candidates_for_research,
 )
 from .context_helpers import (
     context_response,
@@ -63,6 +78,27 @@ class PreparedExpertAttachments:
 
     arguments: Mapping[str, Any]
     evidence: Any
+    research_admission: _ResearchContextAdmission | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _ResearchContextAdmission:
+    """Research-only immutable admission facts for one Expert turn."""
+
+    request: Any
+    bundle: Any
+
+
+@dataclass(frozen=True, slots=True)
+class _ResearchReplayAliasRequest:
+    """Caller-owned facts needed to bind a replay header alias."""
+
+    replay: Any
+    payload: ExpertQueryRequest
+    envelope: ConversationEnvelopeV1
+    owner: str
+    idempotency_key: str | None
+    db_path: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +135,7 @@ async def execute_context_expert(
     *,
     attachment_owner: str,
     helpers: ExpertContextHelpers,
+    idempotency_key: str | None = None,
 ) -> JSONResponse:
     """Run constrained Expert V1 selection through the shared lifecycle."""
     envelope = payload.conversation
@@ -107,6 +144,11 @@ async def execute_context_expert(
         raise HTTPException(
             status_code=422, detail="expert context requires expert mode"
         )
+    resolve_http_locale(
+        explicit=envelope.current_message.locale,
+        accept_language=None,
+        latest_user_query=envelope.current_message.content,
+    )
     replay = await inspect_context_replay(
         executor=dependencies.context.executor,
         envelope=envelope,
@@ -115,12 +157,33 @@ async def execute_context_expert(
         ),
     )
     if replay is not None:
+        _attach_research_replay_alias(
+            _ResearchReplayAliasRequest(
+                replay,
+                payload,
+                envelope,
+                attachment_owner,
+                idempotency_key,
+                dependencies.tasks_db_path(),
+            )
+        )
         return context_response(replay, envelope)
+    effective_forced_tool = envelope.requested_agent_id or payload.forced_tool
     payload = payload.model_copy(
-        update={"user_query": envelope.current_message.content}
+        update={
+            "user_query": envelope.current_message.content,
+            "allowed_tools": list(
+                restrict_expert_candidates_for_research(
+                    envelope.current_message.content,
+                    ServerConfig().BUCKET_NAME,
+                    payload.allowed_tools,
+                    effective_forced_tool,
+                )
+            ),
+        }
     )
     payload, envelope, prepared_by_tool = _prepare_expert_context_inputs(
-        payload, dependencies, attachment_owner, envelope
+        payload, dependencies, attachment_owner, envelope, idempotency_key
     )
     request_json = safe_native_request_json(
         dialogue_id=payload.dialogue_id,
@@ -187,11 +250,74 @@ async def execute_context_expert(
     return context_response(prepared, envelope)
 
 
+def _attach_research_replay_alias(
+    request_input: _ResearchReplayAliasRequest,
+) -> None:
+    """Atomically attach a replay alias without reopening Research inputs."""
+    stage = request_input.replay.stage
+    if (
+        request_input.idempotency_key is None
+        or stage is None
+        or stage.selected_agent_id != "InSilicoResearchAgent"
+    ):
+        return
+    request = ResearchHttpAdmissionInput(
+        owner=request_input.owner,
+        idempotency_key=request_input.idempotency_key,
+        conversation=request_input.envelope,
+        original_query=request_input.envelope.current_message.content,
+        managed_asset_ids=tuple(
+            getattr(item, "asset_id", None)
+            for item in request_input.payload.attachments
+        ),
+        locale=request_input.envelope.current_message.locale,
+        interop_mode="off",
+        interop_targets=(),
+        route_source="expert",
+    )
+    try:
+        identity = parse_idempotency_identity(
+            request.idempotency_key, request.conversation
+        )
+        query = request.original_query.encode("utf-8")
+        fingerprint = compute_research_client_fingerprint(
+            ResearchClientFingerprintInput(
+                original_query_digest=hashlib.sha256(query).hexdigest(),
+                original_query_length=len(request.original_query),
+                managed_asset_ids=request.managed_asset_ids,
+                locale=request.locale,
+                interop_mode=request.interop_mode,
+                interop_targets=request.interop_targets,
+                conversation_identity_digest=identity.canonical_digest,
+            )
+        )
+        lookup_research_admission(
+            owner=request.owner,
+            identity=identity,
+            client_fingerprint=fingerprint,
+            store=ResearchInputStore(request_input.db_path),
+        )
+    except ResearchInputFailure as exc:
+        raise _research_replay_error(exc) from exc
+
+
+def _research_replay_error(exc: ResearchInputFailure) -> SafeApiError:
+    """Project a classified replay failure without exposing store details."""
+    return SafeApiError(
+        status_code=exc.http_status_hint,
+        code=exc.code,
+        message="Research input resolution failed.",
+        stage=exc.stage,
+        retryable=exc.retryable,
+    )
+
+
 def _prepare_expert_context_inputs(
     payload: ExpertQueryRequest,
     dependencies: AgentRouteDependencies,
     attachment_owner: str,
     envelope: ConversationEnvelopeV1,
+    idempotency_key: str | None,
 ) -> tuple[
     ExpertQueryRequest,
     ConversationEnvelopeV1,
@@ -216,7 +342,11 @@ def _prepare_expert_context_inputs(
         payload,
         envelope.model_copy(update={"allowed_agent_ids": ordered_tools}),
         _prepare_expert_attachments(
-            payload, dependencies, ordered_tools, resolved_input
+            payload,
+            dependencies,
+            ordered_tools,
+            resolved_input,
+            idempotency_key,
         ),
     )
 
@@ -253,6 +383,7 @@ def _prepare_expert_attachments(
     dependencies: AgentRouteDependencies,
     ordered_tools: list[str],
     resolved_input: Any,
+    idempotency_key: str | None,
 ) -> dict[str, PreparedExpertAttachments]:
     """Prepare trusted attachment maps in the eligible-tool order."""
     prepared_by_tool: dict[str, PreparedExpertAttachments] = {}
@@ -272,6 +403,19 @@ def _prepare_expert_attachments(
                 if key in arguments
             },
             evidence=context.evidence,
+            research_admission=(
+                _ResearchContextAdmission(
+                    build_expert_research_admission(
+                        payload,
+                        resolved_input,
+                        idempotency_key=idempotency_key,
+                        route_source="expert",
+                    ),
+                    resolved_input.bundle,
+                )
+                if tool_name == "InSilicoResearchAgent"
+                else None
+            ),
         )
     return prepared_by_tool
 
@@ -302,13 +446,20 @@ async def _delegate_context_expert_async(
         **_expert_context_arguments(slug, request.arguments, request.payload),
         **request.attachments.arguments,
     }
+    options: dict[str, Any] = {
+        "agent": slug,
+        "arguments": prepared_arguments,
+        "dialogue_id": request.context_request.dialogue_id,
+        "request_json": request.context_request.request_json,
+        "debug": request.context_request.debug,
+        "attachment_evidence": request.attachments.evidence,
+    }
+    research_admission = request.attachments.research_admission
+    if research_admission is not None:
+        options["research_http_input"] = research_admission.request
+        options["research_attachment_bundle"] = research_admission.bundle
     body, status_code = await request.dependencies.native.invoke_agent_run(
-        agent=slug,
-        arguments=prepared_arguments,
-        dialogue_id=request.context_request.dialogue_id,
-        request_json=request.context_request.request_json,
-        debug=request.context_request.debug,
-        attachment_evidence=request.attachments.evidence,
+        **options
     )
     if request.attachments.evidence is not None:
         body = redact_managed_attachment_values(
@@ -342,6 +493,7 @@ async def _invoke_context_expert_agent(
             attachment_evidence=request.attachments.evidence,
         ),
         dependencies=request.dependencies,
+        research_admission=request.attachments.research_admission,
     )
     if request.attachments.evidence is not None:
         return AgentOutcome(

@@ -40,7 +40,9 @@ from tests.support.resumable_asset_fakes import (
     install_dataset_and_document_assets,
 )
 
+import mcp_server_phytomni.api.agent_runs as agent_runs_module
 from mcp_server_phytomni.agents.expert import router as expert_router
+from mcp_server_phytomni.api.research_input import ResearchHttpAdmissionInput
 from mcp_server_phytomni.api.routes import (
     expert_context as expert_context_routes,
 )
@@ -152,7 +154,20 @@ def _install_selected_handler(
                 202,
             )
 
-        monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+        if selected == "InSilicoResearchAgent":
+
+            async def fake_research(
+                _admission: ResearchHttpAdmissionInput,
+                _bundle: Any,
+                **_kwargs: Any,
+            ) -> tuple[dict[str, Any], int]:
+                return running_agent_run_body("filtered-run", "research"), 202
+
+            monkeypatch.setattr(
+                agent_runs_module, "invoke_research_http_run", fake_research
+            )
+        else:
+            monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
         return
     install_chat_handler(monkeypatch, {}, content="ok")
     if selected != "ChatAgent":
@@ -177,7 +192,10 @@ async def _post_expert_route(
     ) as client:
         return await client.post(
             "/v1/query/route",
-            headers=_auth(api_key or context.api_key),
+            headers={
+                **_auth(api_key or context.api_key),
+                "Idempotency-Key": "expert-route-test-key",
+            },
             json=payload,
         )
 
@@ -272,12 +290,12 @@ def _assert_research_attachment_call(
     document_ref: str,
     dataset_ref: str,
 ) -> None:
-    """Assert one Research Expert call carries canonical managed refs."""
-    assert call["agent"] == "research"
-    assert call["arguments"]["user_query"] == "original expert query"
-    assert call["arguments"]["obs_file_list"] == [document_ref]
-    assert call["arguments"]["data_list"] == {dataset_ref: ""}
-    assert call["attachment_evidence"].attachment_owner == "u1"
+    """Assert one Research admission owns canonical query and assets."""
+    admission = call["admission"]
+    bundle = call["bundle"]
+    assert admission.original_query == "original expert query"
+    assert bundle.documents[0].reference == document_ref
+    assert bundle.datasets[0].reference == dataset_ref
 
 
 _AUTHZ_CASES = (
@@ -378,9 +396,24 @@ async def test_expert_selected_arguments_discard_selector_paths(
         captured.update(kwargs)
         return running_agent_run_body(f"expert-{slug}", slug), 202
 
-    asset_http_context.monkeypatch.setattr(
-        api_app, "_invoke_agent_run", fake_invoke
-    )
+    if slug == "research":
+
+        async def fake_research(
+            admission: ResearchHttpAdmissionInput,
+            bundle: Any,
+            **_kwargs: Any,
+        ) -> tuple[dict[str, Any], int]:
+            captured["admission"] = admission
+            captured["bundle"] = bundle
+            return running_agent_run_body("expert-research", "research"), 202
+
+        asset_http_context.monkeypatch.setattr(
+            agent_runs_module, "invoke_research_http_run", fake_research
+        )
+    else:
+        asset_http_context.monkeypatch.setattr(
+            api_app, "_invoke_agent_run", fake_invoke
+        )
     _patch_select(
         asset_http_context.monkeypatch,
         ToolSelection(
@@ -404,15 +437,21 @@ async def test_expert_selected_arguments_discard_selector_paths(
         base_url="http://api.expert-args.test",
     )
     assert response.status_code == 202, response.text
-    arguments = captured["arguments"]
     if slug == "analyst":
+        arguments = captured["arguments"]
         assert arguments["goal_description"] == "original expert query"
     else:
-        assert arguments["user_query"] == "original expert query"
-    assert arguments["obs_file_list"] == [assets.document_ref]
-    assert arguments["data_list"] == {assets.dataset_ref: ""}
-    assert "/obs/selector-private" not in str(arguments)
-    assert "selector rewrite" not in str(arguments)
+        admission = captured["admission"]
+        bundle = captured["bundle"]
+        assert admission.original_query == "original expert query"
+        assert admission.managed_asset_ids == (
+            assets.dataset_id,
+            assets.document_id,
+        )
+        assert bundle.datasets[0].reference == assets.dataset_ref
+        assert bundle.documents[0].reference == assets.document_ref
+        assert "/obs/selector-private" not in str(admission)
+        assert "selector rewrite" not in str(admission)
     assert "selector value" not in response.text
 
 
@@ -585,11 +624,17 @@ def _patch_expert_invocation(
     """Count the downstream Expert Agent boundary for replay assertions."""
     calls: list[dict[str, Any]] = []
 
-    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
-        calls.append(kwargs)
-        return running_agent_run_body(run_id, kwargs["agent"]), 202
+    async def fake_research(
+        admission: ResearchHttpAdmissionInput,
+        bundle: Any,
+        **_kwargs: Any,
+    ) -> tuple[dict[str, Any], int]:
+        calls.append({"admission": admission, "bundle": bundle})
+        return running_agent_run_body(run_id, "research"), 202
 
-    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+    monkeypatch.setattr(
+        agent_runs_module, "invoke_research_http_run", fake_research
+    )
     return calls
 
 
@@ -790,12 +835,18 @@ async def _run_expert_context_parity(
     """Drive context + ordinary + replay Expert calls for parity asserts."""
     invoke_calls: list[dict[str, Any]] = []
 
-    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
-        invoke_calls.append(kwargs)
+    async def fake_research(
+        admission: ResearchHttpAdmissionInput,
+        bundle: Any,
+        **_kwargs: Any,
+    ) -> tuple[dict[str, Any], int]:
+        invoke_calls.append({"admission": admission, "bundle": bundle})
         run_id = f"expert-ctx-{len(invoke_calls)}"
-        return running_agent_run_body(run_id, kwargs["agent"]), 202
+        return running_agent_run_body(run_id, "research"), 202
 
-    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+    monkeypatch.setattr(
+        agent_runs_module, "invoke_research_http_run", fake_research
+    )
     _patch_select(
         monkeypatch,
         ToolSelection(
@@ -832,7 +883,10 @@ async def _run_expert_context_parity(
     ) as client:
         response = await client.post(
             "/v1/query/route",
-            headers=_auth(api_key),
+            headers={
+                **_auth(api_key),
+                "Idempotency-Key": "expert-context-alias-key",
+            },
             json=request_body,
         )
         ordinary = await client.post(
@@ -850,7 +904,10 @@ async def _run_expert_context_parity(
         )
         replay = await client.post(
             "/v1/query/route",
-            headers=_auth(api_key),
+            headers={
+                **_auth(api_key),
+                "Idempotency-Key": "expert-context-alias-key",
+            },
             json=request_body,
         )
     assert response.status_code == 202, response.text
@@ -871,6 +928,9 @@ async def test_expert_context_preserves_payload_order_and_parity(
         monkeypatch, assets, api_key=key
     )
     assert len(invoke_calls) == 2
+    assert invoke_calls[0]["admission"].idempotency_key == (
+        "expert-context-alias-key"
+    )
     for call in invoke_calls:
         _assert_research_attachment_call(
             call,

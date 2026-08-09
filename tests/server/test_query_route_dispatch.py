@@ -50,6 +50,16 @@ from mcp_server_phytomni.storage.obs_storage import obs_path_from_key
 pytestmark = pytest.mark.server
 
 
+_FORCED_NON_RESEARCH_CASES = tuple(
+    case for case in _FORCED_ROUTE_CASES if case[0] != "InSilicoResearchAgent"
+)
+_BACKGROUND_NON_RESEARCH_CASES = tuple(
+    case
+    for case in _BACKGROUND_EXPERT_CASES
+    if case.id != "research-background"
+)
+
+
 @pytest.fixture(name="scoped_key_without_agents")
 def _scoped_key_without_agents_fixture(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -247,7 +257,7 @@ async def test_route_passes_constraints_to_selector_and_forces_agent(
     assert response.json()["agent"] == "data"
 
 
-@pytest.mark.parametrize("case", _FORCED_ROUTE_CASES)
+@pytest.mark.parametrize("case", _FORCED_NON_RESEARCH_CASES)
 async def test_route_forces_every_canonical_tool_to_its_native_slug(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -294,8 +304,7 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
     )
 
     assert response.status_code == 200
-    assert len(invoked) == 1
-    assert invoked[0]["agent"] == slug
+    assert len(invoked) == 1 and invoked[0]["agent"] == slug
     assert selector_call == {
         "user_query": "q",
         "history": [],
@@ -304,7 +313,7 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
     }
 
 
-@pytest.mark.parametrize("case", _BACKGROUND_EXPERT_CASES)
+@pytest.mark.parametrize("case", _BACKGROUND_NON_RESEARCH_CASES)
 async def test_expert_background_selection_launches_one_reserved_worker(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -318,13 +327,10 @@ async def test_expert_background_selection_launches_one_reserved_worker(
     real_launch = api_app.launch_background_submission
 
     def capture_launch(
-        reservation: Any,
-        operation: Any,
-        *,
-        db_path: str,
+        reservation: Any, operation: Any, **kwargs: Any
     ) -> None:
         launched.append(reservation.agent)
-        real_launch(reservation, operation, db_path=db_path)
+        real_launch(reservation, operation, **kwargs)
 
     monkeypatch.setattr(
         api_app, "launch_background_submission", capture_launch
@@ -337,7 +343,6 @@ async def test_expert_background_selection_launches_one_reserved_worker(
         server.TOOL_HANDLERS,
         {
             "analyst": server.PhytomniAgents.ANALYST_AGENT.value,
-            "research": server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
             "design": server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
             "network": server.PhytomniAgents.GENE_NETWORK_AGENT.value,
         }[slug],
@@ -382,13 +387,10 @@ async def test_expert_synchronous_selection_skips_background_launcher(
     real_launch = api_app.launch_background_submission
 
     def capture_launch(
-        reservation: Any,
-        operation: Any,
-        *,
-        db_path: str,
+        reservation: Any, operation: Any, **kwargs: Any
     ) -> None:
         launched.append(reservation.agent)
-        real_launch(reservation, operation, db_path=db_path)
+        real_launch(reservation, operation, **kwargs)
 
     monkeypatch.setattr(
         api_app, "launch_background_submission", capture_launch
@@ -646,7 +648,6 @@ async def test_route_forced_mismatch_coerces_and_dispatches(
         ("BriefGeneAgent", "brief_gene", False),
         ("AnalystAgent", "analyst", True),
         ("DeepGenomeAgent", "deep_genome", False),
-        ("InSilicoResearchAgent", "research", True),
         ("DigitalDesignAgent", "design", True),
         ("GeneNetworkAgent", "network", True),
     ],
@@ -699,7 +700,6 @@ async def test_route_attachment_forwarding_follows_capability_matrix(
         )
 
     monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
-
     _patch_select(
         monkeypatch,
         ToolSelection(
