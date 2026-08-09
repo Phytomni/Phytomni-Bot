@@ -151,6 +151,27 @@ def test_sqlite_connection_supports_concurrent_writes(tmp_path: Path) -> None:
         assert conn.execute("SELECT COUNT(*) FROM events").fetchone() == (16,)
 
 
+def test_sqlite_connection_serializes_fresh_wal_initialization(
+    tmp_path: Path,
+) -> None:
+    """Fresh databases tolerate concurrent first connections."""
+    db_path = tmp_path / "fresh-concurrent.sqlite"
+
+    def initialize(value: int) -> None:
+        with sqlite_connection(str(db_path)) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS markers "
+                "(value INTEGER NOT NULL)"
+            )
+            conn.execute("INSERT INTO markers(value) VALUES (?)", (value,))
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(initialize, range(16)))
+
+    with closed_sqlite_connection(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM markers").fetchone() == (16,)
+
+
 def test_store_schema_migration_and_boundaries_remain_local(
     tmp_path: Path,
 ) -> None:

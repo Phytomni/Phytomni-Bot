@@ -13,6 +13,7 @@ their independent failure contracts.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from collections.abc import Generator
 from contextlib import contextmanager
 
@@ -20,6 +21,7 @@ __all__ = ["sqlite_connection", "sqlite_transaction"]
 
 _CONNECT_TIMEOUT_SECONDS = 10
 _BUSY_TIMEOUT_MILLISECONDS = 5000
+_WAL_INIT_LOCK = threading.Lock()
 
 
 @contextmanager
@@ -44,8 +46,9 @@ def sqlite_connection(
         isolation_level=None,
     )
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MILLISECONDS}")
+        with _WAL_INIT_LOCK:
+            conn.execute("PRAGMA journal_mode=WAL")
         yield conn
     finally:
         conn.close()
