@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -49,6 +51,12 @@ from mcp_server_phytomni.runtime.research_input_store import (
     ResearchCancellationConflict,
     ResearchInputStore,
     cancel_research_run,
+)
+from mcp_server_phytomni.runtime.research_input_store_support import (
+    ResearchCancellationOutcome,
+)
+from mcp_server_phytomni.runtime.research_input_types import (
+    ResearchWorkUnitRecord,
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.storage.research_objects import (
@@ -122,6 +130,44 @@ def _run_row(db_path: str, run_id: str) -> tuple[object, ...]:
         ).fetchone()
     assert row is not None
     return row
+
+
+def _race_claimed_callback_with_cancellation(
+    store: ResearchInputStore,
+    claimed: ResearchWorkUnitRecord,
+) -> tuple[ResearchCancellationOutcome, bool]:
+    """Run the bounded late-callback boundary on two real SQLite workers."""
+    rendezvous = threading.Barrier(2)
+    callback_ready = threading.Event()
+    cancellation_done = threading.Event()
+
+    def finish_callback() -> bool:
+        """Attempt the completion after cancellation has committed."""
+        rendezvous.wait()
+        callback_ready.set()
+        assert cancellation_done.wait(timeout=5)
+        return store.complete_work(
+            claimed,
+            "succeeded",
+            datetime(2026, 8, 9, 0, 0, 1, tzinfo=UTC),
+            output={"unexpected": "late callback"},
+        )
+
+    def cancel_parent() -> ResearchCancellationOutcome:
+        """Commit the terminal CAS when the callback reaches its boundary."""
+        rendezvous.wait()
+        assert callback_ready.wait(timeout=5)
+        try:
+            return cancel_research_run(store, claimed.run_id, "u1", 0)
+        finally:
+            cancellation_done.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        callback = executor.submit(finish_callback)
+        cancellation = executor.submit(cancel_parent)
+        outcome = cancellation.result(timeout=10)
+        completed = callback.result(timeout=10)
+    return outcome, completed
 
 
 def _seed_pending_grant_outbox(
@@ -376,6 +422,51 @@ async def test_late_work_completion_cannot_revive_cancelled_parent(
     assert record is None
     assert outcome.status == "cancelled"
     assert _run_row(db_path, "run-cancel-late-result")[0] == "cancelled"
+
+
+def test_cancel_wins_against_a_claimed_callback_completion_race(
+    tmp_path: Path,
+) -> None:
+    """A callback that became ready before cancellation cannot settle work.
+
+    This catches a lost cancellation fence: if ``complete_work`` ignores the
+    cancellation CAS, the late worker would write a succeeded root after the
+    parent has become terminal.
+    """
+    store, db_path = _seed_research_parent(
+        tmp_path, "run-cancel-race", outbox_state=None
+    )
+    claimed = store.claim_work(
+        "run-cancel-race:resolve_root",
+        "callback-worker",
+        datetime(2026, 8, 9, tzinfo=UTC),
+    )
+    assert claimed is not None
+
+    outcome, completion = _race_claimed_callback_with_cancellation(
+        store, claimed
+    )
+
+    assert outcome.status == "cancelled"
+    assert completion is False
+    assert _run_row(db_path, "run-cancel-race") == ("cancelled", None, 1)
+    with sqlite3.connect(db_path) as connection:
+        root = connection.execute(
+            "SELECT state, output_json FROM research_work_units "
+            "WHERE unit_id = ?",
+            ("run-cancel-race:resolve_root",),
+        ).fetchone()
+        children = connection.execute(
+            "SELECT COUNT(*) FROM research_dispatch_outbox WHERE run_id = ?",
+            ("run-cancel-race",),
+        ).fetchone()
+        work_units = connection.execute(
+            "SELECT COUNT(*) FROM research_work_units WHERE run_id = ?",
+            ("run-cancel-race",),
+        ).fetchone()
+    assert root == ("cancelled", None)
+    assert children == (0,)
+    assert work_units == (1,)
 
 
 @pytest.mark.asyncio

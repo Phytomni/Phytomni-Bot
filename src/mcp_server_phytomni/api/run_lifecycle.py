@@ -413,6 +413,9 @@ def run_record_to_dict(record: Any) -> dict[str, Any]:
     if _result_tracking_is_degraded(result):
         payload["degraded_tracking"] = True
     if record.spec.agent == "research":
+        # Research queries may embed private object references or evidence.
+        # Its public lifecycle contract exposes only the safe derived state.
+        payload.pop("query")
         stage, failure = project_research_lifecycle(
             record.status, record.stage, record.failure
         )

@@ -5,9 +5,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -26,6 +29,7 @@ from mcp_server_phytomni.agents.research import (
 )
 from mcp_server_phytomni.agents.research import recovery as recovery_module
 from mcp_server_phytomni.agents.research.dispatch_outbox import (
+    ResearchDispatchDisposition,
     ResearchDispatchOutbox,
     ResearchDispatchRecord,
     persist_plan_and_outbox,
@@ -42,7 +46,13 @@ from mcp_server_phytomni.agents.research.recovery import (
     ResearchRecoveryService,
 )
 from mcp_server_phytomni.api import research_input as research_input_api
-from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
+from mcp_server_phytomni.runtime.research_input_store import (
+    ResearchInputStore,
+    cancel_research_run,
+)
+from mcp_server_phytomni.runtime.research_input_store_support import (
+    ResearchCancellationOutcome,
+)
 from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
 from mcp_server_phytomni.storage.research_objects import (
     DirectResearchObjectMetadataPort,
@@ -144,6 +154,32 @@ def _plan(count: int = 2) -> ResearchPlan:
 def _authority_verifier(_row: ResearchDispatchRecord) -> bool:
     """Stand in for the real metadata authority port in legacy tests."""
     return True
+
+
+def _resolution_revision(store: ResearchInputStore, run_id: str) -> int:
+    """Return the current parent CAS revision for a test run."""
+    resolution = store.load_resolution(run_id)
+    assert resolution is not None
+    return int(resolution["revision"])
+
+
+def _outbox_race_rows(
+    store: ResearchInputStore, dispatch_id: str
+) -> tuple[tuple[object, ...], tuple[object, ...]]:
+    """Read public parent and durable outbox state after the race."""
+    with sqlite3.connect(store.db_path) as connection:
+        parent = connection.execute(
+            "SELECT status, revision FROM runs WHERE run_id = ?",
+            ("run-1",),
+        ).fetchone()
+        outbox = connection.execute(
+            "SELECT state, remote_task_id FROM research_dispatch_outbox "
+            "WHERE outbox_id = ?",
+            (dispatch_id,),
+        ).fetchone()
+    assert parent is not None
+    assert outbox is not None
+    return parent, outbox
 
 
 def test_atomic_plan_projection_and_outbox_commit(tmp_path: Path) -> None:
@@ -631,6 +667,63 @@ async def test_pending_dispatch_is_cancelled_when_parent_is_cancelled(
 
     assert disposition.state == "cancelled"
     assert not calls
+
+
+def test_cancel_wins_between_outbox_claim_and_provider_send(
+    tmp_path: Path,
+) -> None:
+    """A cancellation CAS closes a claimed child before provider submission."""
+    store = _store(tmp_path)
+    record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
+        0
+    ]
+    expected_revision = _resolution_revision(store, "run-1")
+    signals = SimpleNamespace(
+        verification_started=threading.Event(),
+        cancellation_committed=threading.Event(),
+        calls=[],
+    )
+
+    async def verify(_row: ResearchDispatchRecord) -> bool:
+        signals.verification_started.set()
+        if not signals.cancellation_committed.wait(timeout=10):
+            raise AssertionError("cancellation did not commit")
+        return True
+
+    async def submit(_row: ResearchDispatchRecord) -> object:
+        signals.calls.append("submit")
+        return {"task_id": "must-not-submit"}
+
+    def dispatch_child() -> ResearchDispatchDisposition:
+        async def run() -> ResearchDispatchDisposition:
+            return await ResearchDispatchOutbox(
+                store,
+                submit=submit,
+                authority_verifier=verify,
+            ).dispatch_once(record.dispatch_id, "worker-a")
+
+        return asyncio.run(run())
+
+    def cancel_parent() -> ResearchCancellationOutcome:
+        try:
+            return cancel_research_run(
+                store, "run-1", "owner", expected_revision
+            )
+        finally:
+            signals.cancellation_committed.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        dispatch_task = executor.submit(dispatch_child)
+        assert signals.verification_started.wait(timeout=10)
+        cancellation = executor.submit(cancel_parent).result(timeout=10)
+        disposition = dispatch_task.result(timeout=10)
+
+    assert cancellation.status == "cancelled"
+    assert disposition.state != "accepted"
+    assert not signals.calls
+    parent, outbox = _outbox_race_rows(store, record.dispatch_id)
+    assert parent == ("cancelled", expected_revision + 1)
+    assert outbox == ("cancelled", None)
 
 
 @pytest.mark.asyncio

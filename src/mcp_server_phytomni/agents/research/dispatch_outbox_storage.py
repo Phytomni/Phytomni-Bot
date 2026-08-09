@@ -78,6 +78,39 @@ def _digest(value: object) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def is_valid_digest(value: object) -> bool:
+    """Return whether a persisted digest has the canonical SHA-256 shape."""
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and value == value.lower()
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def payload_is_consistent(
+    payload: object,
+    payload_digest: object,
+    output_dir: object,
+    dispatch_fingerprint: object,
+) -> bool:
+    """Reject tampered payloads while retaining blank-digest legacy rows."""
+    if not payload_digest:
+        return True
+    if not isinstance(payload, Mapping) or not isinstance(payload_digest, str):
+        return False
+    if not is_valid_digest(payload_digest) or payload_digest != _digest(
+        payload
+    ):
+        return False
+    if "output_dir" not in payload or "dispatch_fingerprint" not in payload:
+        return False
+    return (
+        payload["output_dir"] == output_dir
+        and payload["dispatch_fingerprint"] == dispatch_fingerprint
+    )
+
+
 def task_id(value: object) -> str | None:
     """Extract one bounded task identity from a provider response."""
     if isinstance(value, str) and value.strip():

@@ -122,6 +122,7 @@ def validate_research_attachment_bundle(
     assets = bundle.all_assets
     if (
         len(assets) > config.API_MAX_ATTACHMENTS_PER_REQUEST
+        or len(bundle.datasets) > config.API_MAX_RESEARCH_DATASET_PATHS
         or len(assets) > config.API_MAX_RESEARCH_INPUT_REFERENCES
     ):
         _raise(
@@ -129,7 +130,8 @@ def validate_research_attachment_bundle(
             "Uploaded attachments exceed the allowed limit.",
         )
     _validate_budget_sizes(
-        tuple(asset.size_bytes for asset in bundle.documents)
+        tuple(asset.size_bytes for asset in bundle.documents),
+        max_files=config.API_MAX_ATTACHMENTS_PER_REQUEST,
     )
     return managed_research_assets_from_bundle(bundle)
 
@@ -210,7 +212,14 @@ def validate_agent_attachments(
             "attachment_not_found",
             "The attachment could not be verified.",
         )
-    _validate_budget_sizes((*document_sizes, *dataset_sizes))
+    max_files = (
+        ApiLimitsConfig().API_MAX_ATTACHMENTS_PER_REQUEST
+        if agent == "research"
+        else MAX_FILES
+    )
+    _validate_budget_sizes(
+        (*document_sizes, *dataset_sizes), max_files=max_files
+    )
     return AttachmentSelection(
         documents=documents,
         datasets=datasets,
@@ -676,9 +685,11 @@ def _validate_extension(
         )
 
 
-def _validate_budget_sizes(sizes: Sequence[int]) -> None:
+def _validate_budget_sizes(
+    sizes: Sequence[int], *, max_files: int = MAX_FILES
+) -> None:
     """Enforce inclusive limits across managed and registered uploads."""
-    if len(sizes) > MAX_FILES:
+    if len(sizes) > max_files:
         _raise(
             "attachment_limit_exceeded",
             "Uploaded attachments exceed the allowed limit.",

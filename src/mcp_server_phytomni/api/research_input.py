@@ -430,6 +430,7 @@ class ResearchRoutePreflight:
             raise research_input_failure(
                 "research_input_limit_exceeded",
                 "Research query exceeds the allowed limit.",
+                http_status_hint=413,
             )
         parsed = self._parse(request.original_query)
         managed_snapshot = self._resolve_managed_snapshot(
@@ -819,6 +820,7 @@ def _validate_caller_preflight(
         raise research_input_failure(
             "research_input_limit_exceeded",
             "Research query exceeds the allowed limit.",
+            http_status_hint=413,
         )
     if not _valid_caller_semantics(request):
         raise research_input_failure(

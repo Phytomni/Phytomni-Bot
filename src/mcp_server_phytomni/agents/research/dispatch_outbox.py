@@ -44,7 +44,6 @@ _UNAVAILABLE: ResearchErrorCode = "research_input_resolution_unavailable"
 _TERMINAL = ("succeeded", "failed", "cancelled")
 _LEASE = timedelta(seconds=60)
 _MAX_PAYLOAD_CHARS = 1_048_576
-_DIGEST_SIZE = 64
 _OUTBOX_SELECT = "SELECT * FROM research_dispatch_outbox WHERE outbox_id = ?"
 _OUTBOX_FAILURES = (Exception,)
 _CANCEL_OPTIONS = ("cancelled", _UNAVAILABLE, ("pending", "leased"))
@@ -316,7 +315,7 @@ def _commit_plan(
                     "now": now,
                     "parent_revision": parent_revision,
                 },
-                _valid_digest,
+                _storage.is_valid_digest,
                 ResearchPlanCommitError,
             )
         return _existing_enqueue_rows(connection, run_id, payload.children)
@@ -656,8 +655,9 @@ async def recover_dispatch_outbox(
 def _validated_children(
     run_id: str, prepared: object, plan: object
 ) -> tuple[dict[str, Any], ...]:
+    validator = _storage.is_valid_digest
     return _storage.plan_children(
-        run_id, prepared, plan, _valid_digest, ResearchPlanCommitError
+        run_id, prepared, plan, validator, ResearchPlanCommitError
     )
 
 
@@ -697,6 +697,13 @@ def _load_row(
         payload, grants = {}, []
     if not isinstance(payload, Mapping) or not isinstance(grants, list):
         payload, grants = {}, []
+    if not _storage.payload_is_consistent(
+        payload,
+        row["payload_digest"],
+        row["output_dir"] or "",
+        row["dispatch_fingerprint"],
+    ):
+        return None
     return _OutboxRow(
         record=ResearchDispatchRecord(
             dispatch_id=row["outbox_id"],
@@ -958,15 +965,6 @@ def _schedule_awaitable(value: Awaitable[object]) -> None:
     except RuntimeError:
         return
     asyncio.ensure_future(value, loop=loop)
-
-
-def _valid_digest(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == _DIGEST_SIZE
-        and value == value.lower()
-        and all(character in "0123456789abcdef" for character in value)
-    )
 
 
 def _canonical_json(value: object) -> str:
