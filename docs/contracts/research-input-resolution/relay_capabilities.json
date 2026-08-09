@@ -1,0 +1,14 @@
+{
+  "protocol": "research_input_resolution_v1",
+  "protocols": {
+    "research_object_grant_v1": [
+      1
+    ]
+  },
+  "research_object_grant": {
+    "max_objects": 256,
+    "version": 1
+  },
+  "service_scope": "relay:research-input",
+  "version": 1
+}

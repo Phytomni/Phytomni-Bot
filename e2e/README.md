@@ -236,6 +236,36 @@ The fault-injected module refuses to start unless integration is explicitly
 enabled, the failure count is exactly three, and its task database resolves
 below `/tmp`.
 
+### Research input-resolution acceptance
+
+`test_research_input_resolution_e2e.py` is a separate, manually gated HTTP
+acceptance for the three approved Research grammars. It uses local disposable
+SQLite paths through the existing API helper and requires exactly eleven
+operator-approved synthetic object references. It also checks same-key replay,
+same-key conflict, the four public stages, terminal settlement, and public
+redaction. It does not publish the references or retain response bodies.
+
+Run it only after explicitly proving that the configured OBS, resolver model,
+API key, and local service are development/non-production resources. If that
+proof is unavailable, leave the result as `Needs Verification` and do not
+issue a network call; hostname or a synthetic-looking string alone is not
+proof. Production rollout and Web/Go acceptance are outside this suite.
+
+```bash
+PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
+PHYTOMNI_E2E_RESEARCH_INPUT=1 \
+PHYTOMNI_E2E_RESEARCH_INPUT_OBJECT_REFS="$RESEARCH_SYNTHETIC_REFS_JSON" \
+uv run pytest -v e2e/test_research_input_resolution_e2e.py \
+  -m 'integration and network'
+```
+
+The reference array must contain eleven unique configured-bucket objects in
+the approved synthetic namespace; do not place credentials, buckets, URLs,
+queries, paper text, or real object names in shell history or evidence. The
+only safe evidence is a reference count, SHA-256 digest, sanitized run id,
+stable error code, duration, and stage timeline. A scientific child that does
+not finish within the configured business timeout remains `Needs Verification`.
+
 ### Rerank isolation probe
 
 `test_rerank_probe_e2e.py` isolates the rerank hop of the

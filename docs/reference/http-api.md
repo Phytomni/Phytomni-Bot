@@ -1249,6 +1249,80 @@ evidence, development object-storage/model/remote-platform runs, staging, and
 production activation remain separate `Needs Verification` evidence and are
 not closed by this Bot packet.
 
+## Research Input Resolution
+
+Research runs use the existing native/Expert HTTP routes and add a bounded
+input-resolution phase. `POST /v1/agents/research/runs` accepts the normal
+`arguments.user_query` plus optional managed `attachments` with opaque
+`asset_id` values. `POST /v1/query/route` reaches the same coordinator when
+the trusted allowlist selects `InSilicoResearchAgent`; the selected agent is
+never inferred from a client-pasted storage reference. A non-conversation
+request requires an `Idempotency-Key` header. The private conversation
+context envelope may supply the identity when that independently gated
+contract is present.
+
+The first accepted request returns HTTP `202` with the normal `agent.run`
+acknowledgement and a sanitized `run_id`. Same-identity/same-fingerprint
+replay returns the durable run without a second input-resolution or child
+submission. Same identity with a different query, attachment identity,
+locale, or execution fingerprint returns `409`
+`research_idempotency_conflict`. Missing or malformed non-conversation
+identity returns `400` `research_idempotency_key_required` without creating a
+run. `GET /v1/runs/{run_id}`, list, and refresh use the same projection.
+
+Only these public nonterminal stages are valid:
+`input_resolution`, `planning`, `execution`, and `report_assembly`. A stage
+does not imply success. Terminal rows clear the stage. Failed Research rows
+retain `error: "run failed"` and add a bounded `failure` object with stable
+`code`, safe `message`, `stage`, `retryable`, and `http_status_hint` fields.
+The complete stable-code and lifecycle packet is in
+[`docs/contracts/research-input-resolution/`](../contracts/research-input-resolution/).
+
+The parser accepts only: a trailing `data:` label with strict JSON, a fenced
+strict JSON object associated with `data:`, or one configured-bucket object
+reference per line with an optional ASCII Tab hint. It rejects duplicate
+keys, non-string JSON values, comments, trailing commas, ambiguous
+delimiters, schemes, traversal, controls, placeholders, missing exact keys,
+duplicates, and unsupported longest suffixes. It preserves original Unicode
+query text and recognized source spans. Managed assets are resolved
+owner-scoped from completed server records. Pasted references use exact-key
+metadata/snapshot verification only; this lane cannot list objects, download
+bodies, write, delete, sign URLs, or obtain credentials. `relay:obs` and MCP
+contracts remain unchanged.
+
+The effective descriptor is advertised in `GET /v1/agents` only when the
+runtime is ready. Defaults are 64 managed, 64 pasted, and 128 combined
+references; each hard limit is 256. The current query defaults to 131072
+Unicode code points with a 1048576 hard ceiling. Direct mode requires a
+constructible configured-OBS metadata port. Relay mode additionally requires
+a fresh authenticated `research_object_grant_v1` version-1 snapshot with
+`relay:research-input` or `relay:*` authority and sufficient maxima. Missing,
+stale, incompatible, or lower-capacity capability fails closed with
+`research_input_protocol_unavailable`.
+
+Owner-scoped `POST /v1/runs/{run_id}/cancel` uses a durable compare-and-set.
+Cancellation before the mark-before-send boundary wins and stops new work;
+late callbacks cannot reopen a terminal run. Cancellation after a child is
+accepted/sent returns `409` `research_cancel_conflict`. Relay grants follow
+resolve → verify → use → revoke, are bound to the parent run and execution
+fingerprint, and never authorize list/body/write/delete operations. The
+capability cache TTL is 300 seconds with a 30-second failure cooldown,
+single-flight refresh, and a 10-second handshake timeout. Work leases are 60
+seconds with 20-second heartbeats; outbox leases are 60 seconds and are
+mark-before-send. Grants live 180 minutes, rotate within 15 minutes of expiry
+when snapshots are unchanged, and are purge-eligible after a 24-hour grace.
+
+The contract has no Research feature flag. Mixed versions fail closed through
+the protocol descriptor and relay capability handshake. Development
+acceptance may use local SQLite, an existing OBS and model explicitly proved
+non-production, and synthetic objects.
+
+Without that proof, record `Needs Verification` and make no network call.
+
+This Bot fixture packet proves only
+sanitized shape, serializer/validator alignment, and local redaction; it does
+not prove Web/Go, paired runtime, staging, production rollout, or activation.
+
 Native example using a completed asset:
 
 ```bash

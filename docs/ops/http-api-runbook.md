@@ -1203,6 +1203,81 @@ with the request id, OBS listing, and service logs before any action. Do not
 delete objects or registry rows automatically from this runbook; cleanup
 requires evidence from both the object store and the registry.
 
+### Research Input Resolution Preflight And Recovery
+
+Research input resolution is an additive contract on the native Research run
+and trusted Expert route. It has no `RESEARCH_INPUT_RESOLUTION_ENABLED` flag;
+mixed versions fail closed through the protocol descriptor and relay
+capability handshake. The copyable sanitized packet is
+[`docs/contracts/research-input-resolution/`](../contracts/research-input-resolution/).
+
+Before a Research request reaches a child, check `GET /v1/agents`. The
+`research_input_resolution_v1` protocol and sibling descriptor appear only
+when the effective limits are valid and direct/relay object authority is
+ready. Defaults are 64 managed references, 64 pasted exact-key references,
+and 128 combined references, with 256 hard ceilings; the current query is
+131072 Unicode code points by default and 1048576 at the hard ceiling. The
+catalog's scientific formats are generated from the same longest-suffix
+registry used by parser and inventory validation.
+
+Use a non-conversation `Idempotency-Key` on every first request. The same key
+and fingerprint replays the durable run without re-resolving input or
+resubmitting a child. A different identity tuple under the same key returns
+`409 research_idempotency_conflict`; missing/malformed identity returns
+`400 research_idempotency_key_required` before a run exists. A valid accepted
+request returns `202` with a sanitized `run_id`; poll the owner-scoped run
+resource for the four public stages (`input_resolution`, `planning`,
+`execution`, `report_assembly`) and terminal `succeeded`, `failed`, or
+`cancelled` state. Failed rows retain `error: "run failed"` and add the
+bounded stable `failure` object.
+
+The parser accepts only trailing strict `data:` JSON, fenced strict `data:`
+JSON, or one configured-bucket reference per line with an optional ASCII Tab
+hint. Do not paste an OBS URL, local path, bucket name, archive body, or
+provider payload. Managed `attachments` carry opaque completed `asset_id`
+values only. Pasted references are checked through exact-key metadata and
+snapshot verification; this authority never lists, downloads bodies, writes,
+deletes, signs URLs, or returns credentials. `relay:obs` and MCP remain
+unchanged.
+
+Direct mode requires a constructible configured OBS metadata port. Relay-child
+mode additionally requires an authenticated fresh
+`research_object_grant_v1` version-1 snapshot with `relay:research-input` or
+`relay:*` and enough object maxima. Missing/stale/incompatible/lower-capacity
+capability is a fail-closed `research_input_protocol_unavailable`. The relay
+capability cache lives for 300 seconds, suppresses failed refreshes for 30
+seconds, uses one in-flight refresh, and gives a handshake 10 seconds.
+
+The run-bound grant sequence is resolve → verify → use → revoke. Grants are
+bound to the principal, parent run, execution fingerprint, dataset id, and
+snapshot. They live 180 minutes, may rotate within 15 minutes of expiry only
+when the snapshot is unchanged, and are purge-eligible after a 24-hour grace.
+Revoke is idempotent; a failed revoke records private bounded recovery and
+never reopens a terminal run. A revoked, expired, foreign, or changed-snapshot
+grant must never be used.
+
+Work-unit leases last 60 seconds and heartbeat every 20 seconds. The dispatch
+outbox also uses a 60-second lease and marks a request `sent` before calling a
+provider. Recovery reclaims only work proven not to cross `sent`; an ambiguous
+post-send call is reconciled or remains unavailable and is never blind-retried.
+Private resolution/work/outbox state is purged in dependency-safe order with
+the parent. Existing run retention defaults are 24 hours for successful rows
+and 7 days for failed rows; purge never deletes the user's dataset.
+
+Owner-scoped cancellation wins via durable compare-and-set before new work is
+claimed. Cancel before send is terminal success for cancellation; after an
+accepted/sent child it returns `409 research_cancel_conflict`. Late callbacks
+cannot reopen the run. During an incident, capture only counts, digests,
+durations, stable codes, sanitized ids, and stage timelines. Do not capture
+keys, cookies, endpoints, buckets, object names, paths, queries, prompts,
+paper text, raw provider output, or local SQLite files.
+
+Local acceptance may use development SQLite, an existing OBS/model, and
+synthetic objects only after endpoint ownership is explicitly proven
+non-production. If that proof is absent, record `Needs Verification` and do
+not issue network calls. This Bot runbook does not claim Web/Go, paired
+runtime, staging, production rollout, or activation acceptance.
+
 ## Expert Routing Operations
 
 `POST /v1/query/route` is a constrained Expert-routing endpoint. It accepts

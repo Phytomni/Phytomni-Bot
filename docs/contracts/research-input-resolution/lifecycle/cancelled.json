@@ -1,0 +1,10 @@
+{
+  "protocol": "research_input_resolution_v1",
+  "run": {
+    "error": "run cancelled",
+    "run_id": "run_fixture_001",
+    "stage": null,
+    "status": "cancelled"
+  },
+  "version": 1
+}

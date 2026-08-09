@@ -1,0 +1,17 @@
+{
+  "protocol": "research_input_resolution_v1",
+  "run": {
+    "error": "run failed",
+    "failure": {
+      "code": "research_dataset_not_found",
+      "http_status_hint": 422,
+      "message": "Research request could not be completed.",
+      "retryable": false,
+      "stage": "input_resolution"
+    },
+    "run_id": "run_fixture_001",
+    "stage": null,
+    "status": "failed"
+  },
+  "version": 1
+}

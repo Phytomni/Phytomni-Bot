@@ -1,0 +1,13 @@
+{
+  "error": {
+    "code": "research_dataset_format_unsupported",
+    "http_status_hint": 422,
+    "message": "Research request could not be completed.",
+    "request_id": "req_fixture_001",
+    "retryable": false,
+    "stage": "input_resolution"
+  },
+  "http_status": 422,
+  "protocol": "research_input_resolution_v1",
+  "version": 1
+}

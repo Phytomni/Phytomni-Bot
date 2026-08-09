@@ -1,0 +1,9 @@
+{
+  "protocol": "research_input_resolution_v1",
+  "run": {
+    "run_id": "run_fixture_001",
+    "stage": "planning",
+    "status": "running"
+  },
+  "version": 1
+}

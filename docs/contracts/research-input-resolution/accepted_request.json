@@ -1,0 +1,16 @@
+{
+  "protocol": "research_input_resolution_v1",
+  "request": {
+    "attachments": [
+      {
+        "asset_id": "asset_fixture_001"
+      },
+      {
+        "asset_id": "asset_fixture_002"
+      }
+    ],
+    "idempotency_key": "research_fixture_idempotency_001",
+    "query": "Describe the attached synthetic datasets."
+  },
+  "version": 1
+}

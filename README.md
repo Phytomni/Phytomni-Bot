@@ -170,6 +170,19 @@ and [operator
 runbook](docs/ops/http-api-runbook.md#attachment-preflight-and-orphan-review)
 for the capability matrix, stable error codes, and orphan review boundary.
 
+Research input resolution is a separate exact-key contract layered on the
+existing Research run surface. It accepts only the three documented `data:` /
+configured-bucket grammars, preserves query spans, resolves managed assets
+owner-scoped, and resolves pasted dataset metadata without list or body access.
+The request-wide defaults are 64 managed references, 64 pasted references,
+and 128 combined references (each hard-capped at 256); the effective values
+are advertised only by the versioned `research_input_resolution_v1` descriptor
+when direct or relay readiness is proven. Idempotent admission, four public
+stages, cancellation, bounded failure projections, and relay grants remain
+separate from the unchanged `relay:obs` and MCP contracts. Copyable sanitized
+fixtures and the operator boundary are in the
+[Research input-resolution contract packet](docs/contracts/research-input-resolution/README.md).
+
 HTTP streaming has two explicit failure boundaries. The API eagerly prepares
 the tool and primes the first AG-UI event before committing SSE response
 headers; setup or priming failures are ordinary JSON errors and settle a

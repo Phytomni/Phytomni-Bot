@@ -1,0 +1,132 @@
+{
+  "files": [
+    {
+      "path": "accepted_request.json",
+      "sha256": "1ef84eb284b194f9d262841f9a5707748eabb28bd624c607a60e81001cade9a4",
+      "trailing_newline": true
+    },
+    {
+      "path": "catalog.json",
+      "sha256": "d671507af5a1bd7bdf28bb60ca87c94c384fef09439c2802c10b80377b97715a",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_cancel_conflict.json",
+      "sha256": "008a426567e134be21f994d9cfcb8aad22a6088837ef1f73056342a23ef2297a",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_data_block_invalid.json",
+      "sha256": "c6989ac93b6dc7705ab40705301a431361b8f312747a76acc579c31926b9634a",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_dataset_duplicate.json",
+      "sha256": "32a769adab946dd3e85ddb52436f22f243eaf724db86378f9c6239354d8974b7",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_dataset_format_unsupported.json",
+      "sha256": "714e1d3327c7eafeb4ffeebc2e59c7240e2f0a59fc9004835f7dda7ffa05d321",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_dataset_not_found.json",
+      "sha256": "692589cd916a4b19e66988227eb8948d990fb5f4b505c9654c8ac2b25407942b",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_dataset_path_invalid.json",
+      "sha256": "f84061a6d24ee264bbf88d3ab178ee9af8d329a642b5f6b07e25e34a0f9ac8e1",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_document_extraction_failed.json",
+      "sha256": "b3c80b6352a4d6f06610ec9ba21baf3ef7e89d7be1c6390f30b15ed99cff1caa",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_idempotency_conflict.json",
+      "sha256": "62ee8f0038ad3a1707774090aa40d8a410c544eca2270d602795a11abdaf6d7e",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_idempotency_key_required.json",
+      "sha256": "e0260993c7afbd206eb8e44d0ccf07350a2e15fea027bd4a3153e3a4f318d9f4",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_input_limit_exceeded.json",
+      "sha256": "108382c7d695a567bb51264ed5c145d60cba7ac3f8804c382c1e6f44d59eabb1",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_input_protocol_unavailable.json",
+      "sha256": "cbffbb9a01e9f32f67825d5392fb8cb06cccd04114071cf1e1343217568d0b9f",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_input_resolution_failed.json",
+      "sha256": "e303c59ca27ac8bd7981984f8f86540468b0c2c3846d1630a7b43275fa42f02c",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_input_resolution_unavailable.json",
+      "sha256": "e2b472715d441335be9a4fd431c86411ceca0ce735e55c35e42067dbeb93a21b",
+      "trailing_newline": true
+    },
+    {
+      "path": "errors/research_run_tracking_failed.json",
+      "sha256": "7fb318cec192506759a0a770fbd8495d3645c7e5f964f0e414239e3701444d50",
+      "trailing_newline": true
+    },
+    {
+      "path": "lifecycle/cancelled.json",
+      "sha256": "f8eb8da9c8cec47a201e3ef2e4e73d9179abeebbbe7579d04408eda6ed3a119b",
+      "trailing_newline": true
+    },
+    {
+      "path": "lifecycle/execution.json",
+      "sha256": "c9f663e2ea35bba66e5f0743bf40cefb8290807f52ac0e8b770686af7cfb9083",
+      "trailing_newline": true
+    },
+    {
+      "path": "lifecycle/failed.json",
+      "sha256": "14ee725a8497a6d3beb9aa782b60b4738b0079de82aedd18d177ea4ace00d71e",
+      "trailing_newline": true
+    },
+    {
+      "path": "lifecycle/input_resolution.json",
+      "sha256": "b592bdb6c45d3184972c7e4f54f9694fa577d61e76fc09171e2462425f4822d6",
+      "trailing_newline": true
+    },
+    {
+      "path": "lifecycle/planning.json",
+      "sha256": "37f8d2e127d2aaa38b7d84bab23880b88be51fbb416a8b512c4c43ad8fad03b3",
+      "trailing_newline": true
+    },
+    {
+      "path": "lifecycle/report_assembly.json",
+      "sha256": "49eefeb09cf9b3198259d9401f6f3efa5b48b115fcd06dee9808807afb4a02f3",
+      "trailing_newline": true
+    },
+    {
+      "path": "lifecycle/succeeded.json",
+      "sha256": "ff9e9f9d3f7f60ce8706aa4dcebc8210e1c277d510471c64f9a9142b1343a486",
+      "trailing_newline": true
+    },
+    {
+      "path": "relay_capabilities.json",
+      "sha256": "b5e54cbfa0246928e7bc17f9ae52894ed3fde6bb99b7aa8543a7f74775ed540b",
+      "trailing_newline": true
+    }
+  ],
+  "manifest": {
+    "path": "manifest.json",
+    "sha256": null,
+    "trailing_newline": true
+  },
+  "protocol": "research_input_resolution_v1",
+  "trailing_newline": true,
+  "version": 1
+}

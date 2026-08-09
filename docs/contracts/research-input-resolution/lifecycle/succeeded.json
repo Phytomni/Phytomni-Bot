@@ -1,0 +1,16 @@
+{
+  "protocol": "research_input_resolution_v1",
+  "run": {
+    "datasets": [
+      {
+        "confidence": "high",
+        "description": "Synthetic dataset description.",
+        "id": "dataset_001"
+      }
+    ],
+    "run_id": "run_fixture_001",
+    "stage": null,
+    "status": "succeeded"
+  },
+  "version": 1
+}

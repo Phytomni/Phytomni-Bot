@@ -510,6 +510,46 @@ single env var carries the full map.
   **Purpose:** Maximum UTF-8 bytes in one local A2A answer artifact; bounded to
   `1024..16777216`. Accepts `PHYTOMNI_A2A_MAX_ARTIFACT_BYTES`.
 
+### Research Input Resolution Limits
+
+Research input resolution is not feature-flagged. These four settings are
+validated by the shared `ApiLimitsConfig`, accept the unprefixed or
+`PHYTOMNI_` alias, and are advertised in `research_input_resolution_v1` only
+when direct or relay readiness is true. Raising a lane limit cannot raise
+upload concurrency, storage quota, document bytes, archive expansion, or
+child fan-out.
+
+- **Variable:** `API_MAX_USER_QUERY_CHARS`
+  **Default:** `131072`
+  **Hard maximum:** `1048576`
+  **Sensitive?:** no
+  **Purpose:** Current Research query Unicode code-point limit; prior
+  conversation history remains separately bounded.
+
+- **Variable:** `API_MAX_ATTACHMENTS_PER_REQUEST`
+  **Default:** `64`
+  **Hard maximum:** `256`
+  **Sensitive?:** no
+  **Purpose:** Request-wide managed document plus dataset reference limit.
+
+- **Variable:** `API_MAX_RESEARCH_DATASET_PATHS`
+  **Default:** `64`
+  **Hard maximum:** `256`
+  **Sensitive?:** no
+  **Purpose:** Pasted exact-key Research dataset reference limit.
+
+- **Variable:** `API_MAX_RESEARCH_INPUT_REFERENCES`
+  **Default:** `128`
+  **Hard maximum:** `256`
+  **Sensitive?:** no
+  **Purpose:** Combined managed and pasted Research reference limit. It must
+  be at least as large as either lane limit.
+
+The separate document conversion budgets remain 25 MiB per document and
+50 MiB total converted documents. Metadata-only pasted datasets do not consume
+that conversion aggregate. The canonical suffix registry supplies the
+Research format catalog and longest compound-suffix classifier.
+
 ### Attachment Invocation Limits
 
 The resumable transfer ceiling is `API_UPLOAD_V2_MAX_BYTES` (10 GiB by
