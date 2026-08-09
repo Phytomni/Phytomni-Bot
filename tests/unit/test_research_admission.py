@@ -86,14 +86,8 @@ def _request(
 def _store(tmp_path: Path) -> tuple[ResearchInputStore, str]:
     """Create the shared run database used by admission tests."""
     database = str(tmp_path / "research-admission.db")
-    RunRegistry(database).create_run(
-        RunSpec(
-            run_id="unrelated",
-            user_id="owner-1",
-            agent="research",
-            origin="api",
-        )
-    )
+    registry = RunRegistry(database)
+    registry.create_run(RunSpec("unrelated", "owner-1", "research", "api"))
     return ResearchInputStore(database), database
 
 
