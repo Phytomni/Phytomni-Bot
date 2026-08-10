@@ -10,9 +10,7 @@ coordination.
 """
 
 import asyncio
-from contextlib import nullcontext
 from typing import Any, NamedTuple
-from weakref import WeakKeyDictionary
 
 from httpx import (
     AsyncClient,
@@ -43,10 +41,6 @@ from .retrieval_options import (
     RetrievePayloadOptions,
     RetryOptions,
 )
-
-_RERANK_SEM_STATE: WeakKeyDictionary[
-    asyncio.AbstractEventLoop, asyncio.Semaphore
-] = WeakKeyDictionary()
 
 
 class _RetrieveCacheKey(NamedTuple):
@@ -95,29 +89,6 @@ class _RerankBatchRequest(NamedTuple):
     timeout: float
     max_retries: int
     retriable_codes: tuple[int, ...]
-
-
-def _rerank_semaphore() -> Any:
-    """Return the current loop's rerank semaphore or a null context."""
-    cap = KNOWLEDGE_CONFIG.RERANK_CONCURRENCY
-    if cap <= 0:
-        return nullcontext()
-    loop = asyncio.get_running_loop()
-    semaphore = _RERANK_SEM_STATE.get(loop)
-    if semaphore is None:
-        semaphore = asyncio.Semaphore(cap)
-        _RERANK_SEM_STATE[loop] = semaphore
-    return semaphore
-
-
-def reset_rerank_semaphore_state() -> None:
-    """Clear the per-loop rerank semaphore registry."""
-    _RERANK_SEM_STATE.clear()
-
-
-def rerank_semaphore_state_size() -> int:
-    """Return the number of live per-loop semaphores."""
-    return len(_RERANK_SEM_STATE)
 
 
 @func_cache(key_params=["cache_key"], ttl=LONG_TTL_SECONDS)
@@ -416,39 +387,36 @@ async def _rerank_batch(
     client: AsyncClient,
     request: _RerankBatchRequest,
 ) -> list[dict[str, Any]]:
-    """Send one rerank request batch under the per-loop semaphore."""
-    async with _rerank_semaphore():
-        body = {
-            "query": request.user_query,
-            "ranking_order": ["title", "content"],
-            "docs": request.docs_batch,
-            "top_n": request.top_n,
-        }
-        if relay_mode_enabled():
-            result = await current_relay_client().post_json(
-                "rerank/rank",
-                json_body=body,
-                message="Failed to rerank",
-                request_timeout=request.timeout,
-            )
-        else:
-            result = await post_json_with_retries(
-                client,
-                JsonPostRequest(
-                    url=request.rerank_url,
-                    headers={"Content-Type": "application/json"},
-                    json_body=body,
-                ),
-                JsonPostRetry(
-                    timeout=request.timeout,
-                    max_retries=request.max_retries,
-                    retriable_codes=request.retriable_codes,
-                    message="Failed to rerank",
-                ),
-            )
-        return (
-            result.get("rank_result", []) if isinstance(result, dict) else []
+    """Send one rerank request batch."""
+    body = {
+        "query": request.user_query,
+        "ranking_order": ["title", "content"],
+        "docs": request.docs_batch,
+        "top_n": request.top_n,
+    }
+    if relay_mode_enabled():
+        result = await current_relay_client().post_json(
+            "rerank/rank",
+            json_body=body,
+            message="Failed to rerank",
+            request_timeout=request.timeout,
         )
+    else:
+        result = await post_json_with_retries(
+            client,
+            JsonPostRequest(
+                url=request.rerank_url,
+                headers={"Content-Type": "application/json"},
+                json_body=body,
+            ),
+            JsonPostRetry(
+                timeout=request.timeout,
+                max_retries=request.max_retries,
+                retriable_codes=request.retriable_codes,
+                message="Failed to rerank",
+            ),
+        )
+    return result.get("rank_result", []) if isinstance(result, dict) else []
 
 
 def _collect_rank_results(

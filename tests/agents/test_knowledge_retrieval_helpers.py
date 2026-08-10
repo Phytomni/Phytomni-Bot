@@ -13,9 +13,7 @@ and the multi-layer clear_retrieval_caches admin seam.
 
 from __future__ import annotations
 
-import asyncio
 from contextlib import asynccontextmanager
-from dataclasses import fields
 from typing import Any, cast
 
 import pytest
@@ -30,15 +28,12 @@ from mcp_server_phytomni.agents.knowledge.retrieval import (
     _multi_retrieve,
     _rerank_batch,
     _rerank_docs,
-    _rerank_semaphore,
     _RerankBatchRequest,
     _retrieve_cached,
     _retrieve_scope_docs,
     _sorted_merged_docs,
     _timeout,
     clear_retrieval_caches,
-    rerank_semaphore_state_size,
-    reset_rerank_semaphore_state,
 )
 from mcp_server_phytomni.agents.knowledge.retrieval_options import (
     RerankOptions as LeafRerankOptions,
@@ -46,7 +41,6 @@ from mcp_server_phytomni.agents.knowledge.retrieval_options import (
 from mcp_server_phytomni.agents.knowledge.retrieval_options import (
     RetrieveOptions,
 )
-from mcp_server_phytomni.config.overrides import RETRIEVAL_CONFIG_FIELD_MAP
 
 pytestmark = pytest.mark.unit
 
@@ -203,27 +197,14 @@ def test_clear_retrieval_caches_invokes_each_layer(
     assert calls == ["multi", "single", "scope"]
 
 
-async def _fire_rerank_fan_out(
-    monkeypatch: pytest.MonkeyPatch, *, cap: int, calls: int
-) -> int:
-    """Fire ``calls`` concurrent ``_rerank_batch`` requests under ``cap``.
-
-    Patches the config cap and the direct HTTP egress with a slow stub
-    that tracks the live in-flight count, then returns the observed
-    peak so callers can assert throttled and unthrottled behavior.
-    """
-    monkeypatch.setattr(
-        retrieval_mod.KNOWLEDGE_CONFIG, "RERANK_CONCURRENCY", cap
-    )
-    reset_rerank_semaphore_state()
-
-    state = {"in_flight": 0, "peak": 0}
+async def test_rerank_batch_has_no_legacy_concurrency_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rerank transport receives its complete request from the batch object."""
+    monkeypatch.setattr(retrieval_mod, "KNOWLEDGE_CONFIG", object())
 
     async def fake_post_json_with_retries(_client, _request, _retry):
-        state["in_flight"] += 1
-        state["peak"] = max(state["peak"], state["in_flight"])
-        await asyncio.sleep(0.02)
-        state["in_flight"] -= 1
+        """Return one deterministic ranking without reading global config."""
         return {"rank_result": [{"id": "x", "score": 1.0}]}
 
     monkeypatch.setattr(retrieval_mod, "relay_mode_enabled", lambda: False)
@@ -231,118 +212,17 @@ async def _fire_rerank_fan_out(
         retrieval_mod, "post_json_with_retries", fake_post_json_with_retries
     )
 
-    async def one() -> None:
-        await _rerank_batch(
-            cast(AsyncClient, None),
-            _RerankBatchRequest(
-                user_query="q",
-                docs_batch=[{"id": "x", "title": "t", "content": "c"}],
-                rerank_url="http://rerank.invalid/rank",
-                top_n=1,
-                timeout=1.0,
-                max_retries=0,
-                retriable_codes=(),
-            ),
-        )
-
-    await asyncio.gather(*(one() for _ in range(calls)))
-    return state["peak"]
-
-
-async def test_rerank_batch_caps_concurrency_at_config_value(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``_rerank_batch`` never exceeds RERANK_CONCURRENCY in flight.
-
-    Patches the config cap to 4 and the HTTP egress to a slow stub that
-    records the live in-flight count, then fires 20 batches at once and
-    asserts the observed peak never crossed the cap.
-    """
-    peak = await _fire_rerank_fan_out(monkeypatch, cap=4, calls=20)
-
-    assert peak <= 4, f"peak {peak} exceeded cap 4"
-    assert peak >= 2, "stub never overlapped; test is vacuous"
-
-
-async def test_rerank_batch_full_fan_out_when_cap_disabled(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A cap of 0 means unthrottled: the peak equals the full fan-out.
-
-    The sentinel test below proves the bypass mechanism (a nullcontext
-    is handed out); this pins the promised behavior itself — with the
-    cap disabled, 20 concurrent ``_rerank_batch`` calls are all in
-    flight at once, so no residual throttle sits on the egress path.
-    """
-    peak = await _fire_rerank_fan_out(monkeypatch, cap=0, calls=20)
-
-    assert peak == 20, f"peak {peak} != 20; disabled path is throttled"
-
-
-def test_rerank_semaphore_is_per_event_loop(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Each event loop gets its own semaphore with no cross-loop error.
-
-    A module-level singleton would raise ``RuntimeError: bound to a
-    different event loop`` on the second loop; the per-loop registry
-    must hand each loop a distinct instance.
-    """
-    monkeypatch.setattr(
-        retrieval_mod.KNOWLEDGE_CONFIG, "RERANK_CONCURRENCY", 4
+    ranked = await _rerank_batch(
+        cast(AsyncClient, None),
+        _RerankBatchRequest(
+            user_query="q",
+            docs_batch=[{"id": "x", "title": "t", "content": "c"}],
+            rerank_url="http://rerank.invalid/rank",
+            top_n=1,
+            timeout=1.0,
+            max_retries=0,
+            retriable_codes=(),
+        ),
     )
-    reset_rerank_semaphore_state()
 
-    seen: list[asyncio.Semaphore] = []
-
-    async def grab() -> None:
-        sem = _rerank_semaphore()
-        async with sem:
-            seen.append(sem)
-
-    def run_in_fresh_loop() -> None:
-        """Run one probe on an explicitly closed event loop."""
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(grab())
-        finally:
-            loop.close()
-
-    run_in_fresh_loop()
-    run_in_fresh_loop()
-
-    assert len(seen) == 2
-    assert seen[0] is not seen[1], "two loops shared one semaphore instance"
-
-
-async def test_rerank_semaphore_bypasses_when_disabled(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A non-positive cap returns a nullcontext (throttling disabled)."""
-    monkeypatch.setattr(
-        retrieval_mod.KNOWLEDGE_CONFIG, "RERANK_CONCURRENCY", 0
-    )
-    reset_rerank_semaphore_state()
-
-    ctx = _rerank_semaphore()
-
-    assert not isinstance(ctx, asyncio.Semaphore)
-    async with ctx:
-        pass
-    assert rerank_semaphore_state_size() == 0
-
-
-def test_rerank_concurrency_is_not_a_per_call_override() -> None:
-    """RERANK_CONCURRENCY stays a deployment-level knob only.
-
-    A per-loop singleton semaphore can only honor the first caller's
-    value, so a per-call override would silently no-op for later
-    callers. Pin the field out of the wrapper override map and the
-    per-call ``RerankOptions`` surface so an accidental future wiring
-    fails here instead of shipping that trap.
-    """
-    assert "rerank_concurrency" not in RETRIEVAL_CONFIG_FIELD_MAP
-    assert "RERANK_CONCURRENCY" not in RETRIEVAL_CONFIG_FIELD_MAP.values()
-    assert "rerank_concurrency" not in {
-        field.name for field in fields(RerankOptions)
-    }
+    assert ranked == [{"id": "x", "score": 1.0}]
