@@ -28,12 +28,7 @@ def build_app(
         Callable[[ResearchAdmissionRequest], ResearchCoordinatorRequest] | None
     ) = None,
 ) -> FastAPI:
-    """Build the serving app with its explicit Research root seam.
-
-    No repository-owned composition currently supplies the full coordinator
-    ports. Omitting the factory deliberately leaves Research HTTP admission
-    unavailable instead of accepting a root that cannot execute.
-    """
+    """Build the serving app with the repository-owned Research root."""
     return create_app(
         research_input_root_request_factory=(
             research_input_root_request_factory

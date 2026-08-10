@@ -435,6 +435,16 @@ def stream_answer_max_bytes() -> int:
     return resolve_stream_answer_max_bytes(ApiConfig().STREAM_ANSWER_MAX_BYTES)
 
 
+def bind_research_input_state(
+    app: FastAPI, root_request_factory: Any, runtime: Any
+) -> None:
+    """Bind Research root and managed-asset factories for lifespan startup."""
+    app.state.research_input_root_request_factory = root_request_factory
+    app.state.research_input_asset_resolver_factory = (
+        runtime.upload_runtime.get_asset_resolver
+    )
+
+
 @asynccontextmanager
 async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Own the process-wide shared HTTP and Gauss clients."""
@@ -445,11 +455,15 @@ async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     root_request_factory = getattr(
         state, "research_input_root_request_factory", None
     )
-    if root_request_factory is None:
+    asset_resolver_factory = getattr(
+        state, "research_input_asset_resolver_factory", None
+    )
+    if root_request_factory is None and asset_resolver_factory is None:
         ensure_research_input_runtime()
     else:
         ensure_research_input_runtime(
-            root_request_factory=root_request_factory
+            root_request_factory=root_request_factory,
+            asset_resolver_factory=asset_resolver_factory,
         )
     await recover_registered_startup()
     try:

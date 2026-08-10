@@ -40,6 +40,7 @@ from ..runtime.research_input_store import (
 )
 from ..storage.path_policy import IdFactory
 from .research_launch import launch_worker
+from .research_root import bind_default_research_root_request_factory
 
 __all__ = [
     "ResearchAdmissionOutcome",
@@ -151,6 +152,8 @@ async def _run_production_coordinator_root(
             request_value = await request_value
     if not isinstance(request_value, ResearchCoordinatorRequest):
         return False
+    if request_value.run_id != run_id:
+        request_value = request_value._replace(run_id=run_id)
     outbox = getattr(coordinator, "outbox", None)
     recovery = getattr(coordinator, "recovery", None)
     if outbox is None or recovery is None:
@@ -176,6 +179,7 @@ def ensure_research_input_runtime(
     root_request_factory: (
         Callable[[ResearchAdmissionRequest], ResearchCoordinatorRequest] | None
     ) = None,
+    asset_resolver_factory: Callable[[], Any] | None = None,
 ) -> Any:
     """Construct the HTTP Research worker before lifespan recovery."""
     runtime = _RUNTIME_STATE["current"]
@@ -186,8 +190,8 @@ def ensure_research_input_runtime(
         analyst_config=ANALYST_CONFIG,
         sensitive_config=sensitive_config,
     )
-    return build_research_input_coordinator(
-        store=ResearchInputStore(db_path or _default_tasks_db_path()),
+    coordinator = build_research_input_coordinator(
+        store=ResearchInputStore(db_path or ApiConfig().API_TASKS_DB_PATH),
         provider=_UnavailableResearchWorkProvider(),
         analyst_agent=analyst_agent,
         analyst_config=ANALYST_CONFIG,
@@ -195,6 +199,13 @@ def ensure_research_input_runtime(
         root_worker=_run_production_coordinator_root,
         root_request_factory=root_request_factory,
     )
+    if root_request_factory is None:
+        _RUNTIME_STATE["current"] = bind_default_research_root_request_factory(
+            coordinator,
+            _RUNTIME_STATE["current"],
+            asset_resolver_factory=asset_resolver_factory,
+        )
+    return coordinator
 
 
 async def launch_research_input_worker(
@@ -214,11 +225,6 @@ async def launch_research_input_worker(
     if inspect.isawaitable(launched):
         launched = await launched
     return launched is True
-
-
-def _default_tasks_db_path() -> str:
-    """Read the API task database without importing the application facade."""
-    return ApiConfig().API_TASKS_DB_PATH
 
 
 @dataclass(frozen=True, slots=True)

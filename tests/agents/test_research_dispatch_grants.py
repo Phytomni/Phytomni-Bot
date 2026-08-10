@@ -53,6 +53,7 @@ def _research_request() -> RemoteAnalysisRequest:
         dispatch_fingerprint="sha256-fixture",
         research_grants=(_grant(),),
         parent_run_id="run_fixture_01",
+        obs_file_list=("obs://fixture-bucket/paper.pdf",),
     )
 
 
@@ -91,6 +92,9 @@ async def test_research_request_threads_fingerprint_and_private_sidecar(
         "execution_fingerprint": "sha256-fixture",
         "objects": [_grant().to_payload()],
     }
+    assert captured["payload"]["obs_file_list"] == [
+        "obs://fixture-bucket/paper.pdf"
+    ]
 
 
 def test_child_explicit_fingerprint_reaches_analyst_input() -> None:

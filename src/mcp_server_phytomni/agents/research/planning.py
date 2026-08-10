@@ -271,7 +271,7 @@ def _validate_prepared(prepared: PreparedResearchInput) -> None:
     for reference, description in prepared.data_list.items():
         if _invalid_bounded_text(reference, _MAX_EFFECTIVE_QUERY_CHARS):
             raise _planning_failure()
-        if _invalid_bounded_text(description, _MAX_DATA_DESCRIPTION_CHARS):
+        if _invalid_data_description(description):
             raise _planning_failure()
 
 
@@ -592,6 +592,15 @@ def _invalid_bounded_text(value: object, limit: int) -> bool:
         not isinstance(value, str)
         or not value.strip()
         or len(value) > limit
+        or any(ord(char) < 32 for char in value)
+    )
+
+
+def _invalid_data_description(value: object) -> bool:
+    """Allow an empty hint only for the remote file-inspection path."""
+    return (
+        not isinstance(value, str)
+        or len(value) > _MAX_DATA_DESCRIPTION_CHARS
         or any(ord(char) < 32 for char in value)
     )
 

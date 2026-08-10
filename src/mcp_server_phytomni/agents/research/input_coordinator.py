@@ -56,6 +56,7 @@ class _DispatchBinding(NamedTuple):
     recovery: Any | None
     auto_dispatch: bool
     store: Any | None
+    metadata_port: Any | None = None
 
 
 class ResearchInputCoordinator:
@@ -87,12 +88,16 @@ class ResearchInputCoordinator:
         self._dispatch_binding = _DispatchBinding(None, False, store)
         runtime = ports.pop("dispatch_runtime", None)
         if runtime is not None:
+            metadata_port = getattr(runtime, "metadata_port", None)
             if self.outbox is not None:
                 raise TypeError("dispatch_runtime cannot combine with outbox")
             self.outbox = getattr(runtime, "outbox", None)
             runtime_store = getattr(self.outbox, "store", store)
             self._dispatch_binding = _DispatchBinding(
-                getattr(runtime, "recovery", None), True, runtime_store
+                getattr(runtime, "recovery", None),
+                True,
+                runtime_store,
+                metadata_port,
             )
             if self.outbox is None:
                 raise TypeError("dispatch_runtime must provide an outbox")
@@ -100,6 +105,7 @@ class ResearchInputCoordinator:
                 self._dispatch_binding.recovery,
                 True,
                 self._dispatch_binding.store,
+                self._dispatch_binding.metadata_port,
             )
         self.expected_revision = ports.pop("expected_revision", 0)
         if self.outbox is None and store is not None:
@@ -153,6 +159,11 @@ class ResearchInputCoordinator:
     def recovery(self) -> Any | None:
         """Expose the restart recovery service when production-wired."""
         return self._dispatch_binding.recovery
+
+    @property
+    def metadata_port(self) -> Any | None:
+        """Expose the production metadata port for HTTP root composition."""
+        return self._dispatch_binding.metadata_port
 
     @property
     def _auto_dispatch(self) -> bool:
@@ -466,10 +477,11 @@ class ResearchInputCoordinator:
         """Build one injected pure plan after native validation."""
         if self.plan is not None:
             return self.plan
-        if self.plan_builder is None:
+        plan_builder = self.plan_builder or self.dependencies.plan_builder
+        if plan_builder is None:
             return None
         try:
-            result = self.plan_builder(prepared, request)
+            result = plan_builder(prepared, request)
             return await result if inspect.isawaitable(result) else result
         except ResearchInputFailure:
             raise
@@ -666,7 +678,11 @@ def _persistence_metadata(value: Any) -> Any:
 
 def _validate_native_payload(prepared: PreparedResearchInput) -> None:
     """Apply the native Pydantic and capability boundary before dispatch."""
-    if not prepared.effective_query.strip():
+    if (
+        not prepared.effective_query.strip()
+        and not prepared.data_list
+        and not prepared.obs_file_list
+    ):
         raise ValueError("Research query is empty")
     payload = {
         "user_query": prepared.effective_query,

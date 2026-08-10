@@ -24,6 +24,7 @@ __all__ = [
     "PreparedResearchAuthority",
     "PreparedResearchInput",
     "join_prepared_research_input",
+    "prepare_research_input_for_remote_inspection",
     "with_execution_fingerprint",
 ]
 
@@ -106,6 +107,51 @@ def join_prepared_research_input(
         execution_fingerprint=fingerprint,
         authority_ids=authority_ids,
         authorities=authorities,
+    )
+
+
+def prepare_research_input_for_remote_inspection(
+    inventory: ResearchInputInventory,
+    *,
+    effective_query: str = "",
+) -> PreparedResearchInput:
+    """Prepare trusted references without inventing dataset descriptions.
+
+    This is the explicit HTTP path for a caller that uploads inputs but leaves
+    the query blank. The remote Research/Analyst platform receives the exact
+    owner-authorized references and empty descriptions, so its model can
+    inspect the files itself. The strict observation resolver remains
+    unchanged for paths that request model-grounded descriptions.
+    """
+    _validate_inventory(inventory)
+    if not isinstance(effective_query, str):
+        raise _failure()
+    documents = tuple(
+        entry.exact_reference
+        for entry in inventory.documents
+        if entry.purpose == "document" and entry.lane == "managed"
+    )
+    if len(documents) != len(inventory.documents):
+        raise _failure()
+    prepared = PreparedResearchInput(
+        effective_query=effective_query,
+        obs_file_list=documents,
+        data_list=MappingProxyType(
+            {entry.exact_reference: "" for entry in inventory.datasets}
+        ),
+        inventory_digest=inventory.digest,
+        evidence_digest="",
+        execution_fingerprint="",
+        authority_ids=tuple(
+            entry.authority_id
+            for entry in inventory.entries
+            if entry.authority_id
+        ),
+        authorities=_prepared_authorities(inventory),
+    )
+    return with_execution_fingerprint(
+        prepared,
+        effective_query=effective_query,
     )
 
 

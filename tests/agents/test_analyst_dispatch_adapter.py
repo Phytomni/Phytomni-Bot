@@ -95,6 +95,16 @@ def test_map_send_payload_unpacks_prompt_parts() -> None:
     assert result["data_list"] == {"sample_a.tsv": "expression matrix"}
 
 
+def test_map_send_payload_forwards_document_context_when_present() -> None:
+    """Research documents reach the Analyst subgraph when supplied."""
+    payload = _sample_payload()
+    payload["obs_file_list"] = ["obs://private/paper.pdf"]
+
+    result = dict(map_send_payload_to_analyst_input(payload))
+
+    assert result["obs_file_list"] == ["obs://private/paper.pdf"]
+
+
 def test_map_send_payload_pins_auto_select_and_preset_plan_constants() -> None:
     """``is_auto_select`` and ``is_preset_plan`` stay pinned constants.
 

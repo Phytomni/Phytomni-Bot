@@ -86,6 +86,7 @@ class RemoteAnalysisRequest(_RemoteAnalysisOptions):
     prompt: RemoteAnalysisPrompt
     compute_resource: str
     output_dir_is_result_child: bool = False
+    obs_file_list: tuple[str, ...] = ()
 
     @property
     def goal_description(self) -> str:
@@ -204,6 +205,8 @@ async def submit_remote_analysis(
     }
     if request.dispatch_fingerprint is not None:
         payload["dispatch_fingerprint"] = request.dispatch_fingerprint
+    if request.obs_file_list:
+        payload["obs_file_list"] = list(request.obs_file_list)
     sidecar = request.research_grant_sidecar()
     if sidecar is not None:
         # This name is deliberately private and is consumed only by the

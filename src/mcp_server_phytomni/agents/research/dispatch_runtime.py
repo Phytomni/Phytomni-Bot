@@ -58,6 +58,7 @@ class ResearchDispatchRuntime:
 
     outbox: ResearchDispatchOutbox
     recovery: ResearchRecoveryService
+    metadata_port: ResearchObjectMetadataPort | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +91,7 @@ class _RuntimeBindings:
             dispatch_fingerprint=row.dispatch_fingerprint,
             research_grants=_grant_uses(payload.get("research_grants")),
             parent_run_id=row.run_id,
+            obs_file_list=_obs_file_list(payload.get("obs_file_list")),
             output_dir_is_result_child=True,
         )
         return await submit_remote_analysis(
@@ -214,7 +216,11 @@ def build_research_dispatch_runtime(
         lease_owner=options.get("lease_owner"),
         grant_revoke=bindings.revoke,
     )
-    return ResearchDispatchRuntime(outbox=outbox, recovery=recovery)
+    return ResearchDispatchRuntime(
+        outbox=outbox,
+        recovery=recovery,
+        metadata_port=bindings.metadata_port,
+    )
 
 
 def _rotate_grants(
@@ -253,6 +259,20 @@ def _metadata_port() -> ResearchObjectMetadataPort:
         config.BUCKET_NAME,
         lambda: operator_obs_client(config.OBS_SERVER),
     )
+
+
+def _obs_file_list(value: object) -> tuple[str, ...]:
+    """Validate persisted document references before Analyst submission."""
+    if value is None:
+        return ()
+    if not isinstance(value, (list, tuple)):
+        raise ResearchObjectMetadataError()
+    documents = tuple(value)
+    if any(
+        not isinstance(item, str) or not item.strip() for item in documents
+    ):
+        raise ResearchObjectMetadataError()
+    return documents
 
 
 def _data_list(value: object) -> dict[str, Any]:

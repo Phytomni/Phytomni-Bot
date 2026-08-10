@@ -225,7 +225,16 @@ def plan_children(
         ordinal, fingerprint, task_name, output_dir = fields
         data = getattr(child, "data_list", None)
         targets = getattr(child, "interop_targets", ())
-        if not isinstance(data, Mapping) or not isinstance(targets, tuple):
+        documents = getattr(prepared, "obs_file_list", ())
+        if (
+            not isinstance(data, Mapping)
+            or not isinstance(targets, tuple)
+            or not isinstance(documents, tuple)
+            or any(
+                not isinstance(item, str) or not item.strip()
+                for item in documents
+            )
+        ):
             raise error_factory()
         seen["fingerprints"].add(cast(str, fingerprint))
         seen["task_names"].add(cast(str, task_name))
@@ -242,6 +251,7 @@ def plan_children(
             "interop_targets": targets,
             "ordinal": ordinal,
             "output_dir": output_dir,
+            "obs_file_list": list(documents),
             "task_name": task_name,
             "thread_id": getattr(child, "thread_id", ""),
         }

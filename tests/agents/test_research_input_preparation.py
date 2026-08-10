@@ -50,6 +50,7 @@ from mcp_server_phytomni.agents.research.input_preparation import (
     PreparedResearchAuthority,
     PreparedResearchInput,
     join_prepared_research_input,
+    prepare_research_input_for_remote_inspection,
     with_execution_fingerprint,
 )
 from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
@@ -145,6 +146,24 @@ def test_join_keeps_inventory_order_and_frozen_trusted_references() -> None:
     assert prepared.execution_fingerprint
     with pytest.raises(TypeError):
         cast(Any, prepared.data_list)["obs://model-added/path"] = "unsafe"
+
+
+def test_remote_inspection_keeps_empty_dataset_hints_and_trusted_paths() -> (
+    None
+):
+    """A file-only request leaves descriptions for the remote model."""
+    document = _entry("document_001", 0, purpose="document", lane="managed")
+    dataset = _entry("dataset_002", 1)
+
+    prepared = prepare_research_input_for_remote_inspection(
+        _inventory(document, dataset),
+        effective_query="",
+    )
+
+    assert prepared.effective_query == ""
+    assert prepared.obs_file_list == (document.exact_reference,)
+    assert dict(prepared.data_list) == {dataset.exact_reference: ""}
+    assert prepared.execution_fingerprint
 
 
 def test_join_carries_exact_private_authority_binding() -> None:

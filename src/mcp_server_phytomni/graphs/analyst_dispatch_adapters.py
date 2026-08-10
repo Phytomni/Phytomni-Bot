@@ -123,6 +123,14 @@ def map_send_payload_to_analyst_input(
         is_auto_select=False,
         is_preset_plan=True,
     )
+    raw_documents = payload.get("obs_file_list")
+    if raw_documents is not None:
+        if not isinstance(raw_documents, (list, tuple)) or any(
+            not isinstance(item, str) or not item.strip()
+            for item in raw_documents
+        ):
+            raise ValueError("obs_file_list must contain non-empty strings")
+        analyst_input["obs_file_list"] = list(raw_documents)
     explicit_fingerprint = payload.get("dispatch_fingerprint")
     if explicit_fingerprint is not None:
         analyst_input["dispatch_fingerprint"] = explicit_fingerprint
@@ -276,10 +284,10 @@ async def submit_analyst_via_subgraph(
 def _dispatch_fingerprint(request: Mapping[str, Any]) -> str:
     """Return the dedup fingerprint for a dispatch request.
 
-    Sub-tasks carry no uploaded documents, so ``obs_file_list`` is empty
-    and the digest keys on the goal description and data list only —
-    the same formula and namespace as the analyst top-level dedup so a
-    given gene's analysis reuses across both entry points.
+    The digest includes the semantic goal and data channels. Document
+    context is carried by the explicit Research dispatch fingerprint, so
+    the same formula and namespace lets a gene analysis reuse the analyst
+    top-level dedup without dropping document identity.
 
     Args:
         request: Dispatch request with a ``prompt_parts`` 3-tuple of

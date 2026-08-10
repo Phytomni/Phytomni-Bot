@@ -634,7 +634,9 @@ async def test_production_launcher_builds_a_fresh_root_from_request_factory(
 
     def request_factory(admission: Any) -> ResearchCoordinatorRequest:
         factory_calls.append(admission)
-        return ResearchCoordinatorRequest("run-factory", object())
+        return ResearchCoordinatorRequest(
+            "request-factory-placeholder", object()
+        )
 
     async def run(
         self: Any,

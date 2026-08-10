@@ -54,7 +54,7 @@ from ..runtime.memory import (
 from ..runtime.run_registry import RunFilter, RunRegistry, RunRequestInfo
 from ..runtime.stage_trace import current_stage_trace
 from . import agent_runs as _agent_runs
-from . import run_lifecycle
+from . import app_support, run_lifecycle
 from . import stage_errors as _stage_errors
 from .a2a.executor import A2AHandlerOptions, A2ARequestHandler
 from .admin_auth import require_service_principal
@@ -963,10 +963,10 @@ def build_app(
 ) -> FastAPI:
     """Build the complete FastAPI application from typed route seams."""
     app = _build_base_app()
-    app.state.research_input_root_request_factory = (
-        research_input_root_request_factory
-    )
     runtime = _RuntimeState(rate_limit=_app_attr("make_rate_limiter")())
+    app_support.bind_research_input_state(
+        app, research_input_root_request_factory, runtime
+    )
     scope = partial(build_scope_dependency, runtime.authorized)
     adapters = _RouteAdapters(
         runtime,

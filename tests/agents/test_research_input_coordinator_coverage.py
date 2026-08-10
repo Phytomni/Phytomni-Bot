@@ -181,3 +181,14 @@ async def test_dispatch_records_and_native_empty_query_are_guarded() -> None:
     )
     with pytest.raises(ValueError):
         getattr(module, "_validate_native_payload")(empty)
+
+    uploaded = empty.__class__(
+        effective_query="",
+        obs_file_list=("obs://managed/document.pdf",),
+        data_list=MappingProxyType({}),
+        inventory_digest="i",
+        evidence_digest="e",
+        execution_fingerprint="x",
+        authority_ids=(),
+    )
+    getattr(module, "_validate_native_payload")(uploaded)

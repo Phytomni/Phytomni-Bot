@@ -148,6 +148,7 @@ class ResearchCoordinatorDependencies(NamedTuple):
     persist_planning: Callable[..., Any] | None = None
     join_prepared: Callable[[Any, Any], Any] | None = None
     submit_children: Callable[..., Awaitable[Any]] | None = None
+    plan_builder: Callable[[Any, Any], Awaitable[Any] | Any] | None = None
 
 
 class ResearchCoordinatorRequest(NamedTuple):
