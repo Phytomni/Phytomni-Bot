@@ -14,14 +14,23 @@ HTTP layer, which maps the tool to a slug and reuses _invoke_agent_run.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
+from random import uniform
 from typing import Any, cast
 
 import httpx
-from openai import APIError, APITimeoutError, AsyncOpenAI, BadRequestError
+from openai import (
+    APIConnectionError,
+    APIError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+    BadRequestError,
+)
 
 from ...config.settings import get_sensitive_config
 from ...mcp.schemas import agent_openai_tool_specs
@@ -53,6 +62,13 @@ _LOGGER = logging.getLogger(__name__)
 # 400 round-trip. Process-local and non-secret, mirroring how the router
 # already reads ``sensitive.BASE_URL``; never persisted.
 _TOOL_CHOICE_REQUIRED_UNSUPPORTED: set[str] = set()
+
+# Expert routing is a small control-plane request. Two retries are enough to
+# absorb a transient gateway failure without turning a route decision into an
+# unbounded wait. The jitter prevents concurrent requests from retrying in
+# lockstep when the upstream is recovering.
+_EXPERT_PROVIDER_MAX_RETRIES = 2
+_EXPERT_PROVIDER_BACKOFF_BASE = 1.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,9 +277,7 @@ async def complete_expert_routing(
         )
 
     try:
-        return await _create(effective_choice)
-    except (APITimeoutError, httpx.TimeoutException, TimeoutError) as exc:
-        raise ExpertProviderTimeoutError() from exc
+        return await _create_with_retries(_create, effective_choice)
     except BadRequestError as exc:
         if effective_choice != "auto" and constrained:
             _TOOL_CHOICE_REQUIRED_UNSUPPORTED.add(base_url_key)
@@ -292,11 +306,37 @@ async def _complete_with_auto_fallback(
 ) -> Any:
     """Retry a routing completion with ``tool_choice="auto"``."""
     try:
-        return await create("auto")
-    except (APITimeoutError, httpx.TimeoutException, TimeoutError) as exc:
-        raise ExpertProviderTimeoutError() from exc
+        return await _create_with_retries(create, "auto")
     except APIError as exc:
         raise ExpertProviderError() from exc
+
+
+async def _create_with_retries(
+    create: Callable[[Any], Awaitable[Any]], choice: Any
+) -> Any:
+    """Run one provider choice with bounded transient-error retries."""
+    for attempt in range(_EXPERT_PROVIDER_MAX_RETRIES + 1):
+        try:
+            return await create(choice)
+        except (APITimeoutError, httpx.TimeoutException, TimeoutError) as exc:
+            if attempt >= _EXPERT_PROVIDER_MAX_RETRIES:
+                raise ExpertProviderTimeoutError() from exc
+        except APIError as exc:
+            if not _is_transient_provider_error(exc):
+                raise
+            if attempt >= _EXPERT_PROVIDER_MAX_RETRIES:
+                raise ExpertProviderError() from exc
+        await asyncio.sleep(
+            _EXPERT_PROVIDER_BACKOFF_BASE**attempt + uniform(0, 1)
+        )
+    raise AssertionError("expert provider retry loop exited unexpectedly")
+
+
+def _is_transient_provider_error(exc: APIError) -> bool:
+    """Return whether an OpenAI SDK error is safe to retry."""
+    if isinstance(exc, APIConnectionError):
+        return True
+    return isinstance(exc, APIStatusError) and 500 <= exc.status_code < 600
 
 
 async def _run_completion(

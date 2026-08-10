@@ -12,12 +12,13 @@ locks the tool-spec surface ``select_agent_tool`` offers to the model.
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
-from openai import BadRequestError
+from openai import APIConnectionError, BadRequestError, InternalServerError
 
 from mcp_server_phytomni.agents.expert import (
     ExpertRoutingContractError,
@@ -424,6 +425,21 @@ def _bad_request(message: str) -> BadRequestError:
     return BadRequestError(message, response=response, body=None)
 
 
+def _connection_error() -> APIConnectionError:
+    """Build an offline OpenAI transport failure."""
+    request = httpx.Request("POST", "https://example.invalid/chat/completions")
+    return APIConnectionError(request=request)
+
+
+def _server_error() -> InternalServerError:
+    """Build an offline OpenAI 5xx response."""
+    request = httpx.Request("POST", "https://example.invalid/chat/completions")
+    response = httpx.Response(503, request=request)
+    return InternalServerError(
+        "upstream unavailable", response=response, body=None
+    )
+
+
 # The real Huawei pangu ``mastudio`` endpoint rejects a named tool_choice with
 # a generic ``PANGU.3342`` 400 whose text does NOT mention "tool_choice", and
 # rejects "required" with a validation 400 that does. Endpoint detection must
@@ -466,6 +482,102 @@ async def test_routing_falls_back_to_auto_on_required_rejection(
         "KnowledgeAgent",
         "ChatAgent",
     ]
+
+
+async def test_complete_expert_routing_retries_transient_timeouts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Transient provider timeouts get bounded retries with backoff."""
+    calls: list[dict[str, Any]] = []
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        side_effects=[
+            httpx.TimeoutException("transient timeout"),
+            httpx.TimeoutException("transient timeout"),
+        ],
+        calls=calls,
+    )
+
+    result = await expert_router.complete_expert_routing(
+        messages=[{"role": "user", "content": "route this"}],
+        tools=agent_openai_tool_specs(),
+        tool_choice="auto",
+    )
+
+    assert result.choices
+    assert len(calls) == 3
+    assert len(sleeps) == 2
+    assert all(delay >= 0 for delay in sleeps)
+
+
+@pytest.mark.parametrize(
+    "transient_error",
+    [_connection_error(), _server_error()],
+    ids=("connection", "server-5xx"),
+)
+async def test_complete_expert_routing_retries_transient_sdk_errors(
+    monkeypatch: pytest.MonkeyPatch, transient_error: BaseException
+) -> None:
+    """SDK connection and 5xx errors receive the same bounded retry policy."""
+    calls: list[dict[str, Any]] = []
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        side_effects=[transient_error],
+        calls=calls,
+    )
+
+    result = await expert_router.complete_expert_routing(
+        messages=[{"role": "user", "content": "route this"}],
+        tools=agent_openai_tool_specs(),
+        tool_choice="auto",
+    )
+
+    assert result.choices
+    assert len(calls) == 2
+
+
+async def test_complete_expert_routing_exhausts_transient_timeouts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry exhaustion stays a typed timeout and never loops forever."""
+    calls: list[dict[str, Any]] = []
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        side_effects=[
+            httpx.TimeoutException("transient timeout"),
+            httpx.TimeoutException("transient timeout"),
+            httpx.TimeoutException("transient timeout"),
+        ],
+        calls=calls,
+    )
+
+    with pytest.raises(expert_router.ExpertProviderTimeoutError):
+        await expert_router.complete_expert_routing(
+            messages=[{"role": "user", "content": "route this"}],
+            tools=agent_openai_tool_specs(),
+            tool_choice="auto",
+        )
+
+    assert len(calls) == 3
+    assert len(sleeps) == 2
 
 
 async def test_routing_falls_back_on_pangu_3342_without_tool_choice_text(
