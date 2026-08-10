@@ -321,6 +321,153 @@ def test_execution_fingerprint_changes_for_every_reuse_binding(
     )
 
 
+def test_preparation_rejects_invalid_resolution_and_document_lane() -> None:
+    """Reject non-resolver values and unmanaged document partitions."""
+    inventory = _inventory(_entry("dataset_002", 0))
+    with pytest.raises(Exception) as caught:
+        join_prepared_research_input(inventory, cast(Any, object()))
+    assert getattr(caught.value, "code") == "research_input_resolution_failed"
+
+    unmanaged = _entry("document_001", 0, purpose="document", lane="pasted")
+    with pytest.raises(Exception) as caught:
+        join_prepared_research_input(
+            _inventory(unmanaged, _entry("dataset_002", 1)),
+            _resolution(("dataset_002", "dataset description")),
+        )
+    assert getattr(caught.value, "code") == "research_input_resolution_failed"
+
+
+def test_preparation_rejects_empty_description_and_remote_query_type() -> None:
+    """Reject empty resolver descriptions and non-string remote queries."""
+    with pytest.raises(Exception) as caught:
+        join_prepared_research_input(
+            _inventory(_entry("dataset_002", 0)),
+            _resolution(("dataset_002", "   ")),
+        )
+    assert getattr(caught.value, "code") == "research_input_resolution_failed"
+
+    with pytest.raises(Exception) as caught:
+        prepare_research_input_for_remote_inspection(
+            _inventory(_entry("dataset_002", 0)),
+            effective_query=cast(Any, None),
+        )
+    assert getattr(caught.value, "code") == "research_input_resolution_failed"
+
+    unmanaged = _entry("document_001", 0, purpose="document", lane="pasted")
+    with pytest.raises(Exception) as caught:
+        prepare_research_input_for_remote_inspection(
+            _inventory(unmanaged, _entry("dataset_002", 1))
+        )
+    assert getattr(caught.value, "code") == "research_input_resolution_failed"
+
+
+def test_fingerprint_rejects_wrong_prepared_value_and_query_type() -> None:
+    """Fingerprint binding accepts only the immutable preparation contract."""
+    with pytest.raises(Exception) as caught:
+        with_execution_fingerprint(cast(Any, object()))
+    assert getattr(caught.value, "code") == "research_input_resolution_failed"
+
+    prepared = prepare_research_input_for_remote_inspection(
+        _inventory(_entry("dataset_002", 0))
+    )
+    with pytest.raises(Exception) as caught:
+        with_execution_fingerprint(prepared, effective_query=cast(Any, 1))
+    assert getattr(caught.value, "code") == "research_input_resolution_failed"
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "not_inventory",
+        "duplicate_id",
+        "duplicate_reference",
+        "datasets",
+        "documents",
+        "blank_reference",
+        "blank_dataset_id",
+    ],
+)
+def test_inventory_validation_rejects_each_partition_corruption(
+    kind: str,
+) -> None:
+    """Every inventory identity and partition invariant fails closed."""
+    document = _entry("document_001", 0, purpose="document", lane="managed")
+    dataset = _entry("dataset_002", 1)
+    inventory = _inventory(document, dataset)
+    if kind == "not_inventory":
+        value: Any = object()
+    elif kind == "duplicate_id":
+        value = replace(
+            inventory, entries=(dataset, replace(dataset, lane_ordinal=2))
+        )
+    elif kind == "duplicate_reference":
+        other = replace(dataset, dataset_id="dataset_003")
+        value = replace(
+            inventory,
+            entries=(
+                document,
+                replace(other, exact_reference=dataset.exact_reference),
+            ),
+        )
+    elif kind == "datasets":
+        value = replace(inventory, datasets=())
+    elif kind == "documents":
+        value = replace(inventory, documents=())
+    elif kind == "blank_reference":
+        value = replace(
+            inventory,
+            entries=(replace(document, exact_reference="   "), dataset),
+        )
+    else:
+        value = replace(
+            inventory, entries=(replace(document, dataset_id=""), dataset)
+        )
+
+    validator = getattr(input_preparation, "_validate_inventory")
+    with pytest.raises(Exception) as caught:
+        validator(value)
+    assert getattr(caught.value, "code") == "research_input_resolution_failed"
+
+
+def test_preparation_rejects_bad_resolution_items_and_authority() -> None:
+    """Reject malformed resolver rows and authorities from another dataset."""
+    index = getattr(input_preparation, "_resolution_by_id")
+    with pytest.raises(Exception) as caught:
+        index([cast(Any, object())])
+    assert getattr(caught.value, "code") == "research_input_resolution_failed"
+
+    with pytest.raises(Exception) as caught:
+        index(
+            [
+                ResolvedResearchDataset.model_construct(
+                    id=" ", description="description"
+                )
+            ]
+        )
+    assert getattr(caught.value, "code") == "research_input_resolution_failed"
+
+    entry = _entry("dataset_002", 0)
+    authority = ResearchObjectAuthority(
+        dataset_id="dataset_other",
+        authority_id="authority-other",
+        snapshot=ResearchObjectSnapshot(
+            dataset_id="dataset_other",
+            size_bytes=10,
+            etag="etag",
+            version_id="version",
+            last_modified="2026-08-08T00:00:00+00:00",
+            placeholder=False,
+            snapshot_digest="snapshot-other",
+        ),
+    )
+    inventory = replace(_inventory(entry), authorities=(authority,))
+    with pytest.raises(Exception) as caught:
+        join_prepared_research_input(
+            inventory, _resolution((entry.dataset_id, "description"))
+        )
+    assert getattr(caught.value, "code") == "research_input_resolution_failed"
+
+
 _RESTART_SENTINEL = "RESEARCH_RESTART_DOCUMENT_PLAINTEXT_SENTINEL"
 
 
