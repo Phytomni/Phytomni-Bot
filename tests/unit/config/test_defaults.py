@@ -141,6 +141,22 @@ from mcp_server_phytomni.config.settings import SensitiveConfig
 pytestmark = pytest.mark.unit
 
 
+_CAPACITY_ENV_NAMES = (
+    "OUTBOUND_LLM_CONCURRENCY",
+    "OUTBOUND_RETRIEVAL_CONCURRENCY",
+    "OUTBOUND_RERANK_CONCURRENCY",
+    "OUTBOUND_NL2SQL_CONCURRENCY",
+    "OUTBOUND_ANALYSIS_CONTROL_CONCURRENCY",
+    "OUTBOUND_ANALYSIS_STATUS_CONCURRENCY",
+    "OUTBOUND_IAM_CONCURRENCY",
+    "OUTBOUND_SPA_FAQ_CONCURRENCY",
+    "OUTBOUND_BI_CONCURRENCY",
+    "OUTBOUND_OBS_CONCURRENCY",
+    "OUTBOUND_RELAY_CONTROL_CONCURRENCY",
+    "OUTBOUND_INTEROP_CONCURRENCY",
+)
+
+
 _AGENT_MODEL_MANIFEST = (
     ("AnalystConfig", AnalystConfig, LeafAnalystConfig, PackageAnalystConfig),
     (
@@ -413,6 +429,89 @@ def test_server_config_accepts_phytomni_prefixed_alias(monkeypatch):
     config = ServerConfig()
 
     assert config.TOKEN_URL == "https://example.invalid/iam-alias"
+
+
+@pytest.mark.parametrize("name", _CAPACITY_ENV_NAMES)
+def test_outbound_capacity_is_required(
+    name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject startup when one explicit outbound capacity is absent."""
+    for env_name in _CAPACITY_ENV_NAMES:
+        monkeypatch.setenv(env_name, "1")
+    monkeypatch.setenv("OUTBOUND_POOL_WAIT_WARN_SECONDS", "0.1")
+    monkeypatch.delenv(name)
+    monkeypatch.delenv(f"PHYTOMNI_{name}", raising=False)
+
+    with pytest.raises(ValidationError, match=name):
+        ServerConfig()
+
+
+@pytest.mark.parametrize("value", ["-1", "1.5", "NaN"])
+def test_outbound_capacity_rejects_invalid_values(
+    value: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accept only integer capacities greater than or equal to zero."""
+    monkeypatch.setenv("OUTBOUND_LLM_CONCURRENCY", value)
+
+    with pytest.raises(ValidationError):
+        ServerConfig()
+
+
+@pytest.mark.parametrize(
+    ("field", "env_name", "value"),
+    [
+        ("OUTBOUND_LLM_CONCURRENCY", "OUTBOUND_LLM_CONCURRENCY", "2"),
+        (
+            "OUTBOUND_RETRIEVAL_CONCURRENCY",
+            "PHYTOMNI_OUTBOUND_RETRIEVAL_CONCURRENCY",
+            "3",
+        ),
+        (
+            "OUTBOUND_POOL_WAIT_WARN_SECONDS",
+            "PHYTOMNI_OUTBOUND_POOL_WAIT_WARN_SECONDS",
+            "0.2",
+        ),
+    ],
+)
+def test_outbound_settings_accept_both_alias_forms(
+    field: str,
+    env_name: str,
+    value: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Outbound configuration follows the unprefixed and prefixed contract."""
+    monkeypatch.delenv(field, raising=False)
+    monkeypatch.delenv(f"PHYTOMNI_{field}", raising=False)
+    monkeypatch.setenv(env_name, value)
+
+    expected = float(value) if "." in value else int(value)
+    assert getattr(ServerConfig(), field) == expected
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "NaN", "inf"])
+def test_outbound_wait_warning_rejects_nonpositive_or_nonfinite_values(
+    value: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wait-warning threshold is finite and strictly positive."""
+    monkeypatch.setenv("OUTBOUND_POOL_WAIT_WARN_SECONDS", value)
+
+    with pytest.raises(ValidationError):
+        ServerConfig()
+
+
+def test_legacy_rerank_concurrency_cannot_satisfy_outbound_capacity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The removed rerank setting cannot mask the required pool capacity."""
+    monkeypatch.delenv("OUTBOUND_RERANK_CONCURRENCY", raising=False)
+    monkeypatch.delenv("PHYTOMNI_OUTBOUND_RERANK_CONCURRENCY", raising=False)
+    monkeypatch.setenv("RERANK_CONCURRENCY", "16")
+
+    with pytest.raises(ValidationError, match="OUTBOUND_RERANK_CONCURRENCY"):
+        ServerConfig()
 
 
 def test_data_config_missing_data_repo_id_raises(monkeypatch):

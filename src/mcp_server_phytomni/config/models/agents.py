@@ -52,15 +52,6 @@ class KnowledgeConfig(ChatConfig):
     EXTRA_REPO_IDS: list[str] | None = None
     SCORE_THRESHOLD: float = 0
     RERANK_BATCH_SIZE: int = 128
-    RERANK_CONCURRENCY: Annotated[
-        int,
-        Field(
-            default=16,
-            validation_alias=AliasChoices(
-                "RERANK_CONCURRENCY", "PHYTOMNI_RERANK_CONCURRENCY"
-            ),
-        ),
-    ] = 16
 
 
 class DataConfig(KnowledgeConfig):

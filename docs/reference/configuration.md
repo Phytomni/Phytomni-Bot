@@ -911,24 +911,33 @@ the `httpx.Limits` handed to the shared `AsyncClient` so heavy
 `multi_retrieve` x `rerank` x relay fan-out reuses connections instead of
 churning TCP/TLS handshakes. Leave them unset to accept the defaults.
 
-## Retrieval Tuning Variables
+## Outbound Logical Pool Variables
 
-- **Variable:** `PHYTOMNI_RERANK_CONCURRENCY`
-  **Default:** `16`
-  **Sensitive?:** no
-  **Purpose:** Max concurrent rerank HTTP requests per process event loop. `0`
-  or negative disables throttling.
+The following required `ServerConfig` variables define independent, logical
+per-process request budgets. Every variable also accepts a `PHYTOMNI_`-
+prefixed alias. A capacity of `0` is unlimited; positive values use an AnyIO
+capacity limiter. These budgets neither configure HTTP socket pools nor impose
+request timeouts, and a full pool waits until a borrower releases its lease.
 
-The throttle is process-internal: each running event loop holds its own
-`asyncio.Semaphore`, shared across every rerank-capable agent
-(KnowledgeAgent / ReviewAgent / BriefGeneAgent / DeepGenome) in that
-process. It bounds the rerank fan-out a single `ReviewAgent` run produces
-(research dimensions x repositories x rerank batches) so the rerank
-backend stays in its zero-failure latency region. The MCP stdio process
-and the HTTP API process each keep an independent semaphore; the default
-of `16` is chosen so even both processes saturated (`2 x 16 = 32`) stays
-under the backend's hard-failure knee. Accepts the unprefixed
-`RERANK_CONCURRENCY` or the `PHYTOMNI_RERANK_CONCURRENCY` form.
+- **Variable:** `OUTBOUND_LLM_CONCURRENCY`
+- **Variable:** `OUTBOUND_RETRIEVAL_CONCURRENCY`
+- **Variable:** `OUTBOUND_RERANK_CONCURRENCY`
+- **Variable:** `OUTBOUND_NL2SQL_CONCURRENCY`
+- **Variable:** `OUTBOUND_ANALYSIS_CONTROL_CONCURRENCY`
+- **Variable:** `OUTBOUND_ANALYSIS_STATUS_CONCURRENCY`
+- **Variable:** `OUTBOUND_IAM_CONCURRENCY`
+- **Variable:** `OUTBOUND_SPA_FAQ_CONCURRENCY`
+- **Variable:** `OUTBOUND_BI_CONCURRENCY`
+- **Variable:** `OUTBOUND_OBS_CONCURRENCY`
+- **Variable:** `OUTBOUND_RELAY_CONTROL_CONCURRENCY`
+- **Variable:** `OUTBOUND_INTEROP_CONCURRENCY`
+
+Each capacity is a required integer greater than or equal to `0` and is not
+sensitive. LLM completion and stream requests share the LLM pool.
+
+- **Variable:** `OUTBOUND_POOL_WAIT_WARN_SECONDS`
+  **Purpose:** Required finite positive threshold for a value-safe pool-wait
+  warning; the warning contains only the fixed pool name and numeric counters.
 
 ## Live E2E Variables
 

@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Annotated
 
 from pydantic import AliasChoices, Field, ValidationInfo, field_validator
-from pydantic_settings import BaseSettings
 
 from ..relay_mode import relay_mode_enabled
 from ..required_env import SERVER_REQUIRED_ENDPOINT_FIELDS
+from .outbound import OutboundConfig
 
 _MAX_TOKENS = 65536
 PARENT_PATH = Path(__file__).parent.parent.parent
@@ -34,7 +34,7 @@ def _require_non_empty_endpoint(value, info: ValidationInfo):
     return value
 
 
-class ServerConfig(BaseSettings):
+class ServerConfig(OutboundConfig):
     """Configuration settings for server-level parameters and endpoints."""
 
     MAX_TOKENS: int = _MAX_TOKENS
