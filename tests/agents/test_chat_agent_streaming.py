@@ -115,8 +115,6 @@ def _stream_kwargs() -> dict[str, Any]:
     return {
         "prompt_file": "prompts.yaml",
         "prompt_path": "system/chat",
-        "api_key": "api-key",
-        "base_url": "https://example.invalid/v1",
         "model": "pytest-model",
         "frequency_penalty": 0.0,
         "n": 1,
