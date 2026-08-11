@@ -357,7 +357,7 @@ async def _execute_context_chat(
         resolved_input=resolved_input,
         db_path=dependencies.tasks_db_path(),
     )
-    attachment_arguments = {
+    attachment_arguments: dict[str, Any] = {
         key: prepared_attachments[key]
         for key in ("obs_file_list", "data_list")
         if key in prepared_attachments
@@ -759,7 +759,7 @@ async def _execute_context_native(
             db_path=dependencies.tasks_db_path(),
         )
     )
-    attachment_arguments = {
+    attachment_arguments: dict[str, Any] = {
         key: prepared_arguments[key]
         for key in ("obs_file_list", "data_list")
         if key in prepared_arguments
