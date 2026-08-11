@@ -57,5 +57,6 @@ def test_build_resolver_chat_kwargs_applies_structured_overrides() -> None:
 
     assert result["prompt_path"] == "system/resolver"
     assert result["response_format"] is schema
-    assert result["api_key"] == sensitive_config.API_KEY.get_secret_value()
+    assert "api_key" not in result
+    assert "base_url" not in result
     assert result["retriable_codes"] == list(config.RETRIABLE_CODES)

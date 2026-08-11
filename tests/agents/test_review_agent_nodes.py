@@ -48,10 +48,10 @@ async def test_chat_threads_review_config_into_phyto_chat(
 ) -> None:
     """_chat forwards review_config / sensitive_config into phyto_chat.
 
-    Pins the contract that the configured LLM call carries the test-env
-    api_key / base_url / model and the default response_format from
-    review_config when no override is passed. This is the only direct
-    coverage for line 153 of agent.py.
+    Pins the contract that process-owned provider fields are not forwarded,
+    while model and the default response_format come from review_config when
+    no override is passed. This is the only direct coverage for line 153 of
+    agent.py.
     """
     captured: dict[str, Any] = {}
 
@@ -66,8 +66,8 @@ async def test_chat_threads_review_config_into_phyto_chat(
 
     assert result == {"choices": [{"message": {"content": "ok"}}]}
     assert captured["user_query"] == "hello question"
-    assert captured["api_key"] == "pytest-api-key"
-    assert captured["base_url"] == "https://example.invalid/llm"
+    assert "api_key" not in captured
+    assert "base_url" not in captured
     assert captured["model"] == "pytest-model"
     assert captured["prompt_file"] == agent.review_config.PROMPT_FILE
     assert captured["prompt_path"] == agent.review_config.PROMPT_PATH

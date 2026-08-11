@@ -109,8 +109,6 @@ async def test_chat_generate_injects_memory_as_untrusted_system_context(
         "chat_kwargs": {
             "prompt_file": "prompts.yaml",
             "prompt_path": "system/chat",
-            "api_key": "test-key",
-            "base_url": "https://example.invalid/v1",
             "model": "test-model",
         },
     }

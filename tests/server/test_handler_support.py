@@ -130,11 +130,11 @@ def test_load_handler_runtime_returns_credentials() -> None:
 
 
 def test_chat_kwargs_contains_chat_and_retry_blocks() -> None:
-    """``chat_kwargs`` returns chat fields + response_format + max_tokens."""
+    """``chat_kwargs`` returns caller-safe chat fields and retry settings."""
     result = chat_kwargs(_fake_config(), _fake_sensitive())
 
-    assert result["api_key"] == "fake-api-key"
-    assert result["base_url"] == "https://example.invalid/llm"
+    assert "api_key" not in result
+    assert "base_url" not in result
     assert result["model"] == "fake-model"
     assert result["prompt_file"] == "prompts.yaml"
     assert result["prompt_path"] == "agent/path"

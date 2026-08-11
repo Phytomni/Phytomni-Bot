@@ -98,7 +98,7 @@ async def test_rewrite_prep_node_builds_chat_payload(
     chat_payload = result["chat_payload"]
     assert chat_payload["user_query"] == ("stitched scenarios + user question")
     assert isinstance(chat_payload["chat_kwargs"], dict)
-    assert len(chat_payload["chat_kwargs"]) == 20
+    assert len(chat_payload["chat_kwargs"]) == 18
     assert chat_payload["chat_kwargs"]["relay_timeout_profile"] == (
         "phyto-data"
     )
@@ -221,7 +221,7 @@ async def test_compiled_graph_routes_through_shared_chat(
     chat_input = fake_chat_app.ainvoke.await_args.args[0]
     assert chat_input["user_query"] == ("stitched scenarios + user question")
     assert isinstance(chat_input["chat_kwargs"], dict)
-    assert len(chat_input["chat_kwargs"]) == 20
+    assert len(chat_input["chat_kwargs"]) == 18
     assert chat_input["chat_kwargs"]["relay_timeout_profile"] == "phyto-data"
     assert "obs_file_list" not in chat_input
     assert final_state["final_response"] == {

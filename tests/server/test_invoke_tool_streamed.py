@@ -163,7 +163,7 @@ async def test_invoke_tool_streamed_reaches_primitive_with_standard_kwargs(
         "Explain the C3 photosynthesis"
     )
     assert "obs_file_list" in captured[0]
-    assert "api_key" in captured[0]  # from chat_kwargs
+    assert "api_key" not in captured[0]  # provider-owned by the runtime
     assert "access_key_id" in captured[0]  # from obs_kwargs
 
 
