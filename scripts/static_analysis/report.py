@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import textwrap
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from datetime import date
@@ -210,26 +211,7 @@ def render_markdown(registry: Registry, counts: Mapping[str, int]) -> str:
     for key in sorted(counts):
         lines.append(f"| `{_md_cell(key)}` | {counts[key]} |")
     lines.extend(("", "## Exact records", ""))
-    if registry.exemptions:
-        lines.extend(
-            (
-                "".join(
-                    (
-                        "| ID | Tool | Rule | Classification | ",
-                        "Mechanism | Target | Path | Symbol | ",
-                        "Fingerprint | Owner | Introduced | Review | ",
-                        "Expiry | Remediation | Tests |",
-                    )
-                ),
-                "".join(
-                    (
-                        "| --- | --- | --- | --- | --- | --- | --- | --- | ",
-                        "--- | --- | --- | --- | --- | --- | --- | --- |",
-                    )
-                ),
-            )
-        )
-    else:
+    if not registry.exemptions:
         lines.extend(
             (
                 "No exemption records are authorized.",
@@ -239,33 +221,31 @@ def render_markdown(registry: Registry, counts: Mapping[str, int]) -> str:
                 "Review, Expiry, Remediation, Tests.",
             )
         )
-    for item in sorted(registry.exemptions, key=lambda value: value.id):
-        expiry = item.expires_on.isoformat() if item.expires_on else "—"
-        remediation = item.remediation or "—"
-        tests = ", ".join(item.tests)
-        lines.append(
-            "| "
-            + " | ".join(
+    else:
+        for item in sorted(registry.exemptions, key=lambda value: value.id):
+            lines.extend((f"### `{_md_cell(item.id)}`", ""))
+            for label, value in (
+                ("Tool", item.tool),
+                ("Rule", item.rule),
+                ("Classification", item.classification.value),
+                ("Mechanism", item.mechanism.value),
+                ("Target", item.target_kind.value),
+                ("Path", item.path),
+                ("Symbol", item.symbol or "—"),
+                ("Fingerprint", item.fingerprint),
+                ("Owner", item.owner),
+                ("Introduced", item.introduced_on.isoformat()),
+                ("Review", item.review_on.isoformat()),
                 (
-                    f"`{_md_cell(item.id)}`",
-                    _md_cell(item.tool),
-                    _md_cell(item.rule),
-                    _md_cell(item.classification.value),
-                    _md_cell(item.mechanism.value),
-                    _md_cell(item.target_kind.value),
-                    _md_cell(item.path),
-                    _md_cell(item.symbol or "—"),
-                    f"`{_md_cell(item.fingerprint)}`",
-                    _md_cell(item.owner),
-                    item.introduced_on.isoformat(),
-                    item.review_on.isoformat(),
-                    _md_cell(expiry),
-                    _md_cell(remediation),
-                    _md_cell(tests),
-                )
-            )
-            + " |"
-        )
+                    "Expiry",
+                    item.expires_on.isoformat() if item.expires_on else "—",
+                ),
+                ("Remediation", item.remediation or "—"),
+            ):
+                lines.extend((f"- {label}:", f"  `{_md_cell(value)}`"))
+            lines.append("- Tests:")
+            lines.extend(f"  - `{_md_cell(test)}`" for test in item.tests)
+            lines.append("")
     lines.extend(("", "## Review fields", ""))
     for item in sorted(registry.exemptions, key=lambda value: value.id):
         lines.extend(
@@ -299,7 +279,13 @@ def _code_block(value: str) -> tuple[str, ...]:
         default=0,
     )
     fence = "`" * max(3, longest + 1)
-    return (f"{fence}text", value, fence)
+    wrapped = textwrap.wrap(
+        value,
+        width=78,
+        break_long_words=False,
+        break_on_hyphens=False,
+    ) or [""]
+    return (f"{fence}text", *wrapped, fence)
 
 
 def render_repository_markdown(root: Path) -> str:
