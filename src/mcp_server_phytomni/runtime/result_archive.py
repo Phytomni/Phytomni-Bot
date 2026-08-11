@@ -5,9 +5,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
+import os
 import stat
 import tempfile
 from collections.abc import Sequence
@@ -344,11 +344,7 @@ async def build_and_publish_result_archive_with_runtime(
         f"{inventory.run_root.rstrip('/')}/delivery/{digest_hex}/"
         f"{agent}-results.zip"
     )
-    await asyncio.to_thread(
-        ARCHIVE_TEMP_ROOT.mkdir,
-        parents=True,
-        exist_ok=True,
-    )
+    os.makedirs(ARCHIVE_TEMP_ROOT, exist_ok=True)
     try:
         with tempfile.TemporaryDirectory(
             prefix="result-archive-", dir=ARCHIVE_TEMP_ROOT
