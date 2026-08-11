@@ -81,10 +81,14 @@ async def test_repeated_init_rejected_and_close_is_exactly_once() -> None:
 @pytest.mark.asyncio
 async def test_lifecycle_logs_one_safe_startup_and_shutdown_summary(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Lifecycle summaries expose capacities and final counters only once."""
     logger_name = "mcp_server_phytomni.runtime.outbound.lifecycle"
     caplog.set_level(logging.INFO, logger=logger_name)
+    monkeypatch.setattr(
+        logging.getLogger("mcp_server_phytomni"), "propagate", True
+    )
     resources = RecordingResources()
     runtime = await init_outbound_runtime(
         _config(

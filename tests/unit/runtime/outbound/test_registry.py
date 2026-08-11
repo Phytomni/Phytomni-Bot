@@ -226,11 +226,15 @@ async def test_counters_only_increase_across_leases() -> None:
 @pytest.mark.asyncio
 async def test_terminal_logs_publish_safe_cumulative_outcome_counters(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Terminal observations expose counters without caller-owned values."""
     registry = OutboundPoolRegistry(_capacities(llm=1), wait_warn_seconds=0.01)
     logger_name = "mcp_server_phytomni.runtime.outbound.registry"
     caplog.set_level(logging.INFO, logger=logger_name)
+    monkeypatch.setattr(
+        logging.getLogger("mcp_server_phytomni"), "propagate", True
+    )
 
     async with registry.lease(OutboundPoolName.LLM):
         pass
