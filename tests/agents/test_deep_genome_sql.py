@@ -64,10 +64,10 @@ async def test_cached_gene_symbol_lookup_uses_sql_literal(
 
     async def _capture(
         sql: str,
-        _timeout: float,
+        request_timeout: float,
     ) -> dict[str, Any]:
         """Record the SQL and return a minimal symbol payload."""
-        del _timeout
+        del request_timeout
         captured["sql"] = sql
         return {"data": [{"symbol": "SYM1"}]}
 
@@ -99,10 +99,10 @@ async def test_cached_gene_annotation_lookup_uses_sql_literal(
 
     async def _capture(
         sql: str,
-        _timeout: float,
+        request_timeout: float,
     ) -> dict[str, Any]:
         """Record each annotation SQL and return an empty payload."""
-        del _timeout
+        del request_timeout
         captured.append(sql)
         return {"data": []}
 

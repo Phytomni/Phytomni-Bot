@@ -94,12 +94,14 @@ async def test_post_bi_sql_preserves_caller_timeout(
     assert retry.timeout == 4.25
 
 
+@pytest.mark.parametrize("legacy_keyword", ["timeout"])
 async def test_post_bi_sql_rejects_legacy_timeout_keyword(
     monkeypatch: pytest.MonkeyPatch,
+    legacy_keyword: str,
 ) -> None:
     """The BI lookup boundary rejects the removed timeout spelling."""
     _patch_helper(monkeypatch, result={"data": []})
-    legacy_options: dict[str, Any] = {"timeout": 4.25}
+    legacy_options: dict[str, Any] = {legacy_keyword: 4.25}
 
     with pytest.raises(
         TypeError, match="unexpected keyword argument 'timeout'"

@@ -83,16 +83,19 @@ async def test_get_token_raises_mcperror_when_header_missing(
     assert "X-Subject-Token" in str(excinfo.value)
 
 
+@pytest.mark.parametrize("legacy_keyword", ["timeout"])
 async def test_get_token_rejects_legacy_timeout_keyword(
     outbound_runtime: Any,
+    legacy_keyword: str,
 ) -> None:
     """The IAM boundary accepts only the typed request-timeout spelling.
 
     Args:
         outbound_runtime: Recording process-owned outbound runtime.
+        legacy_keyword: Removed keyword spelling exercised dynamically.
     """
     del outbound_runtime
-    legacy_options: dict[str, Any] = {"timeout": 1.0}
+    legacy_options: dict[str, Any] = {legacy_keyword: 1.0}
 
     with pytest.raises(
         TypeError, match="unexpected keyword argument 'timeout'"
