@@ -17,9 +17,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from mcp_server_phytomni.runtime.outbound import ObsProfileName
 from mcp_server_phytomni.storage.obs_relay_ops import (
     ObsAccessOptions,
     list_object_keys,
+    list_object_keys_page,
     object_size,
 )
 from mcp_server_phytomni.storage.obs_storage import (
@@ -33,7 +35,9 @@ from mcp_server_phytomni.storage.obs_storage import (
 __all__ = [
     "ListedArtifactObject",
     "list_artifact_objects",
+    "list_artifact_objects_with_runtime",
     "list_artifact_paths",
+    "list_artifact_paths_with_runtime",
 ]
 
 
@@ -80,6 +84,60 @@ def list_artifact_objects(
         bucket_name=bucket_name,
         access=access,
     )
+
+
+async def list_artifact_objects_with_runtime(
+    output_dir: str,
+    *,
+    bucket_name: str,
+    obs_runtime: Any,
+    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+) -> list[ListedArtifactObject]:
+    """List output objects with a separate OBS lease per SDK request."""
+    object_key = normalize_obs_object_key(output_dir, bucket_name)
+    base_key = object_key.rstrip("/")
+    if obsfs_bucket_available(bucket_name, mount_root):
+        dir_path = obsfs_path_for(output_dir, bucket_name, mount_root)
+        if dir_path.is_dir():
+            return _list_obsfs_objects(
+                dir_path,
+                base_key=base_key,
+                bucket_name=bucket_name,
+            )
+    prefix = f"{base_key}/" if base_key else ""
+    keys = await _list_sdk_keys_with_runtime(
+        bucket_name,
+        prefix,
+        obs_runtime=obs_runtime,
+        mount_root=mount_root,
+    )
+    objects: list[ListedArtifactObject] = []
+    for key in keys:
+        safe_key = normalize_obs_object_key(key, bucket_name)
+        relative_path = _relative_output_path(safe_key, base_key)
+        if relative_path is None:
+            continue
+        size_bytes = await obs_runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client, safe_key=safe_key: object_size(
+                bucket_name,
+                safe_key,
+                access=ObsAccessOptions(
+                    client=client,
+                    mount_root=mount_root,
+                ),
+            ),
+        )
+        download_ref = obs_path_from_key(bucket_name, safe_key)
+        objects.append(
+            ListedArtifactObject(
+                relative_path=relative_path,
+                source_path=download_ref,
+                size_bytes=size_bytes,
+                download_ref=download_ref,
+            )
+        )
+    return objects
 
 
 def _list_obsfs_objects(
@@ -199,3 +257,64 @@ def list_artifact_paths(
         access=ObsAccessOptions(client=client, mount_root=mount_root),
     )
     return [obs_path_from_key(bucket_name, key) for key in keys]
+
+
+async def list_artifact_paths_with_runtime(
+    output_dir: str,
+    *,
+    bucket_name: str,
+    obs_runtime: Any,
+    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+) -> list[str]:
+    """List output paths with a separate OBS lease for each list page."""
+    object_key = normalize_obs_object_key(output_dir, bucket_name)
+    if obsfs_bucket_available(bucket_name, mount_root):
+        dir_path = obsfs_path_for(output_dir, bucket_name, mount_root)
+        if dir_path.is_dir():
+            rels = [
+                path.relative_to(dir_path).as_posix()
+                for path in sorted(dir_path.rglob("*"))
+                if path.is_file()
+            ]
+            return [
+                obs_path_from_key(
+                    bucket_name,
+                    f"{object_key}/{relative}" if object_key else relative,
+                )
+                for relative in rels
+            ]
+    keys = await _list_sdk_keys_with_runtime(
+        bucket_name,
+        object_key,
+        obs_runtime=obs_runtime,
+        mount_root=mount_root,
+    )
+    return [obs_path_from_key(bucket_name, key) for key in keys]
+
+
+async def _list_sdk_keys_with_runtime(
+    bucket_name: str,
+    prefix: str,
+    *,
+    obs_runtime: Any,
+    mount_root: str,
+) -> list[str]:
+    """Fetch all list pages through individually scoped SDK operations."""
+    keys: list[str] = []
+    marker: str | None = None
+    while True:
+        page, marker = await obs_runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: list_object_keys_page(
+                bucket_name,
+                prefix,
+                marker,
+                access=ObsAccessOptions(
+                    client=client,
+                    mount_root=mount_root,
+                ),
+            ),
+        )
+        keys.extend(page)
+        if marker is None:
+            return keys

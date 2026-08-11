@@ -44,6 +44,7 @@ __all__ = [
     "object_size",
     "iter_object_chunks",
     "list_object_keys",
+    "list_object_keys_page",
 ]
 
 _LIST_MAX_KEYS = 1000
@@ -545,25 +546,51 @@ def list_object_keys(
     """
     safe_prefix = normalize_obs_object_key(prefix, bucket)
     resolved_access = _resolve_access(access)
-    sdk_client = _resolve_client(resolved_access.client)
     keys: list[str] = []
     marker: Any = None
     while True:
-        response = sdk_client.listObjects(
-            bucketName=bucket,
-            prefix=safe_prefix,
-            marker=marker,
-            max_keys=_LIST_MAX_KEYS,
+        page, marker = list_object_keys_page(
+            bucket,
+            safe_prefix,
+            marker,
+            access=resolved_access,
         )
-        _require_ok(response, "list")
-        keys.extend(
-            item.key
-            for item in response.body.contents
-            if not item.key.endswith("/")
-        )
-        if not response.body.is_truncated:
+        keys.extend(page)
+        if marker is None:
             return keys
-        marker = response.body.next_marker
+
+
+def list_object_keys_page(
+    bucket: str,
+    prefix: str,
+    marker: Any | None,
+    *,
+    access: ObsAccessOptions | None = None,
+) -> tuple[list[str], str | None]:
+    """Return one SDK list page and its next marker, if any.
+
+    The caller owns pagination so it can give every network page its own
+    outbound lease. The returned keys remain normalized to the requested
+    bucket prefix; directory markers are excluded like ``list_object_keys``.
+    """
+    safe_prefix = normalize_obs_object_key(prefix, bucket)
+    resolved_access = _resolve_access(access)
+    response = _resolve_client(resolved_access.client).listObjects(
+        bucketName=bucket,
+        prefix=safe_prefix,
+        marker=marker,
+        max_keys=_LIST_MAX_KEYS,
+    )
+    _require_ok(response, "list")
+    keys = [
+        item.key
+        for item in response.body.contents
+        if not item.key.endswith("/")
+    ]
+    next_marker = (
+        response.body.next_marker if response.body.is_truncated else None
+    )
+    return keys, next_marker
 
 
 def _resolve_client(client: Any | None) -> Any:

@@ -5,7 +5,63 @@
 
 from __future__ import annotations
 
+import pytest
+
+from mcp_server_phytomni.runtime.outbound import ObsProfileName
 from mcp_server_phytomni.storage import artifact_listing
+
+
+class _CountingObsRuntime:
+    """Run injected SDK operations while recording their lease count."""
+
+    def __init__(self) -> None:
+        """Expose one opaque client owned by this test runtime."""
+        self.calls = 0
+        self.client = object()
+
+    async def run(self, profile: ObsProfileName, operation: object) -> object:
+        """Run one individually leased OBS operation."""
+        assert profile is ObsProfileName.PRIMARY
+        self.calls += 1
+        return operation(self.client)  # type: ignore[operator]
+
+
+async def test_async_sdk_listing_leases_list_and_each_metadata_head(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """One LIST and two object HEADs consume three distinct OBS leases."""
+    runtime = _CountingObsRuntime()
+
+    monkeypatch.setattr(
+        artifact_listing,
+        "list_object_keys_page",
+        lambda *_args, **_kwargs: (
+            [
+                "agent_data/u1/run0/summary.csv",
+                "agent_data/u1/run0/figure.png",
+            ],
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        artifact_listing,
+        "object_size",
+        lambda _bucket, _key, **_kwargs: 37,
+    )
+
+    objects = await artifact_listing.list_artifact_objects_with_runtime(
+        "/obs/phytomni/agent_data/u1/run0",
+        bucket_name="phytomni",
+        obs_runtime=runtime,
+        mount_root=str(tmp_path),
+    )
+
+    assert [item.relative_path for item in objects] == [
+        "summary.csv",
+        "figure.png",
+    ]
+    assert runtime.calls == 3
 
 
 def test_obsfs_branch_lists_files_as_public_paths(tmp_path):

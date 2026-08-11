@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import stat
@@ -24,6 +25,7 @@ from ..storage.obs_relay_ops import (
     put_object_file,
 )
 from .artifact_roles import ARCHIVE_ELIGIBLE_ROLES, ArtifactRole
+from .outbound import ObsProfileName
 
 __all__ = [
     "FORBIDDEN_NESTED_ARCHIVE_SUFFIXES",
@@ -34,6 +36,7 @@ __all__ = [
     "ResultArchiveInventory",
     "ResultArchiveMember",
     "build_and_publish_result_archive",
+    "build_and_publish_result_archive_with_runtime",
     "build_result_archive_inventory",
     "inventory_digest",
     "result_archive_member_to_data",
@@ -317,6 +320,194 @@ def build_and_publish_result_archive(
             "archive_generation_failed", retryable=True
         ) from None
     return object_key
+
+
+async def build_and_publish_result_archive_with_runtime(
+    inventory: ResultArchiveInventory,
+    *,
+    agent: str,
+    summary_markdown: str,
+    obs_runtime: Any,
+) -> str:
+    """Create and publish one archive with a lease per SDK request."""
+    validate_result_archive_inventory(inventory)
+    if (
+        not isinstance(agent, str)
+        or not agent
+        or not agent.replace("_", "").isalnum()
+    ):
+        raise ResultArchiveError("archive_contract_invalid")
+    if not isinstance(summary_markdown, str):
+        raise ResultArchiveError("archive_contract_invalid")
+    digest_hex = inventory.digest.removeprefix("sha256:")
+    object_key = (
+        f"{inventory.run_root.rstrip('/')}/delivery/{digest_hex}/"
+        f"{agent}-results.zip"
+    )
+    await asyncio.to_thread(
+        ARCHIVE_TEMP_ROOT.mkdir,
+        parents=True,
+        exist_ok=True,
+    )
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="result-archive-", dir=ARCHIVE_TEMP_ROOT
+        ) as scratch:
+            scratch_path = Path(scratch)
+            sources = await _download_archive_sources(
+                inventory,
+                scratch_path,
+                obs_runtime=obs_runtime,
+            )
+            archive_path = scratch_path / "results.zip"
+            try:
+                _write_archive_from_sources(
+                    archive_path,
+                    inventory,
+                    summary_markdown,
+                    sources,
+                )
+            except (OSError, TypeError, ValueError):
+                raise ResultArchiveError(
+                    "archive_generation_failed", retryable=True
+                ) from None
+            size = archive_path.stat().st_size
+            try:
+                existing_size = await obs_runtime.run(
+                    ObsProfileName.PRIMARY,
+                    lambda client: object_size(
+                        SERVER_CONFIG.BUCKET_NAME,
+                        object_key,
+                        access=ObsAccessOptions(client=client),
+                    ),
+                )
+            except OSError:
+                existing_size = None
+            if existing_size is not None:
+                if existing_size != size:
+                    raise ResultArchiveError("archive_publish_failed")
+                return object_key
+            try:
+                await obs_runtime.run(
+                    ObsProfileName.PRIMARY,
+                    lambda client: put_object_file(
+                        SERVER_CONFIG.BUCKET_NAME,
+                        object_key,
+                        archive_path,
+                        access=ObsAccessOptions(client=client),
+                    ),
+                )
+                published_size = await _published_archive_size_with_runtime(
+                    SERVER_CONFIG.BUCKET_NAME,
+                    object_key,
+                    obs_runtime=obs_runtime,
+                )
+            except OSError:
+                raise ResultArchiveError(
+                    "archive_publish_failed", retryable=True
+                ) from None
+            if published_size != size:
+                raise ResultArchiveError("archive_publish_failed")
+    except (OSError, TypeError, ValueError):
+        raise ResultArchiveError(
+            "archive_generation_failed", retryable=True
+        ) from None
+    return object_key
+
+
+async def _download_archive_sources(
+    inventory: ResultArchiveInventory,
+    scratch_path: Path,
+    *,
+    obs_runtime: Any,
+) -> tuple[Path, ...]:
+    """Download each archive member under its own OBS lease."""
+    sources: list[Path] = []
+    for index, member in enumerate(inventory.members):
+        source_path = scratch_path / f"source-{index:04d}"
+        await obs_runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client, member=member, source_path=source_path: (
+                _download_object_to_file(
+                    SERVER_CONFIG.BUCKET_NAME,
+                    member.download_ref,
+                    source_path,
+                    client=client,
+                )
+            ),
+        )
+        sources.append(source_path)
+    return tuple(sources)
+
+
+def _download_object_to_file(
+    bucket: str,
+    object_key: str,
+    destination: Path,
+    *,
+    client: Any,
+) -> None:
+    """Transfer one remote object into a private staging file."""
+    with destination.open("wb") as handle:
+        for block in iter_object_chunks(
+            bucket,
+            object_key,
+            access=ObsAccessOptions(client=client),
+            stream=ObsStreamOptions(chunk_size=_COPY_CHUNK_SIZE),
+        ):
+            handle.write(block)
+
+
+def _write_archive_from_sources(
+    archive_path: Path,
+    inventory: ResultArchiveInventory,
+    summary_markdown: str,
+    sources: Sequence[Path],
+) -> None:
+    """Build the deterministic local archive after remote reads complete."""
+    with ZipFile(
+        archive_path, "w", compression=ZIP_STORED, allowZip64=True
+    ) as archive:
+        _write_zip_bytes(
+            archive, "summary.md", _normalized_summary(summary_markdown)
+        )
+        for member, source_path in zip(inventory.members, sources):
+            actual_size = 0
+            info = _zip_info(member.archive_path)
+            with (
+                source_path.open("rb") as source,
+                archive.open(info, mode="w", force_zip64=True) as destination,
+            ):
+                while block := source.read(_COPY_CHUNK_SIZE):
+                    actual_size += len(block)
+                    destination.write(block)
+            if actual_size != member.size_bytes:
+                raise ResultArchiveError("archive_generation_failed")
+
+
+async def _published_archive_size_with_runtime(
+    bucket: str,
+    object_key: str,
+    *,
+    obs_runtime: Any,
+) -> int:
+    """Read one archive metadata response under its own OBS lease."""
+    try:
+        size_bytes = await obs_runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: object_size(
+                bucket,
+                object_key,
+                access=ObsAccessOptions(client=client),
+            ),
+        )
+    except OSError:
+        raise ResultArchiveError(
+            "archive_publish_failed", retryable=True
+        ) from None
+    if size_bytes is None:
+        raise ResultArchiveError("archive_publish_failed", retryable=True)
+    return size_bytes
 
 
 def _published_archive_size(bucket: str, object_key: str, client: Any) -> int:

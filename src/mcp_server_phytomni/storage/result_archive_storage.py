@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..runtime.artifact_roles import ArtifactRole
+from ..runtime.outbound import ObsProfileName
 from ..runtime.result_archive import (
     MAX_RESULT_ARCHIVE_ARTIFACTS,
     ResultArchiveError,
@@ -29,7 +30,9 @@ from .obs_relay_ops import (
 
 __all__ = [
     "load_result_archive_inventory",
+    "load_result_archive_inventory_with_runtime",
     "persist_result_archive_inventory",
+    "persist_result_archive_inventory_with_runtime",
 ]
 
 
@@ -77,6 +80,52 @@ def persist_result_archive_inventory(
     return object_key
 
 
+async def persist_result_archive_inventory_with_runtime(
+    inventory: ResultArchiveInventory,
+    *,
+    bucket: str,
+    obs_runtime: Any,
+) -> str:
+    """Persist one inventory with a separate lease for every OBS attempt."""
+    validate_result_archive_inventory(inventory)
+    object_key = _inventory_key(inventory.run_root, inventory.digest)
+    content = _serialize_inventory(inventory)
+    existing = await _read_existing_inventory_with_runtime(
+        bucket,
+        object_key,
+        obs_runtime=obs_runtime,
+    )
+    if existing is not None:
+        _require_identical_inventory(existing, content)
+        return object_key
+    try:
+        await obs_runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: put_object_bytes_if_absent(
+                bucket,
+                object_key,
+                content,
+                access=ObsAccessOptions(client=client),
+            ),
+        )
+    except ObsObjectAlreadyExistsError as exc:
+        existing = await _read_existing_inventory_with_runtime(
+            bucket,
+            object_key,
+            obs_runtime=obs_runtime,
+        )
+        if existing is None:
+            raise ResultArchiveError(
+                "archive_publish_failed", retryable=True
+            ) from exc
+        _require_identical_inventory(existing, content)
+    except OSError:
+        raise ResultArchiveError(
+            "archive_publish_failed", retryable=True
+        ) from None
+    return object_key
+
+
 def load_result_archive_inventory(
     run_root: str,
     digest: str,
@@ -93,6 +142,35 @@ def load_result_archive_inventory(
             bucket,
             _inventory_key(run_root, digest),
             access=access,
+        )
+        decoded = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise ResultArchiveError("archive_contract_invalid") from None
+    inventory = _inventory_from_data(decoded)
+    if inventory.run_root != run_root or inventory.digest != digest:
+        raise ResultArchiveError("archive_contract_invalid")
+    return validate_result_archive_inventory(inventory)
+
+
+async def load_result_archive_inventory_with_runtime(
+    run_root: str,
+    digest: str,
+    *,
+    bucket: str,
+    obs_runtime: Any,
+) -> ResultArchiveInventory:
+    """Load one inventory with its single OBS read separately leased."""
+    if not isinstance(run_root, str) or not isinstance(digest, str):
+        raise ResultArchiveError("archive_contract_invalid")
+    try:
+        object_key = _inventory_key(run_root, digest)
+        raw = await obs_runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: get_object_bytes(
+                bucket,
+                object_key,
+                access=ObsAccessOptions(client=client),
+            ),
         )
         decoded = json.loads(raw.decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -131,6 +209,30 @@ def _read_existing_inventory(
     """Read one inventory, treating only a confirmed 404 as absence."""
     try:
         return get_object_bytes(bucket, object_key, access=access)
+    except ObsObjectNotFoundError:
+        return None
+    except OSError:
+        raise ResultArchiveError(
+            "archive_publish_failed", retryable=True
+        ) from None
+
+
+async def _read_existing_inventory_with_runtime(
+    bucket: str,
+    object_key: str,
+    *,
+    obs_runtime: Any,
+) -> bytes | None:
+    """Read one inventory under its own OBS lease."""
+    try:
+        return await obs_runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: get_object_bytes(
+                bucket,
+                object_key,
+                access=ObsAccessOptions(client=client),
+            ),
+        )
     except ObsObjectNotFoundError:
         return None
     except OSError:

@@ -246,10 +246,30 @@ class DirectResearchObjectMetadataPort:
     ) -> tuple[ResearchObjectAuthority, ...]:
         """Resolve request objects with one client and no object-body I/O."""
         try:
-            authorities, records = await self._obs_runtime.run(
-                ObsProfileName.PRIMARY,
-                lambda client: self._resolve_with_client(request, client),
-            )
+            authorities: list[ResearchObjectAuthority] = []
+            records: dict[str, _AuthorityRecord] = {}
+            for candidate in request.objects:
+                object_key = _normalized_object_key(candidate, self._bucket)
+                snapshot = await _read_snapshot(
+                    candidate.dataset_id,
+                    object_key,
+                    self._bucket,
+                    self._obs_runtime,
+                )
+                if snapshot.placeholder:
+                    raise ResearchObjectMetadataError()
+                authority = ResearchObjectAuthority(
+                    dataset_id=candidate.dataset_id,
+                    authority_id=secrets.token_urlsafe(24),
+                    snapshot=snapshot,
+                )
+                records[authority.authority_id] = _AuthorityRecord(
+                    parent_run_id=request.parent_run_id,
+                    execution_fingerprint=request.execution_fingerprint,
+                    object_key=object_key,
+                    authority=authority,
+                )
+                authorities.append(authority)
         except ResearchObjectMetadataError:
             raise
         except Exception:
@@ -270,18 +290,16 @@ class DirectResearchObjectMetadataPort:
             for authority in request.authorities
         )
         try:
-            current = await self._obs_runtime.run(
-                ObsProfileName.PRIMARY,
-                lambda client: tuple(
-                    _read_snapshot(
+            current: list[ResearchObjectSnapshot] = []
+            for record in records:
+                current.append(
+                    await _read_snapshot(
                         record.authority.dataset_id,
                         record.object_key,
                         self._bucket,
-                        client,
+                        self._obs_runtime,
                     )
-                    for record in records
-                ),
-            )
+                )
         except ResearchObjectMetadataError:
             raise
         except Exception:
@@ -301,38 +319,6 @@ class DirectResearchObjectMetadataPort:
                 record, request.parent_run_id, request.execution_fingerprint
             ):
                 self._authorities.pop(authority_id, None)
-
-    def _resolve_with_client(
-        self,
-        request: ResearchObjectResolveRequest,
-        client: Any,
-    ) -> tuple[
-        tuple[ResearchObjectAuthority, ...],
-        dict[str, _AuthorityRecord],
-    ]:
-        """Resolve all exact-key snapshots through one lent SDK client."""
-        authorities: list[ResearchObjectAuthority] = []
-        records: dict[str, _AuthorityRecord] = {}
-        for candidate in request.objects:
-            object_key = _normalized_object_key(candidate, self._bucket)
-            snapshot = _read_snapshot(
-                candidate.dataset_id, object_key, self._bucket, client
-            )
-            if snapshot.placeholder:
-                raise ResearchObjectMetadataError()
-            authority = ResearchObjectAuthority(
-                dataset_id=candidate.dataset_id,
-                authority_id=secrets.token_urlsafe(24),
-                snapshot=snapshot,
-            )
-            records[authority.authority_id] = _AuthorityRecord(
-                parent_run_id=request.parent_run_id,
-                execution_fingerprint=request.execution_fingerprint,
-                object_key=object_key,
-                authority=authority,
-            )
-            authorities.append(authority)
-        return tuple(authorities), records
 
     def _matching_record(
         self,
@@ -376,13 +362,21 @@ def _normalized_object_key(
     return object_key
 
 
-def _read_snapshot(
-    dataset_id: str, object_key: str, bucket: str, client: Any
+async def _read_snapshot(
+    dataset_id: str,
+    object_key: str,
+    bucket: str,
+    obs_runtime: _ObsRuntime,
 ) -> ResearchObjectSnapshot:
-    """Build one safe snapshot from a single exact-key metadata HEAD."""
+    """Build one safe snapshot from one separately leased metadata HEAD."""
     try:
-        metadata = head_object_metadata(
-            bucket=bucket, object_key=object_key, client=client
+        metadata = await obs_runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: head_object_metadata(
+                bucket=bucket,
+                object_key=object_key,
+                client=client,
+            ),
         )
     except (ObsObjectMetadataError, ObsObjectNotFoundError):
         raise ResearchObjectMetadataError() from None

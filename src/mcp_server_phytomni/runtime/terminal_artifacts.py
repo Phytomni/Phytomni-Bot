@@ -23,8 +23,8 @@ from typing import Any, overload
 from ..config.defaults import ServerConfig
 from ..storage.artifact_listing import (
     ListedArtifactObject,
-    list_artifact_objects,
-    list_artifact_paths,
+    list_artifact_objects_with_runtime,
+    list_artifact_paths_with_runtime,
 )
 from ..storage.downloads import download_obs_file
 from .artifact_roles import (
@@ -35,7 +35,7 @@ from .artifact_roles import (
     classify_artifacts,
 )
 from .execution_models import ExecutionWarning
-from .outbound import ObsProfileName, current_obs_runtime
+from .outbound import current_obs_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -86,14 +86,10 @@ class TerminalArtifactSet:
 async def _default_artifact_lister(output_dir: str) -> list[str]:
     """List public artifact paths through the existing storage helper."""
     config = ServerConfig()
-    obs_runtime = current_obs_runtime()
-    return await obs_runtime.run(
-        ObsProfileName.PRIMARY,
-        lambda client: list_artifact_paths(
-            output_dir,
-            bucket_name=config.BUCKET_NAME,
-            client=client,
-        ),
+    return await list_artifact_paths_with_runtime(
+        output_dir,
+        bucket_name=config.BUCKET_NAME,
+        obs_runtime=current_obs_runtime(),
     )
 
 
@@ -102,14 +98,10 @@ async def _default_artifact_object_lister(
 ) -> list[ListedArtifactObject]:
     """List output objects and actual sizes off the event loop."""
     config = ServerConfig()
-    obs_runtime = current_obs_runtime()
-    return await obs_runtime.run(
-        ObsProfileName.PRIMARY,
-        lambda client: list_artifact_objects(
-            output_dir,
-            bucket_name=config.BUCKET_NAME,
-            client=client,
-        ),
+    return await list_artifact_objects_with_runtime(
+        output_dir,
+        bucket_name=config.BUCKET_NAME,
+        obs_runtime=current_obs_runtime(),
     )
 
 

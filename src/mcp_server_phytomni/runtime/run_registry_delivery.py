@@ -15,14 +15,16 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from ..config.defaults import ServerConfig
 from ..mcp.formatting.models import ResultArchiveDescriptor, ResultDelivery
-from ..runtime.outbound import ObsProfileName, current_obs_runtime
-from ..storage.result_archive_storage import load_result_archive_inventory
+from ..runtime.outbound import current_obs_runtime
+from ..storage.result_archive_storage import (
+    load_result_archive_inventory_with_runtime,
+)
 from .live_tasks import deregister_live_task
 from .result_archive import (
     ResultArchiveError,
     ResultArchiveInventory,
-    _published_archive_size,
-    build_and_publish_result_archive,
+    _published_archive_size_with_runtime,
+    build_and_publish_result_archive_with_runtime,
 )
 from .run_registry_models import _now_iso
 from .sqlite import sqlite_transaction
@@ -390,15 +392,11 @@ async def load_private_inventory(
     )
     if not root or not separator or tail != expected:
         raise ResultArchiveError("archive_contract_invalid")
-    obs_runtime = current_obs_runtime()
-    return await obs_runtime.run(
-        ObsProfileName.PRIMARY,
-        lambda client: load_result_archive_inventory(
-            root,
-            inventory_digest,
-            bucket=_CONFIG.BUCKET_NAME,
-            client=client,
-        ),
+    return await load_result_archive_inventory_with_runtime(
+        root,
+        inventory_digest,
+        bucket=_CONFIG.BUCKET_NAME,
+        obs_runtime=current_obs_runtime(),
     )
 
 
@@ -408,33 +406,32 @@ async def _publish_archive(
     summary_markdown: str,
 ) -> ResultArchiveDescriptor:
     """Publish through Task 3 and return only an opaque public reference."""
-    obs_runtime = current_obs_runtime()
-    return await obs_runtime.run(
-        ObsProfileName.PRIMARY,
-        lambda client: _publish_archive_with_client(
-            inventory,
-            agent,
-            summary_markdown,
-            client,
-        ),
+    return await _publish_archive_with_runtime(
+        inventory,
+        agent,
+        summary_markdown,
+        obs_runtime=current_obs_runtime(),
     )
 
 
-def _publish_archive_with_client(
+async def _publish_archive_with_runtime(
     inventory: ResultArchiveInventory,
     agent: str,
     summary_markdown: str,
-    client: Any,
+    *,
+    obs_runtime: Any,
 ) -> ResultArchiveDescriptor:
-    """Publish one archive through the client lent by the OBS runtime."""
-    object_key = build_and_publish_result_archive(
+    """Publish one archive with separately scoped OBS SDK operations."""
+    object_key = await build_and_publish_result_archive_with_runtime(
         inventory,
         agent=agent,
         summary_markdown=summary_markdown,
-        client=client,
+        obs_runtime=obs_runtime,
     )
-    size_bytes = _published_archive_size(
-        _CONFIG.BUCKET_NAME, object_key, client
+    size_bytes = await _published_archive_size_with_runtime(
+        _CONFIG.BUCKET_NAME,
+        object_key,
+        obs_runtime=obs_runtime,
     )
     return ResultArchiveDescriptor(
         role="result_archive",

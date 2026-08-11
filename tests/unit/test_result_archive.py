@@ -21,6 +21,7 @@ from mcp_server_phytomni.runtime.artifact_roles import (
     ClassifiedArtifact,
 )
 from mcp_server_phytomni.runtime.execution_models import ExecutionWarning
+from mcp_server_phytomni.runtime.outbound import ObsProfileName
 from mcp_server_phytomni.runtime.result_archive import (
     ResultArchiveError,
     build_result_archive_inventory,
@@ -31,6 +32,21 @@ from mcp_server_phytomni.runtime.run_registry_reports import (
 from mcp_server_phytomni.runtime.terminal_artifacts import TerminalArtifactSet
 
 pytestmark = pytest.mark.unit
+
+
+class _CountingObsRuntime:
+    """Run one fake client operation while recording each lease."""
+
+    def __init__(self) -> None:
+        """Provide one runtime-owned opaque SDK client."""
+        self.calls = 0
+        self.client = object()
+
+    async def run(self, profile: ObsProfileName, operation: object) -> object:
+        """Execute one separately leased operation."""
+        assert profile is ObsProfileName.PRIMARY
+        self.calls += 1
+        return operation(self.client)  # type: ignore[operator]
 
 
 def _artifact(
@@ -65,6 +81,53 @@ def _set(
     warnings: tuple[ExecutionWarning, ...] = (),
 ) -> TerminalArtifactSet:
     return TerminalArtifactSet(artifacts=artifacts, warnings=warnings)
+
+
+async def test_async_publish_leases_each_source_and_archive_sdk_attempt(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One source GET plus HEAD, PUT, HEAD uses four OBS leases."""
+    inventory = build_result_archive_inventory(
+        _groups(_set(_artifact("report.md", size=3)))
+    )
+    runtime = _CountingObsRuntime()
+    uploaded: dict[str, bytes] = {}
+    sizes: dict[str, int] = {}
+    monkeypatch.setattr(result_archive, "ARCHIVE_TEMP_ROOT", tmp_path)
+    monkeypatch.setattr(
+        result_archive,
+        "SERVER_CONFIG",
+        SimpleNamespace(BUCKET_NAME="phytomni"),
+    )
+    monkeypatch.setattr(
+        result_archive,
+        "iter_object_chunks",
+        lambda *_args, **_kwargs: iter((b"abc",)),
+    )
+
+    def size(_bucket: str, key: str, **_kwargs: object) -> int:
+        if key not in sizes:
+            raise OSError("missing")
+        return sizes[key]
+
+    def put(_bucket: str, key: str, source, **_kwargs: object) -> str:
+        uploaded[key] = source.read_bytes()
+        sizes[key] = len(uploaded[key])
+        return key
+
+    monkeypatch.setattr(result_archive, "object_size", size)
+    monkeypatch.setattr(result_archive, "put_object_file", put)
+
+    key = await result_archive.build_and_publish_result_archive_with_runtime(
+        inventory,
+        agent="analyst",
+        summary_markdown="safe answer",
+        obs_runtime=runtime,
+    )
+
+    assert key in uploaded
+    assert runtime.calls == 4
 
 
 def test_inventory_uses_child_prefixes_and_excludes_internal_files() -> None:

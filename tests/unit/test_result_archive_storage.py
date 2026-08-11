@@ -11,6 +11,7 @@ import json
 import pytest
 
 from mcp_server_phytomni.runtime.artifact_roles import ArtifactRole
+from mcp_server_phytomni.runtime.outbound import ObsProfileName
 from mcp_server_phytomni.runtime.result_archive import (
     ResultArchiveError,
     ResultArchiveInventory,
@@ -20,6 +21,21 @@ from mcp_server_phytomni.runtime.result_archive import (
 from mcp_server_phytomni.storage import result_archive_storage as storage
 
 pytestmark = pytest.mark.unit
+
+
+class _CountingObsRuntime:
+    """Record each individually leased OBS operation."""
+
+    def __init__(self) -> None:
+        """Expose one opaque runtime-owned client to operations."""
+        self.calls = 0
+        self.client = object()
+
+    async def run(self, profile: ObsProfileName, operation: object) -> object:
+        """Run one operation and retain the lease invocation count."""
+        assert profile is ObsProfileName.PRIMARY
+        self.calls += 1
+        return operation(self.client)  # type: ignore[operator]
 
 
 def _inventory() -> ResultArchiveInventory:
@@ -38,6 +54,35 @@ def _inventory() -> ResultArchiveInventory:
         inventory_digest((member,)),
         3,
     )
+
+
+async def test_persist_leases_inventory_read_and_create_separately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing inventory uses distinct OBS leases for GET and PUT."""
+    inventory = _inventory()
+    runtime = _CountingObsRuntime()
+    written: list[bytes] = []
+
+    def missing(*_args: object, **_kwargs: object) -> bytes:
+        raise storage.ObsObjectNotFoundError("missing")
+
+    monkeypatch.setattr(storage, "get_object_bytes", missing)
+    monkeypatch.setattr(
+        storage,
+        "put_object_bytes_if_absent",
+        lambda _bucket, _key, content, **_kwargs: written.append(content),
+    )
+
+    key = await storage.persist_result_archive_inventory_with_runtime(
+        inventory,
+        bucket="phytomni",
+        obs_runtime=runtime,
+    )
+
+    assert key.endswith(".phytomni-result-inventory.json")
+    assert runtime.calls == 2
+    assert len(written) == 1
 
 
 def test_persist_accepts_identical_content_and_load_revalidates(
