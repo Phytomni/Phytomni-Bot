@@ -120,7 +120,7 @@ async def test_region_vci_analysis_extracts_codes_and_submits_task(
         assert task_name == "vci_analysis"
         return ["obs://data/vci-1", "obs://data/vci-2"]
 
-    def fake_create_output_dir(
+    async def fake_create_output_dir(
         user_id: str | None,
         task: str,
         **obs_kwargs: Any,

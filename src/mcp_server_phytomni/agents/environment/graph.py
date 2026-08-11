@@ -111,7 +111,7 @@ async def submit_vci_task_node(
         environment_data, "environment_analysis", "vci_analysis"
     )
     if not batch:
-        output_dir = environment_output_dir(user_id, kwargs)
+        output_dir = await environment_output_dir(user_id, kwargs)
     meta = agent.get_prompt(prompt_file, "user/environment/vci_analysis_meta")
     vci_task = await _submit_vci_via_subgraph(
         _EnvironmentSubmitInputs(

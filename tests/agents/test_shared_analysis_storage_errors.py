@@ -15,7 +15,6 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
@@ -66,26 +65,16 @@ def test_get_data_list_cached_raises_on_missing_species() -> None:
         )
 
 
-def test_ensure_run_output_dir_reuses_preset_dir() -> None:
+async def test_ensure_run_output_dir_reuses_preset_dir() -> None:
     """A non-empty ``output_dir`` short-circuits before touching OBS.
 
     The reuse path is the contract for warm runs that already minted
-    their output directory upstream; it must not call OBS credentials
-    on the sensitive config or hit ``create_output_dir``.
+    their output directory upstream; it must not hit ``create_output_dir``.
     """
     preset = "/obs/phytomni/agent_data/preset/run-X"
 
-    def _credentials_tripwire(*_args: Any, **_kwargs: Any) -> Any:
-        """Should never be called on the preset path."""
-        raise AssertionError(
-            "ensure_run_output_dir reached obs_credentials on the "
-            "preset path; the short-circuit at output_dir is broken."
-        )
-
-    sensitive_stub = SimpleNamespace(obs_credentials=_credentials_tripwire)
-    result = ensure_run_output_dir(
+    result = await ensure_run_output_dir(
         config=SimpleNamespace(OBS_SERVER="ignored", BUCKET_NAME="ignored"),
-        sensitive_config=sensitive_stub,
         task="evolution",
         run_identity=RunIdentity(
             user_id="alice",
@@ -98,7 +87,7 @@ def test_ensure_run_output_dir_reuses_preset_dir() -> None:
     assert result == preset
 
 
-def test_create_output_dir_uses_shared_key_when_fingerprint_given(
+async def test_create_output_dir_uses_shared_key_when_fingerprint_given(
     monkeypatch,
 ) -> None:
     """A fingerprint routes the output dir to the content-addressed root."""
@@ -114,7 +103,7 @@ def test_create_output_dir_uses_shared_key_when_fingerprint_given(
     monkeypatch.setattr(st, "_create_output_dir_obsfs", _fake_obsfs)
     monkeypatch.setattr(st, "relay_mode_enabled", lambda: False)
 
-    st.create_output_dir(
+    await st.create_output_dir(
         user_id="bob",
         task="analyst_task",
         bucket_name="phytomni",

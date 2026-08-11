@@ -132,9 +132,8 @@ async def test_explicit_child_fingerprint_reaches_context(
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
     captured: dict[str, Any] = {}
 
-    def fake_context(
+    async def fake_context(
         _config: Any,
-        _secrets: Any,
         request: dict[str, Any],
         fingerprint: str | None = None,
     ) -> Any:

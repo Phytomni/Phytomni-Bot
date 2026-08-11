@@ -37,12 +37,7 @@ def _config(user_id: str) -> Any:
     )
 
 
-def _sensitive() -> Any:
-    """Return a sensitive config exposing OBS credentials."""
-    return SimpleNamespace(obs_credentials=lambda: ("ak", "sk"))
-
-
-def test_fingerprinted_output_dir_is_identical_across_users(
+async def test_fingerprinted_output_dir_is_identical_across_users(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Two tenants with the same fingerprint land the same neutral path."""
@@ -51,11 +46,11 @@ def test_fingerprinted_output_dir_is_identical_across_users(
     monkeypatch.setattr(storage_mod, "relay_mode_enabled", lambda: True)
     request = {"analysis_type": "evolution_analysis", "target_id": "g1"}
 
-    alice = prepare_analyst_dispatch_context(
-        _config("alice"), _sensitive(), request, _FINGERPRINT
+    alice = await prepare_analyst_dispatch_context(
+        _config("alice"), request, _FINGERPRINT
     )
-    bob = prepare_analyst_dispatch_context(
-        _config("bob"), _sensitive(), request, _FINGERPRINT
+    bob = await prepare_analyst_dispatch_context(
+        _config("bob"), request, _FINGERPRINT
     )
 
     assert alice.output_dir == bob.output_dir
@@ -67,7 +62,7 @@ def test_fingerprinted_output_dir_is_identical_across_users(
     assert alice.thread_id != bob.thread_id
 
 
-def test_preset_output_dir_is_overridden_by_fingerprint(
+async def test_preset_output_dir_is_overridden_by_fingerprint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A preset user-scoped request output_dir is overridden by the fp.
@@ -85,8 +80,8 @@ def test_preset_output_dir_is_overridden_by_fingerprint(
         "output_dir": preset,
     }
 
-    ctx = prepare_analyst_dispatch_context(
-        _config("anonymous"), _sensitive(), request, _FINGERPRINT
+    ctx = await prepare_analyst_dispatch_context(
+        _config("anonymous"), request, _FINGERPRINT
     )
 
     assert ctx.output_dir != preset

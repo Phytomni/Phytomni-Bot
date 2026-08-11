@@ -50,15 +50,25 @@ def _fingerprint() -> str:
 
 def _patch_context(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub OBS/thread prep so no real RunIdentity/OBS work happens."""
-    monkeypatch.setattr(
-        ada,
-        "prepare_analyst_dispatch_context",
-        lambda config, sensitive, request, fp=None: SimpleNamespace(
+
+    async def prepare_context(
+        _config: Any,
+        _sensitive: Any,
+        _request: Any,
+        _fingerprint: str | None = None,
+    ) -> SimpleNamespace:
+        """Return a prepared context through the async helper seam."""
+        return SimpleNamespace(
             analysis_type="evolution_analysis",
             target_id="AT1G01010",
             output_dir="/obs/out",
             thread_id="thread-1",
-        ),
+        )
+
+    monkeypatch.setattr(
+        ada,
+        "prepare_analyst_dispatch_context",
+        prepare_context,
     )
 
 

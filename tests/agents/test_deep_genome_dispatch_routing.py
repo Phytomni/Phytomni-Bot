@@ -493,14 +493,18 @@ async def test_default_analyst_adapter_still_polls(
     """The standalone adapter default keeps its historical polling mode."""
     captured: list[bool] = []
 
-    monkeypatch.setattr(
-        analyst_dispatch_adapters,
-        "prepare_analyst_dispatch_context",
-        lambda *_args: SimpleNamespace(
+    async def prepare_context(*_args: Any) -> SimpleNamespace:
+        """Return a prepared context through the async helper seam."""
+        return SimpleNamespace(
             analysis_type="standalone",
             output_dir="/obs/out",
             thread_id="thread-1",
-        ),
+        )
+
+    monkeypatch.setattr(
+        analyst_dispatch_adapters,
+        "prepare_analyst_dispatch_context",
+        prepare_context,
     )
 
     async def no_reuse(*_args: Any, **_kwargs: Any) -> None:

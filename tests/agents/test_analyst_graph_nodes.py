@@ -439,7 +439,7 @@ async def test_tool_extract_post_node_accepts_object_fragments(
     }
 
 
-def test_submit_output_dir_forwards_input_fingerprint(
+async def test_submit_output_dir_forwards_input_fingerprint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``_submit_output_dir`` passes ``input_fingerprint`` to
@@ -452,7 +452,7 @@ def test_submit_output_dir_forwards_input_fingerprint(
     """
     captured: dict[str, Any] = {}
 
-    def _fake_ensure(
+    async def _fake_ensure(
         config: Any,
         sensitive_config: Any,
         task: str,
@@ -481,7 +481,7 @@ def test_submit_output_dir_forwards_input_fingerprint(
         {"input_fingerprint": "f" * 64, "output_dir": ""},
     )
 
-    getattr(AnalystGraphMixin, "_submit_output_dir")(
+    await getattr(AnalystGraphMixin, "_submit_output_dir")(
         fake_self, state, run_identity
     )
 

@@ -240,7 +240,7 @@ async def test_download_analysis_result_falls_back_to_sdk_download(
     captured: dict[str, Any] = {}
     harness = DispatchHarness(str(tmp_path / "deep-out"))
 
-    def fake_download_obs_out(*args: Any, **kwargs: Any):
+    async def fake_download_obs_out(*args: Any, **kwargs: Any) -> list[str]:
         """Capture SDK download fallback arguments.
 
         Args:
@@ -249,7 +249,7 @@ async def test_download_analysis_result_falls_back_to_sdk_download(
         """
         captured["args"] = args
         captured["kwargs"] = kwargs
-        yield "keep.txt download succeed."
+        return ["keep.txt download succeed."]
 
     monkeypatch.setattr(
         deep_genome_dispatch,

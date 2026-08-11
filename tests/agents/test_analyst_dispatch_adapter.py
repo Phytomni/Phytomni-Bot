@@ -332,9 +332,8 @@ async def test_dispatch_seam_passes_fingerprint_to_output_dir_creator(
 
     captured: dict[str, Any] = {}
 
-    def fake_ensure_output_dir(
+    async def fake_ensure_output_dir(
         _config: Any,
-        _sensitive_config: Any,
         _analysis_type: str,
         _output_dir: str | None,
         _run_identity: Any = None,
@@ -422,12 +421,11 @@ async def test_dispatch_child_flag_requires_an_exact_directory(
         )
 
 
-def test_dispatch_context_rejects_an_invalid_flagged_child() -> None:
+async def test_dispatch_context_rejects_an_invalid_flagged_child() -> None:
     """The shared context validates flagged paths for direct callers too."""
     with pytest.raises(ValueError, match="result child"):
-        _analysis_mod.prepare_analyst_dispatch_context(
+        await _analysis_mod.prepare_analyst_dispatch_context(
             SimpleNamespace(USER_ID="user-child"),
-            object(),
             {
                 "analysis_type": "design_analysis",
                 "target_id": "AT1G01010",
@@ -437,21 +435,26 @@ def test_dispatch_context_rejects_an_invalid_flagged_child() -> None:
         )
 
 
-def test_standalone_analyst_projects_the_ensured_root_to_first_child(
+async def test_standalone_analyst_projects_the_ensured_root_to_first_child(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Standalone Analyst submits use the first child below their run root."""
+
+    async def ensure_output_dir(*_args: Any, **_kwargs: Any) -> str:
+        """Return a deterministic run root through the async seam."""
+        return "/obs/run-root"
+
     monkeypatch.setattr(
         _analyst_graph_mod,
         "ensure_run_output_dir",
-        lambda *_args, **_kwargs: "/obs/run-root",
+        ensure_output_dir,
     )
     agent = SimpleNamespace(
         analyst_config=SimpleNamespace(CREATE_DIR=True),
         sensitive_config=object(),
     )
 
-    output_dir = getattr(AnalystGraphMixin, "_submit_output_dir")(
+    output_dir = await getattr(AnalystGraphMixin, "_submit_output_dir")(
         agent,
         {"output_dir": "", "input_fingerprint": "fingerprint"},
         RunIdentity.create(user_id="user-child"),
@@ -460,7 +463,7 @@ def test_standalone_analyst_projects_the_ensured_root_to_first_child(
     assert output_dir == "/obs/run-root/children/part-001"
 
 
-def test_analyst_rejects_an_invalid_flagged_child() -> None:
+async def test_analyst_rejects_an_invalid_flagged_child() -> None:
     """The Analyst node revalidates flagged state before skipping creation."""
     agent = SimpleNamespace(
         analyst_config=SimpleNamespace(CREATE_DIR=True),
@@ -468,7 +471,7 @@ def test_analyst_rejects_an_invalid_flagged_child() -> None:
     )
 
     with pytest.raises(ValueError, match="result child"):
-        getattr(AnalystGraphMixin, "_submit_output_dir")(
+        await getattr(AnalystGraphMixin, "_submit_output_dir")(
             agent,
             {
                 "output_dir": "/obs/run",
