@@ -318,17 +318,100 @@ async def test_stream_http_holds_interop_lease_until_generator_closes() -> (
 
 
 @pytest.mark.asyncio
-async def test_mcp_resource_creation_happens_before_interop_lease() -> None:
-    """MCP session construction does not consume operation capacity."""
-    observations: list[tuple[str, int]] = []
+async def test_mcp_first_initializations_share_interop_capacity() -> None:
+    """Different first-use MCP sessions cannot initialize concurrently."""
     pools = _pools(1)
+    first_started = asyncio.Event()
+    second_started = asyncio.Event()
+    release_first = asyncio.Event()
+    active_initializations = 0
+    max_active_initializations = 0
+
+    def factory(_target_id: str, **_: Any) -> httpx.AsyncClient:
+        return httpx.AsyncClient()
+
+    @asynccontextmanager
+    async def stream_factory(
+        url: str,
+        *,
+        http_client: httpx.AsyncClient,
+        terminate_on_close: bool,
+    ) -> AsyncGenerator[tuple[object, object, Callable[[], None]], None]:
+        del http_client, terminate_on_close
+        target_id = "peer-a" if "peer-a." in url else "peer-b"
+        yield SimpleNamespace(target_id=target_id), object(), lambda: None
+
+    @asynccontextmanager
+    async def session_context(
+        read_stream: Any, *_args: Any, **_kwargs: Any
+    ) -> AsyncGenerator[Any, None]:
+        session = SimpleNamespace()
+
+        async def initialize() -> None:
+            nonlocal active_initializations, max_active_initializations
+            active_initializations += 1
+            max_active_initializations = max(
+                max_active_initializations,
+                active_initializations,
+            )
+            try:
+                if read_stream.target_id == "peer-a":
+                    first_started.set()
+                    await release_first.wait()
+                else:
+                    second_started.set()
+            finally:
+                active_initializations -= 1
+
+        session.initialize = initialize
+        yield session
+
+    runtime = InteropResourceRuntime(
+        _registry(_http_target("peer-a"), _http_target("peer-b")),
+        _sensitive(),
+        pools,
+        factories=InteropResourceFactories(
+            http=factory,
+            streamable=stream_factory,
+            session=session_context,
+        ),
+    )
+
+    first = asyncio.create_task(
+        runtime.run_mcp("peer-a", lambda _session: _async_none())
+    )
+    await first_started.wait()
+    second = asyncio.create_task(
+        runtime.run_mcp("peer-b", lambda _session: _async_none())
+    )
+    for _ in range(100):
+        if (
+            second_started.is_set()
+            or pools.snapshot(OutboundPoolName.INTEROP).waiting == 1
+        ):
+            break
+        await asyncio.sleep(0)
+
+    second_started_before_release = second_started.is_set()
+    waiting_before_release = pools.snapshot(OutboundPoolName.INTEROP).waiting
+    release_first.set()
+    await asyncio.gather(first, second)
+    await runtime.aclose()
+
+    assert not second_started_before_release
+    assert waiting_before_release == 1
+    assert max_active_initializations == 1
+
+
+@pytest.mark.asyncio
+async def test_mcp_initialization_and_operation_use_separate_leases() -> None:
+    """First use leases initialization and the later operation separately."""
+    pools = _pools(1)
+    observations: list[tuple[str, int]] = []
 
     def factory(_target_id: str, **_: Any) -> httpx.AsyncClient:
         observations.append(
-            (
-                "factory",
-                pools.snapshot(OutboundPoolName.INTEROP).in_use,
-            )
+            ("factory", pools.snapshot(OutboundPoolName.INTEROP).in_use)
         )
         return httpx.AsyncClient()
 
@@ -338,15 +421,26 @@ async def test_mcp_resource_creation_happens_before_interop_lease() -> None:
         *,
         http_client: httpx.AsyncClient,
         terminate_on_close: bool,
-    ) -> AsyncGenerator[tuple[object, object, Callable[[], None]], None]:
+    ) -> AsyncIterator[tuple[object, object, Callable[[], None]]]:
         del http_client, terminate_on_close
         yield object(), object(), lambda: None
 
     @asynccontextmanager
     async def session_context(
         *_args: Any, **_kwargs: Any
-    ) -> AsyncGenerator[Any, None]:
-        yield _fake_session()
+    ) -> AsyncIterator[Any]:
+        session = SimpleNamespace()
+
+        async def initialize() -> None:
+            observations.append(
+                (
+                    "initialize",
+                    pools.snapshot(OutboundPoolName.INTEROP).in_use,
+                )
+            )
+
+        session.initialize = initialize
+        yield session
 
     runtime = InteropResourceRuntime(
         _registry(_http_target()),
@@ -361,15 +455,178 @@ async def test_mcp_resource_creation_happens_before_interop_lease() -> None:
 
     async def operation(_session: Any) -> int:
         observations.append(
-            (
-                "operation",
-                pools.snapshot(OutboundPoolName.INTEROP).in_use,
-            )
+            ("operation", pools.snapshot(OutboundPoolName.INTEROP).in_use)
         )
         return 204
 
     assert await runtime.run_mcp("peer-http", operation) == 204
-    assert observations == [("factory", 0), ("operation", 1)]
+    assert await runtime.run_mcp("peer-http", operation) == 204
+    assert observations == [
+        ("factory", 0),
+        ("initialize", 1),
+        ("operation", 1),
+        ("operation", 1),
+    ]
+    snapshot = pools.snapshot(OutboundPoolName.INTEROP)
+    assert snapshot.started == 3
+    assert snapshot.completed == 3
+    assert snapshot.in_use == 0
+    await runtime.aclose()
+
+
+@pytest.mark.asyncio
+async def test_mcp_initialization_failure_rolls_back_under_lease() -> None:
+    """Failed initialization closes every partial resource and its lease."""
+    pools = _pools(1)
+    events: list[str] = []
+
+    def factory(_target_id: str, **_: Any) -> httpx.AsyncClient:
+        client = httpx.AsyncClient()
+        original_close = client.aclose
+
+        async def close() -> None:
+            events.append("client-close")
+            await original_close()
+
+        setattr(client, "aclose", close)
+        return client
+
+    @asynccontextmanager
+    async def stream_factory(
+        _url: str,
+        *,
+        http_client: httpx.AsyncClient,
+        terminate_on_close: bool,
+    ) -> AsyncIterator[tuple[object, object, Callable[[], None]]]:
+        del http_client, terminate_on_close
+        events.append("stream-open")
+        try:
+            yield object(), object(), lambda: None
+        finally:
+            events.append("stream-close")
+
+    @asynccontextmanager
+    async def session_context(
+        *_args: Any, **_kwargs: Any
+    ) -> AsyncIterator[Any]:
+        events.append("session-open")
+        session = SimpleNamespace()
+
+        async def initialize() -> None:
+            assert pools.snapshot(OutboundPoolName.INTEROP).in_use == 1
+            events.append("initialize")
+            raise httpx.ConnectError("initialization failed")
+
+        session.initialize = initialize
+        try:
+            yield session
+        finally:
+            events.append("session-close")
+
+    runtime = InteropResourceRuntime(
+        _registry(_http_target()),
+        _sensitive(),
+        pools,
+        factories=InteropResourceFactories(
+            http=factory,
+            streamable=stream_factory,
+            session=session_context,
+        ),
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        await runtime.run_mcp("peer-http", lambda _session: _async_none())
+
+    assert events == [
+        "stream-open",
+        "session-open",
+        "initialize",
+        "session-close",
+        "stream-close",
+        "client-close",
+    ]
+    assert runtime.keys == frozenset()
+    assert runtime.http_keys == frozenset()
+    snapshot = pools.snapshot(OutboundPoolName.INTEROP)
+    assert snapshot.started == 1
+    assert snapshot.failed == 1
+    assert snapshot.in_use == 0
+    await runtime.aclose()
+
+
+@pytest.mark.asyncio
+async def test_mcp_initialization_cancellation_rolls_back_under_lease() -> (
+    None
+):
+    """Cancelled initialization closes state before returning capacity."""
+    pools = _pools(1)
+    initialized = asyncio.Event()
+    closed: list[str] = []
+
+    def factory(_target_id: str, **_: Any) -> httpx.AsyncClient:
+        client = httpx.AsyncClient()
+        original_close = client.aclose
+
+        async def close() -> None:
+            closed.append("client")
+            await original_close()
+
+        setattr(client, "aclose", close)
+        return client
+
+    @asynccontextmanager
+    async def stream_factory(
+        _url: str,
+        *,
+        http_client: httpx.AsyncClient,
+        terminate_on_close: bool,
+    ) -> AsyncIterator[tuple[object, object, Callable[[], None]]]:
+        del http_client, terminate_on_close
+        try:
+            yield object(), object(), lambda: None
+        finally:
+            closed.append("stream")
+
+    @asynccontextmanager
+    async def session_context(
+        *_args: Any, **_kwargs: Any
+    ) -> AsyncIterator[Any]:
+        session = SimpleNamespace()
+
+        async def initialize() -> None:
+            initialized.set()
+            await asyncio.Event().wait()
+
+        session.initialize = initialize
+        try:
+            yield session
+        finally:
+            closed.append("session")
+
+    runtime = InteropResourceRuntime(
+        _registry(_http_target()),
+        _sensitive(),
+        pools,
+        factories=InteropResourceFactories(
+            http=factory,
+            streamable=stream_factory,
+            session=session_context,
+        ),
+    )
+    task = asyncio.create_task(
+        runtime.run_mcp("peer-http", lambda _session: _async_none())
+    )
+    await initialized.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert closed == ["session", "stream", "client"]
+    assert runtime.keys == frozenset()
+    assert runtime.http_keys == frozenset()
+    snapshot = pools.snapshot(OutboundPoolName.INTEROP)
+    assert snapshot.cancelled == 1
+    assert snapshot.in_use == 0
     await runtime.aclose()
 
 

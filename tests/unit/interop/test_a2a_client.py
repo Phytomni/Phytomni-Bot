@@ -1,6 +1,7 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
 """Offline ASGI-peer tests for the external A2A client boundary."""
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ import asyncio
 import inspect
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from types import SimpleNamespace
 from typing import Any, cast
 
 import httpx
@@ -32,6 +34,7 @@ from tests.support.a2a_fakes import (
     send_json_response,
 )
 
+from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.interop import a2a_client as client_module
 from mcp_server_phytomni.interop.a2a_client import (
     InteropA2AClientError,
@@ -39,6 +42,14 @@ from mcp_server_phytomni.interop.a2a_client import (
 )
 from mcp_server_phytomni.interop.models import A2ATarget
 from mcp_server_phytomni.interop.registry import InteropRegistry
+from mcp_server_phytomni.interop.runtime import (
+    InteropResourceFactories,
+    InteropResourceRuntime,
+)
+from mcp_server_phytomni.runtime.outbound import (
+    OutboundPoolName,
+    OutboundPoolRegistry,
+)
 
 pytestmark = pytest.mark.unit
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
@@ -195,6 +206,356 @@ async def _collect(**kwargs: Any) -> list[Any]:
     async for event in streamer(registry=registry, **kwargs):
         events.append(event)
     return events
+
+
+def _runtime(
+    registry: InteropRegistry,
+    clients: list[httpx.AsyncClient],
+    *,
+    capacity: int = 1,
+) -> tuple[InteropResourceRuntime, OutboundPoolRegistry]:
+    """Build a process runtime with one observable hardened HTTP client."""
+    capacities = {name: 0 for name in OutboundPoolName}
+    capacities[OutboundPoolName.INTEROP] = capacity
+    pools = OutboundPoolRegistry(capacities, wait_warn_seconds=1.0)
+
+    def factory(_target_id: str, **_: Any) -> httpx.AsyncClient:
+        client = httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(204, request=request)
+            )
+        )
+        clients.append(client)
+        return client
+
+    runtime = InteropResourceRuntime(
+        registry,
+        SensitiveConfig.model_construct(),
+        pools,
+        factories=InteropResourceFactories(http=factory),
+    )
+    return runtime, pools
+
+
+def _recording_sdk_factory(
+    created: list[Any],
+    stream_factory: Callable[[int], AsyncIterator[Any]] | None = None,
+) -> Callable[[Any], Any]:
+    """Build SDK clients whose per-call iterators stay request-local."""
+
+    class RecordingClient:
+        """Minimal reusable SDK client backed by one runtime HTTP client."""
+
+        def __init__(self, http_client: httpx.AsyncClient) -> None:
+            self.http_client = http_client
+            self.close_calls = 0
+            self.send_calls = 0
+
+        def send_message(self, _request: Any) -> AsyncIterator[Any]:
+            """Return one request-local stream from the reusable client."""
+            self.send_calls += 1
+            if stream_factory is not None:
+                return stream_factory(self.send_calls)
+
+            async def responses() -> AsyncIterator[Any]:
+                yield to_stream_response(_terminal_task())
+
+            return responses()
+
+        async def close(self) -> None:
+            """Close the shared HTTP client owned by this fake."""
+            self.close_calls += 1
+            await self.http_client.aclose()
+
+    def factory(config: Any) -> SimpleNamespace:
+        """Return a facade that records each created SDK client."""
+
+        def create(_card: Any) -> RecordingClient:
+            """Create and record one SDK client instance."""
+            client = RecordingClient(config.httpx_client)
+            created.append(client)
+            return client
+
+        return SimpleNamespace(create=create)
+
+    return factory
+
+
+async def _card_fetcher(_target_id: str, **_: Any) -> Any:
+    """Return one already-validated card without external I/O."""
+    return build_agent_card(
+        base_url="https://peer.example.test",
+        name="Peer agent",
+        description="Reusable fixture",
+        skill_description="Annotate text",
+    )
+
+
+async def test_runtime_reuses_one_sdk_client_for_sequential_streams() -> None:
+    """Healthy executions reuse one target-owned official SDK client."""
+    target = _target()
+    registry = _registry(target)
+    http_clients: list[httpx.AsyncClient] = []
+    created: list[Any] = []
+    runtime, _pools = _runtime(registry, http_clients)
+
+    for text in ("first", "second"):
+        events = await _collect(
+            target_id=target.id,
+            capability_id="annotate",
+            registry=registry,
+            text=text,
+            _card_fetcher=_card_fetcher,
+            _sdk_factory=_recording_sdk_factory(created),
+            _interop_runtime=runtime,
+        )
+        assert events[-1].terminal is True
+
+    assert len(created) == 1
+    assert runtime.a2a_keys == {("peer", "a2a")}
+    await runtime.aclose()
+    assert created[0].close_calls == 1
+    assert len(http_clients) == 1
+    assert http_clients[0].is_closed
+
+
+async def test_runtime_serializes_concurrent_a2a_first_use() -> None:
+    """Concurrent first use publishes exactly one SDK client identity."""
+    target = _target()
+    registry = _registry(target)
+    http_clients: list[httpx.AsyncClient] = []
+    created: list[Any] = []
+    runtime, _pools = _runtime(registry, http_clients, capacity=2)
+    both_fetching = asyncio.Event()
+    release_cards = asyncio.Event()
+    fetches = 0
+
+    async def coordinated_card_fetcher(_target_id: str, **_: Any) -> Any:
+        nonlocal fetches
+        fetches += 1
+        if fetches == 2:
+            both_fetching.set()
+        await release_cards.wait()
+        return await _card_fetcher(_target_id)
+
+    sdk_factory = _recording_sdk_factory(created)
+    calls = [
+        asyncio.create_task(
+            _collect(
+                target_id=target.id,
+                capability_id="annotate",
+                registry=registry,
+                text=text,
+                _card_fetcher=coordinated_card_fetcher,
+                _sdk_factory=sdk_factory,
+                _interop_runtime=runtime,
+            )
+        )
+        for text in ("first", "second")
+    ]
+    await both_fetching.wait()
+    release_cards.set()
+    results = await asyncio.gather(*calls)
+
+    assert all(events[-1].terminal for events in results)
+    assert len(created) == 1
+    assert created[0].send_calls == 2
+    await runtime.aclose()
+
+
+async def test_runtime_evicts_failed_a2a_client_before_rebuild() -> None:
+    """A failed SDK stream closes its exact client and rebuilds once."""
+    target = _target()
+    registry = _registry(target)
+    http_clients: list[httpx.AsyncClient] = []
+    created: list[Any] = []
+    stream_attempts = 0
+    runtime, _pools = _runtime(registry, http_clients)
+
+    def stream_factory(_call_number: int) -> AsyncIterator[Any]:
+        nonlocal stream_attempts
+        stream_attempts += 1
+        attempt = stream_attempts
+
+        async def responses() -> AsyncIterator[Any]:
+            if attempt == 1:
+                raise httpx.ConnectError("peer closed")
+            yield to_stream_response(_terminal_task())
+
+        return responses()
+
+    sdk_factory = _recording_sdk_factory(created, stream_factory)
+    with pytest.raises(InteropA2AClientError) as caught:
+        await _collect(
+            target_id=target.id,
+            capability_id="annotate",
+            registry=registry,
+            text="first",
+            _card_fetcher=_card_fetcher,
+            _sdk_factory=sdk_factory,
+            _interop_runtime=runtime,
+        )
+    assert caught.value.code == "transport_error"
+    assert created[0].close_calls == 1
+    assert runtime.a2a_keys == frozenset()
+    assert http_clients[0].is_closed
+
+    events = await _collect(
+        target_id=target.id,
+        capability_id="annotate",
+        registry=registry,
+        text="second",
+        _card_fetcher=_card_fetcher,
+        _sdk_factory=sdk_factory,
+        _interop_runtime=runtime,
+    )
+    assert events[-1].terminal is True
+    assert len(created) == 2
+    assert len(http_clients) == 2
+    await runtime.aclose()
+    assert [client.close_calls for client in created] == [1, 1]
+
+
+async def test_runtime_rebuilds_a2a_client_after_shared_http_closes() -> None:
+    """A closed transport cannot retain a reusable SDK client identity."""
+    target = _target()
+    registry = _registry(target)
+    http_clients: list[httpx.AsyncClient] = []
+    created: list[Any] = []
+    runtime, _pools = _runtime(registry, http_clients)
+    sdk_factory = _recording_sdk_factory(created)
+
+    first = await _collect(
+        target_id=target.id,
+        capability_id="annotate",
+        registry=registry,
+        text="first",
+        _card_fetcher=_card_fetcher,
+        _sdk_factory=sdk_factory,
+        _interop_runtime=runtime,
+    )
+    assert first[-1].terminal is True
+    await http_clients[0].aclose()
+
+    second = await _collect(
+        target_id=target.id,
+        capability_id="annotate",
+        registry=registry,
+        text="second",
+        _card_fetcher=_card_fetcher,
+        _sdk_factory=sdk_factory,
+        _interop_runtime=runtime,
+    )
+
+    assert second[-1].terminal is True
+    assert len(created) == 2
+    assert created[0].close_calls == 1
+    assert len(http_clients) == 2
+    await runtime.aclose()
+
+
+async def test_a2a_cancellation_closes_only_request_iterator() -> None:
+    """Cancellation releases capacity but preserves the healthy SDK client."""
+    target = _target()
+    registry = _registry(target)
+    http_clients: list[httpx.AsyncClient] = []
+    created: list[Any] = []
+    iterator_started = asyncio.Event()
+    iterator_closed = 0
+    runtime, pools = _runtime(registry, http_clients)
+
+    def stream_factory(_call_number: int) -> AsyncIterator[Any]:
+        async def responses() -> AsyncIterator[Any]:
+            nonlocal iterator_closed
+            try:
+                iterator_started.set()
+                await asyncio.Event().wait()
+                yield to_stream_response(_terminal_task())
+            finally:
+                iterator_closed += 1
+
+        return responses()
+
+    task = asyncio.create_task(
+        _collect(
+            target_id=target.id,
+            capability_id="annotate",
+            registry=registry,
+            text="cancel",
+            _card_fetcher=_card_fetcher,
+            _sdk_factory=_recording_sdk_factory(created, stream_factory),
+            _interop_runtime=runtime,
+        )
+    )
+    await iterator_started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert iterator_closed == 1
+    assert created[0].close_calls == 0
+    assert runtime.a2a_keys == {("peer", "a2a")}
+    snapshot = pools.snapshot(OutboundPoolName.INTEROP)
+    assert snapshot.cancelled == 1
+    assert snapshot.in_use == 0
+    await runtime.aclose()
+    await runtime.aclose()
+    assert created[0].close_calls == 1
+    assert http_clients[0].is_closed
+
+
+async def test_a2a_stream_holds_capacity_until_iterator_finishes() -> None:
+    """One lease covers the entire remote A2A iterator lifetime."""
+    target = _target()
+    registry = _registry(target)
+    http_clients: list[httpx.AsyncClient] = []
+    created: list[Any] = []
+    first_started = asyncio.Event()
+    release_first = asyncio.Event()
+    runtime, pools = _runtime(registry, http_clients)
+
+    def stream_factory(call_number: int) -> AsyncIterator[Any]:
+        async def responses() -> AsyncIterator[Any]:
+            if call_number == 1:
+                first_started.set()
+                await release_first.wait()
+            yield to_stream_response(_terminal_task())
+
+        return responses()
+
+    sdk_factory = _recording_sdk_factory(created, stream_factory)
+
+    def collect(text: str) -> asyncio.Task[list[Any]]:
+        return asyncio.create_task(
+            _collect(
+                target_id=target.id,
+                capability_id="annotate",
+                registry=registry,
+                text=text,
+                _card_fetcher=_card_fetcher,
+                _sdk_factory=sdk_factory,
+                _interop_runtime=runtime,
+            )
+        )
+
+    first = collect("first")
+    await first_started.wait()
+    second = collect("second")
+    for _ in range(100):
+        if pools.snapshot(OutboundPoolName.INTEROP).waiting == 1:
+            break
+        await asyncio.sleep(0)
+
+    snapshot = pools.snapshot(OutboundPoolName.INTEROP)
+    assert snapshot.in_use == 1
+    assert snapshot.waiting == 1
+    assert created[0].send_calls == 1
+    release_first.set()
+    await asyncio.gather(first, second)
+    final = pools.snapshot(OutboundPoolName.INTEROP)
+    assert final.max_in_use == 1
+    assert final.completed == 2
+    await runtime.aclose()
 
 
 async def test_send_streams_and_audits_without_payload() -> None:

@@ -43,6 +43,9 @@ T = TypeVar("T")
 type InteropHttpFactory = Callable[..., httpx.AsyncClient]
 type InteropHttpOperation[T] = Callable[[httpx.AsyncClient], Awaitable[T]]
 type InteropMcpOperation[T] = Callable[[ClientSession], Awaitable[T]]
+type InteropA2aFactory = Callable[[httpx.AsyncClient], object]
+type InteropA2aOperation[T] = Callable[[object], AsyncIterator[T]]
+type InteropA2aClose = Callable[[object], Awaitable[None]]
 
 _RESOURCE_FAILURES = (
     ConnectionError,
@@ -67,6 +70,15 @@ class _McpResource:
     http_client: httpx.AsyncClient | None = None
 
 
+@dataclass(slots=True)
+class _A2AResource:
+    """One target-owned A2A SDK client over the shared HTTP client."""
+
+    client: object
+    http_client: httpx.AsyncClient
+    close: InteropA2aClose
+
+
 @dataclass(frozen=True, slots=True)
 class InteropResourceFactories:
     """Construction seams for process-owned Interop resources."""
@@ -83,6 +95,7 @@ class _InteropResourceState:
     """Mutable maps and shutdown state for one process runtime."""
 
     http_clients: dict[str, httpx.AsyncClient]
+    a2a_resources: dict[tuple[str, str], _A2AResource]
     mcp_resources: dict[tuple[str, str], _McpResource]
     locks: dict[tuple[str, str], asyncio.Lock]
     close_lock: asyncio.Lock
@@ -95,8 +108,9 @@ class InteropResourceRuntime:
 
     The registry is immutable and operator-owned.  Callers can select only a
     validated target id; URLs, commands, headers, and credentials never form
-    resource keys.  The logical ``interop`` lease surrounds the actual
-    operation, not target validation or resource construction.
+    resource keys.  The logical ``interop`` lease surrounds each actual
+    operation and each remote MCP initialization, not target validation or
+    local client construction.
     """
 
     def __init__(
@@ -118,6 +132,7 @@ class InteropResourceRuntime:
         self._factories = factories or InteropResourceFactories()
         self._state = _InteropResourceState(
             http_clients={},
+            a2a_resources={},
             mcp_resources={},
             locks={},
             close_lock=asyncio.Lock(),
@@ -132,6 +147,11 @@ class InteropResourceRuntime:
     def http_keys(self) -> frozenset[str]:
         """Return target ids currently holding HTTP clients."""
         return frozenset(self._state.http_clients)
+
+    @property
+    def a2a_keys(self) -> frozenset[tuple[str, str]]:
+        """Return target/transport keys holding reusable A2A clients."""
+        return frozenset(self._state.a2a_resources)
 
     def _ensure_open(self) -> None:
         """Reject new work after shutdown begins."""
@@ -163,6 +183,15 @@ class InteropResourceRuntime:
         if isinstance(target, MCPStdioTarget):
             raise InteropResourceRuntimeError(
                 "outbound interop target is not HTTP-capable"
+            )
+        return target
+
+    def _a2a_target(self, target_id: str) -> A2ATarget:
+        """Resolve one validated A2A target before resource lookup."""
+        target = self._target(target_id)
+        if not isinstance(target, A2ATarget):
+            raise InteropResourceRuntimeError(
+                "outbound interop target is not an A2A target"
             )
         return target
 
@@ -200,7 +229,8 @@ class InteropResourceRuntime:
             if self._state.http_clients.get(target_id) is not client:
                 return
             self._state.http_clients.pop(target_id, None)
-            await client.aclose()
+            if not client.is_closed:
+                await client.aclose()
 
     async def run_http(
         self,
@@ -233,6 +263,69 @@ class InteropResourceRuntime:
                     yield item
         except _RESOURCE_FAILURES:
             await self._evict_http(target_id, client)
+            raise
+
+    async def _get_a2a_resource(
+        self,
+        target_id: str,
+        factory: InteropA2aFactory,
+        close: InteropA2aClose,
+    ) -> _A2AResource:
+        """Create one SDK client per validated A2A target transport."""
+        target = self._a2a_target(target_id)
+        key = (target_id, target.transport)
+        lock = self._lock_for(key)
+        async with lock:
+            self._ensure_open()
+            resource = self._state.a2a_resources.get(key)
+            if resource is not None:
+                if not resource.http_client.is_closed:
+                    return resource
+                self._state.a2a_resources.pop(key, None)
+                await resource.close(resource.client)
+                await self._evict_http(target_id, resource.http_client)
+            http_client = await self._get_http_client(target_id)
+            resource = _A2AResource(
+                client=factory(http_client),
+                http_client=http_client,
+                close=close,
+            )
+            self._state.a2a_resources[key] = resource
+            return resource
+
+    async def _evict_a2a(
+        self,
+        target_id: str,
+        resource: _A2AResource,
+    ) -> None:
+        """Evict and close only the A2A resource that failed."""
+        target = self._a2a_target(target_id)
+        key = (target_id, target.transport)
+        lock = self._lock_for(key)
+        async with lock:
+            if self._state.a2a_resources.get(key) is not resource:
+                return
+            self._state.a2a_resources.pop(key, None)
+            await resource.close(resource.client)
+            await self._evict_http(target_id, resource.http_client)
+
+    async def stream_a2a(
+        self,
+        target_id: str,
+        factory: InteropA2aFactory,
+        close: InteropA2aClose,
+        operation: InteropA2aOperation[T],
+    ) -> AsyncIterator[T]:
+        """Stream through one reusable A2A client under the Interop lease."""
+        self._ensure_open()
+        self._a2a_target(target_id)
+        resource = await self._get_a2a_resource(target_id, factory, close)
+        try:
+            async with self._pools.lease(OutboundPoolName.INTEROP):
+                async for item in operation(resource.client):
+                    yield item
+        except Exception:
+            await self._evict_a2a(target_id, resource)
             raise
 
     async def _build_mcp_resource(
@@ -296,13 +389,19 @@ class InteropResourceRuntime:
             resource = self._state.mcp_resources.get(key)
             if resource is not None:
                 return resource
+            http_client: httpx.AsyncClient | None = None
+            if isinstance(target, MCPStreamableHttpTarget):
+                # HTTP client construction is local preparation.  Open and
+                # initialize the MCP transport only after capacity is held.
+                http_client = await self._get_http_client(target_id)
             try:
-                resource = await self._build_mcp_resource(target_id, target)
-            except _RESOURCE_FAILURES:
-                if isinstance(target, MCPStreamableHttpTarget):
-                    client = self._state.http_clients.get(target_id)
-                    if client is not None:
-                        await self._evict_http(target_id, client)
+                async with self._pools.lease(OutboundPoolName.INTEROP):
+                    resource = await self._build_mcp_resource(
+                        target_id, target
+                    )
+            except BaseException:
+                if http_client is not None:
+                    await self._evict_http(target_id, http_client)
                 raise
             self._state.mcp_resources[key] = resource
             return resource
@@ -351,19 +450,24 @@ class InteropResourceRuntime:
             raise
 
     async def aclose(self) -> None:
-        """Close every session before its shared HTTP client, exactly once."""
+        """Close sessions and SDK clients before their shared HTTP clients."""
         async with self._state.close_lock:
             if self._state.closed:
                 return
             self._state.closing = True
             resources = tuple(self._state.mcp_resources.values())
             self._state.mcp_resources.clear()
-            for resource in resources:
-                await resource.stack.aclose()
+            for mcp_resource in resources:
+                await mcp_resource.stack.aclose()
+            a2a_resources = tuple(self._state.a2a_resources.values())
+            self._state.a2a_resources.clear()
+            for a2a_resource in a2a_resources:
+                await a2a_resource.close(a2a_resource.client)
             clients = tuple(self._state.http_clients.values())
             self._state.http_clients.clear()
             for client in clients:
-                await client.aclose()
+                if not client.is_closed:
+                    await client.aclose()
             self._state.closed = True
 
 

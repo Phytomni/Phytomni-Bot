@@ -413,20 +413,27 @@ async def _stream_execution(
         async with asyncio.timeout(state.total):
             card = await _fetch_execution_card(state, target_id)
 
+            def build_client(client: httpx.AsyncClient) -> object:
+                """Build the target-owned SDK client over shared HTTP."""
+                return state.sdk_factory(
+                    ClientConfig(streaming=True, httpx_client=client)
+                ).create(card)
+
             async def stream_with_client(
-                client: httpx.AsyncClient,
+                sdk_client: object,
             ) -> AsyncIterator[ExternalA2AEvent]:
-                """Stream through one runtime-owned HTTP client."""
+                """Keep only the iterator in per-request stream state."""
                 iterator: AsyncIterator[Any] | None = None
                 try:
-                    sdk_client = state.sdk_factory(
-                        ClientConfig(streaming=True, httpx_client=client)
-                    ).create(card)
-                    iterator = sdk_client.send_message(state.request)
+                    send_message = getattr(sdk_client, "send_message")
+                    opened_iterator = cast(
+                        AsyncIterator[Any], send_message(state.request)
+                    )
+                    iterator = opened_iterator
                     deadline = asyncio.get_running_loop().time() + state.total
                     async for event in _iterate_execution(
                         state,
-                        iterator,
+                        opened_iterator,
                         target_id,
                         deadline,
                     ):
@@ -434,8 +441,10 @@ async def _stream_execution(
                 finally:
                     await _close_iterator(iterator)
 
-            async for event in state.interop_runtime.stream_http(
+            async for event in state.interop_runtime.stream_a2a(
                 target_id,
+                build_client,
+                _close_client,
                 stream_with_client,
             ):
                 yield event
