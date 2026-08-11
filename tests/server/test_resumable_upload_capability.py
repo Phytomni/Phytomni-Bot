@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
@@ -231,6 +233,7 @@ def test_cleanup_hook_is_repeatable_and_preserves_completed_assets(
 
 
 def test_upload_runtime_applies_configured_provisional_ttl(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     """The production factory passes the bounded provisional TTL through."""
@@ -243,7 +246,21 @@ def test_upload_runtime_applies_configured_provisional_ttl(
         logger=logging.getLogger(__name__),
     )
 
-    service = runtime.get_upload_service()
+    loop = asyncio.new_event_loop()
+    monkeypatch.setattr(
+        upload_runtime_module,
+        "current_outbound_runtime",
+        lambda: SimpleNamespace(obs=object()),
+    )
+    monkeypatch.setattr(
+        upload_runtime_module.asyncio,
+        "get_running_loop",
+        lambda: loop,
+    )
+    try:
+        service = runtime.get_upload_service()
+    finally:
+        loop.close()
 
     assert service.registry.provisional_ttl == timedelta(seconds=60)
 

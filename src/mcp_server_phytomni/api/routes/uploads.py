@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from tempfile import SpooledTemporaryFile
@@ -14,6 +16,7 @@ from typing import Any, BinaryIO, cast
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
+from ...runtime.async_utils import wait_for_thread_future
 from ...storage.multipart import PartInput
 from ..asset_resolver import AssetResolver
 from ..auth import ApiPrincipal
@@ -30,6 +33,23 @@ from ..schemas import (
 )
 
 __all__ = ["AgentUploadDependencies", "register_upload_routes"]
+
+_UPLOAD_EXECUTOR = ThreadPoolExecutor(
+    max_workers=16,
+    thread_name_prefix="phytomni-upload",
+)
+
+
+async def _run_upload_operation(
+    operation: Callable[..., Any], *args: Any
+) -> Any:
+    """Run one blocking upload-service operation off the event loop."""
+    future: Future[Any] = _UPLOAD_EXECUTOR.submit(operation, *args)
+    try:
+        return await wait_for_thread_future(future)
+    except asyncio.CancelledError:
+        future.cancel()
+        raise
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,9 +81,10 @@ def register_upload_routes(
     ) -> JSONResponse:
         """Create one owner-scoped upload through the Web service principal."""
         del principal
-        return _upload_json(
-            dependencies.resumable_service().create(payload), status_code=201
+        response = await _run_upload_operation(
+            dependencies.resumable_service().create, payload
         )
+        return _upload_json(response, status_code=201)
 
     @app.post(
         "/v1/files/{asset_id}/capability",
@@ -77,11 +98,12 @@ def register_upload_routes(
     ) -> JSONResponse:
         """Renew a browser capability for the trusted owner assertion."""
         del principal
-        return _upload_json(
-            dependencies.resumable_service().renew(
-                asset_id, payload.owner_subject
-            )
+        response = await _run_upload_operation(
+            dependencies.resumable_service().renew,
+            asset_id,
+            payload.owner_subject,
         )
+        return _upload_json(response)
 
     @app.head(
         "/v1/files/{asset_id}",
@@ -89,8 +111,10 @@ def register_upload_routes(
     )
     async def head_upload(asset_id: str, request: Request) -> Response:
         """Return resumable state through capability-only response headers."""
-        status = dependencies.resumable_service().head(
-            asset_id, _capability_from_request(request)
+        status = await _run_upload_operation(
+            dependencies.resumable_service().head,
+            asset_id,
+            _capability_from_request(request),
         )
         return Response(headers=_upload_status_headers(status))
 
@@ -122,7 +146,8 @@ def register_upload_routes(
             content_length,
             max_part_size=max_part_size,
         ) as source:
-            response = service.put_part(
+            response = await _run_upload_operation(
+                service.put_part,
                 asset_id,
                 capability,
                 _part_input(part_number, source, content_length, checksum),
@@ -140,7 +165,8 @@ def register_upload_routes(
         payload: UploadCompletionRequest | None = None,
     ) -> JSONResponse:
         """Complete one upload from the authoritative part registry."""
-        response = dependencies.resumable_service().complete(
+        response = await _run_upload_operation(
+            dependencies.resumable_service().complete,
             asset_id,
             _capability_from_request(request),
             payload or UploadCompletionRequest(),
@@ -157,11 +183,12 @@ def register_upload_routes(
         request: Request,
     ) -> JSONResponse:
         """Abort one upload and release its provider session."""
-        return _upload_json(
-            dependencies.resumable_service().abort(
-                asset_id, _capability_from_request(request)
-            )
+        response = await _run_upload_operation(
+            dependencies.resumable_service().abort,
+            asset_id,
+            _capability_from_request(request),
         )
+        return _upload_json(response)
 
 
 def _upload_json(value: Any, *, status_code: int = 200) -> JSONResponse:
