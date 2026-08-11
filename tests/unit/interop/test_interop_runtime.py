@@ -68,16 +68,14 @@ def _a2a_target(target_id: str = "peer-a2a") -> A2ATarget:
 
 def _stdio_target(target_id: str = "peer-stdio") -> MCPStdioTarget:
     """Build one absolute-path stdio target."""
-    return MCPStdioTarget.model_validate(
-        {
-            "id": target_id,
-            "kind": "mcp",
-            "transport": "stdio",
-            "command": "/opt/phytomni-peer",
-            "args": ["--mode", "stdio"],
-            "env_keys": ["LANG", "PATH"],
-            "allowed_tools": ["annotate_gene"],
-        }
+    return MCPStdioTarget(
+        id=target_id,
+        kind="mcp",
+        transport="stdio",
+        command="/opt/phytomni-peer",
+        args=("--mode", "stdio"),
+        env_keys=("LANG", "PATH"),
+        allowed_tools=("annotate_gene",),
     )
 
 

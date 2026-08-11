@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from tests.support.outbound_fakes import (
@@ -267,28 +267,34 @@ async def test_openai_client_shares_llm_pool_across_stream_and_completion(
         assert fake.stream is not None
         await fake.stream.started.wait()
 
+        sampling_options = {
+            "top_p": 1.0,
+            "frequency_penalty": 0.0,
+            "presence_penalty": 0.0,
+        }
+        completion_call = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"completion-{id(fake)}",
+                }
+            ],
+            "model": "pytest-model",
+            "temperature": 0.0,
+            **sampling_options,
+            "n": 1,
+            "max_tokens": None,
+            "reasoning_effort": None,
+            "api_key": "ignored",
+            "base_url": "ignored",
+            "user": "test",
+            "timeout": 1.0,
+            "stream": False,
+            "response_format": {"type": "text"},
+        }
         completion = asyncio.create_task(
             chat_service.run_phyto_chat_cached(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": f"completion-{id(fake)}",
-                    }
-                ],
-                model="pytest-model",
-                temperature=0.0,
-                top_p=1.0,
-                frequency_penalty=0.0,
-                presence_penalty=0.0,
-                n=1,
-                max_tokens=None,
-                reasoning_effort=None,
-                api_key="ignored",
-                base_url="ignored",
-                user="test",
-                timeout=1.0,
-                stream=False,
-                response_format={"type": "text"},
+                **cast(chat_service.ChatCacheCall, completion_call)
             )
         )
         for _ in range(1000):
