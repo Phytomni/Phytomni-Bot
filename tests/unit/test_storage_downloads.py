@@ -12,6 +12,7 @@ probing the obsfs mount. Normal mode is unaffected.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -66,3 +67,48 @@ async def test_download_obs_file_uses_relay_in_relay_mode(
     )
     assert not no_sdk.await_args_list
     assert _read_bytes(local_path) == b"PDF-BYTES"
+
+
+async def test_download_obs_list_leaves_concurrency_to_outbound_obs_pool(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The batch helper dispatches every download without a local gate."""
+    started: list[str] = []
+    all_started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_download(
+        obs_file: str,
+        server_dir: str,
+        **kwargs: Any,
+    ) -> str:
+        """Pause each dispatched download below the batch boundary."""
+        del server_dir, kwargs
+        started.append(obs_file)
+        if len(started) == 3:
+            all_started.set()
+        await release.wait()
+        return f"/local/{obs_file}"
+
+    monkeypatch.setattr(downloads_module, "download_obs_file", fake_download)
+    task = asyncio.create_task(
+        downloads_module.download_obs_list(
+            ["one.txt", "two.txt", "three.txt"],
+            str(tmp_path),
+            max_concurrency=0,
+        )
+    )
+
+    try:
+        await asyncio.wait_for(all_started.wait(), timeout=0.5)
+        release.set()
+        assert await task == [
+            "/local/one.txt",
+            "/local/two.txt",
+            "/local/three.txt",
+        ]
+    finally:
+        release.set()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

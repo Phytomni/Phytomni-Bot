@@ -345,8 +345,7 @@ async def download_obs_list(
 ) -> list[str]:
     """Download multiple files from OBS concurrently.
 
-    This function uses an `asyncio.Semaphore` to limit the number of
-    concurrent downloads, improving performance and avoiding rate limits.
+    Each OBS network attempt is bounded by the process-wide outbound OBS pool.
 
     Args:
         obs_file_list: A list of object keys (paths) for the files to be
@@ -358,26 +357,16 @@ async def download_obs_list(
         A list of local paths to the downloaded files.
     """
     context = _obs_transfer_context(server_dir, kwargs)
-    semaphore = asyncio.Semaphore(context.max_concurrency)
-
-    async def download_with_semaphore(obs_file: str) -> str:
-        """Download one OBS file while holding the concurrency semaphore.
-
-        Args:
-            obs_file: OBS path to download.
-
-        Returns:
-            Local path to the downloaded or obsfs-resolved file.
-        """
-        async with semaphore:
-            return await download_obs_file(
+    return await asyncio.gather(
+        *(
+            download_obs_file(
                 obs_file=obs_file,
                 server_dir=context.server_dir,
                 transfer_context=context,
             )
-
-    tasks = [download_with_semaphore(obs_file) for obs_file in obs_file_list]
-    return await asyncio.gather(*tasks)
+            for obs_file in obs_file_list
+        )
+    )
 
 
 def convert_single_file(server_file: str, cleanup: bool = True) -> str:
