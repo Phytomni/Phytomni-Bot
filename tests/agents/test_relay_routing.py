@@ -134,11 +134,7 @@ async def test_agent_timeout_reaches_direct_and_relay_provider(
         )
         sampling["timeout"] = config_type().TIMEOUT
         sampling["relay_timeout_profile"] = expected_profile
-        result = await chat_service.run_phyto_chat_cached(
-            api_key="operator-key",
-            base_url="https://operator.invalid/v1",
-            **sampling,
-        )
+        result = await chat_service.run_phyto_chat_cached(**sampling)
 
         assert result["choices"][0]["message"]["content"] == "ok"
         assert captured["completion"]["timeout"] == expected_timeout
@@ -158,14 +154,12 @@ async def test_agent_timeout_reaches_direct_and_relay_provider(
 def _sampling(content: str) -> dict[str, Any]:
     """Return run_phyto_chat_cached sampling kwargs with given content.
 
-    Distinct content per test keeps the func-cache key (which excludes
-    api_key / base_url) from sharing a stored payload across tests, so
-    the body re-runs and AsyncOpenAI is constructed each time.
+    Distinct content per test keeps the semantic func-cache key from sharing a
+    stored payload across tests, so the process-owned runtime is exercised.
     """
     # Sampling values are deliberately non-default (and differ from the
     # other chat tests' bags) so this fixture does not form a
-    # duplicate-code (R0801) block with them; they do not affect the
-    # api_key / base_url override these tests assert.
+    # duplicate-code (R0801) block with them.
     return {
         "messages": [{"role": "user", "content": content}],
         "model": "relay-model",
@@ -183,13 +177,8 @@ def _sampling(content: str) -> dict[str, Any]:
     }
 
 
-async def test_chat_relay_mode_overrides_llm_endpoint(monkeypatch):
-    """Relay mode points AsyncOpenAI at the relay LLM route + relay key.
-
-    Even though the call passes operator credentials, the relay branch
-    must override both so the child Bot hits ``/v1/relay/llm`` with the
-    relay key rather than the operator LLM directly.
-    """
+async def test_chat_relay_mode_uses_process_owned_llm_endpoint(monkeypatch):
+    """Relay mode uses the process-owned relay LLM route and relay key."""
     chat_service.clear_chat_cache()
     get_sensitive_config.cache_clear()
     monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
@@ -204,9 +193,7 @@ async def test_chat_relay_mode_overrides_llm_endpoint(monkeypatch):
     )
 
     result = await chat_service.run_phyto_chat_cached(
-        api_key="operator-key",
-        base_url="https://operator.invalid/v1",
-        **_sampling("relay routing"),
+        **_sampling("relay routing")
     )
 
     assert result["choices"][0]["message"]["content"] == "ok"
@@ -215,8 +202,10 @@ async def test_chat_relay_mode_overrides_llm_endpoint(monkeypatch):
     assert "extra_headers" not in captured["completion"]
 
 
-async def test_chat_normal_mode_keeps_operator_endpoint(monkeypatch):
-    """Outside relay mode the caller's operator endpoint passes through."""
+async def test_chat_normal_mode_uses_process_owned_operator_endpoint(
+    monkeypatch,
+):
+    """Normal mode uses the process-owned operator endpoint."""
     chat_service.clear_chat_cache()
     monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
     monkeypatch.delenv("RELAY_MODE", raising=False)
@@ -229,9 +218,7 @@ async def test_chat_normal_mode_keeps_operator_endpoint(monkeypatch):
     )
 
     result = await chat_service.run_phyto_chat_cached(
-        api_key="operator-key",
-        base_url="https://operator.invalid/v1",
-        **_sampling("normal routing"),
+        **_sampling("normal routing")
     )
 
     assert result["choices"][0]["message"]["content"] == "ok"

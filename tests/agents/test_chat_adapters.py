@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the shared consumer-agent-to-chat subgraph IO mappers.
 
-Pins the 19-key bag the data / knowledge / analyst chat sites pass
+Pins the 17-key bag the data / knowledge / analyst chat sites pass
 to ``phyto_chat`` / ``CHAT_APP`` so the structural-mount wiring
 projects the same arguments without drift. Covers the kwargs builder
 (with and without the analyst-only ``response_format`` override), the
@@ -45,10 +45,10 @@ def test_fake_sensitive_config_exposes_secret_and_model_fields() -> None:
     assert config.MODEL_ID == "phyto-llm-v1"
 
 
-def test_build_chat_kwargs_for_packs_all_19_fields() -> None:
-    """The returned dict has all 19 keys with the expected values.
+def test_build_chat_kwargs_for_packs_all_17_fields() -> None:
+    """The returned dict has all 17 keys with the expected values.
 
-    Pins the shared 19-key bag the data / knowledge / analyst chat
+    Pins the shared 17-key bag the data / knowledge / analyst chat
     sites pass. If the dispatch site ever adds or drops a kwarg, this
     test fails first so the adapter and the call sites stay aligned.
     """
@@ -60,8 +60,6 @@ def test_build_chat_kwargs_for_packs_all_19_fields() -> None:
     assert kwargs == {
         "prompt_file": "prompt.yaml",
         "prompt_path": "/tmp/prompts",
-        "api_key": "sk-test",
-        "base_url": "https://llm.example/v1",
         "model": "phyto-llm-v1",
         "frequency_penalty": 0.0,
         "n": 1,
@@ -83,7 +81,7 @@ def test_build_chat_kwargs_for_packs_all_19_fields() -> None:
             "exactly."
         ),
     }
-    assert len(kwargs) == 19
+    assert len(kwargs) == 17
 
 
 def test_build_chat_kwargs_for_response_format_override() -> None:
@@ -130,7 +128,7 @@ def test_build_chat_input_minimum() -> None:
     instead of materialising an empty list that would still trigger
     OBS lookups. This is the analyst path.
     """
-    bag = {"model": "phyto-llm-v1", "api_key": "sk-test"}
+    bag = {"model": "phyto-llm-v1"}
     result = build_chat_input(
         user_query="What is photosynthesis?",
         chat_kwargs=bag,

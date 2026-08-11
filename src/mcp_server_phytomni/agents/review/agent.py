@@ -210,8 +210,6 @@ class DeepResearchAgent(
             user_query=prompt,
             prompt_file=self.review_config.PROMPT_FILE,
             prompt_path=self.review_config.PROMPT_PATH,
-            api_key=self.sensitive_config.API_KEY.get_secret_value(),
-            base_url=self.sensitive_config.BASE_URL,
             model=self.sensitive_config.MODEL_ID,
             frequency_penalty=self.review_config.FREQUENCY_PENALTY,
             n=self.review_config.N,

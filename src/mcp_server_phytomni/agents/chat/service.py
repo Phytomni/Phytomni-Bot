@@ -49,6 +49,7 @@ from ...runtime.locale import (
 from ...runtime.outbound import OutboundPoolName, current_outbound_runtime
 from ...storage.downloads import download_list_convert
 from ..shared.conversation_messages import normalize_conversation_messages
+from ..shared.options import reject_chat_provider_overrides
 from .completion_validation import (
     InvalidChatCompletionError,
     is_cacheable_chat_completion,
@@ -86,8 +87,6 @@ class _ChatCacheRequest(NamedTuple):
     n: int
     max_tokens: int | None
     reasoning_effort: str | None
-    api_key: str
-    base_url: str
     user: str
     timeout: float
     stream: bool
@@ -107,8 +106,6 @@ class ChatCacheCall(TypedDict):
     max_tokens: int | None
     response_format: dict[str, Any]
     reasoning_effort: str | None
-    api_key: str
-    base_url: str
     user: str
     timeout: float
     stream: bool
@@ -139,8 +136,6 @@ async def phyto_chat_with_follow(
         prompt_file: Path to the YAML template file containing system prompts.
         prompt_path: Nested path within the template file to locate the
             specific system prompt (e.g., "system/ai4ps").
-        api_key: API key for authenticating with the language model service.
-        base_url: Base URL endpoint for the language model API service.
         model: Identifier of the specific language model to use for generation.
         frequency_penalty: Penalty applied to new tokens based on their
             frequency in the text so far, discouraging repetition of exact
@@ -273,8 +268,6 @@ async def phyto_chat(
         prompt_file: Path to the YAML template file containing system prompts.
         prompt_path: Nested path within the template file to locate the
             specific system prompt (e.g., "system/ai4ps").
-        api_key: API key for authenticating with the language model service.
-        base_url: Base URL endpoint for the language model API service.
         model: Identifier of the specific language model to use for generation.
         frequency_penalty: Penalty applied to new tokens based on their
             frequency in the text so far, discouraging repetition of exact
@@ -391,6 +384,7 @@ def _cached_chat_app() -> Any:
 
 def _chat_options(values: dict[str, Any]) -> dict[str, Any]:
     """Resolve keyword-compatible chat and OBS options."""
+    reject_chat_provider_overrides(values)
     sensitive = get_sensitive_config()
     default_access_key_id, default_secret_access_key = (
         sensitive.obs_credentials()
@@ -401,8 +395,6 @@ def _chat_options(values: dict[str, Any]) -> dict[str, Any]:
     return {
         "prompt_file": values.get("prompt_file", CHAT_CONFIG.PROMPT_FILE),
         "prompt_path": values.get("prompt_path", CHAT_CONFIG.PROMPT_PATH),
-        "api_key": values.get("api_key", sensitive.API_KEY.get_secret_value()),
-        "base_url": values.get("base_url", sensitive.BASE_URL),
         "model": values.get("model", sensitive.MODEL_ID),
         "frequency_penalty": values.get(
             "frequency_penalty", CHAT_CONFIG.FREQUENCY_PENALTY
@@ -556,6 +548,7 @@ async def run_phyto_chat_cached(
     separation makes the cache policy visible in types instead of relying on
     a long positional signature and a linter waiver.
     """
+    reject_chat_provider_overrides(call)
     cache_key = _ChatCacheKey(
         messages=call["messages"],
         response_format=call["response_format"],
@@ -570,8 +563,6 @@ async def run_phyto_chat_cached(
         n=call["n"],
         max_tokens=call["max_tokens"],
         reasoning_effort=call["reasoning_effort"],
-        api_key=call["api_key"],
-        base_url=call["base_url"],
         user=call["user"],
         timeout=call["timeout"],
         stream=call["stream"],
@@ -614,8 +605,6 @@ async def _run_phyto_chat(
                 max_tokens=options["max_tokens"],
                 response_format=options["response_format"],
                 reasoning_effort=options["reasoning_effort"],
-                api_key=options["api_key"],
-                base_url=options["base_url"],
                 user=options["user"],
                 timeout=options["timeout"],
                 stream=options["stream"],

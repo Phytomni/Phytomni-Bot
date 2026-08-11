@@ -8,6 +8,7 @@ keyword builders used by Analyst-backed domain wrappers before they call chat
 and task-submission services.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,9 +24,12 @@ __all__ = [
     "build_resolver_chat_kwargs",
     "build_submit_kwargs",
     "copy_resource_dict",
+    "reject_chat_provider_overrides",
     "resolve_agent_locale",
     "retry_codes_from_kwargs",
 ]
+
+_CHAT_PROVIDER_OWNERSHIP_FIELDS = frozenset({"api_key", "base_url"})
 
 
 @dataclass(frozen=True)
@@ -84,6 +88,21 @@ def resolve_agent_locale(
     return locale or current_effective_locale()
 
 
+def reject_chat_provider_overrides(values: Mapping[str, object]) -> None:
+    """Reject request-scoped fields owned by the outbound runtime.
+
+    Args:
+        values: Public or internal Chat keyword arguments.
+
+    Raises:
+        TypeError: If a caller supplies a provider credential or endpoint.
+    """
+    obsolete = sorted(_CHAT_PROVIDER_OWNERSHIP_FIELDS.intersection(values))
+    if obsolete:
+        joined = ", ".join(obsolete)
+        raise TypeError(f"Chat provider fields are process-owned: {joined}")
+
+
 def build_chat_kwargs(
     kwargs: dict[str, Any],
     config: Any,
@@ -108,14 +127,11 @@ def build_chat_kwargs(
     Returns:
         Keyword arguments suitable for forwarding to ``phyto_chat``.
     """
+    reject_chat_provider_overrides(kwargs)
     effective_locale = resolve_agent_locale(locale or kwargs.get("locale"))
     result: dict[str, Any] = {
         "prompt_file": kwargs.get("prompt_file", config.PROMPT_FILE),
         "prompt_path": kwargs.get("prompt_path", config.PROMPT_PATH),
-        "api_key": kwargs.get(
-            "api_key", sensitive_config.API_KEY.get_secret_value()
-        ),
-        "base_url": kwargs.get("base_url", sensitive_config.BASE_URL),
         "model": kwargs.get("model", sensitive_config.MODEL_ID),
         "frequency_penalty": kwargs.get(
             "frequency_penalty", config.FREQUENCY_PENALTY

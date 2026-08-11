@@ -38,9 +38,7 @@ def _chat_cache_call(query: str) -> chat_service.ChatCacheCall:
     return {
         "messages": [{"role": "user", "content": query}],
         "model": "pytest-model",
-        "api_key": "test-key",
         "temperature": 0.3,
-        "base_url": "https://provider.invalid/v1",
         "top_p": 1.0,
         "user": "test-user",
         "frequency_penalty": 0.0,
@@ -57,8 +55,6 @@ def _chat_cache_call(query: str) -> chat_service.ChatCacheCall:
 def _phyto_chat_kwargs(max_retries: int) -> dict[str, Any]:
     """Build explicit public Chat options for SDK retry tests."""
     return {
-        "api_key": "test-key",
-        "base_url": "https://provider.invalid/v1",
         "model": "pytest-model",
         "max_retries": max_retries,
         "response_format": {"type": "json_object"},

@@ -224,8 +224,6 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
         obs_file_list=["obs://paper.pdf"],
         prompt_file="prompts.yaml",
         prompt_path="system/chat",
-        api_key="api-key",
-        base_url="https://example.invalid/v1",
         model="pytest-model",
         response_format={"type": "text"},
         timeout=3.0,
@@ -320,8 +318,6 @@ async def test_phyto_chat_with_follow_attaches_follow_up_questions(
         obs_file_list=["obs://context.pdf"],
         prompt_file="prompts.yaml",
         prompt_path="system/chat",
-        api_key="api-key",
-        base_url="https://example.invalid/v1",
         model="pytest-model",
         max_retries=0,
         locale="zh-CN",
@@ -390,24 +386,19 @@ async def test_run_phyto_chat_cached_dedupes_identical_sampling(
         "max_tokens": 200,
         "response_format": {"type": "json_object"},
         "reasoning_effort": None,
-        "api_key": "ignored-1",
-        "base_url": "https://example.invalid/v1",
         "user": "u",
         "timeout": 3.0,
         "stream": False,
     }
 
     first = await chat_agents.run_phyto_chat_cached(**sampling_kwargs)
-    # Rotate every infra-only parameter on the second call to prove the
-    # cache ignores them; the result must come from the first call's
-    # cached payload, not a fresh completion.
+    # Rotate transport-only parameters on the second call to prove the cache
+    # ignores them; the result must come from the first cached payload.
     second = await chat_agents.run_phyto_chat_cached(
         **cast(
             chat_agents.ChatCacheCall,
             {
                 **sampling_kwargs,
-                "api_key": "ignored-2",
-                "base_url": "https://other.invalid/v1",
                 "user": "v",
                 "timeout": 9.9,
                 "stream": True,
@@ -495,8 +486,6 @@ async def test_run_phyto_chat_cached_does_not_cache_failures(
         "max_tokens": None,
         "response_format": {"type": "json_object"},
         "reasoning_effort": None,
-        "api_key": "k",
-        "base_url": "https://example.invalid/v1",
         "user": "u",
         "timeout": 3.0,
         "stream": False,
@@ -563,8 +552,6 @@ async def test_non_streaming_repairs_reasoning_content_answer_tail(
         max_tokens=None,
         response_format={"type": "text"},
         reasoning_effort=None,
-        api_key="k",
-        base_url="https://example.invalid/v1",
         user="u",
         timeout=3.0,
         stream=False,
@@ -695,8 +682,6 @@ async def test_streaming_repairs_reasoning_content_after_aggregation(
         max_tokens=None,
         response_format={"type": "text"},
         reasoning_effort=None,
-        api_key="k",
-        base_url="https://example.invalid/v1",
         user="u",
         timeout=3.0,
         stream=True,
