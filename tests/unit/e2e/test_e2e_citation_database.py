@@ -53,6 +53,28 @@ def test_absent_aliases_generate_and_validate_empty_artifact(
         assert metadata.missing_title_count == 0
 
 
+def test_forced_disposable_artifact_overrides_operator_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The non-production pooling harness can ignore a stale local path."""
+    operator_database = tmp_path / "operator.sqlite"
+    operator_database.write_bytes(b"operator-owned")
+    monkeypatch.setenv("CITATION_DB_PATH", str(operator_database))
+
+    with helper.configured_e2e_citation_database(
+        tmp_path, force_disposable=True
+    ) as database:
+        assert database is not None
+        assert database.is_file()
+        assert database != operator_database
+        assert os.environ["CITATION_DB_PATH"] == str(database)
+        assert validate_citation_database(database).schema_version == 1
+
+    assert operator_database.read_bytes() == b"operator-owned"
+    assert os.environ["CITATION_DB_PATH"] == str(operator_database)
+
+
 @pytest.mark.parametrize(
     "alias",
     ("CITATION_DB_PATH", "PHYTOMNI_CITATION_DB_PATH"),

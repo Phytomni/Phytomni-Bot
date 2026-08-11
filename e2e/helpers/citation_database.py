@@ -26,10 +26,18 @@ def _nonblank_environment(name: str) -> bool:
 @contextmanager
 def configured_e2e_citation_database(
     root: Path,
+    *,
+    force_disposable: bool = False,
 ) -> Iterator[Path | None]:
-    """Preserve an operator path or provide one empty valid artifact."""
-    if _nonblank_environment(_CITATION_DB_PATH) or _nonblank_environment(
-        _PHYTOMNI_CITATION_DB_PATH
+    """Preserve an operator path or provide one empty valid artifact.
+
+    ``force_disposable`` is reserved for explicitly gated non-production
+    probes.  It prevents a stale local operator path from leaking into a
+    disposable subprocess while leaving ordinary e2e runs operator-owned.
+    """
+    if not force_disposable and (
+        _nonblank_environment(_CITATION_DB_PATH)
+        or _nonblank_environment(_PHYTOMNI_CITATION_DB_PATH)
     ):
         yield None
         return

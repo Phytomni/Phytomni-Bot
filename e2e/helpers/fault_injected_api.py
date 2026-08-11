@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import threading
 from itertools import count
@@ -49,7 +50,7 @@ _require_test_environment()
 _REAL_DELIVERY = default_result_delivery_dependencies()
 
 
-def _fail_then_publish(
+async def _fail_then_publish(
     inventory: ResultArchiveInventory,
     agent: str,
     summary_markdown: str,
@@ -59,7 +60,10 @@ def _fail_then_publish(
         should_fail = next(_FAILURE_COUNTER) < _REQUIRED_FAILURES
     if should_fail:
         raise ResultArchiveError("archive_publish_failed", retryable=True)
-    return _REAL_DELIVERY.publish(inventory, agent, summary_markdown)
+    published = _REAL_DELIVERY.publish(inventory, agent, summary_markdown)
+    if inspect.isawaitable(published):
+        return await published
+    return published
 
 
 def _registry_factory(db_path: str) -> RunRegistry:

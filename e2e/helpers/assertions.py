@@ -19,7 +19,12 @@ from zipfile import ZipFile
 
 from mcp_server_phytomni.common.responses import assert_no_citation_residue
 from mcp_server_phytomni.config.defaults import ServerConfig
-from mcp_server_phytomni.storage.obs_relay_ops import get_object_bytes
+from mcp_server_phytomni.config.settings import SensitiveConfig
+from mcp_server_phytomni.storage.obs_client import ObsClient
+from mcp_server_phytomni.storage.obs_relay_ops import (
+    ObsAccessOptions,
+    get_object_bytes,
+)
 
 from .polling import TaskState
 
@@ -312,11 +317,29 @@ def fetch_authenticated_result_archive(
     )
     object_ref = f"{path}/delivery/{digest_hex}/{archive['name']}"
     config = ServerConfig()
-    return get_object_bytes(
+    return _read_obs_object(
         config.BUCKET_NAME,
         object_ref,
-        obs_server=config.OBS_SERVER,
+        server=config.OBS_SERVER,
     )
+
+
+def _read_obs_object(bucket: str, object_ref: str, *, server: str) -> bytes:
+    """Read one E2E object through a short-lived authenticated SDK client."""
+    access_key, secret_key = SensitiveConfig.load().obs_credentials()
+    client = ObsClient(
+        access_key_id=access_key,
+        secret_access_key=secret_key,
+        server=server,
+    )
+    try:
+        return get_object_bytes(
+            bucket,
+            object_ref,
+            access=ObsAccessOptions(client=client),
+        )
+    finally:
+        client.close()
 
 
 def assert_result_archive_members(content: bytes) -> None:

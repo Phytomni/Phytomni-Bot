@@ -85,7 +85,7 @@ def test_result_archive_fetch_uses_public_run_root(
 ) -> None:
     """Archive fetches resolve from the public umbrella run root."""
     digest_hex = "a" * 64
-    observed: dict[str, str] = {}
+    observed: dict[str, object] = {}
     monkeypatch.setattr(
         assertions,
         "ServerConfig",
@@ -96,12 +96,15 @@ def test_result_archive_fetch_uses_public_run_root(
     )
 
     def get_object_bytes(
-        bucket: str, object_ref: str, *, obs_server: str
+        bucket: str,
+        object_ref: str,
+        *,
+        access: assertions.ObsAccessOptions,
     ) -> bytes:
         observed.update(
             bucket=bucket,
             object_ref=object_ref,
-            obs_server=obs_server,
+            access=access,
         )
         return b"archive"
 
@@ -134,10 +137,10 @@ def test_result_archive_fetch_uses_public_run_root(
         )
         == b"archive"
     )
-    assert observed == {
-        "bucket": "test-bucket",
-        "object_ref": (
-            f"/obs/runs/network-run/delivery/{digest_hex}/network-results.zip"
-        ),
-        "obs_server": "https://obs.example.test",
-    }
+    assert observed["bucket"] == "test-bucket"
+    assert observed["object_ref"] == (
+        f"/obs/runs/network-run/delivery/{digest_hex}/network-results.zip"
+    )
+    access = observed["access"]
+    assert isinstance(access, assertions.ObsAccessOptions)
+    assert access.client is not None
