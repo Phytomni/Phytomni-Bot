@@ -7,17 +7,28 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import re
 from pathlib import Path
 
+import httpx
 import pytest
+from mcp.shared.exceptions import McpError
 
+from mcp_server_phytomni.common.http import (
+    JsonPostRequest,
+    JsonPostRetry,
+    post_json_with_retries,
+)
 from mcp_server_phytomni.config.required_env import REQUIRED_OUTBOUND_FIELDS
 from mcp_server_phytomni.runtime.outbound import (
     OutboundPoolName,
     OutboundPoolSnapshot,
+    OutboundRuntimeClosedError,
 )
+from mcp_server_phytomni.runtime.outbound.http import BoundAsyncRequestClient
 from mcp_server_phytomni.runtime.outbound.lifecycle import _CAPACITY_FIELDS
+from mcp_server_phytomni.runtime.outbound.registry import OutboundPoolRegistry
 
 pytestmark = pytest.mark.unit
 
@@ -152,3 +163,95 @@ def test_snapshot_repr_contains_only_fixed_observability_fields() -> None:
     assert "secret-token-marker" not in rendered
     assert "prompt-marker" not in rendered
     assert "url" not in rendered
+
+
+async def test_real_marked_attempt_keeps_pool_observability_and_errors_safe(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Request-controlled data never enters pool snapshots or pool logs."""
+    markers = (
+        "url-marker",
+        "header-marker",
+        "credential-marker",
+        "body-marker",
+        "prompt-marker",
+        "query-marker",
+        "obs-key-marker",
+        "user-marker",
+        "run-marker",
+        "task-marker",
+        "request-marker",
+        "provider-body-marker",
+        "exception-marker",
+    )
+    capacities = {name: 0 for name in OutboundPoolName}
+    capacities[OutboundPoolName.LLM] = 1
+    pools = OutboundPoolRegistry(capacities, wait_warn_seconds=0.000001)
+
+    def fail_attempt(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            500,
+            request=request,
+            content=b"provider-body-marker exception-marker",
+        )
+
+    profile = httpx.AsyncClient(transport=httpx.MockTransport(fail_attempt))
+    client = BoundAsyncRequestClient(pools, OutboundPoolName.LLM, profile)
+    request = JsonPostRequest(
+        url="https://url-marker.invalid/query-marker",
+        headers={
+            "Authorization": "Bearer credential-marker",
+            "X-Trace": "header-marker request-marker",
+            "X-User": "user-marker",
+            "X-Run": "run-marker",
+            "X-Task": "task-marker",
+        },
+        json_body={
+            "body": "body-marker",
+            "prompt": "prompt-marker",
+            "obs_key": "obs-key-marker",
+        },
+    )
+    retry = JsonPostRetry(
+        timeout=1.0,
+        max_retries=0,
+        retriable_codes=(),
+        message="safe outbound failure",
+    )
+    caplog.set_level("WARNING", logger="mcp_server_phytomni.runtime.outbound")
+
+    try:
+        async with pools.lease(OutboundPoolName.LLM):
+            attempt = asyncio.create_task(
+                post_json_with_retries(client, request, retry)
+            )
+            for _ in range(100):
+                if pools.snapshot(OutboundPoolName.LLM).waiting == 1:
+                    break
+                await asyncio.sleep(0)
+            assert pools.snapshot(OutboundPoolName.LLM).waiting == 1
+            await asyncio.sleep(0.001)
+
+        with pytest.raises(McpError) as exc_info:
+            await attempt
+
+        snapshot_text = repr(pools.snapshot(OutboundPoolName.LLM))
+        pool_log_text = "\n".join(
+            record.getMessage()
+            for record in caplog.records
+            if record.name.startswith("mcp_server_phytomni.runtime.outbound")
+        )
+        public_error_text = f"{exc_info.value!s}\n{exc_info.value!r}"
+        for marker in markers:
+            assert marker not in snapshot_text
+            assert marker not in pool_log_text
+            assert marker not in public_error_text
+
+        await pools.aclose()
+        with pytest.raises(OutboundRuntimeClosedError) as closed_error:
+            async with pools.lease(OutboundPoolName.LLM):
+                pytest.fail("a closed pool must reject the marked request")
+        for marker in markers:
+            assert marker not in str(closed_error.value)
+    finally:
+        await profile.aclose()
