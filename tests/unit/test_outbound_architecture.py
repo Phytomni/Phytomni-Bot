@@ -41,6 +41,21 @@ _OBS_OWNER = _SOURCE_ROOT / "runtime" / "outbound" / "obs.py"
 _GAUSS_OWNER = _SOURCE_ROOT / "agents" / "shared" / "gauss.py"
 _POOL_VALUE_TYPES = _SOURCE_ROOT / "runtime" / "outbound" / "models.py"
 _POOL_REGISTRY = _SOURCE_ROOT / "runtime" / "outbound" / "registry.py"
+_PRIVATE_MARKERS = (
+    "url-marker",
+    "header-marker",
+    "credential-marker",
+    "body-marker",
+    "prompt-marker",
+    "query-marker",
+    "obs-key-marker",
+    "user-marker",
+    "run-marker",
+    "task-marker",
+    "request-marker",
+    "provider-body-marker",
+    "exception-marker",
+)
 
 
 def _production_sources() -> tuple[Path, ...]:
@@ -169,21 +184,6 @@ async def test_real_marked_attempt_keeps_pool_observability_and_errors_safe(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Request-controlled data never enters pool snapshots or pool logs."""
-    markers = (
-        "url-marker",
-        "header-marker",
-        "credential-marker",
-        "body-marker",
-        "prompt-marker",
-        "query-marker",
-        "obs-key-marker",
-        "user-marker",
-        "run-marker",
-        "task-marker",
-        "request-marker",
-        "provider-body-marker",
-        "exception-marker",
-    )
     capacities = {name: 0 for name in OutboundPoolName}
     capacities[OutboundPoolName.LLM] = 1
     pools = OutboundPoolRegistry(capacities, wait_warn_seconds=0.000001)
@@ -242,7 +242,7 @@ async def test_real_marked_attempt_keeps_pool_observability_and_errors_safe(
             if record.name.startswith("mcp_server_phytomni.runtime.outbound")
         )
         public_error_text = f"{exc_info.value!s}\n{exc_info.value!r}"
-        for marker in markers:
+        for marker in _PRIVATE_MARKERS:
             assert marker not in snapshot_text
             assert marker not in pool_log_text
             assert marker not in public_error_text
@@ -251,7 +251,7 @@ async def test_real_marked_attempt_keeps_pool_observability_and_errors_safe(
         with pytest.raises(OutboundRuntimeClosedError) as closed_error:
             async with pools.lease(OutboundPoolName.LLM):
                 pytest.fail("a closed pool must reject the marked request")
-        for marker in markers:
+        for marker in _PRIVATE_MARKERS:
             assert marker not in str(closed_error.value)
     finally:
         await profile.aclose()

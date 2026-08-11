@@ -7,9 +7,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import TypeVar
-
-_ResultT = TypeVar("_ResultT")
 
 LIVE_GATE_NAMES: tuple[str, ...] = (
     "PHYTOMNI_RUN_INTEGRATION",
@@ -62,11 +59,11 @@ def require_live_gates(environ: Mapping[str, str]) -> None:
         )
 
 
-def require_live_scenario(
+def require_live_scenario[ResultT](
     environ: Mapping[str, str],
     scenario: str,
-    live_accessor: Callable[[], _ResultT],
-) -> _ResultT:
+    live_accessor: Callable[[], ResultT],
+) -> ResultT:
     """Run one known live setup callback only after all safety gates pass."""
     require_live_gates(environ)
     if scenario not in LIVE_ACCEPTANCE_SCENARIOS:
