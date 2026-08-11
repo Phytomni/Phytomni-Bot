@@ -32,6 +32,12 @@ pytestmark = pytest.mark.server
 
 
 @pytest.fixture(autouse=True)
+async def _publish_outbound_runtime(outbound_runtime: Any) -> None:
+    """Keep direct ASGITransport requests inside runtime ownership."""
+    del outbound_runtime
+
+
+@pytest.fixture(autouse=True)
 def _expert_tasks_db(tasks_db_path: str) -> None:
     """Give every Expert contract test an isolated run registry."""
     _ = tasks_db_path

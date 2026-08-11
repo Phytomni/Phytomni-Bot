@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from tests.support.outbound_fakes import InlineObsRuntime
 
 from mcp_server_phytomni.agents.research import dispatch_runtime
 from mcp_server_phytomni.agents.research.dispatch_outbox import (
@@ -131,7 +132,7 @@ async def test_runtime_verify_direct_restart_fallback_rotates_grant() -> None:
                 ResearchObjectAuthority("dataset-1", "grant-new", snapshot),
             )
 
-    bindings = _bindings(RestartPort("bucket", object))
+    bindings = _bindings(RestartPort("bucket", InlineObsRuntime(object)))
     verified = await bindings.verify(_record(payload=payload))
 
     assert verified.grant_ids == ("grant-new",)

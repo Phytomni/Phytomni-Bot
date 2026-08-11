@@ -21,6 +21,7 @@ from mcp_server_phytomni.agents.chat.completion_validation import (
     require_successful_chat_completion,
 )
 from mcp_server_phytomni.func_cache import func_cache
+from tests.support.outbound_fakes import patch_openai_runtime
 
 pytestmark = pytest.mark.agent
 
@@ -121,11 +122,7 @@ def _install_real_sdk_transport(
     # the first async request. Pin only that header metadata so these transport
     # and response-parsing regressions stay deterministic in sandboxes.
     vars(sdk_client)["_platform"] = "Linux"
-    monkeypatch.setattr(
-        chat_service,
-        "AsyncOpenAI",
-        lambda **_kwargs: sdk_client,
-    )
+    patch_openai_runtime(monkeypatch, chat_service, sdk_client)
     return http_client, counter
 
 

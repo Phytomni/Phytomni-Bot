@@ -21,6 +21,7 @@ from openai import APIConnectionError
 
 from mcp_server_phytomni.agents.chat import service as chat_agents
 from tests.support.chat_fakes import misplaced_reasoning_message
+from tests.support.outbound_fakes import patch_openai_runtime
 
 pytestmark = pytest.mark.agent
 
@@ -212,7 +213,11 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
         chat_agents, "download_list_convert", fake_download_list_convert
     )
     monkeypatch.setattr(chat_agents, "get_prompt", fake_get_prompt)
-    monkeypatch.setattr(chat_agents, "AsyncOpenAI", FakeAsyncOpenAI)
+    patch_openai_runtime(
+        monkeypatch,
+        chat_agents,
+        FakeAsyncOpenAI("runtime-key", "https://runtime.example/v1"),
+    )
 
     result = await chat_agents.phyto_chat(
         user_query="Summarize the paper.",
@@ -231,8 +236,8 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
     assert result is not None
     assert result["choices"][0]["message"]["content"] == "chat answer"
     assert captured["client"] == {
-        "api_key": "api-key",
-        "base_url": "https://example.invalid/v1",
+        "api_key": "runtime-key",
+        "base_url": "https://runtime.example/v1",
     }
     assert captured["download"]["obs_file_list"] == ["obs://paper.pdf"]
     assert captured["prompt"] == {
@@ -368,7 +373,11 @@ async def test_run_phyto_chat_cached_dedupes_identical_sampling(
             ),
         )
 
-    monkeypatch.setattr(chat_agents, "AsyncOpenAI", fake_async_openai)
+    patch_openai_runtime(
+        monkeypatch,
+        chat_agents,
+        fake_async_openai("runtime-key", "https://runtime.example/v1"),
+    )
 
     sampling_kwargs: chat_agents.ChatCacheCall = {
         "messages": [{"role": "user", "content": "leaf growth"}],
@@ -469,7 +478,11 @@ async def test_run_phyto_chat_cached_does_not_cache_failures(
             ),
         )
 
-    monkeypatch.setattr(chat_agents, "AsyncOpenAI", fake_async_openai)
+    patch_openai_runtime(
+        monkeypatch,
+        chat_agents,
+        fake_async_openai("runtime-key", "https://runtime.example/v1"),
+    )
 
     sampling_kwargs: chat_agents.ChatCacheCall = {
         "messages": [{"role": "user", "content": "leaf growth"}],
@@ -533,7 +546,11 @@ async def test_non_streaming_repairs_reasoning_content_answer_tail(
             ),
         )
 
-    monkeypatch.setattr(chat_agents, "AsyncOpenAI", fake_async_openai)
+    patch_openai_runtime(
+        monkeypatch,
+        chat_agents,
+        fake_async_openai("runtime-key", "https://runtime.example/v1"),
+    )
 
     result = await chat_agents.run_phyto_chat_cached(
         messages=[{"role": "user", "content": "leaf color"}],
@@ -661,7 +678,11 @@ async def test_streaming_repairs_reasoning_content_after_aggregation(
             ),
         )
 
-    monkeypatch.setattr(chat_agents, "AsyncOpenAI", fake_async_openai)
+    patch_openai_runtime(
+        monkeypatch,
+        chat_agents,
+        fake_async_openai("runtime-key", "https://runtime.example/v1"),
+    )
 
     result = await chat_agents.run_phyto_chat_cached(
         messages=[{"role": "user", "content": "leaf color"}],

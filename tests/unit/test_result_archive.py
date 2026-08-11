@@ -246,6 +246,7 @@ def test_publish_writes_deterministic_zip_and_reuses_matching_object(
         inventory,
         agent="analyst",
         summary_markdown="safe answer\n\n",
+        client=object(),
     )
     assert key == (
         f"{inventory.run_root}/delivery/"
@@ -274,6 +275,7 @@ def test_publish_writes_deterministic_zip_and_reuses_matching_object(
             inventory,
             agent="analyst",
             summary_markdown="safe answer\n\n",
+            client=object(),
         )
         == key
     )
@@ -318,7 +320,10 @@ def test_publish_rejects_stream_size_mismatch_before_publication(
         result_archive.ResultArchiveError, match="archive_generation_failed"
     ):
         result_archive.build_and_publish_result_archive(
-            inventory, agent="analyst", summary_markdown="safe"
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            client=object(),
         )
     assert not published
     assert not list(tmp_path.iterdir())
@@ -364,6 +369,9 @@ def test_publish_rejects_post_upload_size_mismatch(
         result_archive.ResultArchiveError, match="archive_publish_failed"
     ):
         result_archive.build_and_publish_result_archive(
-            inventory, agent="analyst", summary_markdown="safe"
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            client=object(),
         )
     assert not list(tmp_path.iterdir())

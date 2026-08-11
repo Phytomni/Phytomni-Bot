@@ -70,6 +70,12 @@ from mcp_server_phytomni.runtime.run_registry import RunRegistry
 pytestmark = pytest.mark.server
 
 
+@pytest.fixture(autouse=True)
+async def _publish_outbound_runtime(outbound_runtime: Any) -> None:
+    """Keep direct ASGITransport requests inside runtime ownership."""
+    del outbound_runtime
+
+
 @dataclass
 class _CapturingPreflight:
     """Record the sole request allowed to reach Research admission."""

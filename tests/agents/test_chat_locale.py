@@ -12,6 +12,7 @@ import pytest
 
 from mcp_server_phytomni.agents.chat import graph as chat_graph
 from mcp_server_phytomni.agents.chat import service as chat_service
+from tests.support.outbound_fakes import patch_openai_runtime
 
 pytestmark = pytest.mark.agent
 
@@ -59,10 +60,10 @@ async def test_chat_cache_separates_locale(
             }
         )
 
-    monkeypatch.setattr(
+    patch_openai_runtime(
+        monkeypatch,
         chat_service,
-        "AsyncOpenAI",
-        lambda **_kwargs: SimpleNamespace(
+        SimpleNamespace(
             chat=SimpleNamespace(
                 completions=SimpleNamespace(create=fake_create)
             )

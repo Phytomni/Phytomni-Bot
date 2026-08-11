@@ -46,6 +46,12 @@ from mcp_server_phytomni.runtime.run_registry import RunRegistry
 pytestmark = pytest.mark.server
 
 
+@pytest.fixture(autouse=True)
+async def _publish_outbound_runtime(outbound_runtime: Any) -> None:
+    """Keep direct ASGITransport requests inside runtime ownership."""
+    del outbound_runtime
+
+
 def _auth(key: str) -> dict[str, str]:
     """Build one Bearer auth header."""
     return {"Authorization": f"Bearer {key}"}

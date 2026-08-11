@@ -29,6 +29,7 @@ from mcp_server_phytomni.config.models.agents import (
     ReviewConfig,
 )
 from mcp_server_phytomni.config.settings import get_sensitive_config
+from tests.support.outbound_fakes import patch_openai_runtime
 
 pytestmark = pytest.mark.agent
 
@@ -71,6 +72,22 @@ def _capturing_async_openai(captured: dict[str, Any]):
     return fake_async_openai
 
 
+def _install_runtime_openai(
+    monkeypatch: pytest.MonkeyPatch,
+    captured: dict[str, Any],
+    *,
+    api_key: str,
+    base_url: str,
+) -> None:
+    """Inject one process-owned fake OpenAI client for a service test."""
+    factory = _capturing_async_openai(captured)
+    patch_openai_runtime(
+        monkeypatch,
+        chat_service,
+        factory(api_key, base_url),
+    )
+
+
 @pytest.mark.parametrize(
     ("config_type", "expected_timeout", "expected_profile"),
     (
@@ -101,8 +118,15 @@ async def test_agent_timeout_reaches_direct_and_relay_provider(
             monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
             monkeypatch.delenv("RELAY_MODE", raising=False)
         captured: dict[str, Any] = {}
-        monkeypatch.setattr(
-            chat_service, "AsyncOpenAI", _capturing_async_openai(captured)
+        _install_runtime_openai(
+            monkeypatch,
+            captured,
+            api_key="relay-key" if relay_enabled else "operator-key",
+            base_url=(
+                "https://relay.test/v1/relay/llm"
+                if relay_enabled
+                else "https://operator.invalid/v1"
+            ),
         )
 
         sampling = _sampling(
@@ -172,8 +196,11 @@ async def test_chat_relay_mode_overrides_llm_endpoint(monkeypatch):
     monkeypatch.setenv("PHYTOMNI_RELAY_BASE_URL", "https://relay.test")
     monkeypatch.setenv("PHYTOMNI_RELAY_API_KEY", "relay-key")
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(
-        chat_service, "AsyncOpenAI", _capturing_async_openai(captured)
+    _install_runtime_openai(
+        monkeypatch,
+        captured,
+        api_key="relay-key",
+        base_url="https://relay.test/v1/relay/llm",
     )
 
     result = await chat_service.run_phyto_chat_cached(
@@ -194,8 +221,11 @@ async def test_chat_normal_mode_keeps_operator_endpoint(monkeypatch):
     monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
     monkeypatch.delenv("RELAY_MODE", raising=False)
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(
-        chat_service, "AsyncOpenAI", _capturing_async_openai(captured)
+    _install_runtime_openai(
+        monkeypatch,
+        captured,
+        api_key="operator-key",
+        base_url="https://operator.invalid/v1",
     )
 
     result = await chat_service.run_phyto_chat_cached(

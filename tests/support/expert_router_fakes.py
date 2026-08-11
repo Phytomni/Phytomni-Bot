@@ -11,6 +11,8 @@ from typing import Any
 
 import pytest
 
+from tests.support.outbound_fakes import patch_openai_runtime
+
 
 def patch_expert_router(
     monkeypatch: pytest.MonkeyPatch,
@@ -58,7 +60,11 @@ def patch_expert_router(
             chat=SimpleNamespace(completions=SimpleNamespace(create=create))
         )
 
-    monkeypatch.setattr(router, "AsyncOpenAI", fake_async_openai)
+    patch_openai_runtime(
+        monkeypatch,
+        router,
+        fake_async_openai("k", "https://example.invalid/v1"),
+    )
     monkeypatch.setattr(
         router,
         "get_sensitive_config",

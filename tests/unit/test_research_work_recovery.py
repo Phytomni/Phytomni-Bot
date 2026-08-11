@@ -589,6 +589,9 @@ async def test_http_lifespan_runs_registered_recovery_hook(
         app_support, "validate_citation_database", lambda: None
     )
     monkeypatch.setattr(
+        app_support, "ensure_research_input_runtime", lambda: None
+    )
+    monkeypatch.setattr(
         app_support,
         "init_outbound_runtime",
         lambda: _completed_awaitable(calls, "init-runtime"),

@@ -9,8 +9,10 @@ legacy rewrite_nl2sql wrapper thread-id compatibility.
 """
 
 import importlib
+from types import SimpleNamespace
 from typing import Any, cast
 
+import httpx
 import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
@@ -24,6 +26,11 @@ from mcp_server_phytomni.agents.data.nl2sql import (
 from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.mcp.schemas import DataAgent as DataAgentSchema
+from mcp_server_phytomni.runtime.outbound import (
+    BoundAsyncRequestClient,
+    OutboundPoolName,
+    OutboundPoolRegistry,
+)
 
 
 def _run_kwargs(
@@ -81,6 +88,7 @@ class _FakePost:
         self.dialog_ids: list[str] = []
         self.token_timeouts: list[float] = []
         self.backoff_attempts: list[int] = []
+        self.events: list[str] = []
 
     async def __call__(self, client: Any, request: Any, retry: Any) -> Any:
         """Record the conversation id and return/raise the outcome.
@@ -97,6 +105,7 @@ class _FakePost:
             Exception: When the scripted outcome is an exception.
         """
         del client, retry
+        self.events.append("request")
         self.dialog_ids.append(request.json_body["dialog_id"])
         outcome = self.outcomes[len(self.dialog_ids) - 1]
         if isinstance(outcome, Exception):
@@ -157,10 +166,18 @@ def _patch_transport(monkeypatch: pytest.MonkeyPatch, fake: _FakePost) -> None:
     async def fake_backoff(attempt: int) -> None:
         """Record the backoff cadence without actually sleeping."""
         fake.backoff_attempts.append(attempt)
+        fake.events.append("backoff")
+
+    runtime = SimpleNamespace(
+        http=SimpleNamespace(for_pool=lambda _pool: object()),
+    )
 
     monkeypatch.setattr(nl2sql_module, "get_token", fake_token)
     monkeypatch.setattr(nl2sql_module, "post_json_with_retries", fake)
     monkeypatch.setattr(nl2sql_module, "_rotation_backoff", fake_backoff)
+    monkeypatch.setattr(
+        nl2sql_module, "current_outbound_runtime", lambda: runtime
+    )
 
 
 class FakeCompiledGraph:
@@ -441,6 +458,55 @@ async def test_execute_nl2sql_returns_first_success_without_rotation(
     assert fake.token_timeouts == [7.0]
 
 
+async def test_nl2sql_capacity_one_uses_one_network_lease(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A capacity-one NL2SQL request does not acquire its pool twice."""
+
+    async def fake_token(**_kwargs: Any) -> str:
+        """Return a dummy IAM token for the real bound client path."""
+        return "token-xyz"
+
+    pools = OutboundPoolRegistry(
+        {
+            name: (1 if name is OutboundPoolName.NL2SQL else 0)
+            for name in OutboundPoolName
+        },
+        wait_warn_seconds=1.0,
+    )
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            json={"answer": "ok"},
+            request=request,
+        )
+    )
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        bound_client = BoundAsyncRequestClient(
+            pools,
+            OutboundPoolName.NL2SQL,
+            http_client,
+        )
+        runtime = SimpleNamespace(
+            http=SimpleNamespace(for_pool=lambda _pool: bound_client),
+        )
+        monkeypatch.setattr(nl2sql_module, "get_token", fake_token)
+        monkeypatch.setattr(
+            nl2sql_module, "current_outbound_runtime", lambda: runtime
+        )
+        result = await execute_nl2sql_request(
+            Nl2SqlRequest.from_kwargs(
+                "homologs of AT1G75370 in wheat",
+                {"max_retries": 0},
+            )
+        )
+
+    assert result == {"answer": "ok"}
+    snapshot = pools.snapshot(OutboundPoolName.NL2SQL)
+    assert snapshot.started == 1
+    assert snapshot.in_use == 0
+
+
 async def test_execute_nl2sql_rotates_dialog_id_on_retry(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -545,6 +611,13 @@ async def test_execute_nl2sql_backs_off_only_between_rotations(
         )
     assert fail.recorded_backoffs() == [0, 1]
     assert fail.attempt_count() == 3
+    assert fail.events == [
+        "request",
+        "backoff",
+        "request",
+        "backoff",
+        "request",
+    ]
 
 
 async def test_execute_nl2sql_dedupes_identical_questions_across_dialogs(

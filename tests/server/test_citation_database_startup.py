@@ -270,6 +270,9 @@ async def test_http_valid_startup_orders_validation_and_cleanup(
     monkeypatch.setattr(app_support, "init_outbound_runtime", init_runtime)
     monkeypatch.setattr(app_support, "aclose_outbound_runtime", close_runtime)
     monkeypatch.setattr(app_support, "aclose_gauss_pool", close_gauss)
+    monkeypatch.setattr(
+        app_support, "ensure_research_input_runtime", lambda: None
+    )
 
     async with _http_lifespan_context(FastAPI()):
         events.append("yield")

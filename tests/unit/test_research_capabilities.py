@@ -68,6 +68,11 @@ def test_runtime_capability_is_constructible_in_direct_mode(monkeypatch):
         "DirectResearchObjectMetadataPort",
         lambda **_kwargs: object(),
     )
+    monkeypatch.setattr(
+        module,
+        "current_outbound_runtime",
+        lambda: SimpleNamespace(obs=object()),
+    )
     result = research_input_runtime_capability(ApiConfig(), None)
 
     assert isinstance(result, ResearchInputRuntimeCapability)

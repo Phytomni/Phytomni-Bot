@@ -187,6 +187,7 @@ async def test_public_invoke_uses_target_id_and_allowlisted_remote_name(
         "search_genes",
         {"gene": "AT1G01010"},
         registry=_registry(target),
+        _client_cls=_FakeAdapter,
     )
 
     assert result == "ok"

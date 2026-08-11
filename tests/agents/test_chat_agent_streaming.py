@@ -23,6 +23,7 @@ from mcp.shared.exceptions import McpError
 from openai import APIConnectionError
 
 from mcp_server_phytomni.agents.chat import service as chat_service
+from tests.support.outbound_fakes import patch_openai_runtime
 
 pytestmark = pytest.mark.agent
 
@@ -95,6 +96,20 @@ def _build_fake_async_openai(
     return _factory
 
 
+def _patch_openai_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    create_fn: Any,
+    captured: dict[str, Any],
+) -> None:
+    """Inject a fake into the process-owned runtime seam."""
+    factory = _build_fake_async_openai(create_fn, captured)
+    patch_openai_runtime(
+        monkeypatch,
+        chat_service,
+        factory("api-key", "https://example.invalid/v1"),
+    )
+
+
 def _stream_kwargs() -> dict[str, Any]:
     """Return a minimal complete kwargs set for the streaming primitive."""
     return {
@@ -142,11 +157,7 @@ async def test_stream_phyto_chat_chunks_yields_provider_chunks(
         captured["params"] = kwargs
         return _iter_chunks(payloads)
 
-    monkeypatch.setattr(
-        chat_service,
-        "AsyncOpenAI",
-        _build_fake_async_openai(fake_create, captured),
-    )
+    _patch_openai_runtime(monkeypatch, fake_create, captured)
 
     received: list[dict[str, Any]] = []
     async for chunk in chat_service.stream_phyto_chat_chunks(
@@ -176,11 +187,7 @@ async def test_stream_relay_carries_internal_timeout_profile(
         captured["params"] = kwargs
         return _iter_chunks([])
 
-    monkeypatch.setattr(
-        chat_service,
-        "AsyncOpenAI",
-        _build_fake_async_openai(fake_create, captured),
-    )
+    _patch_openai_runtime(monkeypatch, fake_create, captured)
     kwargs = _stream_kwargs()
     kwargs["relay_timeout_profile"] = "phyto-knowledge"
     try:
@@ -191,7 +198,6 @@ async def test_stream_relay_carries_internal_timeout_profile(
     finally:
         chat_service.get_sensitive_config.cache_clear()
 
-    assert captured["base_url"] == "https://relay.test/v1/relay/llm"
     assert captured["params"]["extra_headers"] == {
         "X-Phytomni-Relay-Timeout-Profile": "phyto-knowledge"
     }
@@ -240,11 +246,7 @@ async def test_stream_phyto_chat_chunks_prepends_upload_context(
         "format_upload_context",
         fake_format_upload_context,
     )
-    monkeypatch.setattr(
-        chat_service,
-        "AsyncOpenAI",
-        _build_fake_async_openai(fake_create, captured),
-    )
+    _patch_openai_runtime(monkeypatch, fake_create, captured)
 
     async for _ in chat_service.stream_phyto_chat_chunks(
         user_query="Summarize the paper.",
@@ -294,11 +296,7 @@ async def test_stream_phyto_chat_chunks_open_retries_transient_then_succeeds(
             [{"id": "c1", "choices": [{"delta": {"content": "ok"}}]}]
         )
 
-    monkeypatch.setattr(
-        chat_service,
-        "AsyncOpenAI",
-        _build_fake_async_openai(fake_create, {}),
-    )
+    _patch_openai_runtime(monkeypatch, fake_create, {})
 
     received: list[dict[str, Any]] = []
     async for chunk in chat_service.stream_phyto_chat_chunks(
@@ -331,11 +329,7 @@ async def test_stream_phyto_chat_chunks_open_retries_exhaust_raise_mcperror(
         calls["count"] += 1
         raise TimeoutException("repeat")
 
-    monkeypatch.setattr(
-        chat_service,
-        "AsyncOpenAI",
-        _build_fake_async_openai(fake_create, {}),
-    )
+    _patch_openai_runtime(monkeypatch, fake_create, {})
 
     with pytest.raises(McpError) as excinfo:
         async for _ in chat_service.stream_phyto_chat_chunks(
@@ -375,11 +369,7 @@ async def test_stream_phyto_chat_chunks_mid_stream_failure_propagates(
 
         return _iter()
 
-    monkeypatch.setattr(
-        chat_service,
-        "AsyncOpenAI",
-        _build_fake_async_openai(fake_create, {}),
-    )
+    _patch_openai_runtime(monkeypatch, fake_create, {})
 
     received: list[dict[str, Any]] = []
     with pytest.raises(TimeoutException):

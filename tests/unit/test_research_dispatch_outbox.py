@@ -21,6 +21,7 @@ import pytest
 from tests.agents import (
     test_research_input_coordinator as coordinator_fixtures,
 )
+from tests.support.outbound_fakes import InlineObsRuntime
 from tests.support.research_fakes import persist_research_resolution
 
 from mcp_server_phytomni.agents.research import (
@@ -899,7 +900,7 @@ async def test_direct_runtime_re_resolves_only_after_authority_restart(
 
     client = SimpleNamespace(getObjectMetadata=get_object_metadata)
     initial_port = DirectResearchObjectMetadataPort(
-        "dev-bucket", lambda: client
+        "dev-bucket", InlineObsRuntime(lambda: client)
     )
     fingerprint = hashlib.sha256(str(tmp_path).encode()).hexdigest()
     candidate = ResearchObjectCandidate(
@@ -920,7 +921,7 @@ async def test_direct_runtime_re_resolves_only_after_authority_restart(
     )
     submitted: list[Any] = []
     restarted_port = DirectResearchObjectMetadataPort(
-        "dev-bucket", lambda: client
+        "dev-bucket", InlineObsRuntime(lambda: client)
     )
     runtime = dispatch_runtime.build_research_dispatch_runtime(
         store,

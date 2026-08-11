@@ -10,6 +10,7 @@ from dataclasses import dataclass, fields
 from types import SimpleNamespace
 
 import pytest
+from tests.support.outbound_fakes import InlineObsRuntime
 from tests.support.research_fakes import research_relay_snapshot_payload
 
 from mcp_server_phytomni.storage import (
@@ -154,9 +155,10 @@ def _resolve_request(reference: str) -> ResearchObjectResolveRequest:
 
 
 def _port(fake_obs: FakeObsClient) -> DirectResearchObjectMetadataPort:
-    """Build the direct port with no endpoint or credential configuration."""
+    """Build the direct port with one injected runtime-owned fake."""
     return DirectResearchObjectMetadataPort(
-        bucket="dev-bucket", client_factory=lambda: fake_obs
+        bucket="dev-bucket",
+        obs_runtime=InlineObsRuntime(lambda: fake_obs),
     )
 
 
@@ -207,7 +209,8 @@ async def test_direct_resolve_sanitizes_client_factory_failure(
         raise RuntimeError(sentinel)
 
     port = DirectResearchObjectMetadataPort(
-        bucket="dev-bucket", client_factory=raise_factory_error
+        bucket="dev-bucket",
+        obs_runtime=InlineObsRuntime(raise_factory_error),
     )
 
     with pytest.raises(ResearchObjectMetadataError) as captured:
@@ -234,7 +237,8 @@ async def test_direct_verify_sanitizes_client_factory_failure(
         return fake_obs
 
     port = DirectResearchObjectMetadataPort(
-        bucket="dev-bucket", client_factory=client_factory
+        bucket="dev-bucket",
+        obs_runtime=InlineObsRuntime(client_factory),
     )
     request = _resolve_request("obs://dev-bucket/a.vcf")
     authority = (await port.resolve(request))[0]
