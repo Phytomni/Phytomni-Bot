@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -75,6 +76,52 @@ async def test_repeated_init_rejected_and_close_is_exactly_once() -> None:
     assert resources.closed == ["obs", "direct_upstream", "trusted"]
     with pytest.raises(OutboundRuntimeStateError):
         current_outbound_runtime()
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_logs_one_safe_startup_and_shutdown_summary(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Lifecycle summaries expose capacities and final counters only once."""
+    logger_name = "mcp_server_phytomni.runtime.outbound.lifecycle"
+    caplog.set_level(logging.INFO, logger=logger_name)
+    resources = RecordingResources()
+    runtime = await init_outbound_runtime(
+        _config(
+            OUTBOUND_LLM_CONCURRENCY=2,
+            OUTBOUND_OBS_CONCURRENCY=0,
+        ),
+        factories=resources.factories(),
+    )
+
+    async with runtime.pools.lease(OutboundPoolName.LLM):
+        pass
+    await aclose_outbound_runtime()
+
+    messages = [record.getMessage() for record in caplog.records]
+    startup = [
+        message
+        for message in messages
+        if message.startswith("outbound runtime startup ")
+    ]
+    shutdown = [
+        message
+        for message in messages
+        if message.startswith("outbound runtime shutdown ")
+    ]
+    assert len(startup) == 1
+    assert "llm(capacity=2)" in startup[0]
+    assert "obs(capacity=0)" in startup[0]
+    assert startup[0].count("(capacity=") == len(OutboundPoolName)
+    assert len(shutdown) == 1
+    assert (
+        "llm(capacity=2,in_use=0,waiting=0,max_in_use=1,started=1,"
+        "completed=1,failed=0,cancelled=0,total_wait_ms=0.000,"
+        "max_wait_ms=0.000)" in shutdown[0]
+    )
+    assert shutdown[0].count("(capacity=") == len(OutboundPoolName)
+    assert all("https://" not in message for message in startup + shutdown)
+    assert all("secret" not in message for message in startup + shutdown)
 
 
 @pytest.mark.asyncio
@@ -250,8 +297,6 @@ async def test_openai_client_shares_llm_pool_across_stream_and_completion(
             [],
             prompt_file="unused",
             prompt_path="unused",
-            api_key="ignored",
-            base_url="ignored",
             model="pytest-model",
             response_format={"type": "text"},
             timeout=1.0,
@@ -285,8 +330,6 @@ async def test_openai_client_shares_llm_pool_across_stream_and_completion(
             "n": 1,
             "max_tokens": None,
             "reasoning_effort": None,
-            "api_key": "ignored",
-            "base_url": "ignored",
             "user": "test",
             "timeout": 1.0,
             "stream": False,
