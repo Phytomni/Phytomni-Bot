@@ -22,7 +22,6 @@ from httpx import HTTPStatusError
 from mcp.shared.exceptions import McpError
 
 from ...auth.iam import get_token
-from ...common.http import resolve_request_timeout
 from ...common.prompts import get_prompt
 from ...common.relay_client import current_relay_client
 from ...config.defaults import DeepGenomeConfig
@@ -94,10 +93,9 @@ def evolution_submit_kwargs(
 async def find_spa_taxids(
     spa_names: str,
     request_timeout: float | None = None,
-    **options: Any,
 ) -> list[str]:
     """Return taxonomy ids for a target species name."""
-    timeout = resolve_request_timeout(request_timeout, options)
+    timeout = request_timeout
     if timeout is None:
         timeout = DEEP_GENOME_CONFIG.TIMEOUT
     if relay_mode_enabled():
@@ -121,7 +119,7 @@ async def find_spa_taxids(
             repo_id=DEEP_GENOME_CONFIG.SPA_REPO_ID
         )
         headers = {
-            "X-Auth-Token": await get_token(timeout=timeout),
+            "X-Auth-Token": await get_token(request_timeout=timeout),
             "Content-Type": "application/json",
         }
         request_params: dict[str, str | int] = {
@@ -176,7 +174,7 @@ async def target_taxids(query: str, kwargs: dict[str, Any]) -> str | None:
     taxid_lists = [
         await find_spa_taxids(
             spa,
-            kwargs.get("timeout", DEEP_GENOME_CONFIG.TIMEOUT),
+            request_timeout=kwargs.get("timeout", DEEP_GENOME_CONFIG.TIMEOUT),
         )
         for spa in targets
     ]

@@ -22,7 +22,6 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 from ...common.http import (
     JsonPostRetry,
     require_json_object,
-    resolve_request_timeout,
 )
 from ...config.defaults import DeepGenomeConfig
 from ..shared.sql import bi_query, sql_literal
@@ -40,7 +39,6 @@ _LOOKUP_CONFIG = DeepGenomeConfig()
 async def _post_bi_sql(
     sql: str,
     request_timeout: float = _LOOKUP_CONFIG.TIMEOUT,
-    **options: Any,
 ) -> dict[str, Any]:
     """Run one BI SQL query and return the JSON payload.
 
@@ -52,7 +50,6 @@ async def _post_bi_sql(
     Args:
         sql: SQL statement to execute.
         request_timeout: Per-request timeout in seconds.
-        **options: Backward-compatible ``timeout=`` keyword support.
 
     Returns:
         The decoded BI JSON payload.
@@ -64,14 +61,11 @@ async def _post_bi_sql(
             clear message instead of the opaque ``Expecting value:
             line 1 column 1 (char 0)``.
     """
-    timeout = resolve_request_timeout(request_timeout, options)
-    if timeout is None:
-        timeout = _LOOKUP_CONFIG.TIMEOUT
     try:
         data = await bi_query(
             sql,
             retry=JsonPostRetry(
-                timeout=timeout,
+                timeout=request_timeout,
                 max_retries=_LOOKUP_CONFIG.MAX_RETRIES,
                 retriable_codes=list(_LOOKUP_CONFIG.RETRIABLE_CODES),
                 message="BI query failed",
@@ -97,17 +91,13 @@ async def _cached_gene_symbol_lookup(
     species_code: str,
     gene_id: str,
     request_timeout: float = _LOOKUP_CONFIG.TIMEOUT,
-    **options: Any,
 ) -> list[str]:
     """Retrieve gene symbols for one species/gene pair."""
-    timeout = resolve_request_timeout(request_timeout, options)
-    if timeout is None:
-        timeout = _LOOKUP_CONFIG.TIMEOUT
     sql = (
         f"SELECT * FROM id_table WHERE gene_id = {sql_literal(gene_id)} "
         f"AND species_code = {sql_literal(species_code)}"
     )
-    response = await _post_bi_sql(sql, timeout)
+    response = await _post_bi_sql(sql, request_timeout=request_timeout)
     gene_symbol_list: list[str] = []
     if response["data"][0]["symbol"] is not None:
         cell_raw_value = response["data"][0]["symbol"]
@@ -125,12 +115,8 @@ async def _cached_gene_annotation_lookup(
     species_code: str,
     gene_id: str,
     request_timeout: float = _LOOKUP_CONFIG.TIMEOUT,
-    **options: Any,
 ) -> dict[str, Any]:
     """Retrieve gene annotations for one species/gene pair."""
-    timeout = resolve_request_timeout(request_timeout, options)
-    if timeout is None:
-        timeout = _LOOKUP_CONFIG.TIMEOUT
     gene_literal = sql_literal(gene_id)
     species_literal = sql_literal(species_code)
     sql_list = (
@@ -149,7 +135,10 @@ async def _cached_gene_annotation_lookup(
         f"WHERE gene_id = {gene_literal} "
         f"AND species_code = {species_literal}",
     )
-    responses = [await _post_bi_sql(sql, timeout) for sql in sql_list]
+    responses = [
+        await _post_bi_sql(sql, request_timeout=request_timeout)
+        for sql in sql_list
+    ]
     gene_anno_dict: dict[str, Any] = {}
     if responses[0]["data"]:
         gene_anno_dict.update({"description": responses[0]["data"]})

@@ -160,7 +160,7 @@ def _patch_transport(monkeypatch: pytest.MonkeyPatch, fake: _FakePost) -> None:
 
     async def fake_token(**_kwargs: Any) -> str:
         """Return a dummy IAM token."""
-        fake.token_timeouts.append(_kwargs["timeout"])
+        fake.token_timeouts.append(_kwargs["request_timeout"])
         return "token-xyz"
 
     async def fake_backoff(attempt: int) -> None:

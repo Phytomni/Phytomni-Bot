@@ -12,7 +12,7 @@ returns no response and the wrapper short-circuits.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -93,7 +93,7 @@ async def test_find_spa_taxids_uses_direct_outbound_profile(
 
     async def fake_get_token(**kwargs: Any) -> str:
         """Return a deterministic IAM token for the request headers."""
-        captured["token_timeout"] = kwargs["timeout"]
+        captured["token_timeout"] = kwargs["request_timeout"]
         return "fake-iam-token"
 
     monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
@@ -105,7 +105,9 @@ async def test_find_spa_taxids_uses_direct_outbound_profile(
         )
     )
 
-    taxids = await evolution_agent.find_spa_taxids("Arabidopsis", timeout=12.0)
+    taxids = await evolution_agent.find_spa_taxids(
+        "Arabidopsis", request_timeout=12.0
+    )
 
     assert taxids == ["9606", "10090"]
     assert captured["token_timeout"] == 12.0
@@ -136,6 +138,26 @@ async def test_find_spa_taxids_returns_empty_on_non_200(
     monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
     outbound_runtime.transport.enqueue(status=502, content=b"bad gateway")
 
-    taxids = await evolution_agent.find_spa_taxids("oryza", timeout=1.0)
+    taxids = await evolution_agent.find_spa_taxids(
+        "oryza", request_timeout=1.0
+    )
 
     assert taxids == []
+
+
+async def test_find_spa_taxids_rejects_legacy_timeout_keyword(
+    outbound_runtime: Any,
+) -> None:
+    """The SPA lookup boundary rejects the removed timeout spelling.
+
+    Args:
+        outbound_runtime: Recording process-owned outbound runtime.
+    """
+    del outbound_runtime
+
+    with pytest.raises(
+        TypeError, match="unexpected keyword argument 'timeout'"
+    ):
+        await cast(Any, evolution_agent.find_spa_taxids)(
+            "Arabidopsis", timeout=1.0
+        )

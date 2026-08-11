@@ -14,7 +14,7 @@ instant-retry sleep live in ``tests/unit/conftest.py``.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -81,3 +81,19 @@ async def test_get_token_raises_mcperror_when_header_missing(
         await iam.get_token()
 
     assert "X-Subject-Token" in str(excinfo.value)
+
+
+async def test_get_token_rejects_legacy_timeout_keyword(
+    outbound_runtime: Any,
+) -> None:
+    """The IAM boundary accepts only the typed request-timeout spelling.
+
+    Args:
+        outbound_runtime: Recording process-owned outbound runtime.
+    """
+    del outbound_runtime
+
+    with pytest.raises(
+        TypeError, match="unexpected keyword argument 'timeout'"
+    ):
+        await cast(Any, iam.get_token)(timeout=1.0)

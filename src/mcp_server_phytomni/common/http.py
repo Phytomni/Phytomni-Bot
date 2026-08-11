@@ -57,18 +57,6 @@ class AsyncRequestClient(Protocol):  # pylint: disable=too-few-public-methods
         raise NotImplementedError
 
 
-def resolve_request_timeout(
-    request_timeout: float | None,
-    options: dict[str, Any],
-) -> float | None:
-    """Resolve the legacy ``timeout=`` spelling for async helpers."""
-    timeout = options.pop("timeout", request_timeout)
-    if options:
-        unexpected = next(iter(options))
-        raise TypeError(f"unexpected keyword argument: {unexpected}")
-    return timeout
-
-
 @dataclass(frozen=True)
 class JsonPostRequest:
     """HTTP request payload for retry helpers.

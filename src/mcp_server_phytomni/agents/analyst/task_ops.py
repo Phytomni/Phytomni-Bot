@@ -93,7 +93,7 @@ async def task_status(
             headers={
                 "Content-Type": "application/json",
                 "X-Auth-Token": await get_token(
-                    timeout=req["timeout"], region=req["region"]
+                    request_timeout=req["timeout"], region=req["region"]
                 ),
             },
         ),
@@ -190,7 +190,7 @@ async def task_log(
             headers={
                 "Content-Type": "application/json",
                 "X-Auth-Token": await get_token(
-                    timeout=req["timeout"], region=req["region"]
+                    request_timeout=req["timeout"], region=req["region"]
                 ),
             },
         ),
@@ -245,7 +245,7 @@ async def task_delete(
             headers={
                 "Content-Type": "application/json",
                 "X-Auth-Token": await get_token(
-                    timeout=req["timeout"], region=req["region"]
+                    request_timeout=req["timeout"], region=req["region"]
                 ),
             },
             json_body={"force": True},

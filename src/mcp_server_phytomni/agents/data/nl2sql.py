@@ -255,7 +255,7 @@ async def _execute_nl2sql_uncached(request: Nl2SqlRequest) -> Any:
     """
     if relay_mode_enabled():
         return await _execute_nl2sql_via_relay(request)
-    token = await get_token(timeout=request.timeout)
+    token = await get_token(request_timeout=request.timeout)
     runtime = current_outbound_runtime()
     client = runtime.http.for_pool(OutboundPoolName.NL2SQL)
     last_attempt = request.max_retries

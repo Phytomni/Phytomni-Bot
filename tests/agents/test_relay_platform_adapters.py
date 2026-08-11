@@ -326,7 +326,7 @@ async def test_post_bi_sql_routes_through_relay(monkeypatch):
     monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
     relay = _patch_relay(monkeypatch, shared_sql, {"records": []})
 
-    result = await _post_bi_sql("SELECT 3", 1.0)
+    result = await _post_bi_sql("SELECT 3", request_timeout=1.0)
 
     assert result == {"records": []}
     assert relay.calls[0]["path"] == "bi/query"
@@ -361,7 +361,7 @@ async def test_find_spa_taxids_routes_through_relay(monkeypatch):
         {"total": 1, "records": [{"answer": "9606.1"}]},
     )
 
-    taxids = await find_spa_taxids("Arabidopsis", 1.0)
+    taxids = await find_spa_taxids("Arabidopsis", request_timeout=1.0)
 
     assert taxids == ["9606"]
     assert relay.calls[0]["method"] == "GET"

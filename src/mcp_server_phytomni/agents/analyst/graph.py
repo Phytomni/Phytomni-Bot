@@ -312,7 +312,7 @@ class AnalystGraphMixin:
         if relay_mode_enabled():
             return {"Content-Type": "application/json"}
         token = await get_token(
-            timeout=self.analyst_config.TIMEOUT,
+            request_timeout=self.analyst_config.TIMEOUT,
             region=self.analyst_config.ANALYSIS_REGION,
         )
         return {"Content-Type": "application/json", "X-Auth-Token": token}

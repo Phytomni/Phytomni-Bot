@@ -7,8 +7,6 @@
 Functions: get_token.
 """
 
-from typing import Any
-
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
@@ -16,7 +14,6 @@ from ..common.http import (
     JsonPostRequest,
     JsonPostRetry,
     request_response_with_retries,
-    resolve_request_timeout,
 )
 from ..config.defaults import ServerConfig
 from ..config.settings import SensitiveConfig
@@ -29,7 +26,6 @@ SENSITIVE_CONFIG = SensitiveConfig.load()
 async def get_token(
     request_timeout: float | None = None,
     region: str = SERVER_CONFIG.REGION,
-    **options: Any,
 ) -> str:
     """Obtain an X-Subject-Token for API authentication.
 
@@ -43,7 +39,6 @@ async def get_token(
         request_timeout: Request timeout in seconds
             (default from ServerConfig.TIMEOUT).
         region: Cloud service region name (default from ServerConfig.REGION).
-        **options: Backward-compatible ``timeout=`` keyword support.
 
     Returns:
         str: X-Subject-Token header value for authenticated API requests.
@@ -52,7 +47,7 @@ async def get_token(
         McpError: If the token request fails after all retries, or a
             successful response omits the X-Subject-Token header.
     """
-    timeout = resolve_request_timeout(request_timeout, options)
+    timeout = request_timeout
     if timeout is None:
         timeout = SERVER_CONFIG.TIMEOUT
     client = current_outbound_runtime().http.for_pool(OutboundPoolName.IAM)

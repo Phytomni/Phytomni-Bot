@@ -25,8 +25,10 @@ pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("outbound_runtime")]
 def _patch_token(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub out the IAM token used by every wrapper."""
 
-    async def fake_token(*_args: Any, **_kwargs: Any) -> str:
+    async def fake_token(*, request_timeout: float, region: str) -> str:
         """Return a fixed test token instead of hitting IAM."""
+        assert request_timeout > 0
+        assert region
         return "test-token"
 
     monkeypatch.setattr(task_ops_module, "get_token", fake_token)
