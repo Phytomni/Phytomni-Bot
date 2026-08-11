@@ -37,7 +37,7 @@ from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
 )
 
-pytestmark = pytest.mark.server
+pytestmark = [pytest.mark.server, pytest.mark.usefixtures("outbound_runtime")]
 
 
 def _native_context_envelope(

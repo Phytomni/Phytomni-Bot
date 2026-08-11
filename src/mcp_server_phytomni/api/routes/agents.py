@@ -69,6 +69,9 @@ from .context_helpers import (
 from .context_helpers import (
     slug_for_tool as _slug_for_tool,
 )
+from .context_helpers import (
+    stream_context_chat as _stream_ctx,
+)
 from .context_types import (
     ContextAgentRequest,
     ContextLifecycleHttpRequest,
@@ -315,7 +318,7 @@ async def _execute_context_chat(
     dependencies: AgentRouteDependencies,
     *,
     attachment_owner: str,
-) -> JSONResponse:
+) -> Response:
     """Execute an Instant V1 completion without flattening legacy messages."""
     envelope = payload.conversation
     assert envelope is not None
@@ -327,11 +330,6 @@ async def _execute_context_chat(
         raise HTTPException(
             status_code=422,
             detail="instant context requires a ChatAgent model",
-        )
-    if payload.stream:
-        raise HTTPException(
-            status_code=400,
-            detail="conversation context streaming is not available",
         )
     if payload.obs_file_list and not dependencies.chat.input.tool_accepts_obs(
         "ChatAgent"
@@ -364,6 +362,8 @@ async def _execute_context_chat(
         for key in ("obs_file_list", "data_list")
         if key in prepared_attachments
     }
+    if payload.stream:
+        return await _stream_ctx(dependencies, payload, attachment_arguments)
     context_request = ContextAgentRequest(
         dialogue_id=None,
         request_json="{}",

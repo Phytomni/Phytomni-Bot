@@ -7,17 +7,19 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict
+from typing import Any
 
 from fastapi import HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from ...runtime.conversation_context.models import ConversationEnvelopeV1
 from ...runtime.conversation_context.service import (
     PreparedTurn,
     PrepareStatus,
 )
-from ...runtime.locale import SupportedLocale
+from ...runtime.locale import SupportedLocale, current_effective_locale
 from ..lifecycle_contract import SafeApiError
 from .agent_dependencies import AgentRouteDependencies
 
@@ -25,6 +27,7 @@ __all__ = [
     "context_response",
     "safe_native_request_json",
     "slug_for_tool",
+    "stream_context_chat",
 ]
 
 
@@ -64,6 +67,27 @@ def context_response(
         }
     status_code = 202 if response.get("status") == "running" else 200
     return JSONResponse(response, status_code=status_code)
+
+
+async def stream_context_chat(
+    dependencies: AgentRouteDependencies,
+    payload: Any,
+    attachment_arguments: Mapping[str, object],
+) -> Response:
+    """Stream an Instant context turn through the shared chat runtime."""
+    envelope = payload.conversation
+    assert envelope is not None
+    user_query = envelope.current_message.content
+    return await dependencies.chat.execution.stream_chat_completion(
+        tool_name="ChatAgent",
+        arguments={
+            "user_query": user_query,
+            "locale": current_effective_locale(),
+            **attachment_arguments,
+        },
+        payload=payload,
+        user_query=user_query,
+    )
 
 
 def safe_native_request_json(

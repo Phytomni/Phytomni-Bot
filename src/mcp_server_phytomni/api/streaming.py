@@ -589,9 +589,14 @@ def _stage_context_stream_success(
             turn_id=context_stream.envelope.turn_id,
             selected_agent_id="ChatAgent",
             route_source="instant_lock",
+            route_reason_code="INSTANT_LOCK",
+            base_business_context_version=(
+                context_stream.envelope.base_business_context_version
+            ),
             proposed_business_context_version=(
                 context_stream.envelope.base_business_context_version + 1
             ),
+            last_applied_ledger_cursor=context_stream.envelope.ledger_cursor,
             context_truncated=snapshot.truncated,
             context_rebuilt=context_stream.rebuilt,
             context_degraded=degraded,
@@ -653,6 +658,7 @@ async def stream_chat_completion(
     """Prepare and wrap one streamed tool response."""
     if (
         tool_name == "ChatAgent"
+        and payload.conversation is None
         and dependencies.a2ui.enabled()
         and dependencies.a2ui.select_widget(user_query) is not None
     ):

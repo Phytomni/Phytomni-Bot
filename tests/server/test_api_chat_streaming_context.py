@@ -7,9 +7,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any, cast
 
+import httpx
 import pytest
 from tests.server.test_api_chat_streaming import (
     _consume_context_stage,
@@ -104,6 +105,50 @@ async def test_context_stream_stages_before_custom_and_then_finishes(
     assert _extract_custom_context(accumulated) == (
         expected_context_staged_value("21")
     )
+
+
+async def test_context_stream_http_route_uses_context_stream_runtime(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The public chat route forwards V1 streams to the context runtime."""
+    del tasks_db_path
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "0")
+
+    async def fake_stream(
+        _tool_name: str,
+        _arguments: dict[str, Any],
+        *,
+        run_id: str,
+        dialogue_id: str,
+    ) -> AsyncIterator[Any]:
+        """Yield one valid AG-UI stream without invoking a provider."""
+        del _tool_name, _arguments
+        yield run_started(run_id, dialogue_id)
+        yield text_message_start("route-context-message")
+        yield text_message_content(
+            "route-context-message", "context stream answer"
+        )
+        yield text_message_end("route-context-message")
+        yield run_finished(run_id)
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", fake_stream)
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        conversation=_conversation_envelope().model_dump(mode="json"),
+        stream=True,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert '"name": "phyto.context_staged"' in response.text
+    assert "event: RunFinished\n" in response.text
+    assert response.text.rstrip().endswith("data: [DONE]")
 
 
 async def test_context_stream_duplicate_turn_replays_without_reinvocation(

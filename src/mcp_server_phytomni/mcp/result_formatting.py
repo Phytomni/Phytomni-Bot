@@ -9,7 +9,7 @@ historic imports, including the two private citation helpers used by the
 server test contract, object-identical during the migration.
 """
 
-from dataclasses import dataclass
+from typing import TypedDict
 
 from . import universal_failures as _universal_failures
 from .formatting import agui as _formatting_agui
@@ -32,14 +32,16 @@ CONTEXT_STAGED_CUSTOM_NAME = "phyto.context_staged"
 custom = _formatting_agui.custom
 
 
-@dataclass(frozen=True, slots=True)
-class ContextStagedPayload:
+class ContextStagedPayload(TypedDict):
     """Validated fields carried by the conversation-context stage frame."""
 
     turn_id: str
     selected_agent_id: str
     route_source: str
+    route_reason_code: str
+    base_business_context_version: int
     proposed_business_context_version: int
+    last_applied_ledger_cursor: int
     context_truncated: bool
     context_rebuilt: bool
     context_degraded: bool
@@ -51,15 +53,22 @@ def context_staged(payload: ContextStagedPayload) -> AguiEvent:
         CONTEXT_STAGED_CUSTOM_NAME,
         {
             "schema_version": 1,
-            "turn_id": payload.turn_id,
-            "selected_agent_id": payload.selected_agent_id,
-            "route_source": payload.route_source,
-            "proposed_business_context_version": (
-                payload.proposed_business_context_version
+            "turn_id": payload["turn_id"],
+            "selected_agent_id": payload["selected_agent_id"],
+            "route_source": payload["route_source"],
+            "route_reason_code": payload["route_reason_code"],
+            "base_business_context_version": (
+                payload["base_business_context_version"]
             ),
-            "context_truncated": payload.context_truncated,
-            "context_rebuilt": payload.context_rebuilt,
-            "context_degraded": payload.context_degraded,
+            "proposed_business_context_version": (
+                payload["proposed_business_context_version"]
+            ),
+            "last_applied_ledger_cursor": (
+                payload["last_applied_ledger_cursor"]
+            ),
+            "context_truncated": payload["context_truncated"],
+            "context_rebuilt": payload["context_rebuilt"],
+            "context_degraded": payload["context_degraded"],
         },
     )
 
