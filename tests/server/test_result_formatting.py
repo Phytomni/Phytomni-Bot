@@ -51,7 +51,7 @@ def test_knowledge_result_rewrites_citations_and_deduplicates_docs() -> None:
     result = format_tool_result("KnowledgeAgent", payload)
 
     assert result.answer == (
-        "Evidence appears in <sup>1</sup> and <sup>2,1</sup>."
+        "Evidence appears in <sup>1</sup> and <sup>1,2</sup>."
     )
     assert result.references == (
         {

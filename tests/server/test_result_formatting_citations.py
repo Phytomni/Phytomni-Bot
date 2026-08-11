@@ -133,7 +133,7 @@ def test_normalize_citations_dedup_repoints_to_existing_ref() -> None:
 
 
 def test_normalize_citations_dedup_inside_multi_index_keeps_ref() -> None:
-    """A multi-index bracket with a dedup hit keeps the existing ref."""
+    """A multi-index bracket deduplicates references after renumbering."""
 
     paper_a = {"file_id": "paper-a", "title": "Paper A"}
     paper_b = {"file_id": "paper-b", "title": "Paper B"}
@@ -142,7 +142,7 @@ def test_normalize_citations_dedup_inside_multi_index_keeps_ref() -> None:
     text, refs = _normalize_citations(answer, doc_list)
 
     assert [ref["file_id"] for ref in refs] == ["paper-a", "paper-b"]
-    assert text == "Multiple findings agree <sup>1,2,1</sup>."
+    assert text == "Multiple findings agree <sup>1,2</sup>."
 
 
 def test_normalize_citations_multi_chunk_same_paper_pattern() -> None:
@@ -163,17 +163,46 @@ def test_normalize_citations_multi_chunk_same_paper_pattern() -> None:
     )
 
 
-def test_normalize_citations_keeps_marker_position_and_commas() -> None:
-    """Superscripts stay where authored and never collapse into ranges."""
+def test_normalize_citations_sorts_deduplicated_numbers() -> None:
+    """Each marker sorts unique numbers after first-appearance renumbering."""
+    docs = [
+        {"file_id": str(index), "title": str(index)} for index in range(1, 4)
+    ]
+
+    text, refs = _normalize_citations(
+        "Seed [3]. Claim [2,3,1,2].",
+        docs,
+    )
+
+    assert [ref["file_id"] for ref in refs] == ["3", "2", "1"]
+    assert text == "Seed <sup>1</sup>. Claim <sup>1-3</sup>."
+
+
+def test_normalize_citations_merges_adjacent_markers_into_range() -> None:
+    """Adjacent source markers render as one compact superscript range."""
+    docs = [
+        {"file_id": str(index), "title": str(index)} for index in range(1, 5)
+    ]
+
+    text, refs = _normalize_citations("Claim [1][2][3][4].", docs)
+
+    assert [ref["file_id"] for ref in refs] == ["1", "2", "3", "4"]
+    assert text == "Claim <sup>1-4</sup>."
+
+
+def test_normalize_citations_keeps_position_and_compacts_mixed_ranges() -> (
+    None
+):
+    """Superscripts stay authored while mixed runs use compact ranges."""
     docs = [{"file_id": str(index), "title": str(index)} for index in range(5)]
 
     no_move, _ = _normalize_citations("claim[1].", docs)
-    no_range, _ = _normalize_citations(
+    compacted, _ = _normalize_citations(
         "seed [1][2][3][4][5]\nclaim [1,2,3,5]", docs
     )
 
     assert no_move == "claim<sup>1</sup>."
-    assert no_range.splitlines()[-1] == "claim <sup>1,2,3,5</sup>"
+    assert compacted.splitlines()[-1] == "claim <sup>1-3,5</sup>"
 
 
 def test_normalize_citations_removes_invalid_only_marker() -> None:

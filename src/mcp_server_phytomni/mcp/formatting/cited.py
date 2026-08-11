@@ -32,7 +32,11 @@ from ._shared import (
 )
 from .models import FormattedToolResult
 
+_CITATION_TOKEN_PATTERN = r"\[(?:[A-Za-z]+[:\s]*)?\d+(?:,\s*\d+)*\]"
 _CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[:\s]*)?(\d+(?:,\s*\d+)*)\]")
+_CITATION_BLOCK_PATTERN = re.compile(
+    rf"{_CITATION_TOKEN_PATTERN}" rf"(?:[ \t]*{_CITATION_TOKEN_PATTERN})*"
+)
 _RETRIEVAL_FILE_SUFFIXES = (
     ".pdf",
     ".doc",
@@ -155,16 +159,18 @@ def _normalize_citations_detailed(
         seen_keys[doc_key] = new_ref
         old_to_new[old_index] = new_ref
 
-    def replace_citation(match: re.Match[str]) -> str:
+    def replace_citation_block(match: re.Match[str]) -> str:
         new_numbers = [
-            str(old_to_new[old_index])
-            for old_index in numbers_from_match(match)
+            old_to_new[old_index]
+            for citation in _CITATION_PATTERN.finditer(match.group(0))
+            for old_index in numbers_from_match(citation)
             if old_index in old_to_new
         ]
-        return f"<sup>{','.join(new_numbers)}</sup>" if new_numbers else ""
+        compacted = compact_citation_numbers(new_numbers)
+        return f"<sup>{compacted}</sup>" if compacted else ""
 
     return _CitationNormalization(
-        answer=_CITATION_PATTERN.sub(replace_citation, answer),
+        answer=_CITATION_BLOCK_PATTERN.sub(replace_citation_block, answer),
         references=tuple(selected_docs),
         metadata_degraded=metadata_degraded,
     )
@@ -191,6 +197,34 @@ def numbers_from_match(match: re.Match[str]) -> tuple[int, ...]:
         except ValueError:
             continue
     return tuple(numbers)
+
+
+def compact_citation_numbers(numbers: Sequence[int]) -> str:
+    """Deduplicate, sort, and compact runs of three or more references."""
+    ordered_numbers = sorted(set(numbers))
+    if not ordered_numbers:
+        return ""
+
+    fragments: list[str] = []
+    run_start = ordered_numbers[0]
+    run_end = run_start
+    for number in ordered_numbers[1:]:
+        if number == run_end + 1:
+            run_end = number
+            continue
+        fragments.extend(_citation_run_fragments(run_start, run_end))
+        run_start = run_end = number
+    fragments.extend(_citation_run_fragments(run_start, run_end))
+    return ",".join(fragments)
+
+
+def _citation_run_fragments(start: int, end: int) -> tuple[str, ...]:
+    """Render one citation run using ranges only for three-plus numbers."""
+    if start == end:
+        return (str(start),)
+    if end == start + 1:
+        return (str(start), str(end))
+    return (f"{start}-{end}",)
 
 
 def document_key(doc: Mapping[str, Any], index: int) -> str:

@@ -1498,8 +1498,11 @@ Cited-agent answers (`KnowledgeAgent`, `ReviewAgent`,
 `formatted.references`. The public answer uses HTML superscripts: a single
 marker is `claim<sup>1</sup>.`, and a multi-citation marker is
 `claim<sup>1,2</sup>.`. The source model prompt may still use
-`[document:N]`; that authoring marker is not the public wire format. Marker
-numbers retain their comma-separated order and punctuation position.
+`[document:N]`; that authoring marker is not the public wire format. Reference
+numbering preserves first appearance. Within each adjacent citation block,
+mapped numbers are deduplicated and sorted; runs of three or more use an ASCII
+range, for example `claim<sup>1-4</sup>.`. Citation punctuation position is
+unchanged.
 
 Each `references[]` entry always carries `file_id`, `title`, and an
 always-present `formatted_citation`. When a bibliographic record exists for a
