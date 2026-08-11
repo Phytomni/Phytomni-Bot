@@ -224,6 +224,53 @@ async def test_counters_only_increase_across_leases() -> None:
 
 
 @pytest.mark.asyncio
+async def test_terminal_logs_publish_safe_cumulative_outcome_counters(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Terminal observations expose counters without caller-owned values."""
+    registry = OutboundPoolRegistry(_capacities(llm=1), wait_warn_seconds=0.01)
+    logger_name = "mcp_server_phytomni.runtime.outbound.registry"
+    caplog.set_level(logging.INFO, logger=logger_name)
+
+    async with registry.lease(OutboundPoolName.LLM):
+        pass
+
+    marker = "https://secret.invalid/query-user-run-task"
+    with pytest.raises(RuntimeError, match="secret.invalid"):
+        async with registry.lease(OutboundPoolName.LLM):
+            raise RuntimeError(marker)
+
+    entered = asyncio.Event()
+
+    async def cancel_in_flight() -> None:
+        """Hold one lease until the caller cancels the task."""
+        async with registry.lease(OutboundPoolName.LLM):
+            entered.set()
+            await asyncio.Event().wait()
+
+    task = asyncio.create_task(cancel_in_flight(), name=marker)
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    terminal = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("outbound pool terminal ")
+    ]
+    assert terminal == [
+        "outbound pool terminal pool=llm capacity=1 in_use=1 waiting=0 "
+        "outcome=completed started=1 completed=1 failed=0 cancelled=0",
+        "outbound pool terminal pool=llm capacity=1 in_use=1 waiting=0 "
+        "outcome=failed started=2 completed=1 failed=1 cancelled=0",
+        "outbound pool terminal pool=llm capacity=1 in_use=1 waiting=0 "
+        "outcome=cancelled started=3 completed=1 failed=1 cancelled=1",
+    ]
+    assert all(marker not in message for message in terminal)
+
+
+@pytest.mark.asyncio
 async def test_wait_warning_uses_only_fixed_pool_and_counter_fields(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

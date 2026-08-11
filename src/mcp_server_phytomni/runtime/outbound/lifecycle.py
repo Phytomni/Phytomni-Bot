@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import inspect
+import logging
 from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
@@ -27,7 +28,7 @@ from .http import (
     _resolve_verify,
     build_outbound_http_runtime,
 )
-from .models import OutboundPoolName
+from .models import OutboundPoolName, OutboundPoolSnapshot
 from .obs import (
     ObsClientFactory,
     ObsClientRuntime,
@@ -37,6 +38,8 @@ from .registry import OutboundPoolRegistry
 
 type OpenaiFactory = Callable[..., AsyncOpenAI]
 type InteropFactory = Callable[[OutboundPoolRegistry], Any]
+
+_LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ...interop.runtime import InteropResourceRuntime
@@ -95,7 +98,10 @@ class OutboundRuntime:
         try:
             await self.pools.aclose()
         finally:
-            await self._close_state.stack.aclose()
+            try:
+                await self._close_state.stack.aclose()
+            finally:
+                _log_shutdown_summary(self.pools.snapshots())
 
 
 _RUNTIME_STATE: dict[str, OutboundRuntime | None] = {"runtime": None}
@@ -124,6 +130,34 @@ def _configured_capacities(
         name: getattr(config, field_name)
         for name, field_name in _CAPACITY_FIELDS.items()
     }
+
+
+def _log_startup_summary(
+    snapshots: tuple[OutboundPoolSnapshot, ...],
+) -> None:
+    """Log one deterministic startup summary using fixed safe values."""
+    pools = ",".join(
+        f"{snapshot.name.value}(capacity={snapshot.capacity})"
+        for snapshot in snapshots
+    )
+    _LOGGER.info("outbound runtime startup pools=%s", pools)
+
+
+def _log_shutdown_summary(
+    snapshots: tuple[OutboundPoolSnapshot, ...],
+) -> None:
+    """Log final safe counters after resources have finished closing."""
+    pools = ",".join(
+        f"{snapshot.name.value}(capacity={snapshot.capacity},"
+        f"in_use={snapshot.in_use},waiting={snapshot.waiting},"
+        f"max_in_use={snapshot.max_in_use},started={snapshot.started},"
+        f"completed={snapshot.completed},failed={snapshot.failed},"
+        f"cancelled={snapshot.cancelled},"
+        f"total_wait_ms={snapshot.total_wait_seconds * 1000:.3f},"
+        f"max_wait_ms={snapshot.max_wait_seconds * 1000:.3f})"
+        for snapshot in snapshots
+    )
+    _LOGGER.info("outbound runtime shutdown pools=%s", pools)
 
 
 def _openai_endpoint(
@@ -253,6 +287,7 @@ async def init_outbound_runtime(
         _close_state=_OutboundRuntimeCloseState(stack),
     )
     _RUNTIME_STATE["runtime"] = runtime
+    _log_startup_summary(pools.snapshots())
     return runtime
 
 

@@ -130,18 +130,18 @@ class OutboundPoolRegistry:
             borrower = await self._acquire(name, state)
             acquired = True
         except asyncio.CancelledError:
-            await self._record_outcome(state, _TerminalOutcome.CANCELLED)
+            await self._record_outcome(name, state, _TerminalOutcome.CANCELLED)
             raise
         try:
             yield
         except asyncio.CancelledError:
-            await self._record_outcome(state, _TerminalOutcome.CANCELLED)
+            await self._record_outcome(name, state, _TerminalOutcome.CANCELLED)
             raise
         except BaseException:
-            await self._record_outcome(state, _TerminalOutcome.FAILED)
+            await self._record_outcome(name, state, _TerminalOutcome.FAILED)
             raise
         else:
-            await self._record_outcome(state, _TerminalOutcome.COMPLETED)
+            await self._record_outcome(name, state, _TerminalOutcome.COMPLETED)
         finally:
             if acquired:
                 assert borrower is not None
@@ -244,6 +244,7 @@ class OutboundPoolRegistry:
 
     async def _record_outcome(
         self,
+        name: OutboundPoolName,
         state: _PoolState,
         outcome: _TerminalOutcome,
     ) -> None:
@@ -258,6 +259,20 @@ class OutboundPoolRegistry:
                     state.counters.cancelled += 1
                 else:
                     raise ValueError(f"unknown terminal outcome: {outcome!r}")
+                _LOGGER.info(
+                    "outbound pool terminal pool=%s capacity=%d in_use=%d "
+                    "waiting=%d outcome=%s started=%d completed=%d failed=%d "
+                    "cancelled=%d",
+                    name.value,
+                    state.capacity,
+                    state.activity.in_use,
+                    len(state.waiters),
+                    outcome.name.lower(),
+                    state.counters.started,
+                    state.counters.completed,
+                    state.counters.failed,
+                    state.counters.cancelled,
+                )
 
     def snapshot(self, name: OutboundPoolName) -> OutboundPoolSnapshot:
         """Return value-safe accounting without exposing request data."""
