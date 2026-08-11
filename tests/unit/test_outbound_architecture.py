@@ -28,6 +28,8 @@ _INTEROP_OWNER = _SOURCE_ROOT / "interop" / "http_transport.py"
 _INTEROP_RUNTIME_OWNER = _SOURCE_ROOT / "interop" / "runtime.py"
 _OBS_OWNER = _SOURCE_ROOT / "runtime" / "outbound" / "obs.py"
 _GAUSS_OWNER = _SOURCE_ROOT / "agents" / "shared" / "gauss.py"
+_POOL_VALUE_TYPES = _SOURCE_ROOT / "runtime" / "outbound" / "models.py"
+_POOL_REGISTRY = _SOURCE_ROOT / "runtime" / "outbound" / "registry.py"
 
 
 def _production_sources() -> tuple[Path, ...]:
@@ -93,6 +95,12 @@ def test_legacy_transport_and_rerank_paths_are_absent() -> None:
     ):
         assert marker not in source
     assert not re.search(r"(?<!OUTBOUND_)RERANK_CONCURRENCY", source)
+
+
+def test_pool_value_types_and_registry_need_no_inline_waivers() -> None:
+    """Core pool structures stay within the default static policy."""
+    for path in (_POOL_VALUE_TYPES, _POOL_REGISTRY):
+        assert "pylint: disable" not in path.read_text(encoding="utf-8")
 
 
 def test_httpx_and_openai_constructors_have_one_owner() -> None:

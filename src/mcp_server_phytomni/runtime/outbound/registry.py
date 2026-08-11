@@ -13,6 +13,7 @@ from collections import deque
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from enum import Enum, auto
 
 import anyio
 
@@ -25,20 +26,49 @@ from .models import (
 _LOGGER = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
-class _PoolState:  # pylint: disable=too-many-instance-attributes
-    """Mutable accounting and limiter for one logical pool."""
+class _TerminalOutcome(Enum):
+    """Finite terminal outcomes recorded for one outbound attempt."""
 
-    capacity: int
-    limiter: anyio.CapacityLimiter | None
+    COMPLETED = auto()
+    FAILED = auto()
+    CANCELLED = auto()
+
+
+@dataclass(slots=True)
+class _PoolActivity:
+    """Mutable current and peak borrower counts."""
+
     in_use: int = 0
     max_in_use: int = 0
+
+
+@dataclass(slots=True)
+class _PoolCounters:
+    """Monotonic attempt and terminal outcome counters."""
+
     started: int = 0
     completed: int = 0
     failed: int = 0
     cancelled: int = 0
+
+
+@dataclass(slots=True)
+class _PoolWaitMetrics:
+    """Monotonic wait-duration observations."""
+
     total_wait_seconds: float = 0.0
     max_wait_seconds: float = 0.0
+
+
+@dataclass(slots=True)
+class _PoolState:
+    """Mutable accounting and limiter for one logical pool."""
+
+    capacity: int
+    limiter: anyio.CapacityLimiter | None
+    activity: _PoolActivity = field(default_factory=_PoolActivity)
+    counters: _PoolCounters = field(default_factory=_PoolCounters)
+    wait_metrics: _PoolWaitMetrics = field(default_factory=_PoolWaitMetrics)
     waiters: deque[object] = field(default_factory=deque)
 
 
@@ -100,18 +130,18 @@ class OutboundPoolRegistry:
             borrower = await self._acquire(name, state)
             acquired = True
         except asyncio.CancelledError:
-            await self._record_cancelled(state)
+            await self._record_outcome(state, _TerminalOutcome.CANCELLED)
             raise
         try:
             yield
         except asyncio.CancelledError:
-            await self._record_outcome(state, "cancelled")
+            await self._record_outcome(state, _TerminalOutcome.CANCELLED)
             raise
         except BaseException:
-            await self._record_outcome(state, "failed")
+            await self._record_outcome(state, _TerminalOutcome.FAILED)
             raise
         else:
-            await self._record_outcome(state, "completed")
+            await self._record_outcome(state, _TerminalOutcome.COMPLETED)
         finally:
             if acquired:
                 assert borrower is not None
@@ -139,12 +169,13 @@ class OutboundPoolRegistry:
                             "outbound runtime is closing"
                         )
                     has_capacity = (
-                        state.capacity == 0 or state.in_use < state.capacity
+                        state.capacity == 0
+                        or state.activity.in_use < state.capacity
                     )
                     if state.waiters[0] is token and has_capacity:
                         state.waiters.popleft()
                         queued = False
-                        state.in_use += 1
+                        state.activity.in_use += 1
                         break
                     waited = True
                     await self._condition.wait()
@@ -156,18 +187,20 @@ class OutboundPoolRegistry:
             except BaseException:
                 with anyio.CancelScope(shield=True):
                     async with self._condition:
-                        state.in_use -= 1
+                        state.activity.in_use -= 1
                         self._condition.notify_all()
                 raise
             if waited:
                 waited_seconds = time.perf_counter() - started_at
-                state.total_wait_seconds += waited_seconds
-                state.max_wait_seconds = max(
-                    state.max_wait_seconds, waited_seconds
+                state.wait_metrics.total_wait_seconds += waited_seconds
+                state.wait_metrics.max_wait_seconds = max(
+                    state.wait_metrics.max_wait_seconds, waited_seconds
                 )
                 self._warn_if_waited(name, waited_seconds, state)
-            state.started += 1
-            state.max_in_use = max(state.max_in_use, state.in_use)
+            state.counters.started += 1
+            state.activity.max_in_use = max(
+                state.activity.max_in_use, state.activity.in_use
+            )
             return token
         except BaseException:
             if queued:
@@ -206,29 +239,25 @@ class OutboundPoolRegistry:
             async with self._condition:
                 if state.limiter is not None:
                     state.limiter.release_on_behalf_of(borrower)
-                state.in_use -= 1
+                state.activity.in_use -= 1
                 self._condition.notify_all()
-
-    async def _record_cancelled(self, state: _PoolState) -> None:
-        """Count cancellation of a waiter without acquiring capacity."""
-        with anyio.CancelScope(shield=True):
-            async with self._condition:
-                state.cancelled += 1
 
     async def _record_outcome(
         self,
         state: _PoolState,
-        outcome: str,
+        outcome: _TerminalOutcome,
     ) -> None:
         """Count one terminal outcome without exposing exception details."""
         with anyio.CancelScope(shield=True):
             async with self._condition:
-                if outcome == "completed":
-                    state.completed += 1
-                elif outcome == "failed":
-                    state.failed += 1
+                if outcome is _TerminalOutcome.COMPLETED:
+                    state.counters.completed += 1
+                elif outcome is _TerminalOutcome.FAILED:
+                    state.counters.failed += 1
+                elif outcome is _TerminalOutcome.CANCELLED:
+                    state.counters.cancelled += 1
                 else:
-                    state.cancelled += 1
+                    raise ValueError(f"unknown terminal outcome: {outcome!r}")
 
     def snapshot(self, name: OutboundPoolName) -> OutboundPoolSnapshot:
         """Return value-safe accounting without exposing request data."""
@@ -236,15 +265,15 @@ class OutboundPoolRegistry:
         return OutboundPoolSnapshot(
             name=name,
             capacity=state.capacity,
-            in_use=state.in_use,
+            in_use=state.activity.in_use,
             waiting=len(state.waiters),
-            max_in_use=state.max_in_use,
-            started=state.started,
-            completed=state.completed,
-            failed=state.failed,
-            cancelled=state.cancelled,
-            total_wait_seconds=state.total_wait_seconds,
-            max_wait_seconds=state.max_wait_seconds,
+            max_in_use=state.activity.max_in_use,
+            started=state.counters.started,
+            completed=state.counters.completed,
+            failed=state.counters.failed,
+            cancelled=state.counters.cancelled,
+            total_wait_seconds=state.wait_metrics.total_wait_seconds,
+            max_wait_seconds=state.wait_metrics.max_wait_seconds,
         )
 
     def snapshots(self) -> tuple[OutboundPoolSnapshot, ...]:
@@ -256,5 +285,7 @@ class OutboundPoolRegistry:
         async with self._condition:
             self._closing = True
             self._condition.notify_all()
-            while any(state.in_use for state in self._states.values()):
+            while any(
+                state.activity.in_use for state in self._states.values()
+            ):
                 await self._condition.wait()

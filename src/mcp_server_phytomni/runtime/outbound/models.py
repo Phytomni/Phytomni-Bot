@@ -3,8 +3,8 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Public value types for logical outbound request pools."""
 
-from dataclasses import dataclass
 from enum import StrEnum
+from typing import NamedTuple
 
 
 class OutboundPoolName(StrEnum):
@@ -31,8 +31,7 @@ class OutboundHttpProfile(StrEnum):
     DIRECT_UPSTREAM = "direct_upstream"
 
 
-@dataclass(frozen=True, slots=True)
-class OutboundPoolSnapshot:  # pylint: disable=too-many-instance-attributes
+class OutboundPoolSnapshot(NamedTuple):
     """A value-safe observation of one logical pool's current state."""
 
     name: OutboundPoolName
