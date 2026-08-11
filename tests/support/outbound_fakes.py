@@ -15,6 +15,7 @@ import httpx
 from openai import AsyncOpenAI
 
 from mcp_server_phytomni.runtime.outbound import (
+    ObsProfileName,
     OutboundHttpFactories,
     OutboundPoolName,
     OutboundResourceFactories,
@@ -52,6 +53,26 @@ class InlineObsRuntime:
 
         The fake does not own a real SDK resource, so closing is a no-op.
         """
+
+
+class CountingObsRuntime:
+    """Run OBS operations while recording each independent lease."""
+
+    def __init__(self, client: Any) -> None:
+        """Keep the caller-supplied fake client behind the runtime seam."""
+        self.calls = 0
+        self.client = client
+
+    async def run(
+        self, profile: ObsProfileName, operation: Callable[[Any], Any]
+    ) -> Any:
+        """Execute one OBS operation and count its runtime lease."""
+        assert profile is ObsProfileName.PRIMARY
+        self.calls += 1
+        return operation(self.client)
+
+    async def aclose(self) -> None:
+        """Match the process-owned lifecycle without owning resources."""
 
 
 def patch_openai_runtime(

@@ -14,6 +14,7 @@ from typing import cast
 from zipfile import ZipFile
 
 import pytest
+from tests.support.outbound_fakes import CountingObsRuntime
 
 from mcp_server_phytomni.runtime import result_archive
 from mcp_server_phytomni.runtime.artifact_roles import (
@@ -21,7 +22,6 @@ from mcp_server_phytomni.runtime.artifact_roles import (
     ClassifiedArtifact,
 )
 from mcp_server_phytomni.runtime.execution_models import ExecutionWarning
-from mcp_server_phytomni.runtime.outbound import ObsProfileName
 from mcp_server_phytomni.runtime.result_archive import (
     ResultArchiveError,
     build_result_archive_inventory,
@@ -32,21 +32,6 @@ from mcp_server_phytomni.runtime.run_registry_reports import (
 from mcp_server_phytomni.runtime.terminal_artifacts import TerminalArtifactSet
 
 pytestmark = pytest.mark.unit
-
-
-class _CountingObsRuntime:
-    """Run one fake client operation while recording each lease."""
-
-    def __init__(self) -> None:
-        """Provide one runtime-owned opaque SDK client."""
-        self.calls = 0
-        self.client = object()
-
-    async def run(self, profile: ObsProfileName, operation: object) -> object:
-        """Execute one separately leased operation."""
-        assert profile is ObsProfileName.PRIMARY
-        self.calls += 1
-        return operation(self.client)  # type: ignore[operator]
 
 
 def _artifact(
@@ -91,7 +76,7 @@ async def test_async_publish_leases_each_source_and_archive_sdk_attempt(
     inventory = build_result_archive_inventory(
         _groups(_set(_artifact("report.md", size=3)))
     )
-    runtime = _CountingObsRuntime()
+    runtime = CountingObsRuntime(object())
     uploaded: dict[str, bytes] = {}
     sizes: dict[str, int] = {}
     monkeypatch.setattr(result_archive, "ARCHIVE_TEMP_ROOT", tmp_path)

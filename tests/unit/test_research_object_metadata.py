@@ -8,11 +8,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
-from tests.support.outbound_fakes import InlineObsRuntime
+from tests.support.outbound_fakes import CountingObsRuntime, InlineObsRuntime
 from tests.support.research_fakes import research_relay_snapshot_payload
 
+from mcp_server_phytomni.runtime.outbound import (
+    ObsClientRuntime,
+    OutboundPoolName,
+    OutboundPoolRegistry,
+)
 from mcp_server_phytomni.storage import (
     research_objects as research_objects_module,
 )
@@ -139,6 +145,17 @@ class FakeObsClient:
         raise AssertionError(f"Research metadata must not call {method}")
 
 
+def _pools(*, obs_capacity: int) -> OutboundPoolRegistry:
+    """Build fixed outbound capacities with the requested OBS bound."""
+    return OutboundPoolRegistry(
+        {
+            name: (obs_capacity if name is OutboundPoolName.OBS else 0)
+            for name in OutboundPoolName
+        },
+        wait_warn_seconds=1.0,
+    )
+
+
 def _resolve_request(reference: str) -> ResearchObjectResolveRequest:
     """Build one one-object resolve request with a compound-safe suffix."""
     return ResearchObjectResolveRequest(
@@ -154,12 +171,93 @@ def _resolve_request(reference: str) -> ResearchObjectResolveRequest:
     )
 
 
+def _two_object_resolve_request() -> ResearchObjectResolveRequest:
+    """Build two independent objects so each needs its own metadata HEAD."""
+    return ResearchObjectResolveRequest(
+        parent_run_id="run-parent",
+        execution_fingerprint="exec-fingerprint",
+        objects=(
+            ResearchObjectCandidate(
+                dataset_id="dataset-1",
+                exact_reference="obs://dev-bucket/a.vcf",
+                compound_suffix=".vcf",
+            ),
+            ResearchObjectCandidate(
+                dataset_id="dataset-2",
+                exact_reference="obs://dev-bucket/b.vcf",
+                compound_suffix=".vcf",
+            ),
+        ),
+    )
+
+
 def _port(fake_obs: FakeObsClient) -> DirectResearchObjectMetadataPort:
     """Build the direct port with one injected runtime-owned fake."""
     return DirectResearchObjectMetadataPort(
         bucket="dev-bucket",
         obs_runtime=InlineObsRuntime(lambda: fake_obs),
     )
+
+
+async def test_direct_resolve_leases_each_metadata_head_separately() -> None:
+    """Two exact-key HEAD attempts request two independent OBS leases."""
+    fake_obs = FakeObsClient()
+    fake_obs.metadata["b.vcf"] = _ObjectMetadata(23)
+    runtime = CountingObsRuntime(fake_obs)
+    port = DirectResearchObjectMetadataPort(
+        bucket="dev-bucket",
+        obs_runtime=runtime,
+    )
+
+    resolved = await port.resolve(_two_object_resolve_request())
+
+    assert [item.dataset_id for item in resolved] == ["dataset-1", "dataset-2"]
+    assert runtime.calls == 2
+    assert fake_obs.calls == [
+        ("head", "dev-bucket", "a.vcf"),
+        ("head", "dev-bucket", "b.vcf"),
+    ]
+
+
+async def test_direct_resolve_releases_capacity_before_local_snapshot_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capacity-one OBS slots are free while local snapshot work runs."""
+    fake_obs = FakeObsClient()
+    pools = _pools(obs_capacity=1)
+    runtime = ObsClientRuntime(pools, fake_obs)
+    port = DirectResearchObjectMetadataPort(
+        bucket="dev-bucket",
+        obs_runtime=runtime,
+    )
+    observed_in_use: list[int] = []
+
+    def observe_snapshot_work(
+        dataset_id: str,
+        metadata: Any,
+    ) -> ResearchObjectSnapshot:
+        observed_in_use.append(pools.snapshot(OutboundPoolName.OBS).in_use)
+        return ResearchObjectSnapshot(
+            dataset_id,
+            metadata.size_bytes,
+            metadata.etag,
+            metadata.version_id,
+            metadata.last_modified,
+            metadata.size_bytes == 0,
+            "observed-during-test",
+        )
+
+    monkeypatch.setattr(
+        research_objects_module,
+        "_snapshot_from_metadata",
+        observe_snapshot_work,
+    )
+    try:
+        await port.resolve(_resolve_request("obs://dev-bucket/a.vcf"))
+    finally:
+        await runtime.aclose()
+
+    assert observed_in_use == [0]
 
 
 def _assert_no_factory_details(

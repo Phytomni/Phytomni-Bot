@@ -9,9 +9,9 @@ from __future__ import annotations
 import json
 
 import pytest
+from tests.support.outbound_fakes import CountingObsRuntime
 
 from mcp_server_phytomni.runtime.artifact_roles import ArtifactRole
-from mcp_server_phytomni.runtime.outbound import ObsProfileName
 from mcp_server_phytomni.runtime.result_archive import (
     ResultArchiveError,
     ResultArchiveInventory,
@@ -21,21 +21,6 @@ from mcp_server_phytomni.runtime.result_archive import (
 from mcp_server_phytomni.storage import result_archive_storage as storage
 
 pytestmark = pytest.mark.unit
-
-
-class _CountingObsRuntime:
-    """Record each individually leased OBS operation."""
-
-    def __init__(self) -> None:
-        """Expose one opaque runtime-owned client to operations."""
-        self.calls = 0
-        self.client = object()
-
-    async def run(self, profile: ObsProfileName, operation: object) -> object:
-        """Run one operation and retain the lease invocation count."""
-        assert profile is ObsProfileName.PRIMARY
-        self.calls += 1
-        return operation(self.client)  # type: ignore[operator]
 
 
 def _inventory() -> ResultArchiveInventory:
@@ -61,7 +46,7 @@ async def test_persist_leases_inventory_read_and_create_separately(
 ) -> None:
     """A missing inventory uses distinct OBS leases for GET and PUT."""
     inventory = _inventory()
-    runtime = _CountingObsRuntime()
+    runtime = CountingObsRuntime(object())
     written: list[bytes] = []
 
     def missing(*_args: object, **_kwargs: object) -> bytes:
