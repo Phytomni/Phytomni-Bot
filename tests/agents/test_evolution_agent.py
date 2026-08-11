@@ -12,7 +12,7 @@ returns no response and the wrapper short-circuits.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -154,10 +154,11 @@ async def test_find_spa_taxids_rejects_legacy_timeout_keyword(
         outbound_runtime: Recording process-owned outbound runtime.
     """
     del outbound_runtime
+    legacy_options: dict[str, Any] = {"timeout": 1.0}
 
     with pytest.raises(
         TypeError, match="unexpected keyword argument 'timeout'"
     ):
-        await cast(Any, evolution_agent.find_spa_taxids)(
-            "Arabidopsis", timeout=1.0
+        await evolution_agent.find_spa_taxids(
+            "Arabidopsis", **legacy_options
         )

@@ -219,7 +219,7 @@ class DeepGenomeProfileMixin:
             return await _cached_gene_symbol_lookup(
                 species_code=species_code,
                 gene_id=gene_id,
-                timeout=self.deep_genome_config.TIMEOUT,
+                request_timeout=self.deep_genome_config.TIMEOUT,
             )
 
         if semaphore is not None:
@@ -238,7 +238,7 @@ class DeepGenomeProfileMixin:
             return await _cached_gene_annotation_lookup(
                 species_code=species_code,
                 gene_id=gene_id,
-                timeout=self.deep_genome_config.TIMEOUT,
+                request_timeout=self.deep_genome_config.TIMEOUT,
             )
 
         if semaphore is not None:

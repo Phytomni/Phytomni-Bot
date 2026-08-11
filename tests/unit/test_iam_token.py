@@ -14,7 +14,7 @@ instant-retry sleep live in ``tests/unit/conftest.py``.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 import httpx
 import pytest
@@ -92,8 +92,9 @@ async def test_get_token_rejects_legacy_timeout_keyword(
         outbound_runtime: Recording process-owned outbound runtime.
     """
     del outbound_runtime
+    legacy_options: dict[str, Any] = {"timeout": 1.0}
 
     with pytest.raises(
         TypeError, match="unexpected keyword argument 'timeout'"
     ):
-        await cast(Any, iam.get_token)(timeout=1.0)
+        await iam.get_token(**legacy_options)

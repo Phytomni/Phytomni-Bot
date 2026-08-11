@@ -170,9 +170,7 @@ async def test_relay_child_operation_records_exactly_one_final_pool_attempt(
         name: outbound_runtime.runtime.pools.snapshot(name).started
         for name in OutboundPoolName
     }
-    assert {
-        name: after[name] - before[name] for name in OutboundPoolName
-    } == {
+    assert {name: after[name] - before[name] for name in OutboundPoolName} == {
         name: int(name is expected) for name in OutboundPoolName
     }
     assert len(outbound_runtime.transport.requests) == 1

@@ -13,7 +13,7 @@ helper's ``McpError``, and a 2xx non-JSON body still surfaces as a clear
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from mcp.shared.exceptions import McpError
@@ -99,11 +99,12 @@ async def test_post_bi_sql_rejects_legacy_timeout_keyword(
 ) -> None:
     """The BI lookup boundary rejects the removed timeout spelling."""
     _patch_helper(monkeypatch, result={"data": []})
+    legacy_options: dict[str, Any] = {"timeout": 4.25}
 
     with pytest.raises(
         TypeError, match="unexpected keyword argument 'timeout'"
     ):
-        await cast(Any, _post_bi_sql)("SELECT 1", timeout=4.25)
+        await _post_bi_sql("SELECT 1", **legacy_options)
 
 
 async def test_post_bi_sql_propagates_helper_mcperror(
