@@ -15,7 +15,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import AsyncGenerator, Callable
 from types import SimpleNamespace
-from typing import cast
+from typing import Any
 
 import httpx
 import pytest
@@ -426,17 +426,62 @@ async def test_spa_faq_route_uses_proxy_bypass_client(
     """spa-faq opts out of the host proxy env (bare-IP upstream)."""
     recorded: dict[str, object] = {}
 
-    @contextlib.asynccontextmanager
-    async def _factory(
-        **kwargs: object,
-    ) -> AsyncGenerator[httpx.AsyncClient, None]:
-        recorded["kwargs"] = kwargs
-        async with httpx.AsyncClient(
-            transport=httpx.MockTransport(_ok)
-        ) as upstream_client:
-            yield upstream_client
+    class _Client:
+        """Open one mocked upstream stream."""
 
-    monkeypatch.setattr(forward_module, "get_async_client", _factory)
+        @contextlib.asynccontextmanager
+        async def stream(
+            self, method: str, url: str, **kwargs: Any
+        ) -> AsyncGenerator[httpx.Response, None]:
+            """Open one streamed mocked upstream request."""
+            async with (
+                httpx.AsyncClient(
+                    transport=httpx.MockTransport(_ok)
+                ) as upstream_client,
+                upstream_client.stream(method, url, **kwargs) as response,
+            ):
+                yield response
+
+        async def request(
+            self, method: str, url: str, **kwargs: Any
+        ) -> httpx.Response:
+            """Return one buffered mocked upstream response."""
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(_ok)
+            ) as upstream_client:
+                response = await upstream_client.request(method, url, **kwargs)
+                response.raise_for_status()
+                return response
+
+    class _HttpRuntime:
+        """Record selection of the proxy-bypassing profile."""
+
+        def for_pool(self, pool: object, *, profile: object = None) -> _Client:
+            """Record fixed-profile selection for buffered calls."""
+            recorded["profile"] = getattr(profile, "value", profile)
+            recorded["pool"] = pool
+            return _Client()
+
+        @contextlib.asynccontextmanager
+        async def stream(
+            self,
+            pool: object,
+            method: str,
+            url: str,
+            *,
+            profile: object = None,
+            **kwargs: Any,
+        ) -> AsyncGenerator[httpx.Response, None]:
+            """Record fixed-profile selection for streamed calls."""
+            recorded["profile"] = getattr(profile, "value", profile)
+            recorded["pool"] = pool
+            async with _Client().stream(method, url, **kwargs) as response:
+                yield response
+
+    runtime = SimpleNamespace(http=_HttpRuntime())
+    monkeypatch.setattr(
+        forward_module, "current_outbound_runtime", lambda: runtime
+    )
     monkeypatch.setattr(
         routes_module, "DeepGenomeConfig", lambda: _PLATFORM_URLS
     )
@@ -452,6 +497,4 @@ async def test_spa_faq_route_uses_proxy_bypass_client(
     )
 
     assert response.status_code == 200
-    assert (
-        cast(dict[str, object], recorded["kwargs"]).get("trust_env") is False
-    )
+    assert recorded["profile"] == "direct_upstream"

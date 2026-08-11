@@ -250,15 +250,9 @@ class KnowledgeAgent:
         total_length = 0
 
         if obs_file_list:
-            access_key_id, secret_access_key = (
-                self.sensitive_config.obs_credentials()
-            )
             upload_texts = await download_list_convert(
                 obs_file_list=obs_file_list,
                 server_dir=self.knowledge_config.TEMP_DIR,
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=self.knowledge_config.OBS_SERVER,
                 bucket_name=self.knowledge_config.BUCKET_NAME,
                 part_size=self.knowledge_config.PART_SIZE,
                 task_num=self.knowledge_config.TASK_NUM,

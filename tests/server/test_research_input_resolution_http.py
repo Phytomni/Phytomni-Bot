@@ -849,7 +849,11 @@ async def test_relay_lifespan_refresh_feeds_ready_catalog_projection(
     monkeypatch.setattr(
         app_support_module, "validate_citation_database", _noop_sync
     )
-    monkeypatch.setattr(app_support_module, "init_shared_client", _noop_sync)
+    monkeypatch.setattr(
+        app_support_module,
+        "init_outbound_runtime",
+        _completed_async_call,
+    )
     monkeypatch.setattr(
         app_support_module, "ensure_research_input_runtime", _noop_sync
     )
@@ -860,7 +864,7 @@ async def test_relay_lifespan_refresh_feeds_ready_catalog_projection(
     )
     monkeypatch.setattr(
         app_support_module,
-        "aclose_shared_client",
+        "aclose_outbound_runtime",
         _completed_async_call,
     )
     monkeypatch.setattr(

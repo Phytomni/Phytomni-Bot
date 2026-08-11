@@ -18,7 +18,6 @@ import asyncio
 import time
 from typing import Any
 
-from httpx import Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
@@ -28,9 +27,12 @@ from ...common.http import (
     JsonPostRetry,
     request_response_with_retries,
 )
-from ...common.httpx_client import get_async_client
 from ...common.relay_client import current_relay_client
 from ...config.relay_mode import relay_mode_enabled
+from ...runtime.outbound import (
+    OutboundPoolName,
+    current_outbound_http_client,
+)
 from .defaults import ANALYST_CONFIG
 
 
@@ -82,29 +84,28 @@ async def task_status(
             message=f"Check task {task_id} status failed",
         )
     req = _common_request_kwargs(kwargs)
-    client_timeout = Timeout(req["timeout"], connect=req["timeout"])
-    async with get_async_client(timeout=client_timeout) as client:
-        response = await request_response_with_retries(
-            client,
-            JsonPostRequest(
-                url=f"{req['analysis_url']}/{task_id}",
-                method="GET",
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Auth-Token": await get_token(
-                        timeout=req["timeout"], region=req["region"]
-                    ),
-                },
-            ),
-            JsonPostRetry(
-                timeout=req["timeout"],
-                max_retries=req["max_retries"],
-                retriable_codes=req["retriable_codes"],
-                message=f"Check task {task_id} status failed",
-            ),
-        )
-        if response is not None and response.status_code == 200:
-            return response.json()
+    client = current_outbound_http_client(OutboundPoolName.ANALYSIS_STATUS)
+    response = await request_response_with_retries(
+        client,
+        JsonPostRequest(
+            url=f"{req['analysis_url']}/{task_id}",
+            method="GET",
+            headers={
+                "Content-Type": "application/json",
+                "X-Auth-Token": await get_token(
+                    timeout=req["timeout"], region=req["region"]
+                ),
+            },
+        ),
+        JsonPostRetry(
+            timeout=req["timeout"],
+            max_retries=req["max_retries"],
+            retriable_codes=req["retriable_codes"],
+            message=f"Check task {task_id} status failed",
+        ),
+    )
+    if response is not None and response.status_code == 200:
+        return response.json()
 
     raise McpError(
         ErrorData(
@@ -177,32 +178,31 @@ async def task_log(
             message=f"Check task {task_id} log failed",
         )
     req = _common_request_kwargs(kwargs)
-    client_timeout = Timeout(req["timeout"], connect=req["timeout"])
-    async with get_async_client(timeout=client_timeout) as client:
-        response = await request_response_with_retries(
-            client,
-            JsonPostRequest(
-                url=(
-                    f"{req['analysis_url']}/{task_id}/logs"
-                    f"?task_name=analyst-agents-{compute_resource}"
+    client = current_outbound_http_client(OutboundPoolName.ANALYSIS_STATUS)
+    response = await request_response_with_retries(
+        client,
+        JsonPostRequest(
+            url=(
+                f"{req['analysis_url']}/{task_id}/logs"
+                f"?task_name=analyst-agents-{compute_resource}"
+            ),
+            method="GET",
+            headers={
+                "Content-Type": "application/json",
+                "X-Auth-Token": await get_token(
+                    timeout=req["timeout"], region=req["region"]
                 ),
-                method="GET",
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Auth-Token": await get_token(
-                        timeout=req["timeout"], region=req["region"]
-                    ),
-                },
-            ),
-            JsonPostRetry(
-                timeout=req["timeout"],
-                max_retries=req["max_retries"],
-                retriable_codes=req["retriable_codes"],
-                message=f"Check task {task_id} log failed",
-            ),
-        )
-        if response is not None and response.status_code == 200:
-            return response.json()
+            },
+        ),
+        JsonPostRetry(
+            timeout=req["timeout"],
+            max_retries=req["max_retries"],
+            retriable_codes=req["retriable_codes"],
+            message=f"Check task {task_id} log failed",
+        ),
+    )
+    if response is not None and response.status_code == 200:
+        return response.json()
 
     raise McpError(
         ErrorData(
@@ -237,29 +237,28 @@ async def task_delete(
         )
         return f"Delete task {task_id} success."
     req = _common_request_kwargs(kwargs)
-    client_timeout = Timeout(req["timeout"], connect=req["timeout"])
-    async with get_async_client(timeout=client_timeout) as client:
-        response = await request_response_with_retries(
-            client,
-            JsonPostRequest(
-                url=f"{req['analysis_url']}/{task_id}/terminate",
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Auth-Token": await get_token(
-                        timeout=req["timeout"], region=req["region"]
-                    ),
-                },
-                json_body={"force": True},
-            ),
-            JsonPostRetry(
-                timeout=req["timeout"],
-                max_retries=req["max_retries"],
-                retriable_codes=req["retriable_codes"],
-                message="Failed to delete task",
-            ),
-        )
-        if response is not None and response.status_code == 200:
-            return f"Delete task {task_id} success."
+    client = current_outbound_http_client(OutboundPoolName.ANALYSIS_CONTROL)
+    response = await request_response_with_retries(
+        client,
+        JsonPostRequest(
+            url=f"{req['analysis_url']}/{task_id}/terminate",
+            headers={
+                "Content-Type": "application/json",
+                "X-Auth-Token": await get_token(
+                    timeout=req["timeout"], region=req["region"]
+                ),
+            },
+            json_body={"force": True},
+        ),
+        JsonPostRetry(
+            timeout=req["timeout"],
+            max_retries=req["max_retries"],
+            retriable_codes=req["retriable_codes"],
+            message="Failed to delete task",
+        ),
+    )
+    if response is not None and response.status_code == 200:
+        return f"Delete task {task_id} success."
 
     raise McpError(
         ErrorData(

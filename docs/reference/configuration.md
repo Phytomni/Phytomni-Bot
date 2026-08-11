@@ -895,14 +895,14 @@ real CA bundle instead.
 - **Variable:** `HTTP_MAX_CONNECTIONS`
   **Default:** `100`
   **Sensitive?:** no
-  **Purpose:** Max total connections for the shared `httpx.AsyncClient` pool
-  (`common/httpx_client.py`).
+  **Purpose:** Max total connections for each runtime-owned trusted/direct
+  `httpx.AsyncClient` pool (`runtime/outbound/http.py`).
 
 - **Variable:** `HTTP_MAX_KEEPALIVE`
   **Default:** `50`
   **Sensitive?:** no
-  **Purpose:** Max keepalive connections for the shared `httpx.AsyncClient` pool
-  (`common/httpx_client.py`).
+  **Purpose:** Max keepalive connections for each runtime-owned
+  trusted/direct `httpx.AsyncClient` pool (`runtime/outbound/http.py`).
 
 These are `ServerConfig` fields read once at startup. `GAUSS_COMMAND_TIMEOUT`
 bounds each direct GaussDB query so a stuck backend cannot hold a pooled
@@ -913,11 +913,12 @@ churning TCP/TLS handshakes. Leave them unset to accept the defaults.
 
 ## Outbound Logical Pool Variables
 
-The following required `ServerConfig` variables define independent, logical
-per-process request budgets. Every variable also accepts a `PHYTOMNI_`-
-prefixed alias. A capacity of `0` is unlimited; positive values use an AnyIO
-capacity limiter. These budgets neither configure HTTP socket pools nor impose
-request timeouts, and a full pool waits until a borrower releases its lease.
+The following 13 required `ServerConfig` variables define independent,
+logical per-process request budgets: 12 service capacities plus the wait
+warning threshold. Every variable also accepts a `PHYTOMNI_`-prefixed alias.
+A capacity of `0` is unlimited; positive values use an AnyIO capacity limiter.
+These budgets neither configure HTTP socket pools nor impose request
+timeouts, and a full pool waits until a borrower releases its lease.
 
 - **Variable:** `OUTBOUND_LLM_CONCURRENCY`
 - **Variable:** `OUTBOUND_RETRIEVAL_CONCURRENCY`
@@ -933,11 +934,21 @@ request timeouts, and a full pool waits until a borrower releases its lease.
 - **Variable:** `OUTBOUND_INTEROP_CONCURRENCY`
 
 Each capacity is a required integer greater than or equal to `0` and is not
-sensitive. LLM completion and stream requests share the LLM pool.
+sensitive. LLM completion and stream requests share the LLM pool. The
+capacity is per process: a deployment with `N` worker processes or replicas
+can admit up to `N * capacity` borrowers for a positive setting. Size each
+pool from the provider quota and expected request duration, then multiply the
+per-process budget when reviewing the deployment-wide limit.
 
 - **Variable:** `OUTBOUND_POOL_WAIT_WARN_SECONDS`
   **Purpose:** Required finite positive threshold for a value-safe pool-wait
   warning; the warning contains only the fixed pool name and numeric counters.
+
+These logical budgets do not replace `HTTP_MAX_CONNECTIONS` or
+`HTTP_MAX_KEEPALIVE`. The HTTP settings remain physical limits on each active
+trusted, direct-upstream, or OpenAI-owned client profile, so the possible
+sum of profile connections is still part of deployment sizing. No endpoint,
+global socket semaphore, or metric API is added by the logical pools.
 
 ## Live E2E Variables
 
@@ -948,6 +959,22 @@ sensitive. LLM completion and stream requests share the LLM pool.
 - **Variable:** `PHYTOMNI_ALLOW_NETWORK`
   **Default:** unset
   **Purpose:** Set to `1` to allow network tests.
+
+- **Variable:** `PHYTOMNI_RUN_OUTBOUND_POOL_E2E`
+  **Default:** unset
+  **Purpose:** Set to `1` to enable the outbound-pooling live acceptance
+  module after the other safety gates pass.
+
+- **Variable:** `PHYTOMNI_CONFIRM_NON_PRODUCTION`
+  **Default:** unset
+  **Purpose:** Set to `1` only for a time-bounded run against disposable,
+  explicitly non-production services and objects. It is not a production
+  deployment or activation approval.
+
+- **Variable:** `PHYTOMNI_OUTBOUND_POOL_E2E_CHAT_TIMEOUT_SECONDS`
+  **Default:** `3600`
+  **Purpose:** Large but finite read timeout for the outbound-pooling Chat API
+  probe; accepted range is `1` through `7200` seconds.
 
 - **Variable:** `PHYTOMNI_E2E_SUBMIT_TIMEOUT_SECONDS`
   **Default:** `1800`

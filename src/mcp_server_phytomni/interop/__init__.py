@@ -63,6 +63,11 @@ from .registry import (
     InteropRegistryError,
     load_interop_registry,
 )
+from .runtime import (
+    InteropResourceRuntime,
+    InteropResourceRuntimeError,
+    build_interop_resource_runtime,
+)
 from .security import (
     AsyncDNSResolver,
     EndpointSecurityError,
@@ -92,6 +97,8 @@ __all__ = [
     "InteropPlanningError",
     "InteropRegistry",
     "InteropRegistryError",
+    "InteropResourceRuntime",
+    "InteropResourceRuntimeError",
     "InteropTaskSpec",
     "InteropTarget",
     "MCPStdioTarget",
@@ -101,6 +108,7 @@ __all__ = [
     "invoke_external_mcp_tool",
     "load_external_mcp_tools",
     "load_interop_registry",
+    "build_interop_resource_runtime",
     "discover_external_mcp_capabilities",
     "discover_external_a2a_capabilities",
     "fetch_external_a2a_card",

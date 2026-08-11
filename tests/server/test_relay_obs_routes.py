@@ -12,14 +12,21 @@ root, audit metadata (never the binary body), and gate on ``relay:obs``.
 
 from __future__ import annotations
 
+import asyncio
 import os
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import Mock
 
 import httpx
 import pytest
+from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRoute
+from starlette.requests import Request
 from tests.support.relay_fakes import (
     build_relay_app,
     make_relay_client_fixture,
@@ -27,9 +34,17 @@ from tests.support.relay_fakes import (
     make_relay_reset_fixture,
 )
 
+from mcp_server_phytomni.api.auth import ApiPrincipal
 from mcp_server_phytomni.api.relay import forward as forward_module
+from mcp_server_phytomni.api.relay import obs as obs_route_module
 from mcp_server_phytomni.api.relay.audit import RelayAuditStore
 from mcp_server_phytomni.api.relay.routes import create_relay_router
+from mcp_server_phytomni.runtime.async_utils import wait_for_thread_future
+from mcp_server_phytomni.runtime.outbound import (
+    ObsClientRuntime,
+    OutboundPoolName,
+)
+from mcp_server_phytomni.runtime.outbound.registry import OutboundPoolRegistry
 from mcp_server_phytomni.storage import obs_relay_ops as ops_module
 from mcp_server_phytomni.storage.obs_storage import ObsPathError
 
@@ -41,6 +56,35 @@ _AUDIT_DB_ENV = "PHYTOMNI_RELAY_AUDIT_DB_PATH"
 _relay_key_fixture = make_relay_key_fixture(user_id="customer")
 _client_fixture = make_relay_client_fixture(build_relay_app)
 _reset_inflight = make_relay_reset_fixture(forward_module)
+
+
+@pytest.fixture(autouse=True)
+def _install_operator_obs_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Any:
+    """Give route unit tests the same owned-client seam as production."""
+
+    executor = ThreadPoolExecutor(max_workers=1)
+
+    class _ThreadedObsRuntime:
+        async def run(self, _profile: object, operation: Any) -> Any:
+            """Run mocked synchronous OBS operations off the event loop."""
+            future = executor.submit(operation, object())
+            return await wait_for_thread_future(future)
+
+        async def aclose(self) -> None:
+            """Match the owned runtime close surface for test teardown."""
+            return None
+
+    monkeypatch.setattr(
+        obs_route_module,
+        "current_outbound_runtime",
+        lambda: SimpleNamespace(obs=_ThreadedObsRuntime()),
+    )
+    try:
+        yield
+    finally:
+        executor.shutdown(wait=True)
 
 
 @pytest.fixture(autouse=True)
@@ -99,7 +143,7 @@ async def test_obs_put_object_writes_and_returns_path(
     assert response.status_code == 200
     assert response.json()["obs_path"].startswith("/obs/")
     assert fake.call_args.args[2] == b"file-bytes"
-    assert fake.call_args.kwargs["obs_server"]
+    assert fake.call_args.kwargs["access"].client is not None
 
 
 async def test_obs_get_object_streams_under_budget(
@@ -124,6 +168,99 @@ async def test_obs_get_object_streams_under_budget(
     assert response.status_code == 200
     assert response.content == b"ATOM 1 N"
     assert response.headers["content-type"] == "application/octet-stream"
+
+
+async def test_obs_get_holds_lease_until_sdk_source_closes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A disconnected consumer closes the source before lease release."""
+
+    class _BlockingStream:
+        def __init__(self) -> None:
+            self._first = True
+            self.closed = False
+            self.close_count = 0
+            self._release = threading.Event()
+
+        def read(self, _size: int) -> bytes:
+            """Return the first chunk, then wait for source closure."""
+            if self._first:
+                self._first = False
+                return b"first"
+            self._release.wait(timeout=5)
+            return b""
+
+        def close(self) -> None:
+            """Release the blocked reader and record source closure."""
+            self.close_count += 1
+            self.closed = True
+            self._release.set()
+
+    stream = _BlockingStream()
+
+    class _Client:
+        def get_object_metadata(self, **_kwargs: Any) -> Any:
+            """Return metadata for the fake object."""
+            return SimpleNamespace(
+                status=200,
+                body=SimpleNamespace(contentLength=10),
+            )
+
+        def get_object(self, **_kwargs: Any) -> Any:
+            """Return the blocking fake object stream."""
+            return SimpleNamespace(
+                status=200,
+                body=SimpleNamespace(response=stream),
+            )
+
+    setattr(_Client, "getObjectMetadata", _Client.get_object_metadata)
+    setattr(_Client, "getObject", _Client.get_object)
+
+    pools = OutboundPoolRegistry(
+        {
+            name: (1 if name is OutboundPoolName.OBS else 0)
+            for name in OutboundPoolName
+        },
+        wait_warn_seconds=1.0,
+    )
+    runtime = ObsClientRuntime(pools, _Client())
+    monkeypatch.setattr(
+        obs_route_module,
+        "current_outbound_runtime",
+        lambda: SimpleNamespace(obs=runtime),
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/v1/relay/obs/object",
+            "query_string": (
+                b"path=agent_data/user_data/customer/runs/x/r.cif"
+            ),
+            "headers": [],
+        }
+    )
+    get_object = getattr(obs_route_module, "_get_object")
+    response = await get_object(
+        request,
+        ApiPrincipal(user_id="customer", key_prefix="test"),
+    )
+    iterator = cast(Any, cast(StreamingResponse, response).body_iterator)
+    try:
+        assert await asyncio.wait_for(anext(iterator), timeout=2) == b"first"
+        held = pools.snapshot(OutboundPoolName.OBS)
+        assert held.in_use == 1
+        assert stream.closed is False
+
+        await iterator.aclose()
+
+        released = pools.snapshot(OutboundPoolName.OBS)
+        assert released.in_use == 0
+        assert stream.closed is True
+        assert stream.close_count == 1
+    finally:
+        await runtime.aclose()
+        await pools.aclose()
 
 
 async def test_obs_get_object_rejects_over_budget(

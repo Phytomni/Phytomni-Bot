@@ -96,7 +96,6 @@ class AnalystKnowledgeSubgraphMixin:
         upload_context, total_length = await download_upload_context(
             state["obs_file_list"],
             self.analyst_config,
-            self.sensitive_config,
         )
         docs = extract_analyst_knowledge_response(
             state.get("knowledge_response") or {}

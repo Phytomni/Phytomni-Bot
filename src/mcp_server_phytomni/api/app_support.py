@@ -33,7 +33,6 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from ..agents.research.recovery import recover_registered_startup
 from ..agents.shared.citation_database import validate_citation_database
 from ..agents.shared.gauss import aclose_gauss_pool
-from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..config.defaults import ApiConfig
 from ..config.settings import SensitiveConfig
 from ..interop.cache import DiscoveryCache, get_or_create_discovery_cache
@@ -50,6 +49,10 @@ from ..runtime.locale import (
     resolve_effective_locale,
 )
 from ..runtime.memory import MemoryWrite
+from ..runtime.outbound import (
+    aclose_outbound_runtime,
+    init_outbound_runtime,
+)
 from ..runtime.request_context import (
     bind_accepted_task_ids,
     bind_pre_recorded_task_id,
@@ -447,29 +450,29 @@ def bind_research_input_state(
 
 @asynccontextmanager
 async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Own the process-wide shared HTTP and Gauss clients."""
+    """Own the process-wide outbound runtime and Gauss clients."""
     validate_citation_database()
-    init_shared_client()
-    await refresh_research_relay_capability(ApiConfig())
-    state = getattr(_app, "state", None)
-    root_request_factory = getattr(
-        state, "research_input_root_request_factory", None
-    )
-    asset_resolver_factory = getattr(
-        state, "research_input_asset_resolver_factory", None
-    )
-    if root_request_factory is None and asset_resolver_factory is None:
-        ensure_research_input_runtime()
-    else:
-        ensure_research_input_runtime(
-            root_request_factory=root_request_factory,
-            asset_resolver_factory=asset_resolver_factory,
-        )
-    await recover_registered_startup()
+    await init_outbound_runtime()
     try:
+        await refresh_research_relay_capability(ApiConfig())
+        state = getattr(_app, "state", None)
+        root_request_factory = getattr(
+            state, "research_input_root_request_factory", None
+        )
+        asset_resolver_factory = getattr(
+            state, "research_input_asset_resolver_factory", None
+        )
+        if root_request_factory is None and asset_resolver_factory is None:
+            ensure_research_input_runtime()
+        else:
+            ensure_research_input_runtime(
+                root_request_factory=root_request_factory,
+                asset_resolver_factory=asset_resolver_factory,
+            )
+        await recover_registered_startup()
         yield
     finally:
-        await aclose_shared_client()
+        await aclose_outbound_runtime()
         await aclose_gauss_pool()
 
 

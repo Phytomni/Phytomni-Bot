@@ -18,10 +18,9 @@ import shutil
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
-from ..config.settings import get_sensitive_config
-from .obs_client import ObsClient
 from .obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     normalize_obs_object_key,
@@ -32,10 +31,11 @@ from .obs_storage import (
 
 __all__ = [
     "ObsObjectAlreadyExistsError",
+    "ObsAccessOptions",
     "ObsObjectMetadataError",
     "ObsObjectNotFoundError",
+    "ObsStreamOptions",
     "head_object_metadata",
-    "operator_obs_client",
     "put_object_bytes",
     "put_object_bytes_if_absent",
     "put_object_file",
@@ -70,6 +70,36 @@ class _ObsObjectMetadata:
     etag: str | None
     version_id: str | None
     last_modified: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ObsAccessOptions:
+    """Transport context shared by one operator OBS operation."""
+
+    client: Any | None = None
+    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT
+
+
+@dataclass(frozen=True, slots=True)
+class ObsStreamOptions:
+    """Controls for one bounded OBS object stream."""
+
+    chunk_size: int = _DOWNLOAD_CHUNK_BYTES
+    on_source_open: Any | None = None
+    stop: Any | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _SdkChunkOptions:
+    """Streaming controls passed to the synchronous SDK iterator."""
+
+    access: ObsAccessOptions
+    stream: ObsStreamOptions
+
+
+def _resolve_access(access: ObsAccessOptions | None) -> ObsAccessOptions:
+    """Return one explicit access context for an OBS operation."""
+    return access or ObsAccessOptions()
 
 
 def head_object_metadata(
@@ -123,16 +153,6 @@ def _optional_metadata_value(body: Any, attribute: str) -> str | None:
     return None if value is None else str(value)
 
 
-def operator_obs_client(obs_server: str) -> ObsClient:
-    """Build an operator-credentialed OBS SDK client for ``obs_server``."""
-    access_key, secret_key = get_sensitive_config().obs_credentials()
-    return ObsClient(
-        access_key_id=access_key,
-        secret_access_key=secret_key,
-        server=obs_server,
-    )
-
-
 def _require_ok(response: Any, action: str) -> None:
     """Raise ``OSError`` when an OBS SDK response is missing or >= 300."""
     status = getattr(response, "status", None)
@@ -162,8 +182,7 @@ def put_object_bytes(
     object_key: str,
     content: bytes,
     *,
-    obs_server: str,
-    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    access: ObsAccessOptions | None = None,
 ) -> str:
     """Write ``content`` at the exact ``object_key`` and return its key.
 
@@ -172,8 +191,7 @@ def put_object_bytes(
         object_key: Client-supplied object key or ``/obs/<bucket>/<key>``
             path; re-validated and normalized before any write.
         content: Raw object bytes.
-        obs_server: OBS endpoint for the SDK fallback.
-        mount_root: Filesystem root for the obsfs mount.
+        access: OBS endpoint, client, and obsfs mount context.
 
     Returns:
         The normalized object key that was written.
@@ -183,15 +201,18 @@ def put_object_bytes(
         OSError: If both the obsfs write and the SDK fallback fail.
     """
     safe_key = normalize_obs_object_key(object_key, bucket)
+    resolved_access = _resolve_access(access)
 
     def _obsfs() -> None:
-        _require_mount(bucket, mount_root)
-        destination = obsfs_path_for(safe_key, bucket, mount_root)
+        _require_mount(bucket, resolved_access.mount_root)
+        destination = obsfs_path_for(
+            safe_key, bucket, resolved_access.mount_root
+        )
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(content)
 
     def _sdk() -> None:
-        response = operator_obs_client(obs_server).putContent(
+        response = _resolve_client(resolved_access.client).putContent(
             bucketName=bucket, objectKey=safe_key, content=content
         )
         _require_ok(response, "upload")
@@ -205,8 +226,7 @@ def put_object_bytes_if_absent(
     object_key: str,
     content: bytes,
     *,
-    obs_server: str,
-    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    access: ObsAccessOptions | None = None,
 ) -> str:
     """Create an object only when its key is absent, without overwriting.
 
@@ -215,10 +235,13 @@ def put_object_bytes_if_absent(
     ``ObsObjectAlreadyExistsError`` instead of replacing private inventory.
     """
     safe_key = normalize_obs_object_key(object_key, bucket)
+    resolved_access = _resolve_access(access)
 
     def _obsfs() -> None:
-        _require_mount(bucket, mount_root)
-        destination = obsfs_path_for(safe_key, bucket, mount_root)
+        _require_mount(bucket, resolved_access.mount_root)
+        destination = obsfs_path_for(
+            safe_key, bucket, resolved_access.mount_root
+        )
         destination.parent.mkdir(parents=True, exist_ok=True)
         try:
             with destination.open("xb") as handle:
@@ -229,7 +252,7 @@ def put_object_bytes_if_absent(
             ) from None
 
     def _sdk() -> None:
-        response = operator_obs_client(obs_server).putContent(
+        response = _resolve_client(resolved_access.client).putContent(
             bucketName=bucket,
             objectKey=safe_key,
             content=content,
@@ -237,7 +260,7 @@ def put_object_bytes_if_absent(
         )
         _require_ok(response, "conditional upload")
 
-    if not obsfs_bucket_available(bucket, mount_root):
+    if not obsfs_bucket_available(bucket, resolved_access.mount_root):
         _sdk()
     else:
         try:
@@ -254,8 +277,7 @@ def put_object_file(
     object_key: str,
     source: Path,
     *,
-    obs_server: str,
-    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    access: ObsAccessOptions | None = None,
 ) -> str:
     """Upload one local file at the exact object key without buffering it.
 
@@ -263,15 +285,18 @@ def put_object_file(
     the SDK fallback delegates file streaming to the OBS client.
     """
     safe_key = normalize_obs_object_key(object_key, bucket)
+    resolved_access = _resolve_access(access)
 
     def _obsfs() -> None:
-        _require_mount(bucket, mount_root)
-        destination = obsfs_path_for(safe_key, bucket, mount_root)
+        _require_mount(bucket, resolved_access.mount_root)
+        destination = obsfs_path_for(
+            safe_key, bucket, resolved_access.mount_root
+        )
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
 
     def _sdk() -> None:
-        response = operator_obs_client(obs_server).putFile(
+        response = _resolve_client(resolved_access.client).putFile(
             bucketName=bucket,
             objectKey=safe_key,
             file_path=str(source),
@@ -286,8 +311,7 @@ def put_dir_marker(
     bucket: str,
     object_key: str,
     *,
-    obs_server: str,
-    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    access: ObsAccessOptions | None = None,
 ) -> str:
     """Create a zero-byte directory marker object and return its key.
 
@@ -295,8 +319,7 @@ def put_dir_marker(
         bucket: Target OBS bucket name.
         object_key: Client-supplied directory key (conventionally
             trailing-slashed); re-validated before any write.
-        obs_server: OBS endpoint for the SDK fallback.
-        mount_root: Filesystem root for the obsfs mount.
+        access: OBS endpoint, client, and obsfs mount context.
 
     Returns:
         The normalized directory key that was created.
@@ -306,15 +329,16 @@ def put_dir_marker(
         OSError: If both the obsfs mkdir and the SDK fallback fail.
     """
     safe_key = normalize_obs_object_key(object_key, bucket)
+    resolved_access = _resolve_access(access)
 
     def _obsfs() -> None:
-        _require_mount(bucket, mount_root)
-        obsfs_path_for(safe_key, bucket, mount_root).mkdir(
+        _require_mount(bucket, resolved_access.mount_root)
+        obsfs_path_for(safe_key, bucket, resolved_access.mount_root).mkdir(
             parents=True, exist_ok=True
         )
 
     def _sdk() -> None:
-        response = operator_obs_client(obs_server).putContent(
+        response = _resolve_client(resolved_access.client).putContent(
             bucketName=bucket, objectKey=safe_key, content=None
         )
         _require_ok(response, "mkdir")
@@ -327,8 +351,7 @@ def object_size(
     bucket: str,
     object_key: str,
     *,
-    obs_server: str,
-    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    access: ObsAccessOptions | None = None,
 ) -> int:
     """Return the object's byte length for the response-size budget.
 
@@ -336,8 +359,7 @@ def object_size(
         bucket: Source OBS bucket name.
         object_key: Client-supplied object key or ``/obs/<bucket>/<key>``
             path; re-validated and normalized before the head request.
-        obs_server: OBS endpoint for the SDK fallback.
-        mount_root: Filesystem root for the obsfs mount.
+        access: OBS endpoint, client, and obsfs mount context.
 
     Returns:
         The object's content length in bytes.
@@ -347,16 +369,21 @@ def object_size(
         OSError: If both the obsfs stat and the SDK head fail.
     """
     safe_key = normalize_obs_object_key(object_key, bucket)
+    resolved_access = _resolve_access(access)
 
     def _obsfs() -> int:
-        return obsfs_path_for(safe_key, bucket, mount_root).stat().st_size
+        return (
+            obsfs_path_for(safe_key, bucket, resolved_access.mount_root)
+            .stat()
+            .st_size
+        )
 
     def _sdk() -> int:
         # The obs SDK ships no reliable type info (pyright marks
         # getObject's downloadPath required and does not know
         # getObjectMetadata), so bind the client as Any at the call.
-        client: Any = operator_obs_client(obs_server)
-        response = client.getObjectMetadata(
+        sdk_client = _resolve_client(resolved_access.client)
+        response = sdk_client.getObjectMetadata(
             bucketName=bucket, objectKey=safe_key
         )
         _require_ok(response, "head")
@@ -369,9 +396,8 @@ def iter_object_chunks(
     bucket: str,
     object_key: str,
     *,
-    obs_server: str,
-    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
-    chunk_size: int = _DOWNLOAD_CHUNK_BYTES,
+    access: ObsAccessOptions | None = None,
+    stream: ObsStreamOptions | None = None,
 ) -> Iterator[bytes]:
     """Yield one object's bytes in ``chunk_size`` pieces, never fully buffered.
 
@@ -383,9 +409,8 @@ def iter_object_chunks(
         bucket: Source OBS bucket name.
         object_key: Client-supplied object key or ``/obs/<bucket>/<key>``
             path; re-validated and normalized before any read.
-        obs_server: OBS endpoint for the SDK fallback.
-        mount_root: Filesystem root for the obsfs mount.
-        chunk_size: Bytes to yield per piece.
+        access: OBS endpoint, client, and obsfs mount context.
+        stream: Bounded stream controls, including chunk size and close hooks.
 
     Returns:
         An iterator over the object's content chunks.
@@ -395,11 +420,20 @@ def iter_object_chunks(
         OSError: If the SDK read fails.
     """
     safe_key = normalize_obs_object_key(object_key, bucket)
-    if obsfs_bucket_available(bucket, mount_root):
-        source = obsfs_path_for(safe_key, bucket, mount_root)
+    resolved_access = _resolve_access(access)
+    resolved_stream = stream or ObsStreamOptions()
+    if obsfs_bucket_available(bucket, resolved_access.mount_root):
+        source = obsfs_path_for(safe_key, bucket, resolved_access.mount_root)
         if source.is_file():
-            return _iter_file_chunks(source, chunk_size)
-    return _iter_sdk_chunks(bucket, safe_key, obs_server, chunk_size)
+            return _iter_file_chunks(source, resolved_stream.chunk_size)
+    return _iter_sdk_chunks(
+        bucket,
+        safe_key,
+        _SdkChunkOptions(
+            access=resolved_access,
+            stream=resolved_stream,
+        ),
+    )
 
 
 def _iter_file_chunks(source: Path, chunk_size: int) -> Iterator[bytes]:
@@ -413,33 +447,53 @@ def _iter_file_chunks(source: Path, chunk_size: int) -> Iterator[bytes]:
 
 
 def _iter_sdk_chunks(
-    bucket: str, safe_key: str, obs_server: str, chunk_size: int
+    bucket: str,
+    safe_key: str,
+    options: _SdkChunkOptions,
 ) -> Iterator[bytes]:
     """Stream an object through the OBS SDK in ``chunk_size`` pieces."""
     # Bind as Any: the obs SDK ships no reliable type info, so pyright
     # wrongly marks getObject's downloadPath as required.
-    client: Any = operator_obs_client(obs_server)
-    response = client.getObject(
+    sdk_client = _resolve_client(options.access.client)
+    response = sdk_client.getObject(
         bucketName=bucket, objectKey=safe_key, loadStreamInMemory=False
     )
     _require_ok(response, "download")
-    stream = response.body.response
+    body_stream = response.body.response
+    closed = False
+    close_lock = Lock()
+
+    def close_stream() -> None:
+        """Close the SDK response body once across worker and caller."""
+        nonlocal closed
+        with close_lock:
+            if closed:
+                return
+            closed = True
+        body_stream.close()
+
+    if options.stream.on_source_open is not None:
+        options.stream.on_source_open(close_stream)
     try:
         while True:
-            block = stream.read(chunk_size)
+            if (
+                options.stream.stop is not None
+                and options.stream.stop.is_set()
+            ):
+                return
+            block = body_stream.read(options.stream.chunk_size)
             if not block:
                 return
             yield block
     finally:
-        stream.close()
+        close_stream()
 
 
 def get_object_bytes(
     bucket: str,
     object_key: str,
     *,
-    obs_server: str,
-    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    access: ObsAccessOptions | None = None,
 ) -> bytes:
     """Return one object's full bytes by its exact key (buffered).
 
@@ -450,8 +504,7 @@ def get_object_bytes(
         bucket: Source OBS bucket name.
         object_key: Client-supplied object key or ``/obs/<bucket>/<key>``
             path; re-validated and normalized before any read.
-        obs_server: OBS endpoint for the SDK fallback.
-        mount_root: Filesystem root for the obsfs mount.
+        access: OBS endpoint, client, and obsfs mount context.
 
     Returns:
         The raw object content.
@@ -462,7 +515,9 @@ def get_object_bytes(
     """
     return b"".join(
         iter_object_chunks(
-            bucket, object_key, obs_server=obs_server, mount_root=mount_root
+            bucket,
+            object_key,
+            access=access,
         )
     )
 
@@ -471,7 +526,7 @@ def list_object_keys(
     bucket: str,
     prefix: str,
     *,
-    obs_server: str,
+    access: ObsAccessOptions | None = None,
 ) -> list[str]:
     """Return non-directory object keys under ``prefix``, paginated.
 
@@ -479,7 +534,7 @@ def list_object_keys(
         bucket: Source OBS bucket name.
         prefix: Client-supplied prefix or ``/obs/<bucket>/<prefix>`` path;
             re-validated and normalized before listing.
-        obs_server: OBS endpoint for the SDK client.
+        access: OBS endpoint and client context.
 
     Returns:
         Every content key under the prefix that is not a directory marker.
@@ -489,11 +544,12 @@ def list_object_keys(
         OSError: If a list page returns a non-2xx status.
     """
     safe_prefix = normalize_obs_object_key(prefix, bucket)
-    client = operator_obs_client(obs_server)
+    resolved_access = _resolve_access(access)
+    sdk_client = _resolve_client(resolved_access.client)
     keys: list[str] = []
     marker: Any = None
     while True:
-        response = client.listObjects(
+        response = sdk_client.listObjects(
             bucketName=bucket,
             prefix=safe_prefix,
             marker=marker,
@@ -508,3 +564,10 @@ def list_object_keys(
         if not response.body.is_truncated:
             return keys
         marker = response.body.next_marker
+
+
+def _resolve_client(client: Any | None) -> Any:
+    """Return the client explicitly lent by the owning runtime."""
+    if client is not None:
+        return client
+    raise RuntimeError("OBS runtime client is unavailable")

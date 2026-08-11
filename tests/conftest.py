@@ -29,18 +29,21 @@ from mcp_server_phytomni.agents.shared.citation_database import (
 )
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.config.defaults import ServerConfig
 from mcp_server_phytomni.config.settings import (
     get_sensitive_config,
 )
 from mcp_server_phytomni.func_cache.storage import Storage
+from mcp_server_phytomni.runtime.outbound import (
+    aclose_outbound_runtime,
+    init_outbound_runtime,
+)
 from mcp_server_phytomni.runtime.request_context import (
     request_context,
 )
-from mcp_server_phytomni.storage import (
-    obs_relay_ops as obs_relay_ops_module,
-)
 from tests.support.citation_database import create_valid_citation_database
 from tests.support.http_fakes import open_asgi_client
+from tests.support.outbound_fakes import QueueTransport, RecordingResources
 
 # The repo-root ``conftest.py`` installs the offline test env before
 # pytest reaches this module, so the imports above can stay at the
@@ -331,37 +334,14 @@ def _build_scripted_client_class(
                 raise behavior
             return behavior
 
+        async def request(self, *args: Any, **kwargs: Any) -> Any:
+            """Replay one status-classifying bound request attempt."""
+            response = await self.post(*args, **kwargs)
+            if isinstance(response, httpx.Response):
+                response.raise_for_status()
+            return response
+
     return _FakeClient
-
-
-def _build_async_factory(
-    behaviors: list[Any], calls: dict[str, int]
-) -> Callable[..., Any]:
-    """Return a ``get_async_client``-shaped factory around the scripted client.
-
-    The returned callable constructs the scripted client directly, so the
-    production ``async with get_async_client()`` lifecycle remains explicit
-    without a generator-based context-manager wrapper.
-    """
-    client_cls = _build_scripted_client_class(behaviors, calls)
-    return client_cls
-
-
-@pytest.fixture
-def fake_async_factory() -> Callable[[list[Any], dict[str, int]], Any]:
-    """Build a ``get_async_client`` substitute around the scripted client.
-
-    The shared ``get_async_client`` factory yields an open client from
-    an ``@asynccontextmanager``; tests that previously monkey-patched
-    ``AsyncClient`` now monkey-patch ``get_async_client`` instead.
-    This fixture wraps the scripted client class so callers do not
-    have to redeclare the context-manager boilerplate at every call
-    site.
-
-    Returns:
-        ``make(behaviors, calls) -> async-context-manager factory``.
-    """
-    return _build_async_factory
 
 
 @pytest.fixture
@@ -382,9 +362,30 @@ def fake_client_factory() -> Callable[[list[Any], dict[str, int]], type]:
     return _make
 
 
+@pytest.fixture(name="outbound_runtime")
+async def _outbound_runtime() -> AsyncIterator[Any]:
+    """Publish a real outbound runtime backed by a recording transport."""
+    transport = QueueTransport()
+    resources = RecordingResources(transport=transport)
+    runtime = await init_outbound_runtime(
+        ServerConfig(),
+        factories=resources.factories(),
+    )
+    try:
+        yield SimpleNamespace(
+            runtime=runtime,
+            transport=transport,
+            resources=resources,
+        )
+    finally:
+        await aclose_outbound_runtime()
+
+
 @pytest.fixture
 async def api_client(
     monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+    tasks_db_path: str,
 ) -> AsyncIterator[httpx.AsyncClient]:
     """Yield an httpx client wired to the FastAPI app over ASGI.
 
@@ -397,6 +398,12 @@ async def api_client(
     Returns:
         Async iterator yielding the bound httpx client.
     """
+    monkeypatch.setenv(
+        "PHYTOMNI_API_KEYS_DB",
+        str(Path(tasks_db_path).with_name("api-keys.sqlite")),
+    )
+    monkeypatch.setenv("TEMP_DIR", str(Path(tasks_db_path).parent / "temp"))
+    del outbound_runtime, tasks_db_path
     async with open_asgi_client(
         monkeypatch, create_app(), base_url="http://api.test"
     ) as client:
@@ -472,8 +479,8 @@ def chat_completion() -> Callable[..., Any]:
     return _post
 
 
-@pytest.fixture
-def tasks_db_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+@pytest.fixture(name="tasks_db_path")
+def _tasks_db_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
     """Point the handlers' local task registry at a temp SQLite file.
 
     Shared by the submit-recording and GetTaskStatus suites so they do
@@ -488,6 +495,7 @@ def tasks_db_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
         The temp database path the handlers will resolve.
     """
     db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", db_path)
     monkeypatch.setattr(
         "mcp_server_phytomni.runtime.submit_recorder.resolve_tasks_db_path",
         lambda: db_path,
@@ -706,21 +714,16 @@ def fake_obs_client_factory() -> Callable[..., Any]:
 
 
 @pytest.fixture
-def fake_obs_client(monkeypatch: pytest.MonkeyPatch) -> Any:
-    """Patch ``storage.obs_relay_ops.ObsClient`` with a capturing fake.
+def fake_obs_client() -> Any:
+    """Return a capturing fake for the runtime-owned OBS client.
 
-    Yields the patched class so tests can inspect ``.captured`` for
-    OBS init kwargs and ``putContent`` call arguments. Defined in
+    Yields the fake class so tests can inspect ``.captured`` for
+    OBS call arguments. Defined in
     conftest (not the test file) so test parameters of the same name
     do not trigger pylint W0621 redefined-outer-name.
 
     Args:
-        monkeypatch: Pytest monkeypatch used to bind the fake into
-            ``storage.obs_relay_ops`` for relay object tests.
-
     Returns:
-        The patched fake OBS client class.
+        The fake OBS client class.
     """
-    fake = _build_fake_obs_client()
-    monkeypatch.setattr(obs_relay_ops_module, "ObsClient", fake)
-    return fake
+    return _build_fake_obs_client()

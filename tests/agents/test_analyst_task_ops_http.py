@@ -19,11 +19,11 @@ from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.analyst import task_ops as task_ops_module
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("outbound_runtime")]
 
 
-def _patch_token_and_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub out IAM token + HTTP client factory used by every wrapper."""
+def _patch_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub out the IAM token used by every wrapper."""
 
     async def fake_token(*_args: Any, **_kwargs: Any) -> str:
         """Return a fixed test token instead of hitting IAM."""
@@ -31,29 +31,12 @@ def _patch_token_and_client(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(task_ops_module, "get_token", fake_token)
 
-    class _NoopClient:
-        """Async context manager that yields a sentinel client."""
-
-        async def __aenter__(self) -> Any:
-            """Return a stand-in client object (never actually used)."""
-            return self
-
-        async def __aexit__(self, *_exc: Any) -> None:
-            """Exit cleanly without propagating exceptions."""
-            return None
-
-    def fake_factory(*_args: Any, **_kwargs: Any) -> _NoopClient:
-        """Return a fresh no-op client per call."""
-        return _NoopClient()
-
-    monkeypatch.setattr(task_ops_module, "get_async_client", fake_factory)
-
 
 async def test_task_log_returns_json_on_200(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A successful 200 response is unwrapped to the parsed JSON body."""
-    _patch_token_and_client(monkeypatch)
+    _patch_token(monkeypatch)
 
     payload = {"logs": ["round 1 output"], "task_id": "t-1"}
 
@@ -74,7 +57,7 @@ async def test_task_log_raises_mcperror_when_all_retries_exhaust(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A ``None`` retry result surfaces as the documented McpError."""
-    _patch_token_and_client(monkeypatch)
+    _patch_token(monkeypatch)
 
     async def fake_request(*_args: Any, **_kwargs: Any) -> Any:
         """Mimic the all-retries-exhausted state by returning ``None``."""
@@ -96,7 +79,7 @@ async def test_task_delete_returns_success_string_on_200(
     """A successful 200 response yields the ``Delete task ... success.``
     summary string the analyst-platform CLI surfaces to the operator.
     """
-    _patch_token_and_client(monkeypatch)
+    _patch_token(monkeypatch)
 
     async def fake_request(*_args: Any, **_kwargs: Any) -> Any:
         """Return a fake 200 response (json body ignored on delete)."""
@@ -115,7 +98,7 @@ async def test_task_delete_raises_mcperror_when_all_retries_exhaust(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A ``None`` retry result surfaces as the documented McpError."""
-    _patch_token_and_client(monkeypatch)
+    _patch_token(monkeypatch)
 
     async def fake_request(*_args: Any, **_kwargs: Any) -> Any:
         """Mimic the all-retries-exhausted state by returning ``None``."""

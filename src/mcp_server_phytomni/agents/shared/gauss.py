@@ -33,6 +33,14 @@ _LOGGER = logging.getLogger(__name__)
 _GAUSS_POOL_STATE: WeakKeyDictionary[
     asyncio.AbstractEventLoop, asyncpg.Pool
 ] = WeakKeyDictionary()
+_GAUSS_OPERATION_ERRORS = (
+    asyncpg.PostgresError,
+    asyncpg.InterfaceError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
 
 
 async def _gauss_reset(_conn: asyncpg.Connection) -> None:
@@ -46,14 +54,7 @@ async def _gauss_reset(_conn: asyncpg.Connection) -> None:
     """
     try:
         await _conn.execute("RESET ALL")
-    except (
-        asyncpg.PostgresError,
-        asyncpg.InterfaceError,
-        OSError,
-        RuntimeError,
-        TypeError,
-        ValueError,
-    ) as exc:
+    except _GAUSS_OPERATION_ERRORS as exc:
         _LOGGER.error(
             "GaussDB session reset failed exception_type=%s",
             type(exc).__name__,
@@ -128,14 +129,7 @@ async def gauss_query(
                     conn.transaction(readonly=True),
                 ):
                     rows = await conn.fetch(sql, timeout=request_timeout)
-    except (
-        asyncpg.PostgresError,
-        asyncpg.InterfaceError,
-        OSError,
-        RuntimeError,
-        TypeError,
-        ValueError,
-    ) as exc:
+    except _GAUSS_OPERATION_ERRORS as exc:
         _LOGGER.error(
             "GaussDB query failed request_id=%s exception_type=%s",
             current_request_id() or "unknown",
@@ -154,7 +148,7 @@ async def aclose_gauss_pool() -> None:
     """Close and evict the current loop's pool (lifespan teardown).
 
     Safe to call when no pool exists for the loop, so a teardown can run
-    unconditionally next to ``aclose_shared_client``.
+    unconditionally next to the outbound runtime teardown.
     """
     loop = asyncio.get_running_loop()
     pool = _GAUSS_POOL_STATE.pop(loop, None)

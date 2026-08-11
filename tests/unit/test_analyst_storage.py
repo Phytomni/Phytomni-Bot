@@ -37,7 +37,17 @@ def _write_bytes(path: Path | str, content: bytes) -> None:
     Path(path).write_bytes(content)
 
 
-def test_create_output_dir_prefers_obsfs(tmp_path):
+def _fake_obs_runtime(client: Any) -> SimpleNamespace:
+    """Return a runtime seam that executes one OBS operation locally."""
+
+    async def run(_profile: Any, operation: Any) -> Any:
+        """Execute the operation against the supplied fake client."""
+        return operation(client)
+
+    return SimpleNamespace(run=run)
+
+
+async def test_create_output_dir_prefers_obsfs(tmp_path):
     """Verify output directories are created through obsfs first.
 
     Args:
@@ -50,7 +60,7 @@ def test_create_output_dir_prefers_obsfs(tmp_path):
         IdFactory(token_factory=lambda _: "abc12345"),
     )
 
-    result = analysis_storage.create_output_dir(
+    result = await analysis_storage.create_output_dir(
         "user-a",
         "analysis_task",
         bucket_name="phytomni",
@@ -70,7 +80,9 @@ def test_create_output_dir_prefers_obsfs(tmp_path):
     assert (root / object_key).is_dir()
 
 
-def test_create_output_dir_relay_mode_skips_marker(tmp_path, monkeypatch):
+async def test_create_output_dir_relay_mode_skips_marker(
+    tmp_path, monkeypatch
+):
     """Relay mode returns the run-scoped path without minting a marker.
 
     Args:
@@ -78,15 +90,13 @@ def test_create_output_dir_relay_mode_skips_marker(tmp_path, monkeypatch):
         monkeypatch: Pytest monkeypatch toggling relay mode and the SDK.
     """
     monkeypatch.setattr(analysis_storage, "relay_mode_enabled", lambda: True)
-    no_sdk = Mock()
-    monkeypatch.setattr(analysis_storage, "ObsClient", no_sdk)
     run_identity = RunIdentity.create(
         "user-a",
         "analysis_task",
         IdFactory(token_factory=lambda _: "abc12345"),
     )
 
-    result = analysis_storage.create_output_dir(
+    result = await analysis_storage.create_output_dir(
         "user-a",
         "analysis_task",
         bucket_name="phytomni",
@@ -96,7 +106,6 @@ def test_create_output_dir_relay_mode_skips_marker(tmp_path, monkeypatch):
 
     assert result.startswith("/obs/phytomni/")
     assert result.endswith("/analysis_task/output/")
-    assert not no_sdk.called
     assert not (tmp_path / "no-mount").exists()
 
 
@@ -111,9 +120,6 @@ async def test_upload_analyst_agents_content_relay_mode(monkeypatch):
     relay = Mock()
     relay.put_obs_object = AsyncMock(return_value={"obs_path": "/obs/x"})
     monkeypatch.setattr(analyst_storage, "current_relay_client", lambda: relay)
-    no_sdk = Mock()
-    monkeypatch.setattr(analyst_storage, "ObsClient", no_sdk)
-
     result = await analyst_storage.upload_analyst_agents_content(
         '{"ok": true}',
         "task.yaml",
@@ -128,7 +134,6 @@ async def test_upload_analyst_agents_content_relay_mode(monkeypatch):
     assert result == (
         "phytomni:/agent_data/user_data/cust42/runs/d/r/t/tmp/task.yaml"
     )
-    assert not no_sdk.called
 
 
 async def test_download_obs_out_via_relay_writes_matching_objects(
@@ -237,7 +242,7 @@ async def test_upload_analyst_agents_content_accepts_run_scoped_key(tmp_path):
     assert (root / object_key).read_text(encoding="utf-8") == '{"ok": true}'
 
 
-def test_upload_analyst_agents_data_prefers_obsfs_copy(tmp_path):
+async def test_upload_analyst_agents_data_prefers_obsfs_copy(tmp_path):
     """Verify local metadata files are copied through obsfs.
 
     Args:
@@ -247,7 +252,7 @@ def test_upload_analyst_agents_data_prefers_obsfs_copy(tmp_path):
     source_file = tmp_path / "source.json"
     source_file.write_text("payload", encoding="utf-8")
 
-    result = analyst_storage.upload_analyst_agents_data(
+    result = await analyst_storage.upload_analyst_agents_data(
         str(source_file),
         bucket_name="phytomni",
         obsfs_mount_root=str(tmp_path),
@@ -259,7 +264,7 @@ def test_upload_analyst_agents_data_prefers_obsfs_copy(tmp_path):
     ) == "payload"
 
 
-def test_delete_analyst_agents_data_prefers_obsfs(tmp_path):
+async def test_delete_analyst_agents_data_prefers_obsfs(tmp_path):
     """Verify delete removes files through obsfs first.
 
     Args:
@@ -270,7 +275,7 @@ def test_delete_analyst_agents_data_prefers_obsfs(tmp_path):
     target_file.parent.mkdir(parents=True)
     target_file.write_text("payload", encoding="utf-8")
 
-    result = analyst_storage.delete_analyst_agents_data(
+    result = await analyst_storage.delete_analyst_agents_data(
         "/obs/phytomni/agent_data/tmp_data/delete.json",
         bucket_name="phytomni",
         obsfs_mount_root=str(tmp_path),
@@ -336,7 +341,7 @@ def test_obs_download_options_falls_back_to_static_default():
     )
 
 
-def test_download_obs_out_prefers_obsfs_and_filters_outputs(tmp_path):
+async def test_download_obs_out_prefers_obsfs_and_filters_outputs(tmp_path):
     """Verify result downloads copy matching files from obsfs first.
 
     Args:
@@ -348,16 +353,14 @@ def test_download_obs_out_prefers_obsfs_and_filters_outputs(tmp_path):
     (result_dir / "keep.txt").write_text("keep", encoding="utf-8")
     (result_dir / "skip.log").write_text("skip", encoding="utf-8")
 
-    statuses = list(
-        analyst_storage.download_obs_out(
-            "task-1",
-            "results",
-            download_path=str(tmp_path / "downloads"),
-            bucket_name="phytomni",
-            obsfs_mount_root=str(tmp_path),
-            target_file_feature=[".txt"],
-            if_download_all=False,
-        )
+    statuses = await analyst_storage.download_obs_out(
+        "task-1",
+        "results",
+        download_path=str(tmp_path / "downloads"),
+        bucket_name="phytomni",
+        obsfs_mount_root=str(tmp_path),
+        target_file_feature=[".txt"],
+        if_download_all=False,
     )
 
     assert statuses == ["keep.txt download succeed."]
@@ -410,7 +413,11 @@ async def test_upload_content_falls_back_to_sdk_when_obsfs_missing(
             captured["put_content"] = kwargs
             return SimpleNamespace(status=200, requestId="request-id")
 
-    monkeypatch.setattr(analyst_storage, "ObsClient", FakeObsClient)
+    monkeypatch.setattr(
+        analyst_storage,
+        "_direct_obs_runtime",
+        lambda: _fake_obs_runtime(FakeObsClient()),
+    )
 
     result = await analyst_storage.upload_analyst_agents_content(
         "payload",
@@ -427,7 +434,7 @@ async def test_upload_content_falls_back_to_sdk_when_obsfs_missing(
     )
 
 
-def test_download_obs_out_falls_back_to_sdk_when_obsfs_missing(
+async def test_download_obs_out_falls_back_to_sdk_when_obsfs_missing(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -487,17 +494,19 @@ def test_download_obs_out_falls_back_to_sdk_when_obsfs_missing(
             Path(kwargs["downloadPath"]).write_text("sdk", encoding="utf-8")
             return SimpleNamespace(status=200)
 
-    monkeypatch.setattr(analyst_storage, "ObsClient", FakeObsClient)
+    monkeypatch.setattr(
+        analyst_storage,
+        "_direct_obs_runtime",
+        lambda: _fake_obs_runtime(FakeObsClient()),
+    )
 
-    statuses = list(
-        analyst_storage.download_obs_out(
-            "task-1",
-            "/obs/phytomni/results",
-            download_path=str(tmp_path / "downloads"),
-            bucket_name="phytomni",
-            obsfs_mount_root=str(tmp_path / "missing"),
-            if_download_all=True,
-        )
+    statuses = await analyst_storage.download_obs_out(
+        "task-1",
+        "/obs/phytomni/results",
+        download_path=str(tmp_path / "downloads"),
+        bucket_name="phytomni",
+        obsfs_mount_root=str(tmp_path / "missing"),
+        if_download_all=True,
     )
 
     assert statuses == ["keep.txt download succeed."]

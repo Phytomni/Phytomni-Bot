@@ -32,9 +32,14 @@ from .capabilities import (
     InteropCapability,
     InteropCapabilityError,
 )
-from .http_transport import InteropHTTPError, httpx_client_factory
+from .http_transport import InteropHTTPError
 from .models import A2ATarget
 from .registry import InteropRegistry, InteropRegistryError
+from .runtime import (
+    InteropResourceRuntime,
+    InteropResourceRuntimeError,
+    current_interop_runtime,
+)
 from .security import (
     AsyncDNSResolver,
     EndpointSecurityError,
@@ -154,6 +159,33 @@ async def _read_card_payload(
     return decoded
 
 
+async def _read_card_from_client(
+    *,
+    target_id: str,
+    client: httpx.AsyncClient,
+) -> dict[str, Any]:
+    """Read one card from an already-owned HTTP client."""
+    response = await client.get("")
+    if 300 <= response.status_code < 400:
+        raise InteropA2AError("redirect_rejected", target_id)
+    if not 200 <= response.status_code < 300:
+        raise InteropA2AError("http_error", target_id)
+    media_type = response.headers.get("content-type", "")
+    media_type = media_type.split(";", 1)[0].strip().lower()
+    if media_type != "application/json" and not media_type.endswith("+json"):
+        raise InteropA2AError("content_type_rejected", target_id)
+    payload = await response.aread()
+    if len(payload) > MAX_CARD_BYTES:
+        raise InteropA2AError("card_too_large", target_id)
+    try:
+        decoded = json.loads(payload)
+    except (TypeError, UnicodeDecodeError, ValueError):
+        raise InteropA2AError("invalid_card", target_id) from None
+    if not isinstance(decoded, dict):
+        raise InteropA2AError("invalid_card", target_id)
+    return decoded
+
+
 def _parse_card(payload: dict[str, Any], target_id: str) -> AgentCard:
     """Parse one peer payload with the official SDK's v1 compatibility path."""
     try:
@@ -245,6 +277,7 @@ async def fetch_external_a2a_card(
     sensitive_config: SensitiveConfig | None = None,
     resolver: AsyncDNSResolver = resolve_host,
     _client_factory: Callable[..., httpx.AsyncClient] | None = None,
+    _interop_runtime: InteropResourceRuntime | None = None,
 ) -> AgentCard:
     """Fetch and reduce one operator-approved external A2A Agent Card.
 
@@ -254,14 +287,50 @@ async def fetch_external_a2a_card(
     configured in this phase.
     """
     target = _resolve_a2a_target(target_id, registry)
-    factory = _client_factory or httpx_client_factory
     factory_kwargs = _factory_kwargs(registry, sensitive_config, resolver)
-    payload = await _read_card_payload(
-        target,
-        target_id=target_id,
-        factory_kwargs=factory_kwargs,
-        client_factory=factory,
-    )
+    if _client_factory is not None:
+        payload = await _read_card_payload(
+            target,
+            target_id=target_id,
+            factory_kwargs=factory_kwargs,
+            client_factory=_client_factory,
+        )
+    else:
+        runtime = _interop_runtime
+        if runtime is None:
+            runtime = current_interop_runtime()
+        if runtime is None:
+            raise InteropA2AError("runtime_unavailable", target_id)
+        try:
+            await validate_target_request(
+                target,
+                httpx.URL(target.card_base_url),
+                resolver=resolver,
+                dns_timeout_seconds=target.connect_timeout_seconds,
+            )
+            payload = await runtime.run_http(
+                target_id,
+                lambda client: _read_card_from_client(
+                    target_id=target_id,
+                    client=client,
+                ),
+            )
+        except InteropA2AError:
+            raise
+        except (
+            InteropResourceRuntimeError,
+            InteropHTTPError,
+            httpx.HTTPError,
+        ):
+            raise InteropA2AError("transport_error", target_id) from None
+        except (
+            EndpointSecurityError,
+            OSError,
+            RuntimeError,
+            TimeoutError,
+            ValueError,
+        ):
+            raise InteropA2AError("transport_error", target_id) from None
     card = _parse_card(payload, target_id)
     interfaces = await _approved_interfaces(
         card,

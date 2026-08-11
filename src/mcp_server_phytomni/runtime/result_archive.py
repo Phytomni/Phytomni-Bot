@@ -17,6 +17,8 @@ from zipfile import ZIP_STORED, ZipFile, ZipInfo
 
 from ..config.defaults import ServerConfig
 from ..storage.obs_relay_ops import (
+    ObsAccessOptions,
+    ObsStreamOptions,
     iter_object_chunks,
     object_size,
     put_object_file,
@@ -247,6 +249,7 @@ def build_and_publish_result_archive(
     *,
     agent: str,
     summary_markdown: str,
+    client: Any,
 ) -> str:
     """Create then size-verify one deterministic Zip64 archive in OBS."""
     validate_result_archive_inventory(inventory)
@@ -270,7 +273,12 @@ def build_and_publish_result_archive(
         ) as scratch:
             archive_path = Path(scratch) / "results.zip"
             try:
-                _write_archive(archive_path, inventory, summary_markdown)
+                _write_archive(
+                    archive_path,
+                    inventory,
+                    summary_markdown,
+                    client=client,
+                )
             except (OSError, TypeError, ValueError):
                 raise ResultArchiveError(
                     "archive_generation_failed", retryable=True
@@ -280,7 +288,7 @@ def build_and_publish_result_archive(
                 existing_size = object_size(
                     SERVER_CONFIG.BUCKET_NAME,
                     object_key,
-                    obs_server=SERVER_CONFIG.OBS_SERVER,
+                    access=ObsAccessOptions(client=client),
                 )
             except OSError:
                 existing_size = None
@@ -293,12 +301,10 @@ def build_and_publish_result_archive(
                     SERVER_CONFIG.BUCKET_NAME,
                     object_key,
                     archive_path,
-                    obs_server=SERVER_CONFIG.OBS_SERVER,
+                    access=ObsAccessOptions(client=client),
                 )
-                published_size = object_size(
-                    SERVER_CONFIG.BUCKET_NAME,
-                    object_key,
-                    obs_server=SERVER_CONFIG.OBS_SERVER,
+                published_size = _published_archive_size(
+                    SERVER_CONFIG.BUCKET_NAME, object_key, client
                 )
             except OSError:
                 raise ResultArchiveError(
@@ -311,6 +317,23 @@ def build_and_publish_result_archive(
             "archive_generation_failed", retryable=True
         ) from None
     return object_key
+
+
+def _published_archive_size(bucket: str, object_key: str, client: Any) -> int:
+    """Read one published archive size and map transport errors safely."""
+    try:
+        size_bytes = object_size(
+            bucket,
+            object_key,
+            access=ObsAccessOptions(client=client),
+        )
+    except OSError:
+        raise ResultArchiveError(
+            "archive_publish_failed", retryable=True
+        ) from None
+    if size_bytes is None:
+        raise ResultArchiveError("archive_publish_failed", retryable=True)
+    return size_bytes
 
 
 def _run_root(groups: Sequence[_ReportArtifactGroup]) -> str:
@@ -407,6 +430,8 @@ def _write_archive(
     archive_path: Path,
     inventory: ResultArchiveInventory,
     summary_markdown: str,
+    *,
+    client: Any,
 ) -> None:
     """Write summary and members while checking every source byte count."""
     with ZipFile(
@@ -422,8 +447,8 @@ def _write_archive(
                 for block in iter_object_chunks(
                     SERVER_CONFIG.BUCKET_NAME,
                     member.download_ref,
-                    obs_server=SERVER_CONFIG.OBS_SERVER,
-                    chunk_size=_COPY_CHUNK_SIZE,
+                    access=ObsAccessOptions(client=client),
+                    stream=ObsStreamOptions(chunk_size=_COPY_CHUNK_SIZE),
                 ):
                     if not isinstance(block, bytes):
                         raise ValueError("invalid stream chunk")

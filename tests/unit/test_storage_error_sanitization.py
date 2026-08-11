@@ -13,6 +13,7 @@ secret content never appears on the wire.
 from __future__ import annotations
 
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -88,23 +89,42 @@ def _assert_sanitized(exc: OSError) -> None:
 def _force_sdk_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make every storage module fall through to the OBS SDK branch.
 
-    Patches each module's ``ObsClient`` symbol with a constructor that
-    immediately raises a sentinel-bearing ``RuntimeError``. The obsfs
-    branch in every public helper already raises ``FileNotFoundError``
-    when ``obsfs_mount_root`` points at a missing directory, so the
-    SDK path is the one this fake answers from.
+    Patches each module's outbound runtime with a client whose every SDK
+    method raises a sentinel-bearing ``RuntimeError``. The obsfs branch in
+    every public helper already raises ``FileNotFoundError`` when
+    ``obsfs_mount_root`` points at a missing directory, so the SDK path is
+    the one this fake answers from.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    monkeypatch.setattr(shared_storage, "ObsClient", _ExplodingObsClient)
-    monkeypatch.setattr(analyst_storage, "ObsClient", _ExplodingObsClient)
+
+    async def run(_profile: Any, operation: Any) -> Any:
+        """Execute one operation against a fresh exploding client."""
+        return operation(_ExplodingObsClient())
+
+    runtime = SimpleNamespace(obs=SimpleNamespace(run=run))
+    monkeypatch.setattr(
+        shared_storage,
+        "current_outbound_runtime",
+        lambda: runtime,
+    )
+    monkeypatch.setattr(
+        analyst_storage,
+        "current_outbound_runtime",
+        lambda: runtime,
+    )
+    monkeypatch.setattr(
+        storage_downloads,
+        "current_outbound_runtime",
+        lambda: runtime,
+    )
 
 
-def test_create_output_dir_sanitizes_sdk_error() -> None:
+async def test_create_output_dir_sanitizes_sdk_error() -> None:
     """Verify the shared create_output_dir helper sanitizes SDK errors."""
     with pytest.raises(OSError) as exc_info:
-        shared_storage.create_output_dir(
+        await shared_storage.create_output_dir(
             user_id="placeholder-user",
             task="scratch",
             obsfs_mount_root=_MISSING_OBSFS_ROOT,
@@ -125,10 +145,10 @@ async def test_upload_content_sanitizes_sdk_error() -> None:
     _assert_sanitized(exc_info.value)
 
 
-def test_upload_data_sanitizes_sdk_error() -> None:
+async def test_upload_data_sanitizes_sdk_error() -> None:
     """Verify upload_analyst_agents_data sanitizes SDK errors."""
     with pytest.raises(OSError) as exc_info:
-        analyst_storage.upload_analyst_agents_data(
+        await analyst_storage.upload_analyst_agents_data(
             analyst_agents_datapath="/tmp/missing-file.txt",
             obsfs_mount_root=_MISSING_OBSFS_ROOT,
         )
@@ -136,10 +156,10 @@ def test_upload_data_sanitizes_sdk_error() -> None:
     _assert_sanitized(exc_info.value)
 
 
-def test_delete_analyst_data_sanitizes_sdk_error() -> None:
+async def test_delete_analyst_data_sanitizes_sdk_error() -> None:
     """Verify delete_analyst_agents_data sanitizes SDK errors."""
     with pytest.raises(OSError) as exc_info:
-        analyst_storage.delete_analyst_agents_data(
+        await analyst_storage.delete_analyst_agents_data(
             analyst_agents_datapath="agent_data/note.txt",
             obsfs_mount_root=_MISSING_OBSFS_ROOT,
         )

@@ -99,7 +99,6 @@ class ReviewPlanningMixin:
             upload_context, total_length = await download_upload_context(
                 state["obs_file_list"],
                 self.review_config,
-                self.sensitive_config,
             )
             user_query = get_prompt(
                 self.review_config.PROMPT_FILE,

@@ -4,8 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """OBS download and upload-context conversion helpers.
 
-Classes: ObsCredentials, ObsDownloadOptions,
-    ObsTransferContext, ResolvedObsFile.
+Classes: ObsDownloadOptions, ObsTransferContext, ResolvedObsFile.
 Functions: download_upload_context, download_obs_file,
     download_obs_list,
     convert_single_file, convert_multi_files, download_list_convert.
@@ -25,8 +24,11 @@ from ..common.docs import format_upload_context
 from ..common.relay_client import current_relay_client
 from ..config.defaults import ServerConfig
 from ..config.relay_mode import relay_mode_enabled
-from ..config.settings import SensitiveConfig
-from .obs_client import ObsClient
+from ..runtime.outbound import (
+    ObsClientRuntime,
+    ObsProfileName,
+    current_outbound_runtime,
+)
 from .obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     normalize_obs_object_key,
@@ -37,13 +39,8 @@ from .path_policy import RunIdentity
 logger = logging.getLogger(__name__)
 
 SERVER_CONFIG = ServerConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
-DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
-    SENSITIVE_CONFIG.obs_credentials()
-)
 
 __all__ = [
-    "ObsCredentials",
     "ObsDownloadOptions",
     "ObsTransferContext",
     "ResolvedObsFile",
@@ -57,24 +54,10 @@ __all__ = [
 
 
 @dataclass(frozen=True)
-class ObsCredentials:
-    """OBS credential pair for transfer helpers.
-
-    Attributes:
-        access_key_id: Access key ID used by the OBS SDK fallback.
-        secret_access_key: Secret access key used by the OBS SDK fallback.
-    """
-
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY
-
-
-@dataclass(frozen=True)
 class ObsDownloadOptions:
     """OBS endpoint and retry options for file downloads.
 
     Attributes:
-        obs_server: OBS service endpoint for SDK fallback downloads.
         bucket_name: Default bucket used for object-key normalization.
         obsfs_mount_root: Local obsfs mount root used before SDK fallback.
         part_size: Multipart download part size.
@@ -82,7 +65,6 @@ class ObsDownloadOptions:
         max_retries: Maximum retry attempts for SDK downloads.
     """
 
-    obs_server: str = SERVER_CONFIG.OBS_SERVER
     bucket_name: str = SERVER_CONFIG.BUCKET_NAME
     obsfs_mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT
     part_size: int = SERVER_CONFIG.PART_SIZE
@@ -96,14 +78,12 @@ class ObsTransferContext:
 
     Attributes:
         server_dir: Local temporary directory for SDK downloads.
-        credentials: OBS credential values for SDK fallback.
-        download: OBS endpoint, bucket, mount, and retry options.
+        download: OBS bucket, mount, and retry options.
         max_concurrency: Maximum concurrent OBS downloads.
         max_workers: Maximum process workers for document conversion.
     """
 
     server_dir: str
-    credentials: ObsCredentials
     download: ObsDownloadOptions
     max_concurrency: int = SERVER_CONFIG.MAX_CONCURRENCY
     max_workers: int = SERVER_CONFIG.MAX_WORKERS
@@ -125,27 +105,20 @@ class ResolvedObsFile:
 async def download_upload_context(
     obs_file_list: list[str],
     config: Any,
-    sensitive_config: Any,
 ) -> tuple[str, int]:
     """Download OBS uploads and format them as bounded prompt context.
 
     Args:
         obs_file_list: OBS paths for uploaded user context files.
         config: Runtime config with OBS, temporary path, and token limits.
-        sensitive_config: Sensitive config that provides OBS credentials.
-
     Returns:
         Formatted upload context and the resulting character length.
     """
     if not obs_file_list:
         return "", 0
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
     upload_texts = await download_list_convert(
         obs_file_list=obs_file_list,
         server_dir=config.TEMP_DIR,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=config.OBS_SERVER,
         bucket_name=config.BUCKET_NAME,
         part_size=config.PART_SIZE,
         task_num=config.TASK_NUM,
@@ -193,15 +166,7 @@ def _obs_transfer_context(
         return transfer_context
     return ObsTransferContext(
         server_dir=server_dir,
-        credentials=ObsCredentials(
-            access_key_id=values.get("access_key_id", DEFAULT_ACCESS_KEY_ID),
-            secret_access_key=values.get(
-                "secret_access_key",
-                DEFAULT_SECRET_ACCESS_KEY,
-            ),
-        ),
         download=ObsDownloadOptions(
-            obs_server=values.get("obs_server", SERVER_CONFIG.OBS_SERVER),
             bucket_name=values.get("bucket_name", SERVER_CONFIG.BUCKET_NAME),
             obsfs_mount_root=values.get(
                 "obsfs_mount_root",
@@ -295,14 +260,12 @@ async def _download_obs_file_from_sdk(
 ) -> str:
     """Download one OBS object to the temporary directory using the SDK."""
     server_file = _local_download_target(obs_file, context)
-    obs_client = ObsClient(
-        access_key_id=context.credentials.access_key_id,
-        secret_access_key=context.credentials.secret_access_key,
-        server=context.download.obs_server,
-    )
+    obs_runtime = current_outbound_runtime().obs
+    if obs_runtime is None:
+        raise OSError("OBS runtime is unavailable")
     object_key = _obs_object_key(obs_file, context.download.bucket_name)
     return await _download_obs_file_with_retry(
-        obs_client,
+        obs_runtime,
         object_key,
         server_file,
         context,
@@ -319,7 +282,7 @@ def _temp_download_group(obs_file: str) -> str:
 
 
 async def _download_obs_file_with_retry(
-    obs_client: ObsClient,
+    obs_runtime: ObsClientRuntime,
     object_key: str,
     server_file: str,
     context: ObsTransferContext,
@@ -328,7 +291,7 @@ async def _download_obs_file_with_retry(
     for attempt in range(context.download.max_retries + 1):
         try:
             download_response = await _download_obs_file_once(
-                obs_client,
+                obs_runtime,
                 object_key,
                 server_file,
                 context,
@@ -346,16 +309,15 @@ async def _download_obs_file_with_retry(
 
 
 async def _download_obs_file_once(
-    obs_client: ObsClient,
+    obs_runtime: ObsClientRuntime,
     object_key: str,
     server_file: str,
     context: ObsTransferContext,
 ):
-    """Run one blocking OBS download in the default executor."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        None,
-        lambda: obs_client.downloadFile(
+    """Run one blocking OBS download through the owned runtime."""
+    return await obs_runtime.run(
+        ObsProfileName.PRIMARY,
+        lambda obs_client: obs_client.downloadFile(
             bucketName=context.download.bucket_name,
             objectKey=object_key,
             downloadFile=server_file,

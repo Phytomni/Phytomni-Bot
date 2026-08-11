@@ -6,12 +6,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
 
+from mcp_server_phytomni.runtime.async_utils import wait_for_thread_future
+from mcp_server_phytomni.runtime.outbound import (
+    ObsClientRuntime,
+    OutboundPoolName,
+)
+from mcp_server_phytomni.runtime.outbound.registry import OutboundPoolRegistry
 from mcp_server_phytomni.storage.multipart import (
     BoundedMultipartStorage,
     FakeMultipartStorage,
@@ -22,20 +30,36 @@ from mcp_server_phytomni.storage.multipart import (
 pytestmark = pytest.mark.unit
 
 
-def test_bounded_begin_normalizes_raw_transport_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.mark.asyncio
+async def test_bounded_begin_normalizes_raw_transport_failure() -> None:
     """A raw SDK timeout becomes the stable storage-unavailable error."""
 
     def fail_begin(**_kwargs: object) -> None:
         raise TimeoutError
 
-    storage = BoundedMultipartStorage(obs_server="https://obs.example")
     client = SimpleNamespace(initiateMultipartUpload=fail_begin)
-    monkeypatch.setattr(storage, "_client", lambda: client)
+    pools = OutboundPoolRegistry(
+        {name: 0 for name in OutboundPoolName},
+        wait_warn_seconds=1.0,
+    )
+    runtime = ObsClientRuntime(pools, client)
+    storage = BoundedMultipartStorage(
+        runtime=runtime,
+        loop=asyncio.get_running_loop(),
+    )
+    executor = ThreadPoolExecutor(max_workers=1)
 
-    with pytest.raises(MultipartStorageError) as captured:
-        storage.begin(bucket="bucket", object_key="owner/file")
+    try:
+        future = executor.submit(
+            storage.begin,
+            bucket="bucket",
+            object_key="owner/file",
+        )
+        with pytest.raises(MultipartStorageError) as captured:
+            await wait_for_thread_future(future)
+    finally:
+        executor.shutdown(wait=True)
+        await runtime.aclose()
 
     assert captured.value.code == "upload_storage_unavailable"
     assert str(captured.value) == "upload_storage_unavailable"

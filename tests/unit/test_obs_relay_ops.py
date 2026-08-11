@@ -27,17 +27,21 @@ pytestmark = pytest.mark.unit
 
 
 def _seed_fake(
-    monkeypatch: pytest.MonkeyPatch, factory: Callable[..., Any]
+    _monkeypatch: pytest.MonkeyPatch, factory: Callable[..., Any]
 ) -> Any:
-    """Bind a fresh shared fake ObsClient into the module under test."""
-    fake = factory()
-    monkeypatch.setattr(ops, "ObsClient", fake)
-    return fake
+    """Return a fresh fake to be explicitly lent to each OBS operation."""
+    del _monkeypatch
+    return factory()
 
 
 def _missing_mount(tmp_path: Any) -> str:
     """Return an obsfs mount root that does not exist (forces SDK path)."""
     return str(tmp_path / "no-mount")
+
+
+def _access(client: Any, mount_root: str) -> ops.ObsAccessOptions:
+    """Build one explicit owned-client access context for an OBS op."""
+    return ops.ObsAccessOptions(client=client, mount_root=mount_root)
 
 
 def _capturing_obs_client(
@@ -73,8 +77,7 @@ def test_put_object_bytes_sdk_fallback_writes_exact_key(
         "phytomni",
         "agent_data/uploads/alice/report.pdf",
         b"hello-bytes",
-        obs_server="https://obs.example",
-        mount_root=_missing_mount(tmp_path),
+        access=_access(fake(), _missing_mount(tmp_path)),
     )
 
     put = fake.captured["put_content"]
@@ -82,29 +85,22 @@ def test_put_object_bytes_sdk_fallback_writes_exact_key(
     assert put["objectKey"] == "agent_data/uploads/alice/report.pdf"
     assert put["content"] == b"hello-bytes"
     assert returned == "agent_data/uploads/alice/report.pdf"
-    assert fake.captured["init"]["server"] == "https://obs.example"
 
 
 def test_put_object_file_sdk_fallback_streams_local_file(
     tmp_path: Any,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """SDK putFile receives the source path instead of buffered file bytes."""
     source = tmp_path / "archive.zip"
     source.write_bytes(b"zip-bytes")
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(
-        ops,
-        "ObsClient",
-        _capturing_obs_client(captured, "putFile"),
-    )
+    client = _capturing_obs_client(captured, "putFile")()
 
     returned = ops.put_object_file(
         "phytomni",
         "agent_data/runs/archive.zip",
         source,
-        obs_server="https://obs.example",
-        mount_root=_missing_mount(tmp_path),
+        access=_access(client, _missing_mount(tmp_path)),
     )
 
     assert returned == "agent_data/runs/archive.zip"
@@ -126,8 +122,7 @@ def test_put_object_file_obsfs_copies_local_file(tmp_path: Any) -> None:
         "phytomni",
         "agent_data/runs/archive.zip",
         source,
-        obs_server="https://unused.example",
-        mount_root=str(mount_root),
+        access=ops.ObsAccessOptions(mount_root=str(mount_root)),
     )
 
     assert (
@@ -137,22 +132,16 @@ def test_put_object_file_obsfs_copies_local_file(tmp_path: Any) -> None:
 
 def test_put_object_bytes_if_absent_sdk_uses_conditional_create(
     tmp_path: Any,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """SDK creation sends If-None-Match instead of allowing an overwrite."""
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(
-        ops,
-        "ObsClient",
-        _capturing_obs_client(captured, "putContent"),
-    )
+    client = _capturing_obs_client(captured, "putContent")()
 
     ops.put_object_bytes_if_absent(
         "phytomni",
         "agent_data/runs/private.json",
         b"{}",
-        obs_server="https://obs.example",
-        mount_root=_missing_mount(tmp_path),
+        access=_access(client, _missing_mount(tmp_path)),
     )
 
     assert captured["put_content"]["extensionHeaders"] == {
@@ -174,8 +163,7 @@ def test_put_object_bytes_if_absent_obsfs_rejects_existing_object(
             "phytomni",
             "agent_data/runs/private.json",
             b"replacement",
-            obs_server="https://unused.example",
-            mount_root=str(mount_root),
+            access=ops.ObsAccessOptions(mount_root=str(mount_root)),
         )
 
     assert existing.read_bytes() == b"original"
@@ -183,22 +171,16 @@ def test_put_object_bytes_if_absent_obsfs_rejects_existing_object(
 
 def test_put_object_bytes_if_absent_sdk_maps_precondition_failure(
     tmp_path: Any,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A conditional SDK collision is distinguishable from a failed write."""
-    monkeypatch.setattr(
-        ops,
-        "ObsClient",
-        _capturing_obs_client({}, "putContent", status=412),
-    )
+    client = _capturing_obs_client({}, "putContent", status=412)()
 
     with pytest.raises(ops.ObsObjectAlreadyExistsError):
         ops.put_object_bytes_if_absent(
             "phytomni",
             "agent_data/runs/private.json",
             b"{}",
-            obs_server="https://obs.example",
-            mount_root=_missing_mount(tmp_path),
+            access=_access(client, _missing_mount(tmp_path)),
         )
 
 
@@ -213,8 +195,7 @@ def test_put_dir_marker_sdk_writes_zero_byte_object(
     ops.put_dir_marker(
         "phytomni",
         "agent_data/runs/alice/run_x/output/",
-        obs_server="https://obs.example",
-        mount_root=_missing_mount(tmp_path),
+        access=_access(fake(), _missing_mount(tmp_path)),
     )
 
     put = fake.captured["put_content"]
@@ -234,8 +215,7 @@ def test_get_object_bytes_sdk_returns_streamed_content(
     data = ops.get_object_bytes(
         "phytomni",
         "agent_data/out/result.cif",
-        obs_server="https://obs.example",
-        mount_root=_missing_mount(tmp_path),
+        access=_access(fake(), _missing_mount(tmp_path)),
     )
 
     assert data == b"ATOM  1  N"
@@ -257,9 +237,8 @@ def test_iter_object_chunks_yields_all_bytes_in_pieces(
         ops.iter_object_chunks(
             "phytomni",
             "agent_data/out/big.bin",
-            obs_server="https://obs.example",
-            mount_root=_missing_mount(tmp_path),
-            chunk_size=4,
+            access=_access(fake(), _missing_mount(tmp_path)),
+            stream=ops.ObsStreamOptions(chunk_size=4),
         )
     )
 
@@ -280,8 +259,7 @@ def test_object_size_sdk_returns_content_length(
     size = ops.object_size(
         "phytomni",
         "agent_data/out/big.bin",
-        obs_server="https://obs.example",
-        mount_root=_missing_mount(tmp_path),
+        access=_access(fake(), _missing_mount(tmp_path)),
     )
 
     assert size == 10
@@ -313,7 +291,7 @@ def test_list_object_keys_sdk_paginates_and_skips_dirs(
     ]
 
     keys = ops.list_object_keys(
-        "phytomni", "prefix/", obs_server="https://obs.example"
+        "phytomni", "prefix/", access=_access(fake(), "/no-mount")
     )
 
     assert keys == ["prefix/a.png", "prefix/sub/b.md"]
@@ -334,8 +312,7 @@ def test_put_object_bytes_rejects_out_of_bucket_path(
             "phytomni",
             "agent_data/../../etc/passwd",
             b"x",
-            obs_server="https://obs.example",
-            mount_root=_missing_mount(tmp_path),
+            access=_access(fake(), _missing_mount(tmp_path)),
         )
 
     assert "put_content" not in fake.captured

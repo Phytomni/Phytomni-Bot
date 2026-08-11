@@ -22,8 +22,11 @@ from typing import Any
 from ...common.relay_client import current_relay_client
 from ...config.defaults import AnalystConfig
 from ...config.relay_mode import relay_mode_enabled
-from ...config.settings import get_sensitive_config
-from ...storage.obs_client import ObsClient
+from ...runtime.outbound import (
+    ObsClientRuntime,
+    ObsProfileName,
+    current_outbound_runtime,
+)
 from ...storage.obs_sdk import GetObjectHeader, PutObjectHeader
 from ...storage.obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
@@ -35,7 +38,6 @@ from ...storage.obs_storage import (
 )
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
-from ..shared.analysis_storage import ObsAccessOptions
 
 ANALYST_CONFIG = AnalystConfig()
 # Bound below the credential constants so this module's init block does
@@ -52,7 +54,7 @@ class ObsDownloadOptions:
 
     Attributes:
         download_path: Local root used for downloaded result files.
-        access: OBS endpoint and credential settings.
+        bucket_name: OBS bucket that stores workflow data.
         obsfs_mount_root: Local root where obsfs buckets are mounted.
         target_file_feature: File suffixes selected when not downloading all.
         marker: Optional OBS pagination marker.
@@ -61,7 +63,7 @@ class ObsDownloadOptions:
     """
 
     download_path: str
-    access: ObsAccessOptions
+    bucket_name: str
     obsfs_mount_root: str
     target_file_feature: tuple[str, ...]
     marker: str | None
@@ -91,9 +93,7 @@ class ObsDownloadOptions:
         )
         return cls(
             download_path=download_path,
-            access=_obs_access_from_values(
-                {**values, "bucket_name": bucket_name}
-            ),
+            bucket_name=bucket_name,
             obsfs_mount_root=obsfs_mount_root,
             target_file_feature=tuple(target_file_feature),
             marker=values.get("marker", ANALYST_CONFIG.DOWNLOAD_MARKER),
@@ -133,27 +133,21 @@ def _resolved_download_path(
     return ANALYST_CONFIG.DOWNLOAD_PATH
 
 
-def _obs_access_from_values(values: Mapping[str, Any]) -> ObsAccessOptions:
-    """Build OBS access options from keyword-compatible values."""
-    default_access_key_id, default_secret_access_key = (
-        get_sensitive_config().obs_credentials()
-    )
-    return ObsAccessOptions(
-        access_key_id=values.get("access_key_id", default_access_key_id),
-        secret_access_key=values.get(
-            "secret_access_key",
-            default_secret_access_key,
-        ),
-        obs_server=values.get("obs_server", ANALYST_CONFIG.OBS_SERVER),
-        bucket_name=values.get("bucket_name", ANALYST_CONFIG.BUCKET_NAME),
-    )
+def _obs_bucket_from_values(values: Mapping[str, Any]) -> str:
+    """Return the trusted bucket selector for one storage operation."""
+    return values.get("bucket_name", ANALYST_CONFIG.BUCKET_NAME)
 
 
-def upload_analyst_agents_data(
+def _direct_obs_runtime() -> ObsClientRuntime:
+    """Return the process-owned direct OBS runtime or fail closed."""
+    runtime = current_outbound_runtime().obs
+    if runtime is None:
+        raise OSError("OBS runtime is unavailable")
+    return runtime
+
+
+async def upload_analyst_agents_data(
     analyst_agents_datapath: str,
-    access_key_id: str | None = None,
-    secret_access_key: str | None = None,
-    obs_server: str = ANALYST_CONFIG.OBS_SERVER,
     bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
     **kwargs: Any,
 ) -> str:
@@ -166,9 +160,6 @@ def upload_analyst_agents_data(
 
     Args:
         analyst_agents_datapath: The local path to the file to be uploaded.
-        access_key_id: The access key ID for the OBS bucket.
-        secret_access_key: The secret access key for the OBS bucket.
-        obs_server: The server address of the OBS.
         bucket_name: The name of the OBS bucket.
 
     Returns:
@@ -178,18 +169,6 @@ def upload_analyst_agents_data(
     Raises:
         OSError: If the file upload to OBS fails.
     """
-    if access_key_id is None or secret_access_key is None:
-        default_access_key_id, default_secret_access_key = (
-            get_sensitive_config().obs_credentials()
-        )
-        access_key_id = access_key_id or default_access_key_id
-        secret_access_key = secret_access_key or default_secret_access_key
-    access = ObsAccessOptions(
-        access_key_id,
-        secret_access_key,
-        obs_server,
-        bucket_name,
-    )
     obsfs_mount_root = kwargs.get("obsfs_mount_root", DEFAULT_OBSFS_MOUNT_ROOT)
     object_file = Path(analyst_agents_datapath).name
     object_key = f"agent_data/tmp_data/{object_file}"
@@ -201,10 +180,15 @@ def upload_analyst_agents_data(
             obsfs_mount_root,
         )
     except OSError:
-        return _upload_file_sdk(
-            analyst_agents_datapath,
-            object_key,
-            access,
+        runtime = _direct_obs_runtime()
+        return await runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: _upload_file_sdk(
+                client,
+                analyst_agents_datapath,
+                object_key,
+                bucket_name,
+            ),
         )
 
 
@@ -231,34 +215,37 @@ async def upload_analyst_agents_content(
     Raises:
         OSError: If both obsfs upload and OBS SDK fallback fail.
     """
-    access = _obs_access_from_values(kwargs)
+    bucket_name = _obs_bucket_from_values(kwargs)
     obsfs_mount_root = kwargs.get("obsfs_mount_root", DEFAULT_OBSFS_MOUNT_ROOT)
     object_key = kwargs.get("object_key")
     if object_key is None:
         object_key = f"agent_data/tmp_data/{object_name}"
     else:
-        object_key = normalize_obs_object_key(
-            str(object_key), access.bucket_name
-        )
+        object_key = normalize_obs_object_key(str(object_key), bucket_name)
     if relay_mode_enabled():
         await current_relay_client().put_obs_object(
-            obs_path_from_key(access.bucket_name, object_key),
+            obs_path_from_key(bucket_name, object_key),
             content.encode("utf-8"),
             message="Failed to upload analyst metadata via relay",
         )
-        return bucket_colon_path(access.bucket_name, object_key)
+        return bucket_colon_path(bucket_name, object_key)
     try:
         return _upload_content_obsfs(
             content,
             object_key,
-            access.bucket_name,
+            bucket_name,
             obsfs_mount_root,
         )
     except OSError:
-        return _upload_content_sdk(
-            content,
-            object_key,
-            access,
+        runtime = _direct_obs_runtime()
+        return await runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: _upload_content_sdk(
+                client,
+                content,
+                object_key,
+                bucket_name,
+            ),
         )
 
 
@@ -291,21 +278,17 @@ def _upload_content_obsfs(
 
 
 def _upload_file_sdk(
+    obs_client: Any,
     file_path: str,
     object_key: str,
-    access: ObsAccessOptions,
+    bucket_name: str,
 ) -> str:
     """Upload one local file through the OBS SDK fallback."""
-    obsclient = ObsClient(
-        access_key_id=access.access_key_id,
-        secret_access_key=access.secret_access_key,
-        server=access.obs_server,
-    )
     try:
         headers = PutObjectHeader()
         headers.contentType = "text/plain"
-        response = obsclient.putFile(
-            bucketName=access.bucket_name,
+        response = obs_client.putFile(
+            bucketName=bucket_name,
             objectKey=object_key,
             file_path=file_path,
             metadata={"meta1": "value1", "meta2": "value2"},
@@ -313,7 +296,7 @@ def _upload_file_sdk(
         )
         status_code = getattr(response, "status", None)
         if status_code is not None and status_code < 300:
-            return f"{access.bucket_name}:/{object_key}"
+            return f"{bucket_name}:/{object_key}"
         raise OSError(
             "Put File Failed\n"
             f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
@@ -326,25 +309,21 @@ def _upload_file_sdk(
 
 
 def _upload_content_sdk(
+    obs_client: Any,
     content: str,
     object_key: str,
-    access: ObsAccessOptions,
+    bucket_name: str,
 ) -> str:
     """Upload generated content through the OBS SDK fallback."""
-    obsclient = ObsClient(
-        access_key_id=access.access_key_id,
-        secret_access_key=access.secret_access_key,
-        server=access.obs_server,
-    )
     try:
-        response = obsclient.putContent(
-            bucketName=access.bucket_name,
+        response = obs_client.putContent(
+            bucketName=bucket_name,
             objectKey=object_key,
             content=content,
         )
         status_code = getattr(response, "status", None)
         if status_code is not None and status_code < 300:
-            return f"{access.bucket_name}:/{object_key}"
+            return f"{bucket_name}:/{object_key}"
         raise OSError(
             "Put Content Failed\n"
             f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
@@ -356,11 +335,8 @@ def _upload_content_sdk(
         raise OSError("upload failed") from exc
 
 
-def delete_analyst_agents_data(
+async def delete_analyst_agents_data(
     analyst_agents_datapath: str,
-    access_key_id: str | None = None,
-    secret_access_key: str | None = None,
-    obs_server: str = ANALYST_CONFIG.OBS_SERVER,
     bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
     **kwargs: Any,
 ) -> str:
@@ -372,9 +348,6 @@ def delete_analyst_agents_data(
 
     Args:
         analyst_agents_datapath: The OBS path of the file to be deleted.
-        access_key_id: The access key ID for the OBS bucket.
-        secret_access_key: The secret access key for the OBS bucket.
-        obs_server: The server address of the OBS.
         bucket_name: The name of the OBS bucket.
 
     Returns:
@@ -384,18 +357,6 @@ def delete_analyst_agents_data(
     Raises:
         OSError: If the file deletion from OBS fails.
     """
-    if access_key_id is None or secret_access_key is None:
-        default_access_key_id, default_secret_access_key = (
-            get_sensitive_config().obs_credentials()
-        )
-        access_key_id = access_key_id or default_access_key_id
-        secret_access_key = secret_access_key or default_secret_access_key
-    access = ObsAccessOptions(
-        access_key_id,
-        secret_access_key,
-        obs_server,
-        bucket_name,
-    )
     obsfs_mount_root = kwargs.get("obsfs_mount_root", DEFAULT_OBSFS_MOUNT_ROOT)
     try:
         return _delete_analyst_data_obsfs(
@@ -404,9 +365,14 @@ def delete_analyst_agents_data(
             obsfs_mount_root,
         )
     except OSError:
-        return _delete_analyst_data_sdk(
-            analyst_agents_datapath,
-            access,
+        runtime = _direct_obs_runtime()
+        return await runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: _delete_analyst_data_sdk(
+                client,
+                analyst_agents_datapath,
+                bucket_name,
+            ),
         )
 
 
@@ -427,21 +393,17 @@ def _delete_analyst_data_obsfs(
 
 
 def _delete_analyst_data_sdk(
+    obs_client: Any,
     analyst_agents_datapath: str,
-    access: ObsAccessOptions,
+    bucket_name: str,
 ) -> str:
     """Delete one analyst storage path through the OBS SDK fallback."""
-    obsclient = ObsClient(
-        access_key_id=access.access_key_id,
-        secret_access_key=access.secret_access_key,
-        server=access.obs_server,
-    )
     try:
         object_key = normalize_obs_object_key(
             analyst_agents_datapath,
-            access.bucket_name,
+            bucket_name,
         )
-        response = obsclient.deleteObject(access.bucket_name, object_key)
+        response = obs_client.deleteObject(bucket_name, object_key)
         status_code = getattr(response, "status", None)
         if status_code is not None and status_code < 300:
             delete_marker = getattr(response, "body", {}).get(
@@ -476,21 +438,8 @@ def _download_output_path(task_dir: str, download_path: str) -> Path:
     return output_path
 
 
-def _obs_client(
-    access_key_id: str,
-    secret_access_key: str,
-    obs_server: str,
-) -> ObsClient:
-    """Create an OBS client from resolved credentials."""
-    return ObsClient(
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        server=obs_server,
-    )
-
-
 def _list_obs_object_keys(
-    obs_client: ObsClient,
+    obs_client: Any,
     options: ObsDownloadOptions,
     obs_output_path: str,
 ):
@@ -498,7 +447,7 @@ def _list_obs_object_keys(
     marker = options.marker
     while True:
         file_response = obs_client.listObjects(
-            bucketName=options.access.bucket_name,
+            bucketName=options.bucket_name,
             prefix=obs_output_path,
             marker=marker,
             max_keys=options.max_keys,
@@ -614,7 +563,7 @@ async def download_obs_out_via_relay(
 
 
 def _download_obs_object(
-    obs_client: ObsClient,
+    obs_client: Any,
     headers: GetObjectHeader,
     options: ObsDownloadOptions,
     object_key: str,
@@ -623,7 +572,7 @@ def _download_obs_object(
     """Download one OBS object and return a status message."""
     output_file = object_key.split("/")[-1]
     download_response = obs_client.getObject(
-        bucketName=options.access.bucket_name,
+        bucketName=options.bucket_name,
         objectKey=object_key,
         downloadPath=str(output_path / output_file),
         headers=headers,
@@ -634,7 +583,9 @@ def _download_obs_object(
     return f"{output_file} download succeed."
 
 
-def download_obs_out(task_dir: str, obs_output_path: str, **kwargs: Any):
+async def download_obs_out(
+    task_dir: str, obs_output_path: str, **kwargs: Any
+) -> list[str]:
     """Download analysis results from Object Storage Service to local
         filesystem.
 
@@ -701,15 +652,14 @@ def download_obs_out(task_dir: str, obs_output_path: str, **kwargs: Any):
     """
     options = ObsDownloadOptions.from_kwargs(kwargs)
     try:
-        obsfs_statuses = list(
+        return list(
             _download_obs_out_obsfs(task_dir, obs_output_path, options)
         )
-        yield from obsfs_statuses
     except OSError:
-        yield from _download_obs_out_sdk(task_dir, obs_output_path, options)
+        return await _download_obs_out_sdk(task_dir, obs_output_path, options)
 
 
-def _download_obs_out_sdk(
+async def _download_obs_out_sdk(
     task_dir: str,
     obs_output_path: str,
     options: ObsDownloadOptions,
@@ -718,31 +668,41 @@ def _download_obs_out_sdk(
     output_path = _download_output_path(task_dir, options.download_path)
     headers = GetObjectHeader()
     headers.if_modified_since = "date"
-    obs_client = _obs_client(
-        access_key_id=options.access.access_key_id,
-        secret_access_key=options.access.secret_access_key,
-        obs_server=options.access.obs_server,
-    )
+    runtime = _direct_obs_runtime()
     try:
         object_prefix = normalize_obs_object_key(
             obs_output_path,
-            options.access.bucket_name,
+            options.bucket_name,
         )
-        for object_key in _list_obs_object_keys(
-            obs_client,
-            options,
-            object_prefix,
-        ):
+        object_keys = await runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: tuple(
+                _list_obs_object_keys(client, options, object_prefix)
+            ),
+        )
+        statuses: list[str] = []
+        for object_key in object_keys:
             output_file = object_key.split("/")[-1]
             if not _should_download_object(output_file, options):
                 continue
-            yield _download_obs_object(
-                obs_client,
-                headers,
-                options,
-                object_key,
-                output_path,
+
+            def download_one(client: Any, key: str = object_key) -> str:
+                """Download the current object without capturing the key."""
+                return _download_obs_object(
+                    client,
+                    headers,
+                    options,
+                    key,
+                    output_path,
+                )
+
+            statuses.append(
+                await runtime.run(
+                    ObsProfileName.PRIMARY,
+                    download_one,
+                )
             )
+        return statuses
     except Exception as exc:
         logger.exception(
             "OBS download failed for prefix %s",
@@ -758,12 +718,12 @@ def _download_obs_out_obsfs(
 ):
     """Download analysis results by copying from obsfs."""
     _require_obsfs_bucket(
-        options.access.bucket_name,
+        options.bucket_name,
         options.obsfs_mount_root,
     )
     source_path = obsfs_path_for(
         obs_output_path,
-        options.access.bucket_name,
+        options.bucket_name,
         options.obsfs_mount_root,
     )
     if not source_path.is_dir():

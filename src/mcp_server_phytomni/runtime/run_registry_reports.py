@@ -18,6 +18,7 @@ from ..mcp.formatting.models import (
     FormattedToolResult,
     ResultDelivery,
 )
+from ..runtime.outbound import ObsProfileName, current_obs_runtime
 from ..storage.artifact_listing import ListedArtifactObject
 from ..storage.result_archive_storage import persist_result_archive_inventory
 from .execution_models import ExecutionWarning
@@ -310,7 +311,7 @@ async def settle_report_terminal(request: _ReportSettlementRequest) -> Any:
         )
     try:
         inventory = build_result_archive_inventory(groups)
-        inventory_ref = _persist_report_inventory(inventory)
+        inventory_ref = await _persist_report_inventory(inventory)
     except ResultArchiveError as exc:
         state = replace(
             state,
@@ -361,13 +362,17 @@ async def _assemble_report(
     )
 
 
-def _persist_report_inventory(inventory: Any) -> str:
+async def _persist_report_inventory(inventory: Any) -> str:
     """Persist the immutable inventory and return its private reference."""
     config = ServerConfig()
-    return persist_result_archive_inventory(
-        inventory,
-        bucket=config.BUCKET_NAME,
-        obs_server=config.OBS_SERVER,
+    obs_runtime = current_obs_runtime()
+    return await obs_runtime.run(
+        ObsProfileName.PRIMARY,
+        lambda client: persist_result_archive_inventory(
+            inventory,
+            bucket=config.BUCKET_NAME,
+            client=client,
+        ),
     )
 
 

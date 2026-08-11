@@ -24,17 +24,28 @@ class OutboundPoolName(StrEnum):
     INTEROP = "interop"
 
 
+class OutboundHttpProfile(StrEnum):
+    """Finite HTTP security profiles constructed by the runtime."""
+
+    TRUSTED = "trusted"
+    DIRECT_UPSTREAM = "direct_upstream"
+
+
 @dataclass(frozen=True, slots=True)
-class OutboundPoolSnapshot:
+class OutboundPoolSnapshot:  # pylint: disable=too-many-instance-attributes
     """A value-safe observation of one logical pool's current state."""
 
+    name: OutboundPoolName
     capacity: int
     in_use: int
     waiting: int
-    total_acquired: int
-    total_waited: int
+    max_in_use: int
+    started: int
+    completed: int
+    failed: int
+    cancelled: int
     total_wait_seconds: float
-    closing: bool
+    max_wait_seconds: float
 
 
 class OutboundRuntimeClosedError(RuntimeError):
@@ -42,6 +53,7 @@ class OutboundRuntimeClosedError(RuntimeError):
 
 
 __all__ = [
+    "OutboundHttpProfile",
     "OutboundPoolName",
     "OutboundPoolSnapshot",
     "OutboundRuntimeClosedError",

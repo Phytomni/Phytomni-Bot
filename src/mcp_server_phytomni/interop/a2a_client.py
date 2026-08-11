@@ -27,6 +27,7 @@ from a2a.client import ClientConfig, ClientFactory
 from a2a.types import AgentCard, SendMessageRequest
 
 from ..config.settings import SensitiveConfig
+from ..runtime.outbound import current_outbound_runtime
 from ..storage.path_policy import IdFactory
 from .a2a_discovery import InteropA2AError, fetch_external_a2a_card
 from .a2a_mapping import (
@@ -38,6 +39,7 @@ from .a2a_mapping import (
 from .http_transport import InteropHTTPError, httpx_client_factory
 from .models import A2ATarget
 from .registry import InteropRegistry, InteropRegistryError
+from .runtime import InteropResourceRuntime
 from .security import AsyncDNSResolver, resolve_host
 
 LOGGER = logging.getLogger(__name__)
@@ -206,6 +208,7 @@ class _ExecutionState(NamedTuple):
     card_fetcher: Callable[..., Awaitable[AgentCard]]
     client_factory: Callable[..., httpx.AsyncClient]
     sdk_factory: type[ClientFactory]
+    interop_runtime: InteropResourceRuntime | None
 
 
 _OPTION_KEYS = frozenset(
@@ -223,6 +226,7 @@ _OPTION_KEYS = frozenset(
         "_client_factory",
         "_card_fetcher",
         "_sdk_factory",
+        "_interop_runtime",
     }
 )
 
@@ -237,6 +241,76 @@ def _prepare_execution(
     """Resolve policy and build one SDK request without opening a peer."""
     if set(options) - _OPTION_KEYS:
         raise InteropA2AClientError("invalid_request", target_id)
+    total, idle, request, remote_capability = _prepare_request_state(
+        target_id,
+        capability_id,
+        registry,
+        options,
+        request_id,
+    )
+    sensitive_config = cast(
+        SensitiveConfig | None,
+        options.get("sensitive_config"),
+    )
+    resolver = cast(
+        AsyncDNSResolver,
+        options.get("resolver") or resolve_host,
+    )
+    factory_kwargs = _factory_kwargs(
+        registry,
+        sensitive_config,
+        resolver,
+    )
+    interop_runtime = cast(
+        InteropResourceRuntime | None,
+        options.get("_interop_runtime"),
+    )
+    if interop_runtime is None and not any(
+        key in options
+        for key in ("_client_factory", "_card_fetcher", "_sdk_factory")
+    ):
+        try:
+            interop_runtime = current_outbound_runtime().interop
+        except (ImportError, RuntimeError):
+            interop_runtime = None
+        if interop_runtime is None:
+            raise InteropA2AClientError("runtime_unavailable", target_id)
+    client_factory = cast(
+        Callable[..., httpx.AsyncClient],
+        options.get("_client_factory") or httpx_client_factory,
+    )
+    card_kwargs = dict(factory_kwargs)
+    if options.get("_client_factory") is not None:
+        card_kwargs["_client_factory"] = client_factory
+    if options.get("_card_fetcher") is None and interop_runtime is not None:
+        card_kwargs["_interop_runtime"] = interop_runtime
+    return _ExecutionState(
+        total=total,
+        idle=idle,
+        request=request,
+        remote_capability=remote_capability,
+        factory_kwargs=factory_kwargs,
+        card_kwargs=card_kwargs,
+        card_fetcher=cast(
+            Callable[..., Awaitable[AgentCard]],
+            options.get("_card_fetcher") or fetch_external_a2a_card,
+        ),
+        client_factory=client_factory,
+        sdk_factory=cast(
+            type[ClientFactory], options.get("_sdk_factory") or ClientFactory
+        ),
+        interop_runtime=interop_runtime,
+    )
+
+
+def _prepare_request_state(
+    target_id: str,
+    capability_id: str,
+    registry: InteropRegistry,
+    options: Mapping[str, Any],
+    request_id: str,
+) -> tuple[float, float, SendMessageRequest, str]:
+    """Resolve request policy and build the bounded SDK message."""
     target = _target(target_id, registry)
     remote_capability = _remote_capability(
         target_id,
@@ -266,42 +340,15 @@ def _prepare_execution(
         )
     )
     request.metadata["skill_id"] = remote_capability
-    sensitive_config = cast(
-        SensitiveConfig | None,
-        options.get("sensitive_config"),
-    )
-    resolver = cast(
-        AsyncDNSResolver,
-        options.get("resolver") or resolve_host,
-    )
-    factory_kwargs = _factory_kwargs(
-        registry,
-        sensitive_config,
-        resolver,
-    )
-    client_factory = cast(
-        Callable[..., httpx.AsyncClient],
-        options.get("_client_factory") or httpx_client_factory,
-    )
-    card_kwargs = dict(factory_kwargs)
-    if options.get("_client_factory") is not None:
-        card_kwargs["_client_factory"] = client_factory
-    return _ExecutionState(
-        total,
-        idle,
-        request,
-        remote_capability,
-        factory_kwargs,
-        card_kwargs,
-        cast(
-            Callable[..., Awaitable[AgentCard]],
-            options.get("_card_fetcher") or fetch_external_a2a_card,
-        ),
-        client_factory,
-        cast(
-            type[ClientFactory], options.get("_sdk_factory") or ClientFactory
-        ),
-    )
+    return total, idle, request, remote_capability
+
+
+async def _fetch_execution_card(
+    state: _ExecutionState,
+    target_id: str,
+) -> AgentCard:
+    """Fetch the reduced card through the selected resource owner."""
+    return await state.card_fetcher(target_id, **state.card_kwargs)
 
 
 async def _open_execution(
@@ -309,7 +356,7 @@ async def _open_execution(
     target_id: str,
 ) -> tuple[Any, httpx.AsyncClient, AsyncIterator[Any]]:
     """Fetch a reduced card and create the official SDK client/iterator."""
-    card = await state.card_fetcher(target_id, **state.card_kwargs)
+    card = await _fetch_execution_card(state, target_id)
     http_client = state.client_factory(target_id, **state.factory_kwargs)
     try:
         sdk_client = state.sdk_factory(
@@ -362,6 +409,38 @@ async def _stream_execution(
     target_id: str,
 ) -> AsyncIterator[ExternalA2AEvent]:
     """Run one bounded SDK stream and enforce ordered cleanup."""
+    if state.interop_runtime is not None:
+        async with asyncio.timeout(state.total):
+            card = await _fetch_execution_card(state, target_id)
+
+            async def stream_with_client(
+                client: httpx.AsyncClient,
+            ) -> AsyncIterator[ExternalA2AEvent]:
+                """Stream through one runtime-owned HTTP client."""
+                iterator: AsyncIterator[Any] | None = None
+                try:
+                    sdk_client = state.sdk_factory(
+                        ClientConfig(streaming=True, httpx_client=client)
+                    ).create(card)
+                    iterator = sdk_client.send_message(state.request)
+                    deadline = asyncio.get_running_loop().time() + state.total
+                    async for event in _iterate_execution(
+                        state,
+                        iterator,
+                        target_id,
+                        deadline,
+                    ):
+                        yield event
+                finally:
+                    await _close_iterator(iterator)
+
+            async for event in state.interop_runtime.stream_http(
+                target_id,
+                stream_with_client,
+            ):
+                yield event
+        return
+
     loop = asyncio.get_running_loop()
     deadline = loop.time() + state.total
     sdk_client: Any | None = None

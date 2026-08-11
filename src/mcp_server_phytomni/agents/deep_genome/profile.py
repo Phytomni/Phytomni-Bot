@@ -19,8 +19,11 @@ from typing import TYPE_CHECKING, Any
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
-from ...common.http import JsonPostRetry, require_json_object
-from ...common.httpx_client import resolve_request_timeout
+from ...common.http import (
+    JsonPostRetry,
+    require_json_object,
+    resolve_request_timeout,
+)
 from ...config.defaults import DeepGenomeConfig
 from ..shared.sql import bi_query, sql_literal
 

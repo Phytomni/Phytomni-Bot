@@ -4,13 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Analyst agent package exports.
 
-Re-exports AnalystAgent, AnalystGraphMixin, state and OBS option types,
-task submit/status/log/delete wrappers, polling helpers, data-list lookup,
-output directory helpers, and analyst OBS upload/download utilities.
+Re-exports the AnalystAgent state and task helpers, data-list and output
+directory helpers, and analyst OBS upload/download utilities.
 """
 
 from ..shared.analysis_storage import (
-    ObsAccessOptions,
     create_output_dir,
     ensure_run_output_dir,
     get_data_list,
@@ -46,7 +44,6 @@ __all__ = [
     "AnalystAgent",
     "AnalystAgentsState",
     "AnalystGraphMixin",
-    "ObsAccessOptions",
     "ObsDownloadOptions",
     "create_output_dir",
     "retrieve_plan_submit",

@@ -35,6 +35,7 @@ from .artifact_roles import (
     classify_artifacts,
 )
 from .execution_models import ExecutionWarning
+from .outbound import ObsProfileName, current_obs_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -85,11 +86,14 @@ class TerminalArtifactSet:
 async def _default_artifact_lister(output_dir: str) -> list[str]:
     """List public artifact paths through the existing storage helper."""
     config = ServerConfig()
-    return await asyncio.to_thread(
-        list_artifact_paths,
-        output_dir,
-        bucket_name=config.BUCKET_NAME,
-        obs_server=config.OBS_SERVER,
+    obs_runtime = current_obs_runtime()
+    return await obs_runtime.run(
+        ObsProfileName.PRIMARY,
+        lambda client: list_artifact_paths(
+            output_dir,
+            bucket_name=config.BUCKET_NAME,
+            client=client,
+        ),
     )
 
 
@@ -98,11 +102,14 @@ async def _default_artifact_object_lister(
 ) -> list[ListedArtifactObject]:
     """List output objects and actual sizes off the event loop."""
     config = ServerConfig()
-    return await asyncio.to_thread(
-        list_artifact_objects,
-        output_dir,
-        bucket_name=config.BUCKET_NAME,
-        obs_server=config.OBS_SERVER,
+    obs_runtime = current_obs_runtime()
+    return await obs_runtime.run(
+        ObsProfileName.PRIMARY,
+        lambda client: list_artifact_objects(
+            output_dir,
+            bucket_name=config.BUCKET_NAME,
+            client=client,
+        ),
     )
 
 

@@ -19,7 +19,7 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import cache, partial
+from functools import cache
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -34,8 +34,8 @@ from starlette.requests import Request
 
 from ...agents.research.scientific_formats import classify_scientific_reference
 from ...config.defaults import ApiConfig, ServerConfig
+from ...runtime.outbound import current_outbound_runtime
 from ...runtime.request_context import current_request_id
-from ...storage.obs_relay_ops import operator_obs_client
 from ...storage.obs_storage import ObsPathError, normalize_obs_object_key
 from ...storage.research_objects import (
     DirectResearchObjectMetadataPort,
@@ -89,6 +89,15 @@ class _AuditContext:
     dataset_ids: Iterable[str] = ()
     grant_ids: Iterable[str] = ()
     status_code: int = 200
+
+
+@dataclass(frozen=True, slots=True)
+class _MetadataPortState:
+    """Cache one metadata authority until the owning runtime changes."""
+
+    runtime: object
+    bucket: str
+    port: DirectResearchObjectMetadataPort
 
 
 class _StrictGrantModel(BaseModel):
@@ -242,21 +251,31 @@ class _RevokePayload(_StrictGrantModel):
         return value
 
 
-@cache
-def _cached_metadata_port(
-    bucket: str, obs_server: str
-) -> DirectResearchObjectMetadataPort:
-    """Keep source authority state stable across route calls in one worker."""
-    return DirectResearchObjectMetadataPort(
-        bucket=bucket,
-        client_factory=partial(operator_obs_client, obs_server),
-    )
+_METADATA_PORT_STATE: dict[str, _MetadataPortState | None] = {"value": None}
 
 
 async def get_research_object_metadata_port() -> ResearchObjectMetadataPort:
     """Return the injected production exact-key metadata authority."""
     config = ServerConfig()
-    return _cached_metadata_port(config.BUCKET_NAME, config.OBS_SERVER)
+    runtime = current_outbound_runtime().obs
+    if runtime is None:
+        raise RuntimeError("operator OBS runtime is unavailable")
+    state = _METADATA_PORT_STATE["value"]
+    if (
+        state is None
+        or state.runtime is not runtime
+        or state.bucket != config.BUCKET_NAME
+    ):
+        state = _MetadataPortState(
+            runtime=runtime,
+            bucket=config.BUCKET_NAME,
+            port=DirectResearchObjectMetadataPort(
+                bucket=config.BUCKET_NAME,
+                obs_runtime=runtime,
+            ),
+        )
+        _METADATA_PORT_STATE["value"] = state
+    return state.port
 
 
 @cache

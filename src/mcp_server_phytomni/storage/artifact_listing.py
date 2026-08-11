@@ -15,8 +15,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from mcp_server_phytomni.storage.obs_relay_ops import (
+    ObsAccessOptions,
     list_object_keys,
     object_size,
 )
@@ -49,7 +51,7 @@ def list_artifact_objects(
     output_dir: str,
     *,
     bucket_name: str,
-    obs_server: str,
+    client: Any | None = None,
     mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
 ) -> list[ListedArtifactObject]:
     """List output objects with actual byte sizes.
@@ -71,12 +73,12 @@ def list_artifact_objects(
             )
 
     prefix = f"{base_key}/" if base_key else ""
+    access = ObsAccessOptions(client=client, mount_root=mount_root)
     return _list_sdk_objects(
-        list_object_keys(bucket_name, prefix, obs_server=obs_server),
+        list_object_keys(bucket_name, prefix, access=access),
         base_key=base_key,
         bucket_name=bucket_name,
-        obs_server=obs_server,
-        mount_root=mount_root,
+        access=access,
     )
 
 
@@ -119,8 +121,7 @@ def _list_sdk_objects(
     *,
     base_key: str,
     bucket_name: str,
-    obs_server: str,
-    mount_root: str,
+    access: ObsAccessOptions,
 ) -> list[ListedArtifactObject]:
     """Build object records from SDK keys after prefix confinement."""
     objects: list[ListedArtifactObject] = []
@@ -137,8 +138,7 @@ def _list_sdk_objects(
                 size_bytes=object_size(
                     bucket_name,
                     safe_key,
-                    obs_server=obs_server,
-                    mount_root=mount_root,
+                    access=access,
                 ),
                 download_ref=download_ref,
             )
@@ -162,7 +162,7 @@ def list_artifact_paths(
     output_dir: str,
     *,
     bucket_name: str,
-    obs_server: str,
+    client: Any | None = None,
     mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
 ) -> list[str]:
     """Return public ``/obs/<bucket>/<key>`` paths of files under output_dir.
@@ -170,7 +170,7 @@ def list_artifact_paths(
     Args:
         output_dir: OBS-style directory path written by the run.
         bucket_name: OBS bucket the run wrote to.
-        obs_server: OBS endpoint for the SDK fallback.
+        client: Runtime-owned OBS client for the SDK fallback.
         mount_root: obsfs mount root (default ``/obs``).
 
     Returns:
@@ -193,5 +193,9 @@ def list_artifact_paths(
                 )
                 for rel in rels
             ]
-    keys = list_object_keys(bucket_name, object_key, obs_server=obs_server)
+    keys = list_object_keys(
+        bucket_name,
+        object_key,
+        access=ObsAccessOptions(client=client, mount_root=mount_root),
+    )
     return [obs_path_from_key(bucket_name, key) for key in keys]

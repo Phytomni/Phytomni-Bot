@@ -21,7 +21,6 @@ def test_obsfs_branch_lists_files_as_public_paths(tmp_path):
     paths = artifact_listing.list_artifact_paths(
         f"/obs/{bucket}/agent_data/u1/run0",
         bucket_name=bucket,
-        obs_server="https://obs.example",
         mount_root=str(mount_root),
     )
 
@@ -42,7 +41,6 @@ def test_obsfs_branch_lists_objects_with_actual_sizes(tmp_path):
     objects = artifact_listing.list_artifact_objects(
         f"/obs/{bucket}/agent_data/u1/run0",
         bucket_name=bucket,
-        obs_server="https://obs.example",
         mount_root=str(mount_root),
     )
 
@@ -71,7 +69,6 @@ def test_obsfs_object_listing_omits_symlinks(tmp_path):
     objects = artifact_listing.list_artifact_objects(
         f"/obs/{bucket}/agent_data/u1/run0",
         bucket_name=bucket,
-        obs_server="https://obs.example",
         mount_root=str(mount_root),
     )
 
@@ -83,8 +80,8 @@ def test_sdk_branch_used_when_obsfs_absent(monkeypatch, tmp_path):
     converted to public paths."""
     calls = {}
 
-    def fake_list_object_keys(bucket, prefix, *, obs_server):
-        calls["args"] = (bucket, prefix, obs_server)
+    def fake_list_object_keys(bucket, prefix, *, access):
+        calls["args"] = (bucket, prefix, access.client)
         return ["agent_data/u1/run0/fig1.png", "agent_data/u1/run0/x.txt"]
 
     monkeypatch.setattr(
@@ -94,7 +91,7 @@ def test_sdk_branch_used_when_obsfs_absent(monkeypatch, tmp_path):
     paths = artifact_listing.list_artifact_paths(
         "/obs/phytomni/agent_data/u1/run0",
         bucket_name="phytomni",
-        obs_server="https://obs.example",
+        client=object(),
         mount_root=str(tmp_path),  # exists but no <mount>/phytomni dir
     )
 
@@ -118,16 +115,17 @@ def test_sdk_branch_lists_objects_using_head_sizes(monkeypatch, tmp_path):
     )
     sizes = {}
 
-    def fake_object_size(bucket, key, *, obs_server, mount_root):
-        sizes[(bucket, key, obs_server, mount_root)] = True
+    def fake_object_size(bucket, key, *, access):
+        sizes[(bucket, key, access.client, access.mount_root)] = True
         return 37
 
     monkeypatch.setattr(artifact_listing, "object_size", fake_object_size)
 
+    client = object()
     objects = artifact_listing.list_artifact_objects(
         "/obs/phytomni/agent_data/u1/run0",
         bucket_name="phytomni",
-        obs_server="https://obs.example",
+        client=client,
         mount_root=str(tmp_path),
     )
 
@@ -138,7 +136,7 @@ def test_sdk_branch_lists_objects_using_head_sizes(monkeypatch, tmp_path):
         (
             "phytomni",
             "agent_data/u1/run0/summary.csv",
-            "https://obs.example",
+            client,
             str(tmp_path),
         )
     ]
@@ -157,7 +155,7 @@ def test_obsfs_mounted_but_dir_absent_falls_back_to_sdk(monkeypatch, tmp_path):
     paths = artifact_listing.list_artifact_paths(
         "/obs/phytomni/agent_data/u1/run0",
         bucket_name=bucket,
-        obs_server="https://obs.example",
+        client=object(),
         mount_root=str(tmp_path),
     )
 
@@ -182,7 +180,7 @@ def test_obsfs_enumeration_confines_to_requested_tenant_prefix(tmp_path):
     paths = artifact_listing.list_artifact_paths(
         f"/obs/{bucket}/agent_data/user_data/ua/run0",
         bucket_name=bucket,
-        obs_server="https://obs.invalid",
+        client=object(),
         mount_root=str(mount_root),
     )
 

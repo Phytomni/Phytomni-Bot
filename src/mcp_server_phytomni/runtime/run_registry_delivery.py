@@ -7,19 +7,21 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass, replace
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from ..config.defaults import ServerConfig
 from ..mcp.formatting.models import ResultArchiveDescriptor, ResultDelivery
-from ..storage.obs_relay_ops import object_size
+from ..runtime.outbound import ObsProfileName, current_obs_runtime
 from ..storage.result_archive_storage import load_result_archive_inventory
 from .live_tasks import deregister_live_task
 from .result_archive import (
     ResultArchiveError,
     ResultArchiveInventory,
+    _published_archive_size,
     build_and_publish_result_archive,
 )
 from .run_registry_models import _now_iso
@@ -76,7 +78,8 @@ class PrivateDeliveryState:
 
 
 ResultArchivePublisher = Callable[
-    [ResultArchiveInventory, str, str], ResultArchiveDescriptor
+    [ResultArchiveInventory, str, str],
+    ResultArchiveDescriptor | Awaitable[ResultArchiveDescriptor],
 ]
 AsyncSleep = Callable[[float], Awaitable[None]]
 
@@ -273,14 +276,24 @@ async def run_delivery_worker(
             if claim is None:
                 return
             try:
-                inventory = load_private_inventory(
+                loaded_inventory = load_private_inventory(
                     claim.inventory_ref, target.inventory_digest
                 )
-                archive = await asyncio.to_thread(
+                inventory = (
+                    await loaded_inventory
+                    if inspect.isawaitable(loaded_inventory)
+                    else loaded_inventory
+                )
+                published = await asyncio.to_thread(
                     dependencies.publish,
                     inventory,
                     claim.agent,
                     claim.summary_markdown,
+                )
+                archive = (
+                    await published
+                    if inspect.isawaitable(published)
+                    else published
                 )
             except ResultArchiveError as exc:
                 failure = DeliveryFailure(exc.code, exc.retryable)
@@ -365,7 +378,7 @@ def settle_delivery_failure(
         return "failed"
 
 
-def load_private_inventory(
+async def load_private_inventory(
     inventory_ref: str, inventory_digest: str
 ) -> ResultArchiveInventory:
     """Reload an immutable inventory reference with strict matching."""
@@ -377,33 +390,52 @@ def load_private_inventory(
     )
     if not root or not separator or tail != expected:
         raise ResultArchiveError("archive_contract_invalid")
-    return load_result_archive_inventory(
-        root,
-        inventory_digest,
-        bucket=_CONFIG.BUCKET_NAME,
-        obs_server=_CONFIG.OBS_SERVER,
+    obs_runtime = current_obs_runtime()
+    return await obs_runtime.run(
+        ObsProfileName.PRIMARY,
+        lambda client: load_result_archive_inventory(
+            root,
+            inventory_digest,
+            bucket=_CONFIG.BUCKET_NAME,
+            client=client,
+        ),
     )
 
 
-def _publish_archive(
+async def _publish_archive(
     inventory: ResultArchiveInventory,
     agent: str,
     summary_markdown: str,
 ) -> ResultArchiveDescriptor:
     """Publish through Task 3 and return only an opaque public reference."""
-    object_key = build_and_publish_result_archive(
-        inventory, agent=agent, summary_markdown=summary_markdown
+    obs_runtime = current_obs_runtime()
+    return await obs_runtime.run(
+        ObsProfileName.PRIMARY,
+        lambda client: _publish_archive_with_client(
+            inventory,
+            agent,
+            summary_markdown,
+            client,
+        ),
     )
-    try:
-        size_bytes = object_size(
-            _CONFIG.BUCKET_NAME, object_key, obs_server=_CONFIG.OBS_SERVER
-        )
-    except OSError:
-        raise ResultArchiveError(
-            "archive_publish_failed", retryable=True
-        ) from None
-    if size_bytes is None:
-        raise ResultArchiveError("archive_publish_failed", retryable=True)
+
+
+def _publish_archive_with_client(
+    inventory: ResultArchiveInventory,
+    agent: str,
+    summary_markdown: str,
+    client: Any,
+) -> ResultArchiveDescriptor:
+    """Publish one archive through the client lent by the OBS runtime."""
+    object_key = build_and_publish_result_archive(
+        inventory,
+        agent=agent,
+        summary_markdown=summary_markdown,
+        client=client,
+    )
+    size_bytes = _published_archive_size(
+        _CONFIG.BUCKET_NAME, object_key, client
+    )
     return ResultArchiveDescriptor(
         role="result_archive",
         name=f"{agent}-results.zip",

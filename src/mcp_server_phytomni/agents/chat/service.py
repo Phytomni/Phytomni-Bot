@@ -10,6 +10,7 @@ prompt, with support for various model parameters and retry mechanisms.
 
 import asyncio
 import importlib
+import inspect
 import logging
 from collections.abc import AsyncIterator
 from functools import lru_cache
@@ -18,7 +19,7 @@ from typing import Any, NamedTuple, NotRequired, TypedDict, Unpack
 from httpx import ConnectError, HTTPStatusError, TimeoutException
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
-from openai import APIConnectionError, AsyncOpenAI
+from openai import APIConnectionError
 
 from ...common.docs import format_upload_context
 from ...common.http import (
@@ -45,6 +46,7 @@ from ...runtime.locale import (
     current_effective_locale,
     locale_instruction,
 )
+from ...runtime.outbound import OutboundPoolName, current_outbound_runtime
 from ...storage.downloads import download_list_convert
 from ..shared.conversation_messages import normalize_conversation_messages
 from .completion_validation import (
@@ -467,9 +469,6 @@ async def _query_with_upload_context(
     upload_str_list = await download_list_convert(
         obs_file_list=obs_file_list,
         server_dir=options["server_dir"],
-        access_key_id=options["access_key_id"],
-        secret_access_key=options["secret_access_key"],
-        obs_server=options["obs_server"],
         bucket_name=options["bucket_name"],
         part_size=options["part_size"],
         task_num=options["task_num"],
@@ -486,33 +485,6 @@ async def _query_with_upload_context(
         f"{upload_context}\n"
         f"Please answer the user's questions:\n{user_query}"
     )
-
-
-def _relay_llm_endpoint(api_key: str, base_url: str) -> tuple[str, str]:
-    """Override the LLM endpoint with the relay route in relay mode.
-
-    In customer relay mode the child Bot holds no operator LLM
-    credentials, so regardless of the ``api_key`` / ``base_url`` a caller
-    passed (callers such as ``research/agent.py`` pass operator creds
-    explicitly), point AsyncOpenAI at the relay ``/v1/relay/llm`` route
-    authenticated by the relay key; the relay forwards to the operator
-    LLM with its real credentials. Outside relay mode the caller's values
-    pass through unchanged. ``RELAY_BASE_URL`` is read from a fresh
-    ``ChatConfig()`` so it reflects the current environment rather than
-    the import-time module default.
-
-    Args:
-        api_key: The operator API key the caller resolved.
-        base_url: The operator base URL the caller resolved.
-
-    Returns:
-        ``(api_key, base_url)`` — relay values in relay mode, otherwise
-        the inputs unchanged.
-    """
-    if not relay_mode_enabled():
-        return api_key, base_url
-    relay_key = get_sensitive_config().RELAY_API_KEY.get_secret_value()
-    return relay_key, f"{ChatConfig().RELAY_BASE_URL}/v1/relay/llm"
 
 
 def _relay_timeout_headers(profile: str | None) -> dict[str, str] | None:
@@ -542,11 +514,7 @@ async def _run_chat_completion_cached(
     normal values are rejected after normalization, while the cache admission
     predicate also lazily rejects historical values under the same policy.
     """
-    api_key, base_url = _relay_llm_endpoint(
-        request.api_key,
-        request.base_url,
-    )
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+    runtime = current_outbound_runtime()
     params: dict[str, Any] = {
         "messages": cache_key.messages,
         "model": request.model,
@@ -566,11 +534,14 @@ async def _run_chat_completion_cached(
         params["reasoning_effort"] = request.reasoning_effort
     if extra_headers := _relay_timeout_headers(request.relay_timeout_profile):
         params["extra_headers"] = extra_headers
-    chat_completions = await client.chat.completions.create(**params)
-    if request.stream:
-        payload = await _stream_response_to_dict(chat_completions)
-    else:
-        payload = chat_completions.model_dump()
+    async with runtime.pools.lease(OutboundPoolName.LLM):
+        chat_completions = await runtime.openai.chat.completions.create(
+            **params
+        )
+        if request.stream:
+            payload = await _stream_response_to_dict(chat_completions)
+        else:
+            payload = chat_completions.model_dump()
     normalized = normalize_chat_completion_dict(payload)
     return require_successful_chat_completion(normalized)
 
@@ -701,7 +672,7 @@ async def stream_phyto_chat_chunks(
     that primitive accepts ``stream: bool`` and buffers the full
     response into ``func_cache`` once collected, which is incompatible
     with a real token stream. This function calls
-    ``AsyncOpenAI(...).chat.completions.create(stream=True, ...)``
+    the shared OpenAI client's ``chat.completions.create(stream=True, ...)``
     directly and yields each chunk via ``model_dump()`` so unknown
     provider fields survive intact for the SSE shaper downstream.
 
@@ -744,13 +715,39 @@ async def stream_phyto_chat_chunks(
         {"role": "user", "content": user_query},
     ]
     params = _build_stream_params(messages, options)
-    api_key, base_url = _relay_llm_endpoint(
-        options["api_key"], options["base_url"]
-    )
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-    stream_completions = await _open_chat_stream(client, params)
-    async for chunk in stream_completions:
-        yield chunk.model_dump()
+    runtime = current_outbound_runtime()
+    for attempt in range(MAX_OPEN_STREAM_RETRIES + 1):
+        open_error: BaseException | None = None
+        async with runtime.pools.lease(OutboundPoolName.LLM):
+            try:
+                stream_completions = (
+                    await runtime.openai.chat.completions.create(**params)
+                )
+            except (ConnectError, TimeoutException, APIConnectionError) as exc:
+                open_error = exc
+            else:
+                try:
+                    async for chunk in stream_completions:
+                        yield chunk.model_dump()
+                finally:
+                    await _close_async_stream(stream_completions)
+                return
+        if open_error is None:
+            raise RuntimeError("stream open did not produce a result")
+        if attempt < MAX_OPEN_STREAM_RETRIES:
+            await asyncio.sleep(1.5**attempt)
+            continue
+        logger.warning(
+            "stream_phyto_chat_chunks: open-stream transport failure "
+            "after %s retries",
+            attempt,
+        )
+        raise McpError(
+            ErrorData(
+                code=INTERNAL_ERROR,
+                message="Failed to open chat completion stream",
+            )
+        ) from open_error
 
 
 def _build_stream_params(
@@ -790,43 +787,14 @@ def _build_stream_params(
     return params
 
 
-async def _open_chat_stream(
-    client: AsyncOpenAI, params: dict[str, Any]
-) -> Any:
-    """Open one streaming chat completion with bounded transport retries.
-
-    Retries up to ``MAX_OPEN_STREAM_RETRIES`` times on the transient
-    transport class ``_run_phyto_chat`` already treats as retriable
-    (raw HTTP transport errors or ``APIConnectionError``). Non-transient
-    failures (HTTPStatusError, malformed requests, etc.) propagate immediately
-    so the API layer can map them to the correct HTTP status.
-    """
-    last_exc: BaseException | None = None
-    for attempt in range(MAX_OPEN_STREAM_RETRIES + 1):
-        try:
-            return await client.chat.completions.create(**params)
-        except (ConnectError, TimeoutException, APIConnectionError) as exc:
-            last_exc = exc
-            if attempt < MAX_OPEN_STREAM_RETRIES:
-                await asyncio.sleep(1.5**attempt)
-                continue
-            logger.exception(
-                "stream_phyto_chat_chunks: open-stream transport "
-                "failure after %s retries",
-                attempt,
-            )
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message="Failed to open chat completion stream",
-                )
-            ) from exc
-    raise McpError(
-        ErrorData(
-            code=INTERNAL_ERROR,
-            message="Failed to open chat completion stream",
-        )
-    ) from last_exc
+async def _close_async_stream(stream: Any) -> None:
+    """Close a provider stream when its consumer reaches any terminal path."""
+    close = getattr(stream, "close", None)
+    if close is None:
+        return
+    result = close()
+    if inspect.isawaitable(result):
+        await result
 
 
 async def _stream_response_to_dict(stream_completions: Any) -> dict[str, Any]:
@@ -844,18 +812,21 @@ async def _stream_response_to_dict(stream_completions: Any) -> dict[str, Any]:
     full_reasoning = ""
     finish_reason: str | None = None
     chunk = None
-    async for chunk in stream_completions:
-        if not chunk.choices:
-            continue
-        delta = chunk.choices[0].delta
-        if delta.content:
-            full_content += delta.content
-        delta_reasoning = getattr(delta, "reasoning_content", None)
-        if delta_reasoning:
-            full_reasoning += delta_reasoning
-        chunk_finish = getattr(chunk.choices[0], "finish_reason", None)
-        if chunk_finish:
-            finish_reason = chunk_finish
+    try:
+        async for chunk in stream_completions:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta.content:
+                full_content += delta.content
+            delta_reasoning = getattr(delta, "reasoning_content", None)
+            if delta_reasoning:
+                full_reasoning += delta_reasoning
+            chunk_finish = getattr(chunk.choices[0], "finish_reason", None)
+            if chunk_finish:
+                finish_reason = chunk_finish
+    finally:
+        await _close_async_stream(stream_completions)
     if chunk is None:
         raise McpError(
             ErrorData(

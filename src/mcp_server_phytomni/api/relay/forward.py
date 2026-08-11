@@ -36,7 +36,6 @@ from fastapi import HTTPException
 from fastapi.responses import Response, StreamingResponse
 from starlette.requests import Request
 
-from ...common.httpx_client import get_async_client
 from ...config.defaults import (
     ApiConfig,
     BriefGeneConfig,
@@ -46,6 +45,11 @@ from ...config.defaults import (
     ReviewConfig,
 )
 from ...config.relay_mode import RELAY_TIMEOUT_PROFILE_HEADER
+from ...runtime.outbound import (
+    OutboundHttpProfile,
+    OutboundPoolName,
+    current_outbound_runtime,
+)
 from ...runtime.request_context import current_request_id
 from ..auth import ApiPrincipal
 from .audit import RelayAuditRecord, RelayAuditStore
@@ -371,16 +375,17 @@ class RelayUpstream:
         service: Relay service name recorded in the audit row.
         inject_headers: Strategy minting the operator auth header(s).
         operation: Optional sub-operation label for the audit row.
+        pool: Final logical service pool for this upstream attempt.
         trust_env: When False the upstream call ignores the host proxy /
-            cert env (an ephemeral client) — needed for a bare-IP upstream
-            the host's HTTP(S)_PROXY cannot reach. True keeps the shared
-            keep-alive pool.
+            cert env — needed for a bare-IP upstream the host's HTTP(S)_PROXY
+            cannot reach. True keeps the trusted profile.
     """
 
     url: str
     error_mode: RelayErrorMode
     service: str
     inject_headers: RelayInjectionStrategy
+    pool: OutboundPoolName
     operation: str | None = None
     trust_env: bool = True
 
@@ -585,29 +590,27 @@ async def _open_relay_upstream(
         ) from exc
 
     forward_headers = {**prepare_forward_headers(request.headers), **injected}
-    # trust_env is passed only when False: any client kwarg opts out of the
-    # shared keep-alive pool, so the default path stays pooled while a
-    # bare-IP upstream gets an ephemeral, proxy-bypassing client.
     timeout = httpx.Timeout(
         plan.timeout_seconds,
         connect=plan.timeout_seconds,
     )
-    upstream_client = (
-        get_async_client(timeout=timeout)
+    http_runtime = current_outbound_runtime().http
+    profile = (
+        OutboundHttpProfile.TRUSTED
         if plan.upstream.trust_env
-        else get_async_client(timeout=timeout, trust_env=False)
+        else OutboundHttpProfile.DIRECT_UPSTREAM
     )
-    client = await stack.enter_async_context(upstream_client)
     try:
-        upstream_resp = await client.send(
-            client.build_request(
+        upstream_resp = await stack.enter_async_context(
+            http_runtime.stream(
+                plan.upstream.pool,
                 request.method,
                 plan.upstream.url,
+                profile=profile,
                 headers=forward_headers,
                 content=plan.body,
                 timeout=timeout,
-            ),
-            stream=True,
+            )
         )
     except (httpx.HTTPError, OSError) as exc:
         await stack.aclose()
@@ -617,8 +620,6 @@ async def _open_relay_upstream(
         raise HTTPException(
             status_code=502, detail="relay upstream unavailable"
         ) from exc
-
-    stack.push_async_callback(upstream_resp.aclose)
     return upstream_resp, list(injected.values())
 
 

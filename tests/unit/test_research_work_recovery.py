@@ -588,11 +588,15 @@ async def test_http_lifespan_runs_registered_recovery_hook(
     monkeypatch.setattr(
         app_support, "validate_citation_database", lambda: None
     )
-    monkeypatch.setattr(app_support, "init_shared_client", lambda: None)
     monkeypatch.setattr(
         app_support,
-        "aclose_shared_client",
-        lambda: _completed_awaitable(calls, "close-client"),
+        "init_outbound_runtime",
+        lambda: _completed_awaitable(calls, "init-runtime"),
+    )
+    monkeypatch.setattr(
+        app_support,
+        "aclose_outbound_runtime",
+        lambda: _completed_awaitable(calls, "close-runtime"),
     )
     monkeypatch.setattr(
         app_support,
@@ -606,8 +610,13 @@ async def test_http_lifespan_runs_registered_recovery_hook(
     )
     lifespan = getattr(app_support, "_http_lifespan")
     async with lifespan(FastAPI()):
-        assert calls == ["recover"]
-    assert calls == ["recover", "close-client", "close-gauss"]
+        assert calls == ["init-runtime", "recover"]
+    assert calls == [
+        "init-runtime",
+        "recover",
+        "close-runtime",
+        "close-gauss",
+    ]
 
 
 def _completed_awaitable(calls: list[str], value: str):

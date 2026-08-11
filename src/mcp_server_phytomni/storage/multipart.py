@@ -6,16 +6,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 from collections.abc import Callable, Sequence
+from concurrent.futures import Future
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import Any, BinaryIO, NamedTuple, Protocol
+from typing import Any, BinaryIO, NamedTuple, Protocol, TypeVar
 
-from ..config.settings import get_sensitive_config
-from .obs_client import ObsClient
+from ..runtime.outbound import ObsClientRuntime, ObsProfileName
 from .obs_storage import normalize_obs_object_key
 
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
 ]
 
 _READ_CHUNK_BYTES = 1024 * 1024
+T = TypeVar("T")
 
 
 class MultipartStorageError(OSError):
@@ -133,17 +135,25 @@ CompletedObjectReader = Callable[..., int]
 class BoundedMultipartStorage:
     """Huawei OBS multipart adapter that never buffers a complete asset."""
 
-    def __init__(self, *, obs_server: str) -> None:
-        self.obs_server = obs_server
+    def __init__(
+        self,
+        *,
+        runtime: ObsClientRuntime,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        self._runtime = runtime
+        self._loop = loop
 
     def begin(self, *, bucket: str, object_key: str) -> MultipartSession:
         """Initiate a provider multipart upload for a safe object key."""
         safe_key = normalize_obs_object_key(object_key, bucket)
         try:
-            response = self._client().initiateMultipartUpload(
-                bucketName=bucket,
-                objectKey=safe_key,
-                contentType="application/octet-stream",
+            response = self._run(
+                lambda client: client.initiateMultipartUpload(
+                    bucketName=bucket,
+                    objectKey=safe_key,
+                    contentType="application/octet-stream",
+                )
             )
         except (ConnectionError, OSError, TimeoutError) as exc:
             raise MultipartStorageError("upload_storage_unavailable") from exc
@@ -160,14 +170,16 @@ class BoundedMultipartStorage:
     ) -> StoredPart:
         """Send a file-like part with exact SDK content length."""
         _rewind(upload.source)
-        response = self._client().uploadPart(
-            bucketName=session.bucket,
-            objectKey=session.object_key,
-            partNumber=upload.part_number,
-            uploadId=session.upload_id,
-            content=upload.source,
-            partSize=upload.content_length,
-            autoClose=False,
+        response = self._run(
+            lambda client: client.uploadPart(
+                bucketName=session.bucket,
+                objectKey=session.object_key,
+                partNumber=upload.part_number,
+                uploadId=session.upload_id,
+                content=upload.source,
+                partSize=upload.content_length,
+                autoClose=False,
+            )
         )
         _require_ok(response)
         etag = getattr(getattr(response, "body", None), "etag", None)
@@ -196,11 +208,13 @@ class BoundedMultipartStorage:
             ]
         )
         try:
-            response = self._client().completeMultipartUpload(
-                bucketName=session.bucket,
-                objectKey=session.object_key,
-                uploadId=session.upload_id,
-                completeMultipartUploadRequest=request,
+            response = self._run(
+                lambda client: client.completeMultipartUpload(
+                    bucketName=session.bucket,
+                    objectKey=session.object_key,
+                    uploadId=session.upload_id,
+                    completeMultipartUploadRequest=request,
+                )
             )
         except (ConnectionError, OSError, TimeoutError) as exc:
             if _looks_unknown(exc):
@@ -219,10 +233,12 @@ class BoundedMultipartStorage:
     def abort(self, session: MultipartSession) -> None:
         """Abort a provider upload and map provider details to one code."""
         try:
-            response = self._client().abortMultipartUpload(
-                bucketName=session.bucket,
-                objectKey=session.object_key,
-                uploadId=session.upload_id,
+            response = self._run(
+                lambda client: client.abortMultipartUpload(
+                    bucketName=session.bucket,
+                    objectKey=session.object_key,
+                    uploadId=session.upload_id,
+                )
             )
             _require_ok(response)
         except (ConnectionError, OSError, TimeoutError) as exc:
@@ -235,9 +251,11 @@ class BoundedMultipartStorage:
     ) -> CompletedObject | None:
         """Check object metadata after an ambiguous complete response."""
         try:
-            response = self._client().getObjectMetadata(
-                bucketName=session.bucket,
-                objectKey=session.object_key,
+            response = self._run(
+                lambda client: client.getObjectMetadata(
+                    bucketName=session.bucket,
+                    objectKey=session.object_key,
+                )
             )
         except (ConnectionError, OSError, TimeoutError):
             return None
@@ -262,13 +280,15 @@ class BoundedMultipartStorage:
     ) -> int:
         """Download one completed object without retaining its bytes."""
         safe_key = normalize_obs_object_key(object_key, bucket)
-        response = self._client().downloadFile(
-            bucketName=bucket,
-            objectKey=safe_key,
-            downloadFile=str(destination),
-            partSize=128 * 1024**2,
-            taskNum=1,
-            enableCheckpoint=False,
+        response = self._run(
+            lambda client: client.downloadFile(
+                bucketName=bucket,
+                objectKey=safe_key,
+                downloadFile=str(destination),
+                partSize=128 * 1024**2,
+                taskNum=1,
+                enableCheckpoint=False,
+            )
         )
         _require_ok(response)
         try:
@@ -281,14 +301,12 @@ class BoundedMultipartStorage:
             raise MultipartStorageError("upload_state_conflict")
         return actual_size
 
-    def _client(self) -> ObsClient:
-        """Build a Bot-credentialed OBS client at the storage boundary."""
-        access_key, secret_key = get_sensitive_config().obs_credentials()
-        return ObsClient(
-            access_key_id=access_key,
-            secret_access_key=secret_key,
-            server=self.obs_server,
+    def _run(self, operation: Callable[[Any], T]) -> T:
+        """Run one SDK operation on the owning event loop and OBS runtime."""
+        future: Future[T] = asyncio.run_coroutine_threadsafe(
+            self._runtime.run(ObsProfileName.PRIMARY, operation), self._loop
         )
+        return future.result()
 
 
 @dataclass

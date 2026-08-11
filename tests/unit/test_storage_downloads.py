@@ -51,8 +51,10 @@ async def test_download_obs_file_uses_relay_in_relay_mode(
     monkeypatch.setattr(
         downloads_module, "current_relay_client", lambda: relay
     )
-    no_sdk = Mock()
-    monkeypatch.setattr(downloads_module, "ObsClient", no_sdk)
+    no_sdk = AsyncMock(side_effect=AssertionError("SDK path was used"))
+    monkeypatch.setattr(
+        downloads_module, "_download_obs_file_from_sdk", no_sdk
+    )
 
     local_path = await download_obs_file(
         "/obs/phytomni/agent_data/uploads/u/r/up/notes.pdf", str(tmp_path)
@@ -62,5 +64,5 @@ async def test_download_obs_file_uses_relay_in_relay_mode(
     assert relay.get_obs_object_to_path.await_args.args[0].endswith(
         "notes.pdf"
     )
-    assert not no_sdk.called
+    assert not no_sdk.await_args_list
     assert _read_bytes(local_path) == b"PDF-BYTES"

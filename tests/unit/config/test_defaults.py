@@ -135,26 +135,16 @@ from mcp_server_phytomni.config.models.reference import (
     SpeciesDataIndex as LeafSpeciesDataIndex,
 )
 from mcp_server_phytomni.config.relay_mode import relay_mode_enabled
-from mcp_server_phytomni.config.required_env import REQUIRED_DEPLOYMENT_FIELDS
+from mcp_server_phytomni.config.required_env import (
+    REQUIRED_DEPLOYMENT_FIELDS,
+    REQUIRED_OUTBOUND_FIELDS,
+)
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.unit
 
 
-_CAPACITY_ENV_NAMES = (
-    "OUTBOUND_LLM_CONCURRENCY",
-    "OUTBOUND_RETRIEVAL_CONCURRENCY",
-    "OUTBOUND_RERANK_CONCURRENCY",
-    "OUTBOUND_NL2SQL_CONCURRENCY",
-    "OUTBOUND_ANALYSIS_CONTROL_CONCURRENCY",
-    "OUTBOUND_ANALYSIS_STATUS_CONCURRENCY",
-    "OUTBOUND_IAM_CONCURRENCY",
-    "OUTBOUND_SPA_FAQ_CONCURRENCY",
-    "OUTBOUND_BI_CONCURRENCY",
-    "OUTBOUND_OBS_CONCURRENCY",
-    "OUTBOUND_RELAY_CONTROL_CONCURRENCY",
-    "OUTBOUND_INTEROP_CONCURRENCY",
-)
+_CAPACITY_ENV_NAMES = REQUIRED_OUTBOUND_FIELDS[:-1]
 
 
 _AGENT_MODEL_MANIFEST = (

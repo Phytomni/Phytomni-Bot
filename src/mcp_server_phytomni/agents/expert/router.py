@@ -28,7 +28,6 @@ from openai import (
     APIError,
     APIStatusError,
     APITimeoutError,
-    AsyncOpenAI,
     BadRequestError,
 )
 
@@ -39,6 +38,7 @@ from ...runtime.locale import (
     current_effective_locale,
     locale_instruction,
 )
+from ...runtime.outbound import OutboundPoolName, current_outbound_runtime
 
 __all__ = [
     "ExpertCompletion",
@@ -256,25 +256,22 @@ async def complete_expert_routing(
     enforced by ``_selection_from_completion``, which coerces the final
     selection to ``forced_tool`` regardless of what the auto retry returned.
     """
+    runtime = current_outbound_runtime()
     sensitive = get_sensitive_config()
-    base_url = sensitive.BASE_URL or None
-    client = AsyncOpenAI(
-        api_key=sensitive.API_KEY.get_secret_value(),
-        base_url=base_url,
-    )
-    base_url_key = base_url or ""
+    base_url_key = str(getattr(runtime.openai, "base_url", ""))
     constrained = _is_constrained_choice(tool_choice)
     effective_choice = tool_choice
     if constrained and base_url_key in _TOOL_CHOICE_REQUIRED_UNSUPPORTED:
         effective_choice = "auto"
 
     async def _create(choice: Any) -> Any:
-        return await client.chat.completions.create(
-            model=sensitive.MODEL_ID,
-            messages=cast(Any, messages),
-            tools=cast(Any, tools),
-            tool_choice=choice,
-        )
+        async with runtime.pools.lease(OutboundPoolName.LLM):
+            return await runtime.openai.chat.completions.create(
+                model=sensitive.MODEL_ID,
+                messages=cast(Any, messages),
+                tools=cast(Any, tools),
+                tool_choice=choice,
+            )
 
     try:
         return await _create_with_retries(_create, effective_choice)

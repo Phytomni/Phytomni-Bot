@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import time
@@ -25,15 +26,19 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
-class _PoolState:
-    """Mutable accounting and optional AnyIO limiter for one pool."""
+class _PoolState:  # pylint: disable=too-many-instance-attributes
+    """Mutable accounting and limiter for one logical pool."""
 
     capacity: int
     limiter: anyio.CapacityLimiter | None
     in_use: int = 0
-    total_acquired: int = 0
-    total_waited: int = 0
+    max_in_use: int = 0
+    started: int = 0
+    completed: int = 0
+    failed: int = 0
+    cancelled: int = 0
     total_wait_seconds: float = 0.0
+    max_wait_seconds: float = 0.0
     waiters: deque[object] = field(default_factory=deque)
 
 
@@ -90,17 +95,31 @@ class OutboundPoolRegistry:
         """Acquire one named logical pool lease and release it reliably."""
         state = self._states[name]
         acquired = False
+        borrower: object | None = None
         try:
-            await self._acquire(name, state)
+            borrower = await self._acquire(name, state)
             acquired = True
+        except asyncio.CancelledError:
+            await self._record_cancelled(state)
+            raise
+        try:
             yield
+        except asyncio.CancelledError:
+            await self._record_outcome(state, "cancelled")
+            raise
+        except BaseException:
+            await self._record_outcome(state, "failed")
+            raise
+        else:
+            await self._record_outcome(state, "completed")
         finally:
             if acquired:
-                await self._release(state)
+                assert borrower is not None
+                await self._release(state, borrower)
 
     async def _acquire(
         self, name: OutboundPoolName, state: _PoolState
-    ) -> None:
+    ) -> object:
         """Wait in FIFO order, then reserve one logical capacity slot."""
         token = object()
         queued = False
@@ -126,22 +145,30 @@ class OutboundPoolRegistry:
                         state.waiters.popleft()
                         queued = False
                         state.in_use += 1
-                        try:
-                            if state.limiter is not None:
-                                await state.limiter.acquire()
-                        except BaseException:
-                            state.in_use -= 1
-                            self._condition.notify_all()
-                            raise
-                        state.total_acquired += 1
-                        if waited:
-                            waited_seconds = time.perf_counter() - started_at
-                            state.total_waited += 1
-                            state.total_wait_seconds += waited_seconds
-                            self._warn_if_waited(name, waited_seconds, state)
-                        return
+                        break
                     waited = True
                     await self._condition.wait()
+            try:
+                if state.limiter is not None:
+                    # Use an explicit borrower token: a stream can be closed
+                    # by a different task than the one that opened it.
+                    await state.limiter.acquire_on_behalf_of(token)
+            except BaseException:
+                with anyio.CancelScope(shield=True):
+                    async with self._condition:
+                        state.in_use -= 1
+                        self._condition.notify_all()
+                raise
+            if waited:
+                waited_seconds = time.perf_counter() - started_at
+                state.total_wait_seconds += waited_seconds
+                state.max_wait_seconds = max(
+                    state.max_wait_seconds, waited_seconds
+                )
+                self._warn_if_waited(name, waited_seconds, state)
+            state.started += 1
+            state.max_in_use = max(state.max_in_use, state.in_use)
+            return token
         except BaseException:
             if queued:
                 await self._remove_waiter(state, token)
@@ -173,27 +200,56 @@ class OutboundPoolRegistry:
             len(state.waiters),
         )
 
-    async def _release(self, state: _PoolState) -> None:
+    async def _release(self, state: _PoolState, borrower: object) -> None:
         """Return one lease even when the borrower is being cancelled."""
         with anyio.CancelScope(shield=True):
             async with self._condition:
                 if state.limiter is not None:
-                    state.limiter.release()
+                    state.limiter.release_on_behalf_of(borrower)
                 state.in_use -= 1
                 self._condition.notify_all()
+
+    async def _record_cancelled(self, state: _PoolState) -> None:
+        """Count cancellation of a waiter without acquiring capacity."""
+        with anyio.CancelScope(shield=True):
+            async with self._condition:
+                state.cancelled += 1
+
+    async def _record_outcome(
+        self,
+        state: _PoolState,
+        outcome: str,
+    ) -> None:
+        """Count one terminal outcome without exposing exception details."""
+        with anyio.CancelScope(shield=True):
+            async with self._condition:
+                if outcome == "completed":
+                    state.completed += 1
+                elif outcome == "failed":
+                    state.failed += 1
+                else:
+                    state.cancelled += 1
 
     def snapshot(self, name: OutboundPoolName) -> OutboundPoolSnapshot:
         """Return value-safe accounting without exposing request data."""
         state = self._states[name]
         return OutboundPoolSnapshot(
+            name=name,
             capacity=state.capacity,
             in_use=state.in_use,
             waiting=len(state.waiters),
-            total_acquired=state.total_acquired,
-            total_waited=state.total_waited,
+            max_in_use=state.max_in_use,
+            started=state.started,
+            completed=state.completed,
+            failed=state.failed,
+            cancelled=state.cancelled,
             total_wait_seconds=state.total_wait_seconds,
-            closing=self._closing,
+            max_wait_seconds=state.max_wait_seconds,
         )
+
+    def snapshots(self) -> tuple[OutboundPoolSnapshot, ...]:
+        """Return immutable snapshots in the fixed enum order."""
+        return tuple(self.snapshot(name) for name in OutboundPoolName)
 
     async def aclose(self) -> None:
         """Reject queued work and await active borrower releases."""

@@ -17,6 +17,7 @@ from collections.abc import Callable
 import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
+from tests.support.relay_request import relay_request_scope
 
 from mcp_server_phytomni.api.relay.routes import read_relay_body
 
@@ -44,14 +45,10 @@ def _streaming_request(
             }
         return {"type": "http.request", "body": b"", "more_body": False}
 
-    scope = {
-        "type": "http",
-        "method": "POST",
-        "path": "/v1/relay/llm/chat/completions",
-        "headers": [],
-        "query_string": b"",
-    }
-    return Request(scope, receive=receive), lambda: pulls["count"]
+    return (
+        Request(relay_request_scope(), receive=receive),
+        lambda: pulls["count"],
+    )
 
 
 async def test_read_relay_body_returns_body_within_budget() -> None:

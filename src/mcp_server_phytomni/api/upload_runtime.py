@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
 from collections.abc import AsyncIterator, Callable
@@ -19,8 +20,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from ..config.defaults import ApiConfig, ServerConfig
+from ..config.defaults import ApiConfig
 from ..runtime.background_submission import BACKGROUND_RUNTIME_ERRORS
+from ..runtime.outbound import current_outbound_runtime
 from ..runtime.resumable_uploads import (
     ResumableUploadRegistry,
     ResumableUploadRegistryConfig,
@@ -61,7 +63,9 @@ class UploadRuntime:
         """Build the upload service at the Bot storage boundary once."""
         if self.upload_service is None:
             config = self.config_factory()
-            server_config = ServerConfig()
+            outbound = current_outbound_runtime()
+            if outbound.obs is None:
+                raise RuntimeError("OBS runtime is unavailable")
             registry = ResumableUploadRegistry(
                 config.API_TASKS_DB_PATH,
                 ResumableUploadRegistryConfig(
@@ -80,7 +84,10 @@ class UploadRuntime:
             )
             self.upload_service = ResumableUploadService(
                 registry,
-                BoundedMultipartStorage(obs_server=server_config.OBS_SERVER),
+                BoundedMultipartStorage(
+                    runtime=outbound.obs,
+                    loop=asyncio.get_running_loop(),
+                ),
                 UploadServiceConfig(
                     bucket_name=config.API_UPLOAD_V2_BUCKET,
                     upload_origin=config.API_UPLOAD_V2_ORIGIN,

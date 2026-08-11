@@ -31,6 +31,7 @@ from .models import (
     MCPStreamableHttpTarget,
 )
 from .registry import InteropRegistry, InteropRegistryError
+from .runtime import InteropResourceRuntime, current_interop_runtime
 from .security import AsyncDNSResolver, resolve_host
 
 
@@ -191,6 +192,24 @@ def _load_official_client() -> type[Any]:
     return cast(type[Any], client_cls)
 
 
+def _load_official_tool_loader() -> Callable[..., Any]:
+    """Import the official tool loader only after interop is requested."""
+    try:
+        module = importlib.import_module("langchain_mcp_adapters.tools")
+        loader = getattr(module, "load_mcp_tools")
+    except (ImportError, AttributeError):
+        raise InteropMCPError(
+            "external MCP adapter dependency is unavailable",
+            code="adapter_unavailable",
+        ) from None
+    if not callable(loader):
+        raise InteropMCPError(
+            "external MCP adapter dependency is unavailable",
+            code="adapter_unavailable",
+        )
+    return cast(Callable[..., Any], loader)
+
+
 def _remote_name(tool_name: object, target_id: str) -> str | None:
     """Extract the original remote name from the official qualified name."""
     if not isinstance(tool_name, str):
@@ -254,6 +273,65 @@ def _temporary_tool(
     )
 
 
+class _LeasedMcpSession:
+    """Proxy one initialized session through the Interop logical lease."""
+
+    def __init__(
+        self, runtime: InteropResourceRuntime, target_id: str
+    ) -> None:
+        """Store only the process-owned runtime and canonical target id."""
+        self._runtime = runtime
+        self._target_id = target_id
+
+    async def list_tools(self, *args: Any, **kwargs: Any) -> Any:
+        """List tools while holding the Interop lease for the request."""
+        return await self._runtime.run_mcp(
+            self._target_id,
+            lambda session: session.list_tools(*args, **kwargs),
+        )
+
+    async def call_tool(self, *args: Any, **kwargs: Any) -> Any:
+        """Call one remote tool while holding the Interop lease."""
+        return await self._runtime.run_mcp(
+            self._target_id,
+            lambda session: session.call_tool(*args, **kwargs),
+        )
+
+
+async def _load_external_mcp_tools_runtime(
+    target: MCPStdioTarget | MCPStreamableHttpTarget,
+    *,
+    runtime: InteropResourceRuntime,
+) -> tuple[BaseTool, ...]:
+    """Load tools against the cached runtime-owned MCP session."""
+    try:
+        load_mcp_tools = _load_official_tool_loader()
+        leased_session = _LeasedMcpSession(runtime, target.id)
+        discovered = await load_mcp_tools(
+            leased_session,
+            server_name=target.id,
+            tool_name_prefix=True,
+            handle_tool_errors=False,
+        )
+    except Exception:
+        raise _target_error("discovery_failed", target.id) from None
+
+    allowed = frozenset(target.allowed_tools)
+    temporary: list[BaseTool] = []
+    for tool in discovered:
+        remote_name = _remote_name(getattr(tool, "name", None), target.id)
+        if remote_name is None or remote_name not in allowed:
+            continue
+        temporary.append(
+            _temporary_tool(
+                tool,
+                target_id=target.id,
+                remote_name=remote_name,
+            )
+        )
+    return tuple(temporary)
+
+
 async def load_external_mcp_tools(
     target_id: str,
     *,
@@ -273,6 +351,16 @@ async def load_external_mcp_tools(
     target = _resolve_target(target_id, registry)
     if isinstance(target, A2ATarget):
         raise _target_error("unsupported_transport", target.id)
+
+    if _client_cls is None:
+        runtime = current_interop_runtime()
+        if runtime is None:
+            raise _target_error("runtime_unavailable", target.id)
+        return await _load_external_mcp_tools_runtime(
+            target,
+            runtime=runtime,
+        )
+
     connection = build_mcp_connection(
         target,
         registry=registry,

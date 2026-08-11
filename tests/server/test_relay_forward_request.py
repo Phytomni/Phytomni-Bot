@@ -36,6 +36,7 @@ from mcp_server_phytomni.api.relay.forward import (
     RelayUpstream,
     forward_relay_request,
 )
+from mcp_server_phytomni.runtime.outbound import OutboundPoolName
 
 pytestmark = pytest.mark.server
 
@@ -77,11 +78,19 @@ def _upstream(
     inject: _Inject = _openai_inject,
 ) -> RelayUpstream:
     """Build a RelayUpstream with test defaults."""
+    pool = {
+        "llm": OutboundPoolName.LLM,
+        "coder": OutboundPoolName.LLM,
+        "embed": OutboundPoolName.LLM,
+        "retrieve": OutboundPoolName.RETRIEVAL,
+        "spa_faq": OutboundPoolName.SPA_FAQ,
+    }.get(service, OutboundPoolName.RELAY_CONTROL)
     return RelayUpstream(
         url=url,
         error_mode=error_mode,
         service=service,
         inject_headers=inject,
+        pool=pool,
     )
 
 

@@ -12,7 +12,7 @@ backend).
 """
 
 import json
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -117,77 +117,27 @@ def test_network_to_string_is_deterministic_for_identical_inputs():
     assert "NAC domain transcription factor" in first
 
 
-async def test_retrieve_uses_composite_cache(monkeypatch):
+async def test_retrieve_uses_composite_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+):
     """Verify retrieve memoizes the merged answer per user query.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to replace HTTP calls.
+        outbound_runtime: Recording process-owned outbound runtime.
 
     Returns:
         None after composite-cache hit/miss assertions pass.
     """
     knowledge_retrieval.clear_retrieval_caches()
-    calls = {"post": 0, "rerank": 0}
-
-    class FakeResponse:
-        """Minimal retrieve response stub."""
-
-        def raise_for_status(self):
-            """No-op successful status check.
-
-            Returns:
-                None to indicate success.
-            """
-            return None
-
-        def json(self):
-            """Return a minimal retrieval JSON payload.
-
-            Returns:
-                Retrieval response payload with one document.
-            """
-            return {
-                "doc_list": [
-                    {
-                        "chunk_id": "doc-1",
-                        "title": "Leaf",
-                        "content": "content",
-                    }
-                ]
-            }
-
-    class FakeClient:
-        """Minimal async HTTP client stub.
-
-        Attributes:
-            No instance attributes are required; calls are tracked externally.
-        """
-
-        def __init__(self, *args, **kwargs):
-            """Verify init  ."""
-            del args, kwargs
-
-        async def __aenter__(self):
-            """Verify aenter  ."""
-            return self
-
-        async def __aexit__(self, *args):
-            """Verify aexit  ."""
-            del args
-
-        async def post(self, *args, **kwargs):
-            """Return the fake retrieval response and count the call.
-
-            Args:
-                *args: Ignored request positional arguments.
-                **kwargs: Ignored request keyword arguments.
-
-            Returns:
-                Fake response containing retrieval documents.
-            """
-            del args, kwargs
-            calls["post"] += 1
-            return FakeResponse()
+    calls = {"rerank": 0}
+    outbound_runtime.transport.enqueue(
+        content=(
+            b'{"doc_list":[{"chunk_id":"doc-1","title":"Leaf",'
+            b'"content":"content"}]}'
+        )
+    )
 
     async def fake_rerank(**kwargs):
         """Return a deterministic rerank result.
@@ -202,11 +152,6 @@ async def test_retrieve_uses_composite_cache(monkeypatch):
         calls["rerank"] += 1
         return [{"chunk_id": "doc-1", "score": 0.9}]
 
-    fake_async_client = FakeClient
-
-    monkeypatch.setattr(
-        knowledge_retrieval, "get_async_client", fake_async_client
-    )
     monkeypatch.setattr(knowledge_retrieval, "rerank", fake_rerank)
 
     first = await knowledge_retrieval.retrieve(
@@ -247,60 +192,31 @@ async def test_retrieve_uses_composite_cache(monkeypatch):
     # The composite _retrieve_cached layer memoizes the merged answer,
     # so the second retrieve(...) returns immediately without touching
     # either the retrieve HTTP or the rerank stub.
-    assert calls == {"post": 1, "rerank": 1}
+    assert len(outbound_runtime.transport.requests) == 1
+    assert calls == {"rerank": 1}
 
 
-async def test_multi_retrieve_dedupes_via_primitive_cache(monkeypatch):
+async def test_multi_retrieve_dedupes_via_primitive_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+):
     """Verify multi_retrieve hits one retrieve HTTP per (repo, query) tuple.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to replace HTTP calls.
+        outbound_runtime: Recording process-owned outbound runtime.
 
     Returns:
         None after primitive-cache hit/miss assertions pass.
     """
     knowledge_retrieval.clear_retrieval_caches()
-    calls = {"post": 0, "rerank": 0}
-
-    class FakeResponse:
-        """Minimal retrieve response stub."""
-
-        def raise_for_status(self):
-            """No-op successful status check."""
-            return None
-
-        def json(self):
-            """Return a minimal retrieval JSON payload."""
-            return {
-                "doc_list": [
-                    {
-                        "chunk_id": "doc-1",
-                        "title": "Leaf",
-                        "content": "content",
-                    }
-                ]
-            }
-
-    class FakeClient:
-        """Minimal async HTTP client stub for retrieval HTTPs."""
-
-        def __init__(self, *args, **kwargs):
-            """Ignore httpx AsyncClient constructor args."""
-            del args, kwargs
-
-        async def __aenter__(self):
-            """Return self as the async context value."""
-            return self
-
-        async def __aexit__(self, *args):
-            """Discard async-exit arguments."""
-            del args
-
-        async def post(self, *args, **kwargs):
-            """Count POST attempts and return a fake retrieval response."""
-            del args, kwargs
-            calls["post"] += 1
-            return FakeResponse()
+    calls = {"rerank": 0}
+    response = (
+        b'{"doc_list":[{"chunk_id":"doc-1","title":"Leaf",'
+        b'"content":"content"}]}'
+    )
+    outbound_runtime.transport.enqueue(content=response)
+    outbound_runtime.transport.enqueue(content=response)
 
     async def fake_rerank(**kwargs):
         """Return one ranked doc and count the call."""
@@ -308,11 +224,6 @@ async def test_multi_retrieve_dedupes_via_primitive_cache(monkeypatch):
         calls["rerank"] += 1
         return [{"chunk_id": "doc-1", "score": 0.9}]
 
-    fake_async_client = FakeClient
-
-    monkeypatch.setattr(
-        knowledge_retrieval, "get_async_client", fake_async_client
-    )
     monkeypatch.setattr(knowledge_retrieval, "rerank", fake_rerank)
 
     first = await knowledge_retrieval.multi_retrieve(
@@ -347,7 +258,8 @@ async def test_multi_retrieve_dedupes_via_primitive_cache(monkeypatch):
     # the (user_query, repo_items, top_n) tuple. First call: two repos
     # each hit the retrieve HTTP once and rerank once. Second call hits
     # the composite cache, so neither retrieve nor rerank is reached.
-    assert calls == {"post": 2, "rerank": 2}
+    assert len(outbound_runtime.transport.requests) == 2
+    assert calls == {"rerank": 2}
 
 
 async def test_gene_retrieve_is_idempotent_without_composite_cache():

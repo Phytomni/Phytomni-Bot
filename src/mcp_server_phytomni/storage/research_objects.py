@@ -9,10 +9,10 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
+from ..runtime.outbound import ObsProfileName
 from .obs_relay_ops import (
     ObsObjectMetadataError,
     ObsObjectNotFoundError,
@@ -55,6 +55,20 @@ RESEARCH_OBJECT_SNAPSHOT_FIELD_NAMES = (
 RESEARCH_OBJECT_SNAPSHOT_FIELDS = frozenset(
     RESEARCH_OBJECT_SNAPSHOT_FIELD_NAMES
 )
+
+
+class _ObsRuntime(Protocol):
+    """Minimal process-owned OBS runtime contract used by this port."""
+
+    async def run(
+        self,
+        profile: ObsProfileName,
+        operation: Any,
+    ) -> Any:
+        """Run one synchronous OBS operation under the runtime lease."""
+
+    async def aclose(self) -> None:
+        """Close the process-owned runtime after outstanding work drains."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,16 +236,81 @@ class _AuthorityRecord:
 class DirectResearchObjectMetadataPort:
     """Resolve private authorities through exact-key OBS metadata HEADs."""
 
-    def __init__(self, bucket: str, client_factory: Callable[[], Any]) -> None:
+    def __init__(self, bucket: str, obs_runtime: _ObsRuntime) -> None:
         self._bucket = bucket
-        self._client_factory = client_factory
+        self._obs_runtime = obs_runtime
         self._authorities: dict[str, _AuthorityRecord] = {}
 
     async def resolve(
         self, request: ResearchObjectResolveRequest
     ) -> tuple[ResearchObjectAuthority, ...]:
         """Resolve request objects with one client and no object-body I/O."""
-        client = self._client()
+        try:
+            authorities, records = await self._obs_runtime.run(
+                ObsProfileName.PRIMARY,
+                lambda client: self._resolve_with_client(request, client),
+            )
+        except ResearchObjectMetadataError:
+            raise
+        except Exception:
+            raise ResearchObjectMetadataError() from None
+        self._authorities.update(records)
+        return tuple(authorities)
+
+    async def verify(
+        self, request: ResearchObjectVerifyRequest
+    ) -> tuple[ResearchObjectAuthority, ...]:
+        """Re-HEAD each private authority and reject changed snapshots."""
+        records = tuple(
+            self._matching_record(
+                authority,
+                request.parent_run_id,
+                request.execution_fingerprint,
+            )
+            for authority in request.authorities
+        )
+        try:
+            current = await self._obs_runtime.run(
+                ObsProfileName.PRIMARY,
+                lambda client: tuple(
+                    _read_snapshot(
+                        record.authority.dataset_id,
+                        record.object_key,
+                        self._bucket,
+                        client,
+                    )
+                    for record in records
+                ),
+            )
+        except ResearchObjectMetadataError:
+            raise
+        except Exception:
+            raise ResearchObjectMetadataError() from None
+        if any(
+            snapshot != record.authority.snapshot
+            for snapshot, record in zip(current, records)
+        ):
+            raise ResearchObjectMetadataError()
+        return tuple(record.authority for record in records)
+
+    async def revoke(self, request: ResearchObjectRevokeRequest) -> None:
+        """Drop matching in-process authority state without object deletion."""
+        for authority_id in request.authority_ids:
+            record = self._authorities.get(authority_id)
+            if record is not None and _matches_scope(
+                record, request.parent_run_id, request.execution_fingerprint
+            ):
+                self._authorities.pop(authority_id, None)
+
+    def _resolve_with_client(
+        self,
+        request: ResearchObjectResolveRequest,
+        client: Any,
+    ) -> tuple[
+        tuple[ResearchObjectAuthority, ...],
+        dict[str, _AuthorityRecord],
+    ]:
+        """Resolve all exact-key snapshots through one lent SDK client."""
         authorities: list[ResearchObjectAuthority] = []
         records: dict[str, _AuthorityRecord] = {}
         for candidate in request.objects:
@@ -253,47 +332,7 @@ class DirectResearchObjectMetadataPort:
                 authority=authority,
             )
             authorities.append(authority)
-        self._authorities.update(records)
-        return tuple(authorities)
-
-    async def verify(
-        self, request: ResearchObjectVerifyRequest
-    ) -> tuple[ResearchObjectAuthority, ...]:
-        """Re-HEAD each private authority and reject changed snapshots."""
-        client = self._client()
-        verified: list[ResearchObjectAuthority] = []
-        for authority in request.authorities:
-            record = self._matching_record(
-                authority,
-                request.parent_run_id,
-                request.execution_fingerprint,
-            )
-            current = _read_snapshot(
-                authority.dataset_id,
-                record.object_key,
-                self._bucket,
-                client,
-            )
-            if current != authority.snapshot:
-                raise ResearchObjectMetadataError()
-            verified.append(record.authority)
-        return tuple(verified)
-
-    async def revoke(self, request: ResearchObjectRevokeRequest) -> None:
-        """Drop matching in-process authority state without object deletion."""
-        for authority_id in request.authority_ids:
-            record = self._authorities.get(authority_id)
-            if record is not None and _matches_scope(
-                record, request.parent_run_id, request.execution_fingerprint
-            ):
-                self._authorities.pop(authority_id, None)
-
-    def _client(self) -> Any:
-        """Build a client while suppressing factory failure details."""
-        try:
-            return self._client_factory()
-        except Exception:
-            raise ResearchObjectMetadataError() from None
+        return tuple(authorities), records
 
     def _matching_record(
         self,

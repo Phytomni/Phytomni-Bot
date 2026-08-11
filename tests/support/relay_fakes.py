@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import httpx
 import pytest
@@ -41,18 +42,65 @@ def patch_mock_transport(
     module: ModuleType,
     handler: Callable[[httpx.Request], httpx.Response],
 ) -> None:
-    """Patch a relay module's shared client with a MockTransport client."""
+    """Patch a relay module with a no-network outbound runtime fake."""
 
-    @asynccontextmanager
-    async def _factory(
-        **_kwargs: object,
-    ) -> AsyncIterator[httpx.AsyncClient]:
-        async with httpx.AsyncClient(
-            transport=httpx.MockTransport(handler)
-        ) as client:
-            yield client
+    class _RequestClient:
+        """Use a fresh MockTransport client for each isolated attempt."""
 
-    monkeypatch.setattr(module, "get_async_client", _factory)
+        async def request(
+            self, method: str, url: str, **kwargs: Any
+        ) -> httpx.Response:
+            """Run one buffered mocked request."""
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(handler)
+            ) as client:
+                return await client.request(method, url, **kwargs)
+
+        @asynccontextmanager
+        async def stream(
+            self, method: str, url: str, **kwargs: Any
+        ) -> AsyncIterator[httpx.Response]:
+            """Run one streamed mocked request."""
+            async with (
+                httpx.AsyncClient(
+                    transport=httpx.MockTransport(handler)
+                ) as client,
+                client.stream(method, url, **kwargs) as response,
+            ):
+                yield response
+
+    class _HttpRuntime:
+        """Return one isolated fake for either relay HTTP profile."""
+
+        def __init__(self) -> None:
+            self.client = _RequestClient()
+
+        def for_pool(
+            self, _pool: object, *, profile: object = None
+        ) -> _RequestClient:
+            """Return the selected fixed-profile fake."""
+            del profile
+            return self.client
+
+        @asynccontextmanager
+        async def stream(
+            self,
+            _pool: object,
+            method: str,
+            url: str,
+            *,
+            profile: object = None,
+            **kwargs: Any,
+        ) -> AsyncIterator[httpx.Response]:
+            """Return one streamed response through the selected profile."""
+            del profile
+            async with self.client.stream(method, url, **kwargs) as response:
+                yield response
+
+    runtime = type("RelayRuntime", (), {"http": _HttpRuntime()})()
+    monkeypatch.setattr(
+        module, "current_outbound_runtime", lambda: runtime, raising=False
+    )
 
 
 def relay_key_factory(
@@ -94,7 +142,12 @@ def make_relay_client_fixture(
     @pytest.fixture(name="client")
     async def _client(
         monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> AsyncIterator[httpx.AsyncClient]:
+        monkeypatch.setenv(
+            "PHYTOMNI_RELAY_AUDIT_DB_PATH",
+            str(tmp_path / "relay-audit.sqlite"),
+        )
         async with open_asgi_client(
             monkeypatch,
             app_factory(),

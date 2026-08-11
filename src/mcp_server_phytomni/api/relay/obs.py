@@ -16,21 +16,24 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import queue
 import re
 import sqlite3
+import threading
 import time
 from collections.abc import AsyncIterator, Callable, Iterator
-from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.requests import Request
 
 from ...config.defaults import ApiConfig, ServerConfig
-from ...runtime.async_utils import wait_for_thread_future
+from ...runtime.outbound import ObsProfileName, current_outbound_runtime
 from ...runtime.request_context import current_request_id
 from ...storage import obs_relay_ops
+from ...storage.obs_relay_ops import ObsAccessOptions
 from ...storage.obs_storage import (
     ObsPathError,
     normalize_obs_object_key,
@@ -45,10 +48,26 @@ __all__ = ["add_obs_routes"]
 
 _OBS_SERVICE = "obs"
 _LOGGER = logging.getLogger(__name__)
-_OBS_OP_EXECUTOR = ThreadPoolExecutor(
-    max_workers=40,
-    thread_name_prefix="phytomni-obs",
+_OBS_OPERATION_ERRORS = (
+    AttributeError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _ObsChunkRequest:
+    """Inputs for one blocking OBS response-stream worker."""
+
+    client: Any
+    events: queue.Queue[object]
+    stop: threading.Event
+    bucket: str
+    object_key: str
+    source_close: list[Callable[[], None] | None]
+
 
 # A content-addressed shared path must carry a FULL sha256 fingerprint
 # segment (64 lowercase hex) plus something after it. Anchoring on the
@@ -86,27 +105,23 @@ def _begin() -> tuple[float, ApiConfig, ServerConfig]:
 async def _run_obs_op(
     op: Callable[..., Any], *args: Any, **kwargs: Any
 ) -> Any:
-    """Run a blocking OBS op off-thread, mapping a path escape to 400."""
-    future = _OBS_OP_EXECUTOR.submit(op, *args, **kwargs)
+    """Run one operator OBS operation under the finite OBS runtime."""
+    outbound = current_outbound_runtime()
+    if outbound.obs is None:
+        raise RuntimeError("operator OBS runtime is unavailable")
     try:
-        return await _wait_obs_future(future)
-    except asyncio.CancelledError:
-        future.cancel()
-        raise
+        return await outbound.obs.run(
+            ObsProfileName.PRIMARY,
+            lambda client: op(
+                *args,
+                access=ObsAccessOptions(client=client),
+                **kwargs,
+            ),
+        )
     except ObsPathError as exc:
         raise HTTPException(
             status_code=400, detail="obs path outside bucket"
         ) from exc
-
-
-async def _wait_obs_future(future: Future[Any]) -> Any:
-    """Await one worker future without blocking the event loop."""
-    return await wait_for_thread_future(future)
-
-
-def _next_stream_chunk(iterator: Iterator[bytes]) -> bytes | None:
-    """Return the next blocking OBS chunk, or ``None`` at EOF."""
-    return next(iterator, None)
 
 
 def _close_stream_iterator(iterator: Iterator[bytes]) -> None:
@@ -251,7 +266,6 @@ async def _put_object(
         server.BUCKET_NAME,
         safe_key,
         body,
-        obs_server=server.OBS_SERVER,
     )
     _record_obs_audit(
         principal,
@@ -277,7 +291,6 @@ async def _get_object(
         obs_relay_ops.object_size,
         server.BUCKET_NAME,
         safe_key,
-        obs_server=server.OBS_SERVER,
     )
     if size > config.RELAY_RESPONSE_MAX_BYTES:
         raise HTTPException(status_code=413, detail="obs object too large")
@@ -290,36 +303,54 @@ async def _get_object(
     )
 
     async def _stream() -> AsyncIterator[bytes]:
-        iterator = await _run_obs_op(
-            obs_relay_ops.iter_object_chunks,
-            server.BUCKET_NAME,
-            safe_key,
-            obs_server=server.OBS_SERVER,
-        )
-        next_future: Future[Any] | None = None
+        outbound = current_outbound_runtime()
+        if outbound.obs is None:
+            raise RuntimeError("operator OBS runtime is unavailable")
+        obs_runtime = outbound.obs
+        events: queue.Queue[object] = queue.Queue(maxsize=2)
+        stop = threading.Event()
+        source_close: list[Callable[[], None] | None] = [None]
+
+        async def _produce() -> None:
+            """Hold the SDK lease while the source iterator is consumed."""
+            try:
+                await obs_runtime.run(
+                    ObsProfileName.PRIMARY,
+                    lambda client: _produce_obs_chunks(
+                        _ObsChunkRequest(
+                            client=client,
+                            events=events,
+                            stop=stop,
+                            bucket=server.BUCKET_NAME,
+                            object_key=safe_key,
+                            source_close=source_close,
+                        )
+                    ),
+                )
+            except _OBS_OPERATION_ERRORS as exc:
+                await _put_stream_event_async(events, ("error", exc), stop)
+                await _put_stream_event_async(events, _STREAM_END, stop)
+
+        producer = asyncio.create_task(_produce())
         try:
             while True:
-                next_future = _OBS_OP_EXECUTOR.submit(
-                    _next_stream_chunk, iterator
-                )
-                chunk = await _wait_obs_future(next_future)
-                next_future = None
-                if chunk is None:
+                try:
+                    event = events.get_nowait()
+                except queue.Empty:
+                    await asyncio.sleep(0.01)
+                    continue
+                if event is _STREAM_END:
                     return
-                yield chunk
+                kind, value = cast(tuple[str, Any], event)
+                if kind == "error":
+                    raise value
+                yield value
         finally:
-            if (
-                next_future is not None
-                and not next_future.done()
-                and not next_future.cancel()
-            ):
-
-                def _close_after_chunk(_done: Future[Any]) -> None:
-                    _OBS_OP_EXECUTOR.submit(_close_stream_iterator, iterator)
-
-                next_future.add_done_callback(_close_after_chunk)
-            else:
-                _OBS_OP_EXECUTOR.submit(_close_stream_iterator, iterator)
+            stop.set()
+            close_source = source_close[0]
+            if close_source is not None:
+                close_source()
+            await _wait_for_producer(producer)
 
     return StreamingResponse(
         _stream(),
@@ -341,7 +372,6 @@ async def _list_objects(
         obs_relay_ops.list_object_keys,
         server.BUCKET_NAME,
         prefix,
-        obs_server=server.OBS_SERVER,
     )
     _record_obs_audit(
         principal,
@@ -365,7 +395,6 @@ async def _put_dir(
         obs_relay_ops.put_dir_marker,
         server.BUCKET_NAME,
         safe_key,
-        obs_server=server.OBS_SERVER,
     )
     _record_obs_audit(
         principal,
@@ -389,3 +418,75 @@ def add_obs_routes(router: APIRouter) -> None:
     router.add_api_route("/obs/object", _get_object, methods=["GET"])
     router.add_api_route("/obs/list", _list_objects, methods=["GET"])
     router.add_api_route("/obs/dir", _put_dir, methods=["PUT"])
+
+
+_STREAM_END = object()
+
+
+def _put_stream_event(
+    events: queue.Queue[object], event: object, stop: threading.Event
+) -> None:
+    """Put one producer event without wedging cancellation on a full queue."""
+    while not stop.is_set():
+        try:
+            events.put(event, timeout=0.05)
+            return
+        except queue.Full:
+            continue
+
+
+def _produce_obs_chunks(
+    request: _ObsChunkRequest,
+) -> None:
+    """Read and publish SDK chunks while the caller owns the OBS lease."""
+    iterator: Iterator[bytes] | None = None
+    try:
+        iterator = obs_relay_ops.iter_object_chunks(
+            request.bucket,
+            request.object_key,
+            access=ObsAccessOptions(client=request.client),
+            stream=obs_relay_ops.ObsStreamOptions(
+                on_source_open=lambda close: request.source_close.__setitem__(
+                    0, close
+                ),
+                stop=request.stop,
+            ),
+        )
+        for chunk in iterator:
+            if request.stop.is_set():
+                return
+            _put_stream_event(request.events, ("chunk", chunk), request.stop)
+    except _OBS_OPERATION_ERRORS as exc:
+        _put_stream_event(request.events, ("error", exc), request.stop)
+    finally:
+        try:
+            if iterator is not None:
+                _close_stream_iterator(iterator)
+        finally:
+            _put_stream_event(request.events, _STREAM_END, request.stop)
+
+
+async def _put_stream_event_async(
+    events: queue.Queue[object], event: object, stop: threading.Event
+) -> None:
+    """Put one producer event without blocking the event loop."""
+    while not stop.is_set():
+        try:
+            events.put_nowait(event)
+            return
+        except queue.Full:
+            await asyncio.sleep(0.01)
+
+
+async def _wait_for_producer(producer: asyncio.Task[None]) -> None:
+    """Drain a stream producer even when the downstream task is cancelled."""
+    cancelled = False
+    while not producer.done():
+        try:
+            await asyncio.shield(producer)
+        except asyncio.CancelledError:
+            cancelled = True
+    if cancelled:
+        raise asyncio.CancelledError
+    if not producer.cancelled():
+        producer.result()

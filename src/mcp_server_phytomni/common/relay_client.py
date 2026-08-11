@@ -9,7 +9,7 @@ Functions: build_relay_client.
 
 Lets a relay-mode child Bot reach the operator's upstream relay API:
 builds ``/v1/relay/<path>`` URLs, attaches the bearer key (header only,
-never logged), and reuses the shared retry helpers + get_async_client.
+never logged), and binds each attempt to its final service pool.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from ..api.research_capabilities import (
 )
 from ..config.defaults import ServerConfig
 from ..config.settings import SensitiveConfig, get_sensitive_config
+from ..runtime.outbound import OutboundPoolName, current_outbound_runtime
 from ..storage.research_objects import (
     RESEARCH_OBJECT_SNAPSHOT_FIELDS,
     ResearchObjectAuthority,
@@ -47,7 +48,6 @@ from .http import (
     post_json_with_retries,
     request_response_with_retries,
 )
-from .httpx_client import get_async_client
 
 __all__ = [
     "RelayClient",
@@ -60,6 +60,38 @@ __all__ = [
 _RELAY_PREFIX = "v1/relay"
 _MISSING = object()
 _RESEARCH_PROTOCOL = "research_object_grant_v1"
+
+_RELAY_SERVICE_POOLS = {
+    "bi": OutboundPoolName.BI,
+    "coder": OutboundPoolName.LLM,
+    "database": OutboundPoolName.NL2SQL,
+    "embed": OutboundPoolName.LLM,
+    "llm": OutboundPoolName.LLM,
+    "obs": OutboundPoolName.OBS,
+    "rerank": OutboundPoolName.RERANK,
+    "retrieve": OutboundPoolName.RETRIEVAL,
+    "spa-faq": OutboundPoolName.SPA_FAQ,
+}
+
+
+def _relay_pool(relay_path: str, method: str) -> OutboundPoolName:
+    """Resolve one fixed relay route to its final logical service pool."""
+    normalized = relay_path.lstrip("/")
+    service = normalized.partition("/")[0]
+    if service in {"capabilities", "research-input"}:
+        return OutboundPoolName.RELAY_CONTROL
+    if service == "analysis":
+        return (
+            OutboundPoolName.ANALYSIS_STATUS
+            if method.upper() == "GET"
+            else OutboundPoolName.ANALYSIS_CONTROL
+        )
+    try:
+        return _RELAY_SERVICE_POOLS[service]
+    except KeyError as exc:
+        raise ValueError(f"unsupported relay service: {service}") from exc
+
+
 _RESEARCH_SCHEMA_VERSION = 1
 _MAX_RESEARCH_OBJECTS = 256
 _MAX_RELAY_RESPONSE_TEXT_LENGTH = 512
@@ -172,6 +204,7 @@ class RelayClient:
         request: JsonPostRequest,
         message: str,
         *,
+        pool: OutboundPoolName,
         request_timeout: float | None = None,
     ) -> Any:
         """Run one relay request through the shared retry/JSON helper.
@@ -185,12 +218,12 @@ class RelayClient:
         effective_timeout = (
             self.timeout if request_timeout is None else request_timeout
         )
-        async with get_async_client(timeout=effective_timeout) as client:
-            return await post_json_with_retries(
-                client,
-                request,
-                self._retry(message, timeout=effective_timeout),
-            )
+        client = current_outbound_runtime().http.for_pool(pool)
+        return await post_json_with_retries(
+            client,
+            request,
+            self._retry(message, timeout=effective_timeout),
+        )
 
     async def post_json(
         self,
@@ -214,7 +247,10 @@ class RelayClient:
             json_body=json_body,
         )
         return await self._request_json(
-            request, message, request_timeout=request_timeout
+            request,
+            message,
+            pool=_relay_pool(relay_path, "POST"),
+            request_timeout=request_timeout,
         )
 
     async def post_data(
@@ -232,7 +268,11 @@ class RelayClient:
             headers=self._auth_headers(),
             data=data,
         )
-        return await self._request_json(request, message)
+        return await self._request_json(
+            request,
+            message,
+            pool=_relay_pool(relay_path, "POST"),
+        )
 
     async def get_json(
         self,
@@ -252,7 +292,10 @@ class RelayClient:
             headers=self._auth_headers(),
         )
         return await self._request_json(
-            request, message, request_timeout=request_timeout
+            request,
+            message,
+            pool=_relay_pool(relay_path, "GET"),
+            request_timeout=request_timeout,
         )
 
     async def get_research_capabilities(self) -> ResearchRelayCapabilities:
@@ -395,7 +438,11 @@ class RelayClient:
             headers=self._auth_headers(),
             data=content,
         )
-        return await self._request_json(request, message)
+        return await self._request_json(
+            request,
+            message,
+            pool=OutboundPoolName.OBS,
+        )
 
     async def _request_bytes(
         self, request: JsonPostRequest, message: str
@@ -406,11 +453,11 @@ class RelayClient:
         bytes rather than JSON; the shared retry helper still maps a
         non-retriable status / exhaustion to a key-free ``McpError``.
         """
-        async with get_async_client(timeout=self.timeout) as client:
-            response = await request_response_with_retries(
-                client, request, self._retry(message)
-            )
-            return response.content
+        client = current_outbound_runtime().http.for_pool(OutboundPoolName.OBS)
+        response = await request_response_with_retries(
+            client, request, self._retry(message)
+        )
+        return response.content
 
     async def get_obs_object(self, obs_path: str, *, message: str) -> bytes:
         """GET one object's raw bytes from the OBS download relay.
@@ -436,15 +483,14 @@ class RelayClient:
         a key-free ``McpError`` on a non-2xx status before any file write.
         """
         url = self.relay_url("obs/object", {"path": obs_path})
-        async with (
-            get_async_client(timeout=self.timeout) as client,
-            client.stream(
-                "GET",
-                url,
-                headers=self._auth_headers(),
-                timeout=self.timeout,
-            ) as response,
-        ):
+        http_runtime = current_outbound_runtime().http
+        async with http_runtime.stream(
+            OutboundPoolName.OBS,
+            "GET",
+            url,
+            headers=self._auth_headers(),
+            timeout=self.timeout,
+        ) as response:
             if response.status_code >= 400:
                 raise McpError(ErrorData(code=INTERNAL_ERROR, message=message))
             with destination.open("wb") as sink:
@@ -476,7 +522,11 @@ class RelayClient:
             method="PUT",
             headers=self._auth_headers(),
         )
-        return await self._request_json(request, message)
+        return await self._request_json(
+            request,
+            message,
+            pool=OutboundPoolName.OBS,
+        )
 
 
 def _decode_research_capabilities(

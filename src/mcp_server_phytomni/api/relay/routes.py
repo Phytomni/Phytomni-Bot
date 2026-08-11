@@ -30,6 +30,7 @@ from ...auth.iam import get_token
 from ...common.relay_client import is_opaque_relay_text
 from ...config.defaults import ApiConfig, DeepGenomeConfig
 from ...config.settings import get_sensitive_config
+from ...runtime.outbound import OutboundPoolName
 from ...runtime.request_context import current_request_id
 from ..auth import ApiPrincipal, relay_scope_satisfied
 from .audit import RelayAuditRecord, get_audit_store
@@ -80,6 +81,13 @@ _PLATFORM_RELAYS = (
     ("database", "nl2sql", "DATABASE_URL", "iam", None),
     ("analysis", "tasks", "ANALYSIS_URL", "iam", "ANALYSIS_REGION"),
 )
+
+_OPERATOR_RELAY_POOLS = {
+    "analysis": OutboundPoolName.ANALYSIS_CONTROL,
+    "database": OutboundPoolName.NL2SQL,
+    "rerank": OutboundPoolName.RERANK,
+    "retrieve": OutboundPoolName.RETRIEVAL,
+}
 
 _PRIVATE_RESEARCH_KEYS = frozenset(
     ("research_grant_sidecar", "research_input_grants", "research_grants")
@@ -159,6 +167,7 @@ def _openai_relay_handler(
             error_mode=RelayErrorMode.TRANSPARENT,
             service=name,
             inject_headers=_inject,
+            pool=OutboundPoolName.LLM,
         )
         return await forward_relay_request(
             request=request,
@@ -235,6 +244,7 @@ async def _forward_platform_body(
         error_mode=RelayErrorMode.ENVELOPE,
         service=spec.name,
         inject_headers=_build_platform_inject(spec.inject_kind, region),
+        pool=_OPERATOR_RELAY_POOLS[spec.name],
     )
     return await forward_relay_request(
         request=request,
@@ -488,6 +498,11 @@ def _analysis_lifecycle_handler(
             inject_headers=_build_platform_inject(
                 "iam", platform.ANALYSIS_REGION
             ),
+            pool=(
+                OutboundPoolName.ANALYSIS_CONTROL
+                if operation == "analysis_terminate"
+                else OutboundPoolName.ANALYSIS_STATUS
+            ),
             operation=operation,
         )
         return await forward_relay_request(
@@ -532,6 +547,7 @@ def _spa_faq_handler() -> Callable[..., Awaitable[Response]]:
             error_mode=RelayErrorMode.ENVELOPE,
             service="spa_faq",
             inject_headers=_build_platform_inject("iam", None),
+            pool=OutboundPoolName.SPA_FAQ,
             trust_env=False,
         )
         return await forward_relay_request(

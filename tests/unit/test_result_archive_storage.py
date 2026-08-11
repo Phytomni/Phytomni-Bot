@@ -63,7 +63,7 @@ def test_persist_accepts_identical_content_and_load_revalidates(
     )
 
     key = storage.persist_result_archive_inventory(
-        inventory, bucket="phytomni", obs_server="https://obs.example"
+        inventory, bucket="phytomni", client=object()
     )
     assert key.endswith(
         f"delivery/{inventory.digest.removeprefix('sha256:')}/"
@@ -71,7 +71,7 @@ def test_persist_accepts_identical_content_and_load_revalidates(
     )
     assert (
         storage.persist_result_archive_inventory(
-            inventory, bucket="phytomni", obs_server="https://obs.example"
+            inventory, bucket="phytomni", client=object()
         )
         == key
     )
@@ -80,7 +80,7 @@ def test_persist_accepts_identical_content_and_load_revalidates(
             inventory.run_root,
             inventory.digest,
             bucket="phytomni",
-            obs_server="https://obs.example",
+            client=object(),
         )
         == inventory
     )
@@ -96,7 +96,7 @@ def test_persist_rejects_different_existing_content(
     )
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
         storage.persist_result_archive_inventory(
-            inventory, bucket="phytomni", obs_server="https://obs.example"
+            inventory, bucket="phytomni", client=object()
         )
 
 
@@ -123,7 +123,7 @@ def test_persist_fails_closed_when_inventory_read_is_not_not_found(
         storage.persist_result_archive_inventory(
             inventory,
             bucket="phytomni",
-            obs_server="https://obs.example",
+            client=object(),
         )
 
     assert exc_info.value.retryable is True
@@ -160,7 +160,7 @@ def test_persist_reloads_after_conditional_create_race(
     assert storage.persist_result_archive_inventory(
         inventory,
         bucket="phytomni",
-        obs_server="https://obs.example",
+        client=object(),
     ).endswith(".phytomni-result-inventory.json")
     assert calls == 2
 
@@ -195,5 +195,5 @@ def test_load_rejects_tampered_digest(
             inventory.run_root,
             inventory.digest,
             bucket="phytomni",
-            obs_server="https://obs.example",
+            client=object(),
         )

@@ -12,14 +12,13 @@ bearer-auth header injection, JSON POST and GET response handling, the
 
 from __future__ import annotations
 
-import contextlib
-from types import SimpleNamespace
+import json
 from typing import Any, cast
 
-import httpx
 import pytest
 from mcp.shared.exceptions import McpError
 from pydantic import SecretStr
+from tests.support.outbound_fakes import ControlledByteStream
 from tests.support.research_fakes import research_relay_snapshot_payload
 
 from mcp_server_phytomni.common import relay_client as rc
@@ -55,86 +54,6 @@ def _client(api_key: str = "relay-secret-value") -> rc.RelayClient:
     )
 
 
-class _CapturingClient:
-    """Async-context client stub recording one POST/GET and replaying a
-    canned response.
-
-    The real ``httpx.AsyncClient.request`` is blocked offline, so the
-    relay client is exercised against this stub (yielded in place of
-    ``get_async_client``). It records the URL / headers / body the
-    shared retry helper sends so tests can assert the relay contract.
-    """
-
-    def __init__(self, response: httpx.Response) -> None:
-        self.response = response
-        self.captured: dict[str, Any] = {}
-
-    async def __aenter__(self) -> _CapturingClient:
-        return self
-
-    async def __aexit__(self, *_args: Any) -> None:
-        return None
-
-    async def post(self, url: str, **kwargs: Any) -> httpx.Response:
-        """Record a POST and replay the canned response."""
-        self.captured = {"method": "POST", "url": url, **kwargs}
-        return self.response
-
-    async def get(self, url: str, **kwargs: Any) -> httpx.Response:
-        """Record a GET and replay the canned response."""
-        self.captured = {"method": "GET", "url": url, **kwargs}
-        return self.response
-
-    async def request(
-        self, method: str, url: str, **kwargs: Any
-    ) -> httpx.Response:
-        """Record a non-GET/POST request (e.g. PUT) and replay it."""
-        self.captured = {"method": method, "url": url, **kwargs}
-        return self.response
-
-    def stream(self, method: str, url: str, **kwargs: Any) -> Any:
-        """Record a streaming request and replay the canned response."""
-        self.captured = {"method": method, "url": url, **kwargs}
-
-        @contextlib.asynccontextmanager
-        async def _cm():
-            yield self.response
-
-        return _cm()
-
-
-def _patch_client(monkeypatch, response: Any) -> _CapturingClient:
-    """Patch ``relay_client.get_async_client`` to yield a capturing stub."""
-    client = _CapturingClient(response)
-
-    @contextlib.asynccontextmanager
-    async def fake_get_async_client(**_kwargs: Any):
-        del _kwargs
-        yield client
-
-    monkeypatch.setattr(rc, "get_async_client", fake_get_async_client)
-    return client
-
-
-def _stream_response(status_code: int, chunks: list[bytes]) -> Any:
-    """Return a stream-shaped response stub with status + aiter_bytes."""
-
-    async def _aiter() -> Any:
-        for chunk in chunks:
-            yield chunk
-
-    return SimpleNamespace(status_code=status_code, aiter_bytes=_aiter)
-
-
-def _response(status: int, body: Any, method: str = "POST") -> httpx.Response:
-    """Return a canned httpx.Response carrying a request for status raises."""
-    return httpx.Response(
-        status,
-        json=body,
-        request=httpx.Request(method, "https://relay.test/v1/relay/x"),
-    )
-
-
 def test_relay_url_builds_v1_relay_path():
     """``relay_url`` joins the base under the fixed ``/v1/relay`` prefix."""
     assert (
@@ -166,9 +85,9 @@ def test_repr_masks_api_key():
     assert "super-secret" not in repr(_client("super-secret"))
 
 
-async def test_post_json_sends_bearer_and_body(monkeypatch):
+async def test_post_json_sends_bearer_and_body(outbound_runtime: Any):
     """``post_json`` POSTs the body with a bearer header and parses JSON."""
-    client_stub = _patch_client(monkeypatch, _response(200, {"hits": []}))
+    outbound_runtime.transport.enqueue(content=b'{"hits": []}')
 
     result = await _client("k9").post_json(
         "retrieve/search",
@@ -177,37 +96,33 @@ async def test_post_json_sends_bearer_and_body(monkeypatch):
     )
 
     assert result == {"hits": []}
-    assert client_stub.captured["method"] == "POST"
-    assert (
-        client_stub.captured["url"]
-        == "https://relay.test/v1/relay/retrieve/search"
-    )
-    assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"
-    assert client_stub.captured["json"] == {"q": "gene"}
+    request = outbound_runtime.transport.requests[0]
+    assert request.method == "POST"
+    assert str(request.url) == "https://relay.test/v1/relay/retrieve/search"
+    assert request.headers["Authorization"] == "Bearer k9"
+    assert json.loads(request.content) == {"q": "gene"}
 
 
-async def test_get_json_uses_get_method(monkeypatch):
+async def test_get_json_uses_get_method(outbound_runtime: Any):
     """``get_json`` issues a GET carrying the bearer header."""
-    client_stub = _patch_client(
-        monkeypatch, _response(200, {"status": "done"}, method="GET")
-    )
+    outbound_runtime.transport.enqueue(content=b'{"status": "done"}')
 
     result = await _client("k9").get_json(
         "analysis/abc", message="relay status failed"
     )
 
     assert result == {"status": "done"}
-    assert client_stub.captured["method"] == "GET"
-    assert (
-        client_stub.captured["url"]
-        == "https://relay.test/v1/relay/analysis/abc"
-    )
-    assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"
+    request = outbound_runtime.transport.requests[0]
+    assert request.method == "GET"
+    assert str(request.url) == "https://relay.test/v1/relay/analysis/abc"
+    assert request.headers["Authorization"] == "Bearer k9"
 
 
-async def test_post_json_accepts_request_timeout_override(monkeypatch):
+async def test_post_json_accepts_request_timeout_override(
+    outbound_runtime: Any,
+):
     """A caller-specific relay timeout reaches the per-request HTTP call."""
-    client_stub = _patch_client(monkeypatch, _response(200, {"ok": True}))
+    outbound_runtime.transport.enqueue(content=b'{"ok": true}')
 
     result = await _client("k9").post_json(
         "retrieve/search",
@@ -217,12 +132,15 @@ async def test_post_json_accepts_request_timeout_override(monkeypatch):
     )
 
     assert result == {"ok": True}
-    assert client_stub.captured["timeout"] == 2.5
+    timeout = outbound_runtime.transport.requests[0].extensions["timeout"]
+    assert timeout["read"] == 2.5
 
 
-async def test_non_retriable_status_raises_mcperror_without_key(monkeypatch):
+async def test_non_retriable_status_raises_mcperror_without_key(
+    outbound_runtime: Any,
+):
     """A non-retriable upstream status raises McpError, key-free."""
-    _patch_client(monkeypatch, _response(500, {"err": "boom"}))
+    outbound_runtime.transport.enqueue(status=500, content=b'{"err":"boom"}')
 
     with pytest.raises(McpError) as excinfo:
         await _client("super-secret").post_json(
@@ -270,10 +188,12 @@ def test_current_relay_client_reads_live_relay_config(monkeypatch):
     assert client.api_key.get_secret_value() == "live-key"
 
 
-async def test_put_obs_object_puts_bytes_with_path_query(monkeypatch):
+async def test_put_obs_object_puts_bytes_with_path_query(
+    outbound_runtime: Any,
+):
     """``put_obs_object`` PUTs raw bytes to /obs/object with the path query."""
-    client_stub = _patch_client(
-        monkeypatch, _response(200, {"obs_path": "/obs/phytomni/x"}, "PUT")
+    outbound_runtime.transport.enqueue(
+        content=b'{"obs_path":"/obs/phytomni/x"}'
     )
 
     result = await _client("k9").put_obs_object(
@@ -283,41 +203,33 @@ async def test_put_obs_object_puts_bytes_with_path_query(monkeypatch):
     )
 
     assert result == {"obs_path": "/obs/phytomni/x"}
-    assert client_stub.captured["method"] == "PUT"
-    assert "v1/relay/obs/object?" in client_stub.captured["url"]
-    assert "path=" in client_stub.captured["url"]
-    assert client_stub.captured["content"] == b"file-bytes"
-    assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"
+    request = outbound_runtime.transport.requests[0]
+    assert request.method == "PUT"
+    assert "v1/relay/obs/object?" in str(request.url)
+    assert "path=" in str(request.url)
+    assert request.content == b"file-bytes"
+    assert request.headers["Authorization"] == "Bearer k9"
 
 
-async def test_get_obs_object_returns_raw_bytes(monkeypatch):
+async def test_get_obs_object_returns_raw_bytes(outbound_runtime: Any):
     """``get_obs_object`` GETs /obs/object and returns the raw body bytes."""
-    client_stub = _patch_client(
-        monkeypatch,
-        httpx.Response(
-            200,
-            content=b"ATOM 1 N",
-            request=httpx.Request(
-                "GET", "https://relay.test/v1/relay/obs/object"
-            ),
-        ),
-    )
+    outbound_runtime.transport.enqueue(content=b"ATOM 1 N")
 
     data = await _client("k9").get_obs_object(
         "/obs/phytomni/agent_data/out/r.cif", message="relay download failed"
     )
 
     assert data == b"ATOM 1 N"
-    assert client_stub.captured["method"] == "GET"
-    assert "v1/relay/obs/object?" in client_stub.captured["url"]
-    assert "path=" in client_stub.captured["url"]
+    request = outbound_runtime.transport.requests[0]
+    assert request.method == "GET"
+    assert "v1/relay/obs/object?" in str(request.url)
+    assert "path=" in str(request.url)
 
 
-async def test_get_obs_list_returns_keys(monkeypatch):
+async def test_get_obs_list_returns_keys(outbound_runtime: Any):
     """``get_obs_list`` GETs /obs/list with the prefix query, unwraps keys."""
-    client_stub = _patch_client(
-        monkeypatch,
-        _response(200, {"keys": ["pfx/a.png", "pfx/b.md"]}, "GET"),
+    outbound_runtime.transport.enqueue(
+        content=b'{"keys":["pfx/a.png","pfx/b.md"]}'
     )
 
     keys = await _client("k9").get_obs_list(
@@ -326,14 +238,15 @@ async def test_get_obs_list_returns_keys(monkeypatch):
     )
 
     assert keys == ["pfx/a.png", "pfx/b.md"]
-    assert "v1/relay/obs/list?" in client_stub.captured["url"]
-    assert "prefix=" in client_stub.captured["url"]
+    request = outbound_runtime.transport.requests[0]
+    assert "v1/relay/obs/list?" in str(request.url)
+    assert "prefix=" in str(request.url)
 
 
-async def test_put_obs_dir_puts_marker(monkeypatch):
+async def test_put_obs_dir_puts_marker(outbound_runtime: Any):
     """``put_obs_dir`` PUTs /obs/dir with the path query, parses JSON."""
-    client_stub = _patch_client(
-        monkeypatch, _response(200, {"obs_path": "/obs/phytomni/d/"}, "PUT")
+    outbound_runtime.transport.enqueue(
+        content=b'{"obs_path":"/obs/phytomni/d/"}'
     )
 
     result = await _client("k9").put_obs_dir(
@@ -341,14 +254,18 @@ async def test_put_obs_dir_puts_marker(monkeypatch):
     )
 
     assert result == {"obs_path": "/obs/phytomni/d/"}
-    assert client_stub.captured["method"] == "PUT"
-    assert "v1/relay/obs/dir?" in client_stub.captured["url"]
+    request = outbound_runtime.transport.requests[0]
+    assert request.method == "PUT"
+    assert "v1/relay/obs/dir?" in str(request.url)
 
 
-async def test_get_obs_object_to_path_streams_to_disk(tmp_path, monkeypatch):
+async def test_get_obs_object_to_path_streams_to_disk(
+    tmp_path: Any,
+    outbound_runtime: Any,
+):
     """The download streams each chunk straight to the destination file."""
-    client_stub = _patch_client(
-        monkeypatch, _stream_response(200, [b"AB", b"C", b"D"])
+    outbound_runtime.transport.enqueue(
+        stream=ControlledByteStream(b"AB", b"C", b"D")
     )
     dest = tmp_path / "r.cif"
 
@@ -359,17 +276,22 @@ async def test_get_obs_object_to_path_streams_to_disk(tmp_path, monkeypatch):
     )
 
     assert dest.read_bytes() == b"ABCD"
-    assert client_stub.captured["method"] == "GET"
-    assert "v1/relay/obs/object?" in client_stub.captured["url"]
-    assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"
-    assert client_stub.captured["timeout"] == 5.0
+    request = outbound_runtime.transport.requests[0]
+    assert request.method == "GET"
+    assert "v1/relay/obs/object?" in str(request.url)
+    assert request.headers["Authorization"] == "Bearer k9"
+    assert request.extensions["timeout"]["read"] == 5.0
 
 
 async def test_get_obs_object_to_path_raises_on_error_status(
-    tmp_path, monkeypatch
+    tmp_path: Any,
+    outbound_runtime: Any,
 ):
     """A 4xx/5xx upstream status raises McpError, key-free, no file write."""
-    _patch_client(monkeypatch, _stream_response(404, [b"nope"]))
+    outbound_runtime.transport.enqueue(
+        status=404,
+        stream=ControlledByteStream(b"nope"),
+    )
     dest = tmp_path / "missing.cif"
 
     with pytest.raises(McpError) as excinfo:

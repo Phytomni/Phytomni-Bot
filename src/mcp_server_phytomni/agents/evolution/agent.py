@@ -18,13 +18,11 @@ from functools import lru_cache
 from json import loads
 from typing import Any
 
+from httpx import HTTPStatusError
 from mcp.shared.exceptions import McpError
 
 from ...auth.iam import get_token
-from ...common.httpx_client import (
-    get_async_client,
-    resolve_request_timeout,
-)
+from ...common.http import resolve_request_timeout
 from ...common.prompts import get_prompt
 from ...common.relay_client import current_relay_client
 from ...config.defaults import DeepGenomeConfig
@@ -32,6 +30,11 @@ from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
 from ...graphs.chat_adapters import invoke_chat_content
 from ...runtime.langgraph_runner import ainvoke_graph
+from ...runtime.outbound import (
+    OutboundHttpProfile,
+    OutboundPoolName,
+    current_outbound_runtime,
+)
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import submit
 from ..chat.service import _cached_chat_app
@@ -53,7 +56,6 @@ __all__ = [
     "evolution_output_dir",
     "evolution_submit_kwargs",
     "find_spa_taxids",
-    "get_async_client",
     "get_data_list",
     "get_prompt",
     "get_token",
@@ -131,15 +133,19 @@ async def find_spa_taxids(
         # 'https': None} on the requests call: this endpoint sits on a
         # bare-IP corporate URL, so inheriting HTTP(S)_PROXY from the host
         # env would route it through a proxy that cannot reach it.
-        async with get_async_client(
-            timeout=timeout, trust_env=False
-        ) as client:
-            response = await client.get(
+        client = current_outbound_runtime().http.for_pool(
+            OutboundPoolName.SPA_FAQ,
+            profile=OutboundHttpProfile.DIRECT_UPSTREAM,
+        )
+        try:
+            response = await client.request(
+                "GET",
                 url,
                 headers=headers,
                 params=request_params,
+                timeout=timeout,
             )
-        if response.status_code != 200:
+        except HTTPStatusError:
             return []
         response_taxid_data = response.json()
     if response_taxid_data["total"] <= 0:
@@ -177,23 +183,17 @@ async def target_taxids(query: str, kwargs: dict[str, Any]) -> str | None:
     return ",".join(taxid for taxids in taxid_lists for taxid in taxids)
 
 
-def evolution_output_dir(user_id: str | None, kwargs: dict[str, Any]) -> str:
+async def evolution_output_dir(
+    user_id: str | None, kwargs: dict[str, Any]
+) -> str:
     """Create the output directory for a non-batch evolution task."""
     run_identity = RunIdentity.create(
         user_id=user_id,
         scope="evolution_agents_task",
     )
-    default_access_key_id, default_secret_access_key = (
-        get_sensitive_config().obs_credentials()
-    )
-    return create_output_dir(
+    return await create_output_dir(
         user_id=run_identity.user_id,
         task="evolution_agents_task",
-        access_key_id=kwargs.get("access_key_id", default_access_key_id),
-        secret_access_key=kwargs.get(
-            "secret_access_key", default_secret_access_key
-        ),
-        obs_server=kwargs.get("obs_server", DEEP_GENOME_CONFIG.OBS_SERVER),
         bucket_name=kwargs.get("bucket_name", DEEP_GENOME_CONFIG.BUCKET_NAME),
         run_identity=run_identity,
     )

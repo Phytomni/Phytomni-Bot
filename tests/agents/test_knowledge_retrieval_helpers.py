@@ -7,17 +7,15 @@
 Pins the small synchronous helpers that the retrieve / rerank async
 orchestration depends on: _collect_rank_results error handling and
 top_n trimming, _rerank_docs dedup + content fallback, _sorted_merged_docs
-score-descending merging, _list_or_empty coercion, _timeout shaping,
-and the multi-layer clear_retrieval_caches admin seam.
+score-descending merging, _list_or_empty coercion, and the multi-layer
+clear_retrieval_caches admin seam.
 """
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from typing import Any, cast
 
 import pytest
-from httpx import AsyncClient, Timeout
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.knowledge import retrieval as retrieval_mod
@@ -32,7 +30,6 @@ from mcp_server_phytomni.agents.knowledge.retrieval import (
     _retrieve_cached,
     _retrieve_scope_docs,
     _sorted_merged_docs,
-    _timeout,
     clear_retrieval_caches,
 )
 from mcp_server_phytomni.agents.knowledge.retrieval_options import (
@@ -145,26 +142,11 @@ def test_list_or_empty_coerces_none_and_iterables() -> None:
     assert _list_or_empty((3, 4)) == [3, 4]
 
 
-def test_timeout_returns_httpx_timeout_with_matching_connect() -> None:
-    """``_timeout`` shapes a uniform httpx Timeout for retrieve client use."""
-    timeout = _timeout(12.5)
-
-    assert isinstance(timeout, Timeout)
-    assert timeout.read == 12.5
-    assert timeout.connect == 12.5
-
-
 async def test_retrieve_raw_docs_rejects_unknown_scope(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reject unsupported retrieval scopes before issuing an HTTP request."""
-
-    @asynccontextmanager
-    async def fake_client(**kwargs: Any):
-        del kwargs
-        yield cast(AsyncClient, None)
-
-    monkeypatch.setattr(retrieval_mod, "get_async_client", fake_client)
+    del monkeypatch
     options = RetrieveOptions.from_kwargs({"scope": "unsupported"})
 
     with pytest.raises(ValueError, match="Invalid scope value"):
@@ -213,7 +195,7 @@ async def test_rerank_batch_has_no_legacy_concurrency_dependency(
     )
 
     ranked = await _rerank_batch(
-        cast(AsyncClient, None),
+        cast(Any, None),
         _RerankBatchRequest(
             user_query="q",
             docs_batch=[{"id": "x", "title": "t", "content": "c"}],

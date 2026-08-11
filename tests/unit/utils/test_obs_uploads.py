@@ -235,7 +235,11 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
         _write_text(server_file, "downloaded")
         return server_file
 
-    monkeypatch.setattr(downloads, "ObsClient", FakeObsClient)
+    monkeypatch.setattr(
+        downloads,
+        "current_outbound_runtime",
+        lambda: SimpleNamespace(obs=object()),
+    )
     monkeypatch.setattr(
         downloads,
         "_download_obs_file_with_retry",
@@ -333,7 +337,11 @@ async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
         captured["cleanup"] = cleanup
         return "converted paper"
 
-    monkeypatch.setattr(downloads, "ObsClient", FakeObsClient)
+    monkeypatch.setattr(
+        downloads,
+        "current_outbound_runtime",
+        lambda: SimpleNamespace(obs=object()),
+    )
     monkeypatch.setattr(
         downloads,
         "_download_obs_file_with_retry",

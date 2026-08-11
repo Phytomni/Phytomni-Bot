@@ -993,6 +993,58 @@ verify both `/.well-known/agent-card.json` and `/a2a` return `404`. Keep
 inspect those rows. Drain or explicitly abandon `INPUT_REQUIRED` tasks before
 the rollback because a disabled A2A client cannot send their resume payload.
 
+### Outbound logical pool operations
+
+The outbound runtime owns 12 typed logical pools: `llm`, `retrieval`,
+`rerank`, `nl2sql`, `analysis_control`, `analysis_status`, `iam`, `spa_faq`,
+`bi`, `obs`, `relay_control`, and `interop`. Each capacity is process-local;
+`0` means unlimited and a positive value is an AnyIO admission budget. A
+deployment with multiple workers or replicas multiplies the possible
+borrowers, so choose each value from the upstream quota, request duration,
+and the number of active processes.
+
+LLM completions and token streams intentionally share `llm`. Raising that
+capacity improves mixed throughput but also increases provider concurrency;
+lowering it protects quota while making a stream occupy a slot for its full
+life. Retry backoff, polling sleeps, and local work happen outside a logical
+lease. A borrower that is cancelled waits for its synchronous OBS operation
+or byte-stream cleanup to finish before returning capacity.
+
+When a pool is saturated, the runtime may emit a value-safe wait warning with
+only the fixed pool name and numeric counters (`capacity`, `in_use`, and
+`waiting`). It does not log URLs, targets, headers, credentials, request
+bodies, prompts, paths, task ids, or user identities. There is no endpoint,
+global socket semaphore, or metric API added by this feature. The existing
+HTTP connection and keepalive limits still apply independently to every
+active trusted/direct/OpenAI client profile; include the possible sum of
+those profiles when sizing a process or replica.
+
+Shutdown first stops new outbound work, drains active leases, closes child
+resources in reverse ownership order, and then closes the runtime-owned
+HTTP/OpenAI/OBS/Interop clients. Keep the service termination grace period
+long enough for the longest permitted synchronous operation or stream to
+finish; cancellation is not a shortcut around resource cleanup.
+
+The dedicated live acceptance module is non-production only and requires all
+four exact environment gates before it starts an API process or loads live
+configuration:
+
+```bash
+PHYTOMNI_RUN_INTEGRATION=1 \
+PHYTOMNI_ALLOW_NETWORK=1 \
+PHYTOMNI_RUN_OUTBOUND_POOL_E2E=1 \
+PHYTOMNI_CONFIRM_NON_PRODUCTION=1 \
+  uv run pytest -q e2e/test_outbound_pooling_e2e.py -v
+```
+
+Without all four gates the module skips before creating a service, task,
+OBS object, or socket. The probe uses synthetic Chat requests and the large
+but finite `PHYTOMNI_OUTBOUND_POOL_E2E_CHAT_TIMEOUT_SECONDS` setting. Run it
+only with disposable non-production credentials and record unavailable
+providers or configured Interop targets as `external-pending`; never redirect
+the probe to production. Production capacity selection, deployment, replica
+coordination, activation, and monitoring remain external operations.
+
 ### Bounded resource-limit checklist
 
 The following C6.4 settings are admission or projection limits. They are read

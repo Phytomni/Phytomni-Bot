@@ -41,9 +41,12 @@ from ..agents.shared.citation_database import validate_citation_database
 from ..agents.shared.citation_enrichment import enrich_cited_doc_list
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..agents.shared.intermediate_state import merge_intermediate_state
-from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from ..runtime.langgraph_runner import build_runnable_config
+from ..runtime.outbound import (
+    aclose_outbound_runtime,
+    init_outbound_runtime,
+)
 from ..runtime.request_context import current_request_id
 from ..runtime.resume import (
     aresume_graph,
@@ -912,8 +915,8 @@ async def serve() -> None:
 
     Configures package-level logging, builds a ``Server("Phytomni-Server")``
     instance, wires the ``list_tools`` and ``call_tool`` handlers, owns the
-    process-wide shared ``AsyncClient`` (initialised before stdio comes
-    up, closed in ``finally`` so a stdio crash never leaks the pool), and
+    process-wide outbound runtime (initialised before stdio comes up,
+    closed in ``finally`` so a stdio crash never leaks resources), and
     runs the server over stdio with ``raise_exceptions=True``. The
     function blocks until the stdio streams close (interrupt or client
     disconnect); there is no graceful shutdown drain — in-flight handler
@@ -970,12 +973,12 @@ async def serve() -> None:
         return await dispatch_tool(name, arguments)
 
     options = server.create_initialization_options()
-    init_shared_client()
+    await init_outbound_runtime()
     try:
         async with stdio_server() as (read_stream, write_stream):
             await server.run(
                 read_stream, write_stream, options, raise_exceptions=True
             )
     finally:
-        await aclose_shared_client()
+        await aclose_outbound_runtime()
         await aclose_gauss_pool()

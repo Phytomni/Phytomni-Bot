@@ -24,9 +24,9 @@ from pathlib import Path
 from typing import Any, Final
 
 from ...config.defaults import DeepGenomeConfig, GeneNetworkConfig
-from ...config.settings import get_sensitive_config
+from ...runtime.outbound import ObsProfileName, current_outbound_runtime
 from ...storage.downloads import download_obs_file
-from ...storage.obs_relay_ops import list_object_keys
+from ...storage.obs_relay_ops import ObsAccessOptions, list_object_keys
 from ...storage.obs_storage import (
     normalize_obs_object_key,
     obsfs_or_sdk,
@@ -250,14 +250,14 @@ def _obsfs_top20_match(output_dir: str, bucket_name: str) -> str | None:
 
 
 def _sdk_top20_match(
-    output_dir: str, bucket_name: str, obs_server: str
+    output_dir: str, bucket_name: str, client: Any
 ) -> str | None:
     """Return the first object key matching ``TOP20_GLOB`` via the SDK.
 
     Args:
         output_dir: Network envelope's output directory.
         bucket_name: OBS bucket name used by the network config.
-        obs_server: OBS endpoint for the SDK client.
+        client: Runtime-owned OBS client for the SDK fallback.
 
     Returns:
         The matched object key (full prefix + filename), or ``None``
@@ -267,7 +267,7 @@ def _sdk_top20_match(
         keys = list_object_keys(
             bucket=bucket_name,
             prefix=output_dir,
-            obs_server=obs_server,
+            access=ObsAccessOptions(client=client),
         )
     except OSError:
         return None
@@ -279,7 +279,7 @@ def _sdk_top20_match(
 
 
 def _find_top20_object_key(
-    output_dir: str, bucket_name: str, obs_server: str
+    output_dir: str, bucket_name: str, client: Any
 ) -> str:
     """Return the OBS object key for the top20 file under the network dir.
 
@@ -291,7 +291,7 @@ def _find_top20_object_key(
     Args:
         output_dir: Network envelope's output directory.
         bucket_name: OBS bucket name used by the network config.
-        obs_server: OBS endpoint for the SDK fallback.
+        client: Runtime-owned OBS client for the SDK fallback.
 
     Returns:
         OBS object key suitable for ``download_obs_file``.
@@ -308,7 +308,7 @@ def _find_top20_object_key(
         return _build_top20_object_key(output_dir, basename, bucket_name)
 
     def _sdk_action() -> str:
-        key = _sdk_top20_match(output_dir, bucket_name, obs_server)
+        key = _sdk_top20_match(output_dir, bucket_name, client)
         if key is None:
             raise FileNotFoundError("no SDK match")
         return key
@@ -366,10 +366,16 @@ async def _download_top20_csv(output_dir: str, scratch_dir: Path) -> Path:
             object key is empty, or the SDK download fails.
     """
     network_config = GeneNetworkConfig()
-    object_key = _find_top20_object_key(
-        output_dir,
-        network_config.BUCKET_NAME,
-        network_config.OBS_SERVER,
+    obs_runtime = current_outbound_runtime().obs
+    if obs_runtime is None:
+        raise RuntimeError("OBS runtime is unavailable")
+    object_key = await obs_runtime.run(
+        ObsProfileName.PRIMARY,
+        lambda client: _find_top20_object_key(
+            output_dir,
+            network_config.BUCKET_NAME,
+            client,
+        ),
     )
     if not object_key:
         raise ChainTop20MissingError(
@@ -379,20 +385,15 @@ async def _download_top20_csv(output_dir: str, scratch_dir: Path) -> Path:
                 "network output_dir did not produce a usable OBS " "object key"
             ),
         )
-    sensitive = get_sensitive_config()
-    access_key_id, secret_access_key = sensitive.obs_credentials()
     try:
         local_path = await download_obs_file(
             obs_file=object_key,
             server_dir=str(scratch_dir),
-            obs_server=network_config.OBS_SERVER,
             bucket_name=network_config.BUCKET_NAME,
             part_size=network_config.PART_SIZE,
             task_num=network_config.TASK_NUM,
             max_retries=network_config.MAX_RETRIES,
             max_concurrency=network_config.MAX_CONCURRENCY,
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
         )
     except OSError as exc:
         raise ChainTop20MissingError(
@@ -439,11 +440,10 @@ async def network_to_deep_genome_chain(
         **kwargs: Optional keyword overrides forwarded to
             ``network_analysis`` and to each ``gene_function`` call.
             Keys matching the network/deepgenome config field names
-            (e.g., ``output_dir``, ``obs_server``, ``bucket_name``,
+            (e.g., ``output_dir``, ``bucket_name``,
             ``deepgenome_data``, ``deepgenome_out``, ``prompt_file``,
             ``user_id``, ``batch``, ``max_poll``, ``max_keys``,
             ``max_concurrency``, ``marker``, ``download_path``,
-            ``access_key_id``, ``secret_access_key``) are passed
             through. MCP-handler-only fields (``dialog_id``,
             ``subject_id``, ``need_insight``, ``epic_type``,
             ``database_url``,

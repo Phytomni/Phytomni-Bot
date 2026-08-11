@@ -16,7 +16,7 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import cast
+from typing import Any
 
 import httpx
 import pytest
@@ -39,6 +39,7 @@ from mcp_server_phytomni.api.relay.forward import (
     tee_and_stream,
     validate_relay_path_segment,
 )
+from mcp_server_phytomni.runtime.outbound import OutboundPoolName
 
 pytestmark = pytest.mark.unit
 
@@ -289,6 +290,7 @@ def test_relay_upstream_trust_env_defaults_true() -> None:
         error_mode=RelayErrorMode.ENVELOPE,
         service="s",
         inject_headers=_noinject,
+        pool=OutboundPoolName.RELAY_CONTROL,
     )
 
     assert upstream.trust_env is True
@@ -307,36 +309,87 @@ def _minimal_request(method: str = "GET") -> Request:
     )
 
 
-def _recording_factory(recorded: dict[str, object]) -> object:
-    """Return an async client factory that records its kwargs."""
-
-    @contextlib.asynccontextmanager
-    async def _factory(**kwargs: object) -> AsyncIterator[httpx.AsyncClient]:
-        recorded["kwargs"] = kwargs
-        async with httpx.AsyncClient(
-            transport=httpx.MockTransport(
-                lambda _r: httpx.Response(
-                    200,
-                    headers={"content-type": "application/json"},
-                    content=b"{}",
-                )
-            )
-        ) as client:
-            yield client
-
-    return _factory
-
-
 async def _forward_with_trust_env(
     monkeypatch: pytest.MonkeyPatch,
     audit_store: RelayAuditStore,
     *,
     trust_env: bool,
 ) -> dict[str, object]:
-    """Run a buffered ENVELOPE forward, returning the client kwargs seen."""
+    """Run a buffered forward, returning the selected profile."""
     recorded: dict[str, object] = {}
+
+    class _Client:
+        """Record a streamed attempt against a no-network transport."""
+
+        @contextlib.asynccontextmanager
+        async def stream(
+            self, method: str, url: str, **kwargs: Any
+        ) -> AsyncIterator[httpx.Response]:
+            """Open one streamed request and retain its arguments."""
+            recorded["kwargs"] = kwargs
+            async with (
+                httpx.AsyncClient(
+                    transport=httpx.MockTransport(
+                        lambda _request: httpx.Response(
+                            200,
+                            headers={"content-type": "application/json"},
+                            content=b"{}",
+                        )
+                    )
+                ) as client,
+                client.stream(method, url, **kwargs) as response,
+            ):
+                yield response
+
+        async def request(
+            self, method: str, url: str, **kwargs: Any
+        ) -> httpx.Response:
+            """Return one buffered response through the mocked transport."""
+            recorded["kwargs"] = kwargs
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(
+                    lambda _request: httpx.Response(
+                        200,
+                        headers={"content-type": "application/json"},
+                        content=b"{}",
+                    )
+                )
+            ) as client:
+                response = await client.request(method, url, **kwargs)
+                response.raise_for_status()
+                return response
+
+    class _Http:
+        """Record whether the trusted or direct profile was selected."""
+
+        def __init__(self) -> None:
+            self.client = _Client()
+
+        def for_pool(
+            self, _pool: object, *, profile: object = None
+        ) -> _Client:
+            """Record fixed-profile selection for buffered calls."""
+            recorded["profile"] = getattr(profile, "value", profile)
+            return self.client
+
+        @contextlib.asynccontextmanager
+        async def stream(
+            self,
+            _pool: object,
+            method: str,
+            url: str,
+            *,
+            profile: object = None,
+            **kwargs: Any,
+        ) -> AsyncIterator[httpx.Response]:
+            """Record fixed-profile selection for streamed calls."""
+            recorded["profile"] = getattr(profile, "value", profile)
+            async with self.client.stream(method, url, **kwargs) as response:
+                yield response
+
+    runtime = type("RelayRuntime", (), {"http": _Http()})()
     monkeypatch.setattr(
-        forward_module, "get_async_client", _recording_factory(recorded)
+        forward_module, "current_outbound_runtime", lambda: runtime
     )
     monkeypatch.setattr(forward_module, "_INFLIGHT", {})
 
@@ -348,6 +401,7 @@ async def _forward_with_trust_env(
         error_mode=RelayErrorMode.ENVELOPE,
         service="spa_faq",
         inject_headers=_noinject,
+        pool=OutboundPoolName.SPA_FAQ,
         trust_env=trust_env,
     )
     response = await forward_relay_request(
@@ -362,24 +416,24 @@ async def _forward_with_trust_env(
         audit_store=audit_store,
     )
     assert response.status_code == 200
-    return cast(dict[str, object], recorded["kwargs"])
+    return recorded
 
 
 async def test_forward_passes_trust_env_false_to_client(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """trust_env=False reaches get_async_client (ephemeral, proxy bypass)."""
+    """trust_env=False selects the direct-upstream profile."""
     store = RelayAuditStore(str(tmp_path / "audit.sqlite"))
     kwargs = await _forward_with_trust_env(monkeypatch, store, trust_env=False)
 
-    assert kwargs.get("trust_env") is False
+    assert kwargs["profile"] == "direct_upstream"
 
 
 async def test_forward_omits_trust_env_on_default(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A default upstream passes no trust_env, keeping the shared pool."""
+    """A default upstream selects the trusted shared profile."""
     store = RelayAuditStore(str(tmp_path / "audit.sqlite"))
     kwargs = await _forward_with_trust_env(monkeypatch, store, trust_env=True)
 
-    assert "trust_env" not in kwargs
+    assert kwargs["profile"] == "trusted"

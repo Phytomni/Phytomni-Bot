@@ -142,9 +142,8 @@ class AnalystDispatchContext(NamedTuple):
     thread_id: str
 
 
-def prepare_analyst_dispatch_context(
+async def prepare_analyst_dispatch_context(
     config: Any,
-    sensitive_config: Any,
     request: Mapping[str, Any],
     fingerprint: str | None = None,
 ) -> AnalystDispatchContext:
@@ -160,8 +159,6 @@ def prepare_analyst_dispatch_context(
 
     Args:
         config: Public config object with at least ``USER_ID``.
-        sensitive_config: Sensitive config used by
-            ``ensure_analysis_output_dir`` for OBS credentials.
         request: Prepared request mapping with ``analysis_type`` /
             ``target_id`` / optional ``output_dir``.
         fingerprint: Optional input-identity digest forwarded to
@@ -184,9 +181,8 @@ def prepare_analyst_dispatch_context(
         result_run_root_from_child(output_dir)
     else:
         output_dir = result_child_output_dir(
-            ensure_analysis_output_dir(
+            await ensure_analysis_output_dir(
                 config,
-                sensitive_config,
                 analysis_type,
                 request.get("output_dir"),
                 run_identity,
@@ -269,9 +265,8 @@ def route_analysis_tasks(
     ]
 
 
-def ensure_analysis_output_dir(
+async def ensure_analysis_output_dir(
     config: Any,
-    sensitive_config: Any,
     analysis_type: str,
     output_dir: str | None,
     run_identity: RunIdentity | None = None,
@@ -288,7 +283,6 @@ def ensure_analysis_output_dir(
 
     Args:
         config: Public config object with user, OBS server, and bucket fields.
-        sensitive_config: Sensitive config object with OBS credentials.
         analysis_type: Analysis workflow name used in generated paths.
         output_dir: Existing output directory to reuse when no fingerprint
             is supplied; ignored when a fingerprint routes to the shared key.
@@ -309,13 +303,9 @@ def ensure_analysis_output_dir(
         user_id=config.USER_ID,
         scope=analysis_type,
     )
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
-    return create_output_dir(
+    return await create_output_dir(
         user_id=identity.user_id,
         task=f"{analysis_type}_task",
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=config.OBS_SERVER,
         bucket_name=config.BUCKET_NAME,
         run_identity=identity,
         fingerprint=fingerprint,
@@ -325,7 +315,6 @@ def ensure_analysis_output_dir(
 async def submit_analyst_analysis(
     analyst_agent: Any,
     config: Any,
-    sensitive_config: Any,
     request: Mapping[str, Any],
     *,
     is_polling: bool = False,
@@ -335,7 +324,6 @@ async def submit_analyst_analysis(
     Args:
         analyst_agent: Configured AnalystAgent-compatible instance.
         config: Public config object used for user and OBS settings.
-        sensitive_config: Sensitive config object used for OBS credentials.
         request: Prepared request mapping containing analysis metadata,
             prompt parts, compute resource, target id, and optional output dir.
         is_polling: Whether the analyst should block until the submitted task
@@ -349,9 +337,7 @@ async def submit_analyst_analysis(
         AnalystAgent result payload, including task id and output directory
         when task submission succeeds.
     """
-    context = prepare_analyst_dispatch_context(
-        config, sensitive_config, request
-    )
+    context = await prepare_analyst_dispatch_context(config, request)
     goal_description, meta, data_list = request["prompt_parts"]
     logger.info("Submitting %s task via AnalystAgent", context.analysis_type)
     result = await analyst_agent.arun(

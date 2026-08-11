@@ -225,8 +225,9 @@ async def submit_analyst_via_subgraph(
         caller-owned task row so the reuse caller polls a row they own.
     """
     output_dir_is_result_child, fingerprint = _dispatch_identity(request)
-    context = prepare_analyst_dispatch_context(
-        config, sensitive_config, request, fingerprint
+    del sensitive_config
+    context = await prepare_analyst_dispatch_context(
+        config, request, fingerprint
     )
     if fingerprint is not None:
         reused = await _reuse_prior_dispatch(

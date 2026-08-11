@@ -21,7 +21,6 @@ from contextlib import suppress
 from typing import TYPE_CHECKING, Any, cast
 
 import yaml
-from httpx import Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
@@ -31,11 +30,14 @@ from ...common.http import (
     JsonPostRetry,
     request_response_with_retries,
 )
-from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
 from ...common.relay_client import current_relay_client
 from ...config.relay_mode import relay_mode_enabled
 from ...runtime.artifact_roles import append_artifact_manifest_contract
+from ...runtime.outbound import (
+    OutboundPoolName,
+    current_outbound_http_client,
+)
 from ...runtime.result_run_layout import (
     result_child_output_dir,
     result_run_root_from_child,
@@ -149,7 +151,7 @@ class AnalystGraphMixin:
             McpError: If task submission fails after all retries.
         """
         run_identity = self._submit_run_identity()
-        output_dir = self._submit_output_dir(state, run_identity)
+        output_dir = await self._submit_output_dir(state, run_identity)
         obs_task_path, obs_model_path = await self._upload_submit_meta(
             state,
             output_dir,
@@ -176,7 +178,7 @@ class AnalystGraphMixin:
             scope="analysis_agents_task",
         )
 
-    def _submit_output_dir(
+    async def _submit_output_dir(
         self: Any,
         state: Mapping[str, Any],
         run_identity: RunIdentity,
@@ -194,9 +196,8 @@ class AnalystGraphMixin:
             with suppress(ValueError):
                 run_root = result_run_root_from_child(output_dir)
         return result_child_output_dir(
-            ensure_run_output_dir(
+            await ensure_run_output_dir(
                 self.analyst_config,
-                self.sensitive_config,
                 "analysis_agents_task",
                 run_identity,
                 run_root,
@@ -216,9 +217,6 @@ class AnalystGraphMixin:
         Returns:
             Tuple of OBS paths ``(task_yaml_path, model_yaml_path)``.
         """
-        access_key_id, secret_access_key = (
-            self.sensitive_config.obs_credentials()
-        )
         task_object_name = "task.yaml"
         task_path = await upload_analyst_agents_content(
             content=self._submit_payload(state, output_dir),
@@ -228,9 +226,6 @@ class AnalystGraphMixin:
                 "analysis_agents_task",
                 task_object_name,
             ),
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=self.analyst_config.OBS_SERVER,
             bucket_name=self.analyst_config.BUCKET_NAME,
         )
         model_object_name = "model.yaml"
@@ -242,9 +237,6 @@ class AnalystGraphMixin:
                 "analysis_agents_config",
                 model_object_name,
             ),
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=self.analyst_config.OBS_SERVER,
             bucket_name=self.analyst_config.BUCKET_NAME,
         )
         return (task_path, model_path)
@@ -414,39 +406,40 @@ class AnalystGraphMixin:
             }
         timeout = self.analyst_config.TIMEOUT
         max_retries = self.analyst_config.MAX_RETRIES
-        client_timeout = Timeout(timeout, connect=timeout)
         analysis_url = self.analyst_config.ANALYSIS_URL
 
-        async with get_async_client(timeout=client_timeout) as client:
-            response = await request_response_with_retries(
-                client,
-                JsonPostRequest(
-                    url=analysis_url,
-                    headers=job_headers,
-                    json_body=job_data,
-                ),
-                JsonPostRetry(
-                    timeout=timeout,
-                    max_retries=max_retries,
-                    retriable_codes=self.analyst_config.RETRIABLE_CODES,
-                    message="Failed to submit task",
-                ),
+        client = current_outbound_http_client(
+            OutboundPoolName.ANALYSIS_CONTROL
+        )
+        response = await request_response_with_retries(
+            client,
+            JsonPostRequest(
+                url=analysis_url,
+                headers=job_headers,
+                json_body=job_data,
+            ),
+            JsonPostRetry(
+                timeout=timeout,
+                max_retries=max_retries,
+                retriable_codes=self.analyst_config.RETRIABLE_CODES,
+                message="Failed to submit task",
+            ),
+        )
+        if response is not None and response.status_code == 201:
+            payload = response.json()
+            logger.info(
+                "Submit: job_name=%s task_id=%s output_dir=%s "
+                "task_status=RUNNING",
+                job_name,
+                payload["id"],
+                output_dir,
             )
-            if response is not None and response.status_code == 201:
-                payload = response.json()
-                logger.info(
-                    "Submit: job_name=%s task_id=%s output_dir=%s "
-                    "task_status=RUNNING",
-                    job_name,
-                    payload["id"],
-                    output_dir,
-                )
-                return {
-                    "task_id": payload["id"],
-                    "task_status": "PENDING",
-                    "job_name": job_name,
-                    "output_dir": output_dir,
-                }
+            return {
+                "task_id": payload["id"],
+                "task_status": "PENDING",
+                "job_name": job_name,
+                "output_dir": output_dir,
+            }
 
         raise McpError(
             ErrorData(

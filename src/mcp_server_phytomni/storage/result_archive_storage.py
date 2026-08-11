@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from typing import Any
 
 from ..runtime.artifact_roles import ArtifactRole
 from ..runtime.result_archive import (
@@ -19,6 +20,7 @@ from ..runtime.result_archive import (
     validate_result_archive_inventory,
 )
 from .obs_relay_ops import (
+    ObsAccessOptions,
     ObsObjectAlreadyExistsError,
     ObsObjectNotFoundError,
     get_object_bytes,
@@ -35,16 +37,17 @@ def persist_result_archive_inventory(
     inventory: ResultArchiveInventory,
     *,
     bucket: str,
-    obs_server: str,
+    client: Any,
 ) -> str:
     """Write one private inventory, accepting only byte-identical reuse."""
     validate_result_archive_inventory(inventory)
     object_key = _inventory_key(inventory.run_root, inventory.digest)
     content = _serialize_inventory(inventory)
+    access = ObsAccessOptions(client=client)
     existing = _read_existing_inventory(
         bucket,
         object_key,
-        obs_server=obs_server,
+        access=access,
     )
     if existing is not None:
         _require_identical_inventory(existing, content)
@@ -54,13 +57,13 @@ def persist_result_archive_inventory(
             bucket,
             object_key,
             content,
-            obs_server=obs_server,
+            access=access,
         )
     except ObsObjectAlreadyExistsError as exc:
         existing = _read_existing_inventory(
             bucket,
             object_key,
-            obs_server=obs_server,
+            access=access,
         )
         if existing is None:
             raise ResultArchiveError(
@@ -79,16 +82,17 @@ def load_result_archive_inventory(
     digest: str,
     *,
     bucket: str,
-    obs_server: str,
+    client: Any,
 ) -> ResultArchiveInventory:
     """Load one private inventory and reject any malformed or changed field."""
     if not isinstance(run_root, str) or not isinstance(digest, str):
         raise ResultArchiveError("archive_contract_invalid")
     try:
+        access = ObsAccessOptions(client=client)
         raw = get_object_bytes(
             bucket,
             _inventory_key(run_root, digest),
-            obs_server=obs_server,
+            access=access,
         )
         decoded = json.loads(raw.decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -122,11 +126,11 @@ def _read_existing_inventory(
     bucket: str,
     object_key: str,
     *,
-    obs_server: str,
+    access: ObsAccessOptions,
 ) -> bytes | None:
     """Read one inventory, treating only a confirmed 404 as absence."""
     try:
-        return get_object_bytes(bucket, object_key, obs_server=obs_server)
+        return get_object_bytes(bucket, object_key, access=access)
     except ObsObjectNotFoundError:
         return None
     except OSError:

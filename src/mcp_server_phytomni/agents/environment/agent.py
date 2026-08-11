@@ -101,23 +101,17 @@ async def environment_region_codes(
     return tuple((code_info.split("|") + [None] * 3)[:3])
 
 
-def environment_output_dir(user_id: str | None, kwargs: dict[str, Any]) -> str:
+async def environment_output_dir(
+    user_id: str | None, kwargs: dict[str, Any]
+) -> str:
     """Create the output directory for a non-batch VCI task."""
     run_identity = RunIdentity.create(
         user_id=user_id,
         scope="vci_analysis_task",
     )
-    default_access_key_id, default_secret_access_key = (
-        get_sensitive_config().obs_credentials()
-    )
-    return create_output_dir(
+    return await create_output_dir(
         run_identity.user_id,
         "vci_analysis_task",
-        access_key_id=kwargs.get("access_key_id", default_access_key_id),
-        secret_access_key=kwargs.get(
-            "secret_access_key", default_secret_access_key
-        ),
-        obs_server=kwargs.get("obs_server", ENVIRONMENT_CONFIG.OBS_SERVER),
         bucket_name=kwargs.get("bucket_name", ENVIRONMENT_CONFIG.BUCKET_NAME),
         run_identity=run_identity,
     )

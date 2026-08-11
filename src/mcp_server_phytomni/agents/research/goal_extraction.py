@@ -62,7 +62,6 @@ async def extract_research_goals(
         upload_context, _ = await download_upload_context(
             obs_file_list,
             config,
-            dependencies.sensitive_config,
         )
         user_query = dependencies.prompt_builder(
             config.PROMPT_FILE,

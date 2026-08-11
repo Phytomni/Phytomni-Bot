@@ -21,13 +21,9 @@ pytestmark = pytest.mark.unit
 
 def _capacities(**overrides: int) -> dict[OutboundPoolName, int]:
     """Return every finite pool capacity with selected overrides applied."""
-    capacities = {name: 0 for name in OutboundPoolName}
-    capacities.update(
-        {
-            OutboundPoolName(name): capacity
-            for name, capacity in overrides.items()
-        }
-    )
+    capacities = dict.fromkeys(OutboundPoolName, 0)
+    for name, capacity in overrides.items():
+        capacities[OutboundPoolName(name)] = capacity
     return capacities
 
 
@@ -154,6 +150,7 @@ async def test_cancelled_waiter_is_removed_from_snapshot() -> None:
     with pytest.raises(asyncio.CancelledError):
         await waiter_task
     assert registry.snapshot(OutboundPoolName.LLM).waiting == 0
+    assert registry.snapshot(OutboundPoolName.LLM).cancelled == 1
     release.set()
     await holder_task
 
@@ -175,7 +172,9 @@ async def test_in_flight_cancellation_releases_the_pool() -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert registry.snapshot(OutboundPoolName.LLM).in_use == 0
+    snapshot = registry.snapshot(OutboundPoolName.LLM)
+    assert snapshot.in_use == 0
+    assert snapshot.cancelled == 1
 
 
 @pytest.mark.asyncio
@@ -187,12 +186,14 @@ async def test_exception_releases_the_pool() -> None:
         async with registry.lease(OutboundPoolName.LLM):
             raise RuntimeError("boom")
 
-    assert registry.snapshot(OutboundPoolName.LLM).in_use == 0
+    snapshot = registry.snapshot(OutboundPoolName.LLM)
+    assert snapshot.in_use == 0
+    assert snapshot.failed == 1
 
 
 @pytest.mark.asyncio
 async def test_counters_only_increase_across_leases() -> None:
-    """Acquisition and wait counters retain monotonically increasing totals."""
+    """Attempt and wait counters retain monotonically increasing totals."""
     registry = OutboundPoolRegistry(_capacities(llm=1), wait_warn_seconds=0.01)
     entered = asyncio.Event()
     release = asyncio.Event()
@@ -216,9 +217,10 @@ async def test_counters_only_increase_across_leases() -> None:
     release.set()
     await asyncio.gather(holder_task, waiter_task)
     after = registry.snapshot(OutboundPoolName.LLM)
-    assert after.total_acquired > before.total_acquired
-    assert after.total_waited >= before.total_waited
+    assert after.started > before.started
+    assert after.completed > before.completed
     assert after.total_wait_seconds >= before.total_wait_seconds
+    assert after.max_wait_seconds >= before.max_wait_seconds
 
 
 @pytest.mark.asyncio
@@ -244,12 +246,17 @@ async def test_wait_warning_uses_only_fixed_pool_and_counter_fields(
             return None
 
     caplog.set_level(logging.WARNING)
-    holder_task = asyncio.create_task(holder())
-    await entered.wait()
-    waiter_task = asyncio.create_task(waiter())
-    await _wait_for_waiters(registry, OutboundPoolName.LLM, 1)
-    release.set()
-    await asyncio.gather(holder_task, waiter_task)
+    logger = logging.getLogger("mcp_server_phytomni.runtime.outbound.registry")
+    logger.addHandler(caplog.handler)
+    try:
+        holder_task = asyncio.create_task(holder())
+        await entered.wait()
+        waiter_task = asyncio.create_task(waiter())
+        await _wait_for_waiters(registry, OutboundPoolName.LLM, 1)
+        release.set()
+        await asyncio.gather(holder_task, waiter_task)
+    finally:
+        logger.removeHandler(caplog.handler)
     messages = [record.getMessage() for record in caplog.records]
     assert any("pool=llm" in message for message in messages)
     assert all("https://" not in message for message in messages)
@@ -284,7 +291,10 @@ async def test_aclose_wakes_waiters_and_waits_for_active_borrowers() -> None:
     assert not close_task.done()
     release.set()
     await asyncio.gather(holder_task, close_task)
-    assert registry.snapshot(OutboundPoolName.LLM).closing is True
+    assert registry.snapshot(OutboundPoolName.LLM).in_use == 0
+    assert tuple(snapshot.name for snapshot in registry.snapshots()) == tuple(
+        OutboundPoolName
+    )
 
 
 @pytest.mark.asyncio

@@ -12,7 +12,6 @@ the uploaded files itself.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import tempfile
 from collections.abc import Callable
@@ -51,8 +50,9 @@ from ..common.relay_client import current_relay_client
 from ..config.api_limits import ApiLimitsConfig
 from ..config.defaults import ServerConfig
 from ..config.relay_mode import relay_mode_enabled
+from ..runtime.outbound import ObsProfileName, current_obs_runtime
 from ..storage.downloads import convert_single_file
-from ..storage.obs_relay_ops import get_object_bytes
+from ..storage.obs_relay_ops import ObsAccessOptions, get_object_bytes
 from ..storage.research_objects import ResearchObjectMetadataPort
 from .asset_resolver import bind_research_asset_resolver
 
@@ -108,11 +108,14 @@ class _ManagedDocumentDownloader:
                 entry.exact_reference,
                 message="Failed to download Research document",
             )
-        return await asyncio.to_thread(
-            get_object_bytes,
-            self.source.BUCKET_NAME,
-            entry.exact_reference,
-            obs_server=self.source.OBS_SERVER,
+        obs_runtime = current_obs_runtime()
+        return await obs_runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: get_object_bytes(
+                self.source.BUCKET_NAME,
+                entry.exact_reference,
+                access=ObsAccessOptions(client=client),
+            ),
         )
 
 

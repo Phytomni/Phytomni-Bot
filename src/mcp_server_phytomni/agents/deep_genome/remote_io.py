@@ -15,7 +15,6 @@ behavior.
 from __future__ import annotations
 
 import logging
-from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -427,24 +426,17 @@ class DeepGenomeRemoteIO:
     ) -> None:
         """Download selected result objects with direct OBS credentials."""
         try:
-            access_key_id, secret_access_key = (
-                self.sensitive_config.obs_credentials()
-            )
             sdk_download = self.hook("sdk_download", download_obs_out)
-            deque(
-                sdk_download(
-                    task_dir=context.gene_id,
-                    obs_output_path=obs_output_path,
-                    download_path=scratch_root,
-                    access_key_id=access_key_id,
-                    secret_access_key=secret_access_key,
-                    obs_server=self.config.OBS_SERVER,
-                    bucket_name=self.config.BUCKET_NAME,
-                    target_file_feature=features,
-                    if_download_all=False,
-                ),
-                maxlen=0,
+            statuses = await sdk_download(
+                task_dir=context.gene_id,
+                obs_output_path=obs_output_path,
+                download_path=scratch_root,
+                bucket_name=self.config.BUCKET_NAME,
+                target_file_feature=features,
+                if_download_all=False,
             )
+            if not statuses:
+                raise OSError("no analysis results")
         except OSError as exc:
             logger.warning(
                 "Failed to download results (continuing); error_type=%s",

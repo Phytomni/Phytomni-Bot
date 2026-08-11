@@ -17,7 +17,6 @@ from collections.abc import Mapping
 from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import asdict, dataclass
-from functools import partial
 from importlib import import_module
 from inspect import Parameter, Signature
 from typing import Any, cast
@@ -45,13 +44,13 @@ from ..runtime.background_submission import (
     reserve_background_submission,
 )
 from ..runtime.locale import current_effective_locale
+from ..runtime.outbound import current_outbound_runtime
 from ..runtime.research_input_store import ResearchInputStore
 from ..runtime.run_registry import RunRegistry, RunRequestInfo
 from ..runtime.stage_trace import DataStage
 from ..runtime.submission_outcome import (
     project_submission_warnings as _project_warnings,
 )
-from ..storage.obs_relay_ops import operator_obs_client
 from ..storage.research_objects import DirectResearchObjectMetadataPort
 from . import research_capabilities, run_lifecycle
 from .attachments import (
@@ -384,9 +383,12 @@ def _direct_inventory_validator(
         if not parsed.candidates:
             return
         source = ServerConfig()
+        obs_runtime = current_outbound_runtime().obs
+        if obs_runtime is None:
+            raise RuntimeError("OBS runtime is unavailable")
         port = DirectResearchObjectMetadataPort(
             bucket=source.BUCKET_NAME,
-            client_factory=partial(operator_obs_client, source.OBS_SERVER),
+            obs_runtime=obs_runtime,
         )
         await validate_research_inventory(
             ResearchInventoryRequest(

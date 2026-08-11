@@ -21,8 +21,8 @@ from ...agents.shared.remote_analysis import (
 from ...common.relay_client import current_relay_client
 from ...config.defaults import ServerConfig
 from ...config.relay_mode import relay_mode_enabled
+from ...runtime.outbound import current_outbound_runtime
 from ...runtime.research_input_store import ResearchInputStore
-from ...storage.obs_relay_ops import operator_obs_client
 from ...storage.research_objects import (
     DirectResearchObjectMetadataPort,
     RelayResearchObjectMetadataPort,
@@ -255,9 +255,12 @@ def _metadata_port() -> ResearchObjectMetadataPort:
     if relay_mode_enabled():
         return RelayResearchObjectMetadataPort(current_relay_client())
     config = ServerConfig()
+    obs_runtime = current_outbound_runtime().obs
+    if obs_runtime is None:
+        raise RuntimeError("OBS runtime is unavailable")
     return DirectResearchObjectMetadataPort(
         config.BUCKET_NAME,
-        lambda: operator_obs_client(config.OBS_SERVER),
+        obs_runtime,
     )
 
 

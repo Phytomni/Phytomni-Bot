@@ -103,8 +103,8 @@ async def test_http_lifespan_missing_config_fails_before_client_init(
     _clear_citation_config(monkeypatch)
     monkeypatch.setattr(
         app_support,
-        "init_shared_client",
-        _unexpected("HTTP client init"),
+        "init_outbound_runtime",
+        _unexpected("HTTP runtime init"),
     )
 
     with pytest.raises(CitationDatabaseConfigurationError) as exc:
@@ -126,8 +126,8 @@ async def test_mcp_serve_missing_config_fails_before_stdio_or_client(
     _clear_citation_config(monkeypatch)
     monkeypatch.setattr(
         mcp_app,
-        "init_shared_client",
-        _unexpected("MCP client init"),
+        "init_outbound_runtime",
+        _unexpected("MCP runtime init"),
     )
     monkeypatch.setattr(mcp_app, "stdio_server", _unexpected("MCP stdio"))
 
@@ -219,13 +219,13 @@ async def test_invalid_artifact_fails_both_entrypoints_before_client_init(
     resolve_citation_database_path.cache_clear()
     monkeypatch.setattr(
         app_support,
-        "init_shared_client",
-        _unexpected("HTTP client init"),
+        "init_outbound_runtime",
+        _unexpected("HTTP runtime init"),
     )
     monkeypatch.setattr(
         mcp_app,
-        "init_shared_client",
-        _unexpected("MCP client init"),
+        "init_outbound_runtime",
+        _unexpected("MCP runtime init"),
     )
     monkeypatch.setattr(mcp_app, "stdio_server", _unexpected("MCP stdio"))
 
@@ -257,19 +257,18 @@ async def test_http_valid_startup_orders_validation_and_cleanup(
         lambda: events.append("validate"),
         raising=False,
     )
-    monkeypatch.setattr(
-        app_support,
-        "init_shared_client",
-        lambda: events.append("client_init"),
-    )
 
-    async def close_client() -> None:
-        events.append("client_close")
+    async def init_runtime() -> None:
+        events.append("runtime_init")
+
+    async def close_runtime() -> None:
+        events.append("runtime_close")
 
     async def close_gauss() -> None:
         events.append("gauss_close")
 
-    monkeypatch.setattr(app_support, "aclose_shared_client", close_client)
+    monkeypatch.setattr(app_support, "init_outbound_runtime", init_runtime)
+    monkeypatch.setattr(app_support, "aclose_outbound_runtime", close_runtime)
     monkeypatch.setattr(app_support, "aclose_gauss_pool", close_gauss)
 
     async with _http_lifespan_context(FastAPI()):
@@ -277,9 +276,9 @@ async def test_http_valid_startup_orders_validation_and_cleanup(
 
     assert events == [
         "validate",
-        "client_init",
+        "runtime_init",
         "yield",
-        "client_close",
+        "runtime_close",
         "gauss_close",
     ]
 
@@ -327,9 +326,13 @@ async def test_mcp_valid_startup_orders_validation_transport_and_cleanup(
         finally:
             events.append("stdio_exit")
 
-    async def close_client() -> None:
-        """Record shared HTTP client cleanup."""
-        events.append("client_close")
+    async def init_runtime() -> None:
+        """Record outbound runtime startup."""
+        events.append("runtime_init")
+
+    async def close_runtime() -> None:
+        """Record outbound runtime cleanup."""
+        events.append("runtime_close")
 
     async def close_gauss() -> None:
         """Record Gauss pool cleanup."""
@@ -349,11 +352,11 @@ async def test_mcp_valid_startup_orders_validation_transport_and_cleanup(
     monkeypatch.setattr(mcp_app, "Server", _Server)
     monkeypatch.setattr(
         mcp_app,
-        "init_shared_client",
-        lambda: events.append("client_init"),
+        "init_outbound_runtime",
+        init_runtime,
     )
     monkeypatch.setattr(mcp_app, "stdio_server", stdio)
-    monkeypatch.setattr(mcp_app, "aclose_shared_client", close_client)
+    monkeypatch.setattr(mcp_app, "aclose_outbound_runtime", close_runtime)
     monkeypatch.setattr(mcp_app, "aclose_gauss_pool", close_gauss)
 
     await mcp_app.serve()
@@ -365,10 +368,10 @@ async def test_mcp_valid_startup_orders_validation_transport_and_cleanup(
         "register_list_tools",
         "register_call_tool",
         "options",
-        "client_init",
+        "runtime_init",
         "stdio_enter",
         "run",
         "stdio_exit",
-        "client_close",
+        "runtime_close",
         "gauss_close",
     ]

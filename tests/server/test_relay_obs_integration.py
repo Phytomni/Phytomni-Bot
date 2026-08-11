@@ -13,6 +13,7 @@ tenant guard, and ops layers is caught (the per-layer unit tests cannot).
 from __future__ import annotations
 
 import contextlib
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
 
@@ -23,8 +24,14 @@ from mcp.shared.exceptions import McpError
 from pydantic import SecretStr
 
 from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.api.relay import obs as obs_route_module
 from mcp_server_phytomni.api.relay.routes import create_relay_router
 from mcp_server_phytomni.common import relay_client as rc
+from mcp_server_phytomni.runtime.outbound import (
+    ObsClientRuntime,
+    OutboundPoolName,
+)
+from mcp_server_phytomni.runtime.outbound.registry import OutboundPoolRegistry
 
 pytestmark = pytest.mark.server
 
@@ -37,6 +44,34 @@ _OWNER_KEY = "agent_data/user_data/customer/runs/x/out.txt"
 _OWNER_PREFIX = "agent_data/user_data/customer/runs/x/"
 _GENE_MD_KEY = "gene-examples/md/AT1G01010_result.md"
 _GENE_IMAGE_KEY = "gene-examples/img/AT1G01010/AT1G01010_network.png"
+
+
+@pytest.fixture(autouse=True)
+async def _install_operator_obs_runtime(
+    fake_obs_client: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Any:
+    """Bind route SDK calls to the fixture's one operator-owned fake."""
+
+    pools = OutboundPoolRegistry(
+        {
+            name: (1 if name is OutboundPoolName.OBS else 0)
+            for name in OutboundPoolName
+        },
+        wait_warn_seconds=1.0,
+    )
+    obs_runtime = ObsClientRuntime(pools, fake_obs_client())
+
+    monkeypatch.setattr(
+        obs_route_module,
+        "current_outbound_runtime",
+        lambda: SimpleNamespace(obs=obs_runtime),
+    )
+    try:
+        yield
+    finally:
+        await obs_runtime.aclose()
+        await pools.aclose()
 
 
 @pytest.fixture(autouse=True)
@@ -67,17 +102,65 @@ def _owner_key_fixture(tmp_path) -> str:
 def _relay_client(
     app: FastAPI, api_key: str, monkeypatch: pytest.MonkeyPatch
 ) -> rc.RelayClient:
-    """Return a RelayClient whose async client is ASGI-bound to ``app``."""
+    """Return a RelayClient with a runtime-owned ASGI request profile."""
     monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_REQUEST)
 
-    @contextlib.asynccontextmanager
-    async def fake_get_async_client(**_kwargs: Any):
-        del _kwargs
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport) as client:
-            yield client
+    class _RequestClient:
+        """Drive one buffered or streamed request through ASGI."""
 
-    monkeypatch.setattr(rc, "get_async_client", fake_get_async_client)
+        async def request(
+            self, method: str, url: str, **kwargs: Any
+        ) -> httpx.Response:
+            """Run one buffered ASGI request."""
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app)
+            ) as client:
+                response = await client.request(method, url, **kwargs)
+                response.raise_for_status()
+                return response
+
+        @contextlib.asynccontextmanager
+        async def stream(
+            self, method: str, url: str, **kwargs: Any
+        ) -> AsyncIterator[httpx.Response]:
+            """Open one streamed ASGI request."""
+            async with (
+                httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=app)
+                ) as client,
+                client.stream(method, url, **kwargs) as response,
+            ):
+                yield response
+
+    class _HttpRuntime:
+        """Return the ASGI profile for every child relay service pool."""
+
+        def for_pool(
+            self, _pool: object, *, profile: object = None
+        ) -> _RequestClient:
+            """Return the in-process request profile."""
+            del profile
+            return _RequestClient()
+
+        @contextlib.asynccontextmanager
+        async def stream(
+            self,
+            _pool: object,
+            method: str,
+            url: str,
+            *,
+            profile: object = None,
+            **kwargs: Any,
+        ) -> AsyncIterator[httpx.Response]:
+            """Return one in-process streamed response."""
+            del profile
+            async with _RequestClient().stream(
+                method, url, **kwargs
+            ) as response:
+                yield response
+
+    runtime = SimpleNamespace(http=_HttpRuntime())
+    monkeypatch.setattr(rc, "current_outbound_runtime", lambda: runtime)
     return rc.RelayClient(
         base_url="http://relay.test",
         api_key=SecretStr(api_key),

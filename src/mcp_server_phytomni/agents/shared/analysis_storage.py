@@ -5,22 +5,24 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Storage helpers for Analyst-backed analysis workflows.
 
-Exports OBS access options, metadata data-list lookup, and output directory
-builders. Directory helpers prefer obsfs paths and fall back to the OBS SDK
-when the mount is unavailable.
+Exports metadata data-list lookup and output-directory builders. Directory
+helpers prefer obsfs paths and use the process-owned OBS runtime when the
+mount is unavailable.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, NamedTuple
+from typing import Any
 
 from ...common.prompts import file_cache_fingerprint
 from ...config.data_loaders import load_species_data
 from ...config.defaults import AnalystConfig
 from ...config.relay_mode import relay_mode_enabled
-from ...config.settings import get_sensitive_config
-from ...storage.obs_client import ObsClient
+from ...runtime.outbound import (
+    ObsProfileName,
+    current_outbound_runtime,
+)
 from ...storage.obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     obs_path_from_key,
@@ -35,7 +37,6 @@ from ...storage.path_policy import (
 
 __all__ = [
     "ANALYSIS_DATA_LIST_MAP",
-    "ObsAccessOptions",
     "create_output_dir",
     "ensure_run_output_dir",
     "get_data_list",
@@ -45,22 +46,6 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 ANALYST_CONFIG = AnalystConfig()
-
-
-class ObsAccessOptions(NamedTuple):
-    """Resolved OBS endpoint and credential settings.
-
-    Attributes:
-        access_key_id: OBS access key id.
-        secret_access_key: OBS secret access key.
-        obs_server: OBS service endpoint.
-        bucket_name: OBS bucket that stores workflow data.
-    """
-
-    access_key_id: str
-    secret_access_key: str
-    obs_server: str
-    bucket_name: str
 
 
 def get_data_list(
@@ -173,7 +158,7 @@ def resolve_data_list_key(analysis_type: str) -> str:
     return resolved
 
 
-def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
+async def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
     """Create a unique OBS output directory for analysis tasks.
 
     Args:
@@ -191,14 +176,6 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
     Raises:
         OSError: If both obsfs creation and OBS SDK fallback fail.
     """
-    default_access_key_id, default_secret_access_key = (
-        get_sensitive_config().obs_credentials()
-    )
-    access_key_id = kwargs.get("access_key_id", default_access_key_id)
-    secret_access_key = kwargs.get(
-        "secret_access_key", default_secret_access_key
-    )
-    obs_server = kwargs.get("obs_server", ANALYST_CONFIG.OBS_SERVER)
     bucket_name = kwargs.get("bucket_name", ANALYST_CONFIG.BUCKET_NAME)
     obsfs_mount_root = kwargs.get(
         "obsfs_mount_root",
@@ -226,21 +203,22 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
             obsfs_mount_root,
         )
         return obs_path_from_key(bucket_name, output_dir)
-    except OSError:
-        return _create_output_dir_sdk(
-            output_dir,
-            ObsAccessOptions(
-                access_key_id,
-                secret_access_key,
-                obs_server,
+    except OSError as exc:
+        runtime = current_outbound_runtime().obs
+        if runtime is None:
+            raise OSError("OBS runtime is unavailable") from exc
+        return await runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: _create_output_dir_sdk(
+                client,
+                output_dir,
                 bucket_name,
             ),
         )
 
 
-def ensure_run_output_dir(
+async def ensure_run_output_dir(
     config: Any,
-    sensitive_config: Any,
     task: str,
     run_identity: RunIdentity,
     output_dir: str | None = None,
@@ -250,7 +228,6 @@ def ensure_run_output_dir(
 
     Args:
         config: Public config object with OBS endpoint and bucket fields.
-        sensitive_config: Sensitive config object with OBS credentials.
         task: Task label used as the output directory scope.
         run_identity: Run identity used for path construction.
         output_dir: Existing output directory to reuse when provided.
@@ -266,13 +243,9 @@ def ensure_run_output_dir(
     """
     if output_dir:
         return output_dir
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
-    return create_output_dir(
+    return await create_output_dir(
         user_id=run_identity.user_id,
         task=task,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=config.OBS_SERVER,
         bucket_name=config.BUCKET_NAME,
         run_identity=run_identity,
         fingerprint=kwargs.get("fingerprint"),
@@ -291,24 +264,20 @@ def _create_output_dir_obsfs(
 
 
 def _create_output_dir_sdk(
+    obs_client: Any,
     output_dir: str,
-    access: ObsAccessOptions,
+    bucket_name: str,
 ) -> str:
     """Create an output directory through the OBS SDK fallback."""
-    obs_client = ObsClient(
-        access_key_id=access.access_key_id,
-        secret_access_key=access.secret_access_key,
-        server=access.obs_server,
-    )
     try:
         response = obs_client.putContent(
-            bucketName=access.bucket_name,
+            bucketName=bucket_name,
             objectKey=output_dir,
             content=None,
         )
         status_code = getattr(response, "status", None)
         if status_code is not None and status_code < 300:
-            return f"/obs/{access.bucket_name}/{output_dir}"
+            return f"/obs/{bucket_name}/{output_dir}"
         raise OSError(_obs_error_message("Put File Failed", response))
     except Exception as exc:
         logger.exception("OBS upload failed for output dir %s", output_dir)

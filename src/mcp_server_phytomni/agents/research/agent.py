@@ -644,15 +644,9 @@ class InSilicoResearchAgents:
             user_id=state.get("user_id"),
             scope="in_silico_research_task",
         )
-        access_key_id, secret_access_key = (
-            self.sensitive_config.obs_credentials()
-        )
-        output_dir = state.get("output_dir") or create_output_dir(
+        output_dir = state.get("output_dir") or await create_output_dir(
             user_id=run_identity.user_id,
             task="in_silico_research_task",
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=self.in_silico_config.OBS_SERVER,
             bucket_name=self.in_silico_config.BUCKET_NAME,
             run_identity=run_identity,
         )

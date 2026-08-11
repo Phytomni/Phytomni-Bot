@@ -13,21 +13,21 @@ from dataclasses import dataclass, replace
 from random import uniform
 from typing import Any, NamedTuple
 
-from httpx import AsyncClient, Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...auth.iam import get_token
 from ...common.http import (
+    AsyncRequestClient,
     JsonPostRequest,
     JsonPostRetry,
     post_json_with_retries,
 )
-from ...common.httpx_client import get_async_client
 from ...common.relay_client import current_relay_client
 from ...config.defaults import DataConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...func_cache import LONG_TTL_SECONDS, func_cache
+from ...runtime.outbound import OutboundPoolName, current_outbound_runtime
 from ...storage.path_policy import IdFactory
 
 DATA_CONFIG = DataConfig()
@@ -185,7 +185,7 @@ async def nl2sql(
 
 
 async def _post_one_conversation(
-    client: AsyncClient,
+    client: AsyncRequestClient,
     request: Nl2SqlRequest,
     body: dict[str, Any],
     token: str,
@@ -255,31 +255,33 @@ async def _execute_nl2sql_uncached(request: Nl2SqlRequest) -> Any:
     """
     if relay_mode_enabled():
         return await _execute_nl2sql_via_relay(request)
-    client_timeout = Timeout(request.timeout, connect=request.timeout)
     token = await get_token(timeout=request.timeout)
-    async with get_async_client(timeout=client_timeout) as client:
-        last_attempt = request.max_retries
-        for attempt in range(last_attempt + 1):
-            # Attempt 0 keeps the caller's conversation (honors an
-            # explicit dialog_id); every retry is a brand-new
-            # conversation so a poisoned server-side cache slot left
-            # by the failed attempt is bypassed.
-            body = (
-                request.payload()
-                if attempt == 0
-                else request.payload_with_fresh_dialog()
-            )
-            try:
-                return await _post_one_conversation(
-                    client, request, body, token
-                )
-            except McpError:
-                # Rotate to a fresh conversation on the next attempt;
-                # on the final attempt surface the real error so the
-                # caller never sees a silent None.
-                if attempt == last_attempt:
-                    raise
-                await _rotation_backoff(attempt)
+    runtime = current_outbound_runtime()
+    client = runtime.http.for_pool(OutboundPoolName.NL2SQL)
+    last_attempt = request.max_retries
+    for attempt in range(last_attempt + 1):
+        # Attempt 0 keeps the caller's conversation (honors an
+        # explicit dialog_id); every retry is a brand-new
+        # conversation so a poisoned server-side cache slot left
+        # by the failed attempt is bypassed.
+        body = (
+            request.payload()
+            if attempt == 0
+            else request.payload_with_fresh_dialog()
+        )
+        try:
+            # The lease covers exactly one target-bound network attempt.
+            # The bound client acquires it around the network attempt. IAM is
+            # fetched before that call, and rotation backoff runs after it
+            # returns, so neither unrelated work nor sleep consumes the slot.
+            return await _post_one_conversation(client, request, body, token)
+        except McpError:
+            # Rotate to a fresh conversation on the next attempt;
+            # on the final attempt surface the real error so the
+            # caller never sees a silent None.
+            if attempt == last_attempt:
+                raise
+            await _rotation_backoff(attempt)
     # Reached only if max_retries is negative (empty attempt range);
     # never silently return None into the NL2SQL caller.
     raise McpError(

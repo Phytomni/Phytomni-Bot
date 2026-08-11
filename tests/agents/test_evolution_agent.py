@@ -11,12 +11,10 @@ returns no response and the wrapper short-circuits.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
-import httpx
 import pytest
 
 from mcp_server_phytomni.agents.evolution import agent as evolution_agent
@@ -76,19 +74,20 @@ async def test_evo_test_analysis_returns_none_task_when_chat_returns_none(
     assert "user_query" in chat_input
 
 
-async def test_find_spa_taxids_uses_async_httpx_factory(
+async def test_find_spa_taxids_uses_direct_outbound_profile(
     monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
 ):
-    """Verify the taxid lookup drives the shared async httpx factory.
+    """Verify the taxid lookup uses the direct SPA pool profile.
 
     The previous implementation called ``requests.get`` synchronously,
     blocking the event loop and bypassing the central TLS resolver.
-    This test mocks ``get_async_client`` so the captured kwargs and the
-    JSON parsing both surface through the new async path.
+    This test installs a recording runtime so request construction and JSON
+    parsing both surface through the owned direct-upstream profile.
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture used to swap the auth
-            token loader and the shared HTTP client factory.
+        monkeypatch: Pytest monkeypatch fixture used to swap the auth loader.
+        outbound_runtime: Recording process-owned outbound runtime.
     """
     captured: dict[str, Any] = {}
 
@@ -98,51 +97,36 @@ async def test_find_spa_taxids_uses_async_httpx_factory(
         return "fake-iam-token"
 
     monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
-
-    @asynccontextmanager
-    async def fake_factory(**factory_kwargs: Any):
-        """Hand out a stub client that records the parameters passed in."""
-        captured["factory_kwargs"] = factory_kwargs
-
-        async def fake_get(url: str, **call_kwargs: Any) -> httpx.Response:
-            """Capture the request and return a two-record payload."""
-            captured["url"] = url
-            captured["call_kwargs"] = call_kwargs
-            return httpx.Response(
-                200,
-                json={
-                    "total": 2,
-                    "records": [
-                        {"answer": "9606. Homo sapiens"},
-                        {"answer": "10090. Mus musculus"},
-                    ],
-                },
-            )
-
-        yield SimpleNamespace(get=fake_get)
-
-    monkeypatch.setattr(evolution_agent, "get_async_client", fake_factory)
+    outbound_runtime.transport.enqueue(
+        content=(
+            b'{"total":2,"records":['
+            b'{"answer":"9606. Homo sapiens"},'
+            b'{"answer":"10090. Mus musculus"}]}'
+        )
+    )
 
     taxids = await evolution_agent.find_spa_taxids("Arabidopsis", timeout=12.0)
 
     assert taxids == ["9606", "10090"]
-    assert captured["factory_kwargs"]["timeout"] == 12.0
     assert captured["token_timeout"] == 12.0
-    assert captured["factory_kwargs"]["trust_env"] is False
+    request = outbound_runtime.transport.requests[0]
+    assert request.headers["X-Auth-Token"] == "fake-iam-token"
+    assert request.url.params["question"] == "Arabidopsis"
     assert (
-        captured["call_kwargs"]["headers"]["X-Auth-Token"] == "fake-iam-token"
+        outbound_runtime.resources.constructed["direct_upstream"]["trust_env"]
+        is False
     )
-    assert captured["call_kwargs"]["params"]["question"] == "Arabidopsis"
 
 
 async def test_find_spa_taxids_returns_empty_on_non_200(
     monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
 ):
     """Verify the lookup short-circuits to an empty list on non-200.
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture used to swap the auth
-            token loader and the shared HTTP client factory.
+        monkeypatch: Pytest monkeypatch fixture used to swap the auth loader.
+        outbound_runtime: Recording process-owned outbound runtime.
     """
 
     async def fake_get_token(**_kwargs: Any) -> str:
@@ -150,20 +134,7 @@ async def test_find_spa_taxids_returns_empty_on_non_200(
         return "fake-iam-token"
 
     monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
-
-    @asynccontextmanager
-    async def fake_factory(**factory_kwargs: Any):
-        """Yield a stub client that always returns a 502."""
-        del factory_kwargs
-
-        async def fake_get(url: str, **call_kwargs: Any) -> httpx.Response:
-            """Discard the request and return a 502 response."""
-            del url, call_kwargs
-            return httpx.Response(502, text="bad gateway")
-
-        yield SimpleNamespace(get=fake_get)
-
-    monkeypatch.setattr(evolution_agent, "get_async_client", fake_factory)
+    outbound_runtime.transport.enqueue(status=502, content=b"bad gateway")
 
     taxids = await evolution_agent.find_spa_taxids("oryza", timeout=1.0)
 

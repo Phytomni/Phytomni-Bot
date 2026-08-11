@@ -15,10 +15,9 @@ import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from random import uniform
-from typing import Any
+from typing import Any, Protocol
 
 from httpx import (
-    AsyncClient,
     HTTPStatusError,
     NetworkError,
     ProxyError,
@@ -43,6 +42,31 @@ _RETRIABLE_TRANSPORT_ERRORS = (
     RemoteProtocolError,
     ProxyError,
 )
+
+
+class AsyncRequestClient(Protocol):  # pylint: disable=too-few-public-methods
+    """Narrow transport contract whose request classifies HTTP status."""
+
+    async def request(
+        self,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> Response:
+        """Run one buffered request attempt or raise its transport error."""
+        raise NotImplementedError
+
+
+def resolve_request_timeout(
+    request_timeout: float | None,
+    options: dict[str, Any],
+) -> float | None:
+    """Resolve the legacy ``timeout=`` spelling for async helpers."""
+    timeout = options.pop("timeout", request_timeout)
+    if options:
+        unexpected = next(iter(options))
+        raise TypeError(f"unexpected keyword argument: {unexpected}")
+    return timeout
 
 
 @dataclass(frozen=True)
@@ -87,7 +111,7 @@ class JsonPostRetry:
 
 
 async def _send_retry_request(
-    client: AsyncClient,
+    client: AsyncRequestClient,
     request: JsonPostRequest,
     request_timeout: float,
 ) -> Response:
@@ -105,21 +129,6 @@ async def _send_retry_request(
     else:
         content = None
         form_data = raw
-    if method == "GET":
-        return await client.get(
-            request.url,
-            headers=headers,
-            timeout=request_timeout,
-        )
-    if method == "POST":
-        return await client.post(
-            request.url,
-            json=request.json_body,
-            content=content,
-            data=form_data,
-            headers=headers,
-            timeout=request_timeout,
-        )
     return await client.request(
         method,
         request.url,
@@ -220,14 +229,14 @@ async def retry_network_or_raise(
 
 
 async def request_response_with_retries(
-    client: AsyncClient,
+    client: AsyncRequestClient,
     request: JsonPostRequest,
     retry: JsonPostRetry,
 ) -> Response:
     """Request with shared HTTP/network retry handling and return response.
 
     Args:
-        client: Async HTTP client (httpx.AsyncClient).
+        client: Status-classifying async request client.
         request: JSON POST request payload including url,
             method, headers, body.
         retry: Retry policy including timeout, max_retries,
@@ -249,7 +258,6 @@ async def request_response_with_retries(
             response = await _send_retry_request(
                 client, request, retry.timeout
             )
-            response.raise_for_status()
             return response
         except HTTPStatusError as exc:
             if await retry_http_status_or_raise(
@@ -282,7 +290,7 @@ async def request_response_with_retries(
 
 
 async def post_json_with_retries(
-    client: AsyncClient,
+    client: AsyncRequestClient,
     request: JsonPostRequest,
     retry: JsonPostRetry,
 ) -> Any:
@@ -297,7 +305,7 @@ async def post_json_with_retries(
     ``McpError`` instead of an opaque downstream ``KeyError``.
 
     Args:
-        client: Async HTTP client (httpx.AsyncClient).
+        client: Status-classifying async request client.
         request: JSON POST request payload including url,
             method, headers, body.
         retry: Retry policy including timeout, max_retries,

@@ -13,25 +13,24 @@ import asyncio
 from typing import Any, NamedTuple
 
 from httpx import (
-    AsyncClient,
     ConnectError,
     HTTPStatusError,
-    Timeout,
     TimeoutException,
 )
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.http import (
+    AsyncRequestClient,
     JsonPostRequest,
     JsonPostRetry,
     post_json_with_retries,
 )
-from ...common.httpx_client import get_async_client
 from ...common.lists import split_list
 from ...common.relay_client import current_relay_client
 from ...config.relay_mode import relay_mode_enabled
 from ...func_cache import LONG_TTL_SECONDS, func_cache
+from ...runtime.outbound import OutboundPoolName, current_outbound_runtime
 from .retrieval_options import (
     KNOWLEDGE_CONFIG,
     MultiRetrieveOptions,
@@ -72,7 +71,7 @@ class _RetrieveScopeKey(NamedTuple):
 class _RetrieveScopeRequest(NamedTuple):
     """Transport settings for one scoped retrieval request."""
 
-    client: AsyncClient
+    client: AsyncRequestClient
     retrieve_url: str
     timeout: float
     max_retries: int
@@ -161,24 +160,27 @@ async def _retrieve_raw_docs(
     options: RetrieveOptions,
 ) -> list[dict[str, Any]]:
     """Return raw documents for the configured retrieval scope."""
-    async with get_async_client(timeout=_timeout(options.timeout)) as client:
-        if options.scope in ("doc", "keyword"):
-            docs = await _retrieve_scope_docs(
-                _retrieve_scope_key(user_query, options, options.scope),
-                _RetrieveScopeRequest(
-                    client=client,
-                    retrieve_url=options.retrieve_url,
-                    timeout=options.timeout,
-                    max_retries=options.max_retries,
-                    retriable_codes=options.retriable_codes,
-                ),
-            )
-        elif options.scope == "both":
-            docs = await _retrieve_both_scopes(client, user_query, options)
-        else:
-            raise ValueError(
-                "Invalid scope value. Must be 'doc', 'keyword', or 'both'."
-            )
+    if options.scope not in ("doc", "keyword", "both"):
+        raise ValueError(
+            "Invalid scope value. Must be 'doc', 'keyword', or 'both'."
+        )
+    client = current_outbound_runtime().http.for_pool(
+        OutboundPoolName.RETRIEVAL
+    )
+    docs: Any = []
+    if options.scope in ("doc", "keyword"):
+        docs = await _retrieve_scope_docs(
+            _retrieve_scope_key(user_query, options, options.scope),
+            _RetrieveScopeRequest(
+                client=client,
+                retrieve_url=options.retrieve_url,
+                timeout=options.timeout,
+                max_retries=options.max_retries,
+                retriable_codes=options.retriable_codes,
+            ),
+        )
+    elif options.scope == "both":
+        docs = await _retrieve_both_scopes(client, user_query, options)
     return _list_or_empty(docs)
 
 
@@ -226,7 +228,7 @@ async def _retrieve_scope_docs(
 
 
 async def _retrieve_both_scopes(
-    client: AsyncClient,
+    client: AsyncRequestClient,
     user_query: str,
     options: RetrieveOptions,
 ) -> list[dict[str, Any]]:
@@ -332,8 +334,8 @@ async def rerank(
     """Rerank documents by score and apply the configured threshold."""
     options = RerankOptions.from_kwargs(kwargs)
     docs, id_doc_dict = _rerank_docs(doc_list)
-    async with get_async_client(timeout=_timeout(options.timeout)) as client:
-        rank_docs = await _rank_docs(client, user_query, docs, options)
+    client = current_outbound_runtime().http.for_pool(OutboundPoolName.RERANK)
+    rank_docs = await _rank_docs(client, user_query, docs, options)
     return [
         {**id_doc_dict[doc["id"]].copy(), "score": doc["score"]}
         for doc in _list_or_empty(rank_docs)
@@ -342,7 +344,7 @@ async def rerank(
 
 
 async def _rank_docs(
-    client: AsyncClient,
+    client: AsyncRequestClient,
     user_query: str,
     docs: list[dict[str, Any]],
     options: RerankOptions,
@@ -384,7 +386,7 @@ async def _rank_docs(
 
 
 async def _rerank_batch(
-    client: AsyncClient,
+    client: AsyncRequestClient,
     request: _RerankBatchRequest,
 ) -> list[dict[str, Any]]:
     """Send one rerank request batch."""
@@ -480,11 +482,6 @@ def _list_or_empty(value: Any) -> list:
     if isinstance(value, list):
         return value
     return list(value)
-
-
-def _timeout(timeout: float) -> Timeout:
-    """Return an httpx timeout with matching connect timeout."""
-    return Timeout(timeout, connect=timeout)
 
 
 def clear_retrieval_caches() -> None:

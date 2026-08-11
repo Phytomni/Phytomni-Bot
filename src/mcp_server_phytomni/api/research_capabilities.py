@@ -10,14 +10,13 @@ import asyncio
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from functools import partial
 from importlib import import_module
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 from ..config.defaults import ApiConfig, ServerConfig
 from ..config.relay_mode import relay_mode_enabled
-from ..storage.obs_relay_ops import operator_obs_client
+from ..runtime.outbound import current_outbound_runtime
 from ..storage.research_objects import DirectResearchObjectMetadataPort
 
 if TYPE_CHECKING:
@@ -297,9 +296,12 @@ def _direct_constructible(config: ApiConfig) -> bool:
             for name in ("BUCKET_NAME", "OBS_SERVER")
         ):
             source = ServerConfig()
+        obs_runtime = current_outbound_runtime().obs
+        if obs_runtime is None:
+            return False
         DirectResearchObjectMetadataPort(
             bucket=source.BUCKET_NAME,
-            client_factory=partial(operator_obs_client, source.OBS_SERVER),
+            obs_runtime=obs_runtime,
         )
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
         return False

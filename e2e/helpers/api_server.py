@@ -231,7 +231,8 @@ def boot_phytomni_api(
     base_url = f"http://127.0.0.1:{port}"
     env = os.environ.copy()
     env.update(environment or {})
-    env.pop("PHYTOMNI_TESTING", None)
+    if environment is None or environment.get("PHYTOMNI_TESTING") != "1":
+        env.pop("PHYTOMNI_TESTING", None)
     env["API_HOST"] = "127.0.0.1"
     env["API_PORT"] = str(port)
     env["PHYTOMNI_API_KEYS_DB"] = keys_db

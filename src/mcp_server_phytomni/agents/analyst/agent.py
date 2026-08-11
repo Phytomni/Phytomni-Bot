@@ -15,11 +15,7 @@ continue to resolve every public name unchanged.
 
 from __future__ import annotations
 
-from ..shared.analysis_storage import (
-    ObsAccessOptions,
-    create_output_dir,
-    get_data_list,
-)
+from ..shared.analysis_storage import create_output_dir, get_data_list
 from .core import AnalystAgent, AnalystAgentsState
 from .defaults import (
     ANALYST_CONFIG,
@@ -44,7 +40,6 @@ _PUBLIC_EXPORTS = {
     "ANALYST_SENSITIVE_FIELD_MAP": ANALYST_SENSITIVE_FIELD_MAP,
     "AnalystAgent": AnalystAgent,
     "AnalystAgentsState": AnalystAgentsState,
-    "ObsAccessOptions": ObsAccessOptions,
     "ObsDownloadOptions": ObsDownloadOptions,
     "create_output_dir": create_output_dir,
     "delete_analyst_agents_data": delete_analyst_agents_data,
