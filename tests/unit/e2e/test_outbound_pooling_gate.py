@@ -10,6 +10,7 @@ from collections.abc import Iterator, Mapping
 from unittest.mock import Mock
 
 import pytest
+from e2e.helpers import outbound_pooling
 from e2e.helpers.outbound_pooling import (
     LIVE_GATE_NAMES,
     MISSING_LIVE_GATE_REASON,
@@ -18,6 +19,10 @@ from e2e.helpers.outbound_pooling import (
 )
 
 pytestmark = pytest.mark.unit
+
+LIVE_ACCEPTANCE_SCENARIOS = getattr(
+    outbound_pooling, "LIVE_ACCEPTANCE_SCENARIOS", ()
+)
 
 
 @pytest.mark.parametrize("missing", LIVE_GATE_NAMES)
@@ -70,3 +75,45 @@ def test_all_gates_pass_without_touching_any_other_configuration() -> None:
     assert reads == list(LIVE_GATE_NAMES)
     secret_accessor.assert_not_called()
     socket_accessor.assert_not_called()
+
+
+def test_live_scenario_guard_is_available() -> None:
+    """The e2e helper exposes one gate-first scenario execution seam."""
+    assert LIVE_ACCEPTANCE_SCENARIOS
+    assert callable(getattr(outbound_pooling, "require_live_scenario", None))
+
+
+@pytest.mark.parametrize("scenario", LIVE_ACCEPTANCE_SCENARIOS)
+@pytest.mark.parametrize("missing", LIVE_GATE_NAMES)
+def test_every_live_scenario_stops_at_each_missing_gate(
+    scenario: str,
+    missing: str,
+) -> None:
+    """Every acceptance scenario fails closed before its live accessor."""
+    environ = {name: "1" for name in LIVE_GATE_NAMES}
+    environ.pop(missing)
+    live_accessor = Mock()
+
+    with pytest.raises(MissingOutboundLiveGateError):
+        outbound_pooling.require_live_scenario(
+            environ, scenario, live_accessor
+        )
+
+    live_accessor.assert_not_called()
+
+
+@pytest.mark.parametrize("scenario", LIVE_ACCEPTANCE_SCENARIOS)
+def test_every_live_scenario_runs_only_after_all_gates(
+    scenario: str,
+) -> None:
+    """All four confirmations are required before scenario setup begins."""
+    live_accessor = Mock(return_value=f"ready:{scenario}")
+
+    result = outbound_pooling.require_live_scenario(
+        {name: "1" for name in LIVE_GATE_NAMES},
+        scenario,
+        live_accessor,
+    )
+
+    assert result == f"ready:{scenario}"
+    live_accessor.assert_called_once_with()

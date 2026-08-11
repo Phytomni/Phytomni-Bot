@@ -6,13 +6,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from typing import TypeVar
+
+_ResultT = TypeVar("_ResultT")
 
 LIVE_GATE_NAMES: tuple[str, ...] = (
     "PHYTOMNI_RUN_INTEGRATION",
     "PHYTOMNI_ALLOW_NETWORK",
     "PHYTOMNI_RUN_OUTBOUND_POOL_E2E",
     "PHYTOMNI_CONFIRM_NON_PRODUCTION",
+)
+LIVE_ACCEPTANCE_SCENARIOS: tuple[str, ...] = (
+    "llm_stream_and_completion",
+    "retrieval_and_rerank",
+    "nl2sql",
+    "analysis_lifecycle",
+    "relay_paths",
+    "obs_lifecycle",
+    "interop_targets",
+    "cancellation",
+    "resource_reuse",
+    "bounded_capacity",
+    "clean_shutdown",
 )
 MISSING_LIVE_GATE_REASON = (
     "outbound pooling live acceptance requires all four non-production "
@@ -46,9 +62,23 @@ def require_live_gates(environ: Mapping[str, str]) -> None:
         )
 
 
+def require_live_scenario(
+    environ: Mapping[str, str],
+    scenario: str,
+    live_accessor: Callable[[], _ResultT],
+) -> _ResultT:
+    """Run one known live setup callback only after all safety gates pass."""
+    require_live_gates(environ)
+    if scenario not in LIVE_ACCEPTANCE_SCENARIOS:
+        raise ValueError(f"unknown outbound live scenario: {scenario}")
+    return live_accessor()
+
+
 __all__ = [
+    "LIVE_ACCEPTANCE_SCENARIOS",
     "LIVE_GATE_NAMES",
     "MISSING_LIVE_GATE_REASON",
     "MissingOutboundLiveGateError",
     "require_live_gates",
+    "require_live_scenario",
 ]
