@@ -121,7 +121,7 @@ async def test_scientific_child_failure_never_builds_or_publishes_delivery(
     )
     monkeypatch.setattr(
         run_registry_reports,
-        "persist_result_archive_inventory",
+        "persist_result_archive_inventory_with_runtime",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("must not publish")
         ),
