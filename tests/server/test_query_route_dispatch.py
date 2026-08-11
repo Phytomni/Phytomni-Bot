@@ -546,12 +546,10 @@ async def test_route_strict_failures_never_invoke_agent(
 ) -> None:
     """Non-forced strict selector contract failures stop before dispatch.
 
-    A model *decline* (no choice / no tool call) is only a failure when the
-    caller did not authorize ``ChatAgent``; these cases use a chat-less
-    allowlist so the decline stays a 502 (the chat-degrade path is covered
-    by ``test_route_strict_decline_degrades_to_chat_when_allowed``). Genuine
-    violations -- multiple, unknown, or out-of-allowlist calls -- always 502
-    regardless of the allowlist.
+    A model *decline* (no choice / no tool call) is always a 502 under the
+    strict contract, including when ``ChatAgent`` is allowlisted. Genuine
+    violations -- multiple, unknown, or out-of-allowlist calls -- also always
+    return 502 regardless of the allowlist.
 
     A forced route is intentionally NOT a failure case here: a pinned
     ``@agent`` is coerced to the forced tool and does dispatch even when the
@@ -792,9 +790,8 @@ async def test_route_no_selection_returns_sanitized_502(
     raises ``ExpertRoutingDeclinedError`` on a decline -- so this exercises
     the
     defensive guard, which must not leak the query or allowlist even though
-    ``ChatAgent`` is authorized. The chat-degrade path keys off the decline
-    exception, not this sentinel (see
-    ``test_route_strict_decline_degrades_to_chat_when_allowed``).
+    ``ChatAgent`` is authorized. Both the sentinel and the typed decline are
+    sanitized contract failures.
     """
     _patch_select(monkeypatch, None)
 
@@ -818,20 +815,17 @@ async def test_route_no_selection_returns_sanitized_502(
     assert "DataAgent" not in response.text
 
 
-async def test_route_strict_decline_degrades_to_chat_when_allowed(
+async def test_route_strict_decline_returns_502_without_dispatch(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """A strict decline degrades to ChatAgent when the caller allowed it.
+    """A strict decline never relaxes into a ChatAgent dispatch.
 
-    Drives the real router: the endpoint returns no tool call (the shape the
-    ``required`` -> ``auto`` downgrade produces on a decline), so the router
-    raises ``ExpertRoutingDeclinedError``. Because ``ChatAgent`` is in the
-    allowlist, the route degrades to a chat dispatch and injects the original
-    ``user_query`` (which ``prepare_expert_arguments`` never synthesizes),
-    resolving to the ``chat`` slug rather than a 502.
+    The real router raises ``ExpertRoutingDeclinedError`` when the provider
+    returns no tool call. Even when ChatAgent is allowlisted, the strict
+    contract requires a sanitized 502 and zero agent/run side effects.
     """
     captured: dict[str, Any] = {}
     install_chat_handler(monkeypatch, captured, content="declined to chat")
@@ -848,18 +842,15 @@ async def test_route_strict_decline_degrades_to_chat_when_allowed(
         },
     )
 
-    assert response.status_code == 200
-    body = response.json()
-    # The original query is injected verbatim for the degraded chat turn,
-    # and the decline resolves to the chat slug rather than a 502.
-    assert captured["user_query"] == "what is photosynthesis"
-    assert (body["object"], body["agent"], body["status"]) == (
-        "agent.run",
-        "chat",
-        "succeeded",
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == ("routing_contract_violation")
+    assert response.json()["error"]["stage"] == "routing"
+    assert response.json()["error"]["retryable"] is False
+    assert response.json()["error"]["message"] == (
+        "The routing contract is invalid."
     )
-    record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
-    assert record.spec.agent == "chat"
+    assert not captured
+    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
 
 
 async def test_legacy_a2a_no_selection_cannot_relax_strict_route(

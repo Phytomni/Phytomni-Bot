@@ -104,9 +104,10 @@ class ExpertRoutingDeclinedError(ToolSelectionError):
     endpoint follows the ``required`` -> ``auto`` downgrade and simply means
     "this turn is plain chat". It subclasses ``ToolSelectionError`` so every
     existing broad handler still treats a decline as a contract error; the
-    HTTP Expert boundary catches it first to degrade to the chat agent when
-    the caller allowed one. Genuine violations (multiple, malformed, or
-    out-of-allowlist tool calls) keep raising ``ToolSelectionError``.
+    strict HTTP Expert boundary maps it to the same sanitized contract
+    violation as every other invalid selection. Genuine violations
+    (multiple, malformed, or out-of-allowlist tool calls) keep raising
+    ``ToolSelectionError``.
     """
 
 

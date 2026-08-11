@@ -27,8 +27,6 @@ from ..agents.expert import (
     ExpertProviderError,
     ExpertProviderTimeoutError,
     ExpertRoutingContractError,
-    ExpertRoutingDeclinedError,
-    ToolSelection,
     select_agent_tool,
 )
 from ..common import logging_config as _logging_config
@@ -331,23 +329,6 @@ async def _route_expert_query(
             payload.history,
             allowed_tools=payload.allowed_tools,
             forced_tool=payload.forced_tool,
-        )
-    except ExpertRoutingDeclinedError as exc:
-        # The model answered directly instead of picking a tool -- on the
-        # real endpoint this follows the ``required`` -> ``auto`` downgrade
-        # and means the turn is plain chat. Degrade to ChatAgent when the
-        # caller allowed it (injecting ``user_query`` because selected
-        # preparation restores the canonical query), mirroring the A2A
-        # mapper's ``None`` -> ChatAgent fallback. Otherwise the caller
-        # scoped chat out, so the decline stays a 502 contract failure.
-        if "ChatAgent" not in payload.allowed_tools:
-            _LOGGER.warning(
-                "Expert routing declined with no chat fallback allowed"
-            )
-            raise _routing_contract_error() from exc
-        selection = ToolSelection(
-            tool_name="ChatAgent",
-            arguments={"user_query": payload.user_query},
         )
     except ExpertRoutingContractError as exc:
         _LOGGER.warning(

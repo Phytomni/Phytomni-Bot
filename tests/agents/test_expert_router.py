@@ -202,9 +202,9 @@ async def test_select_expert_tool_decline_raises_declined(
 
     An empty-choice or tool-call-free completion is the model answering
     directly rather than a contract fault, so the strict seam raises the
-    narrower ``ExpertRoutingDeclinedError`` (a ``ToolSelectionError`` subclass
-    the HTTP layer catches first to degrade to chat) rather than a bare
-    ``ToolSelectionError``.
+    narrower ``ExpertRoutingDeclinedError`` (a ``ToolSelectionError``
+    subclass that the strict HTTP layer maps to a contract violation) rather
+    than a bare ``ToolSelectionError``.
     """
 
     async def fake_completion(**_kwargs: Any) -> object:
@@ -227,8 +227,8 @@ async def test_select_expert_tool_genuine_violation_not_declined() -> None:
     """A real contract violation stays a plain ``ToolSelectionError``.
 
     An out-of-allowlist pick is a genuine fault, not a decline, so it must
-    NOT raise ``ExpertRoutingDeclinedError`` -- otherwise the HTTP layer would
-    wrongly degrade a misbehaving selector to chat.
+    NOT raise ``ExpertRoutingDeclinedError`` -- the HTTP layer must preserve
+    the distinction while mapping both outcomes to a safe contract error.
     """
 
     async def fake_completion(**_kwargs: Any) -> object:
