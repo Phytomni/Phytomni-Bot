@@ -351,10 +351,9 @@ def _normalized_object_key(
         object_key = normalize_obs_object_key(raw_key, bucket)
     except ValueError:
         raise ResearchObjectMetadataError() from None
-    if (
-        not object_key
-        or not candidate.compound_suffix
-        or not object_key.casefold().endswith(
+    if not object_key or (
+        candidate.compound_suffix
+        and not object_key.casefold().endswith(
             candidate.compound_suffix.casefold()
         )
     ):

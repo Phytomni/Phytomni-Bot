@@ -178,6 +178,7 @@ def test_bound_research_asset_resolver_rechecks_effective_owner(
     snapshots = bound((asset_id,))
 
     assert [snapshot.asset_id for snapshot in snapshots] == [asset_id]
+    assert snapshots[0].exact_reference.startswith("obs://resolver-bucket/")
     assert snapshots[0].completed
     assert snapshots[0].state_version >= 1
     assert snapshots[0].completed_at

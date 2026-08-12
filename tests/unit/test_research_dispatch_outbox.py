@@ -248,6 +248,47 @@ def test_plan_persists_exact_private_authority_bindings(
     assert grant["snapshot_digest"] == "snapshot-001"
 
 
+def test_plan_persists_server_owned_binding_without_suffix(
+    tmp_path: Path,
+) -> None:
+    """Opaque managed keys retain durable grants without a suffix hint."""
+    store = _store(tmp_path)
+    authority = ResearchObjectAuthority(
+        dataset_id="dataset-opaque",
+        authority_id="grant-opaque",
+        snapshot=ResearchObjectSnapshot(
+            dataset_id="dataset-opaque",
+            size_bytes=17,
+            etag="etag-opaque",
+            version_id="version-opaque",
+            last_modified="2026-08-08T00:00:00+00:00",
+            placeholder=False,
+            snapshot_digest="snapshot-opaque",
+        ),
+    )
+    prepared = replace(
+        _prepared(),
+        authorities=(
+            PreparedResearchAuthority(
+                dataset_id="dataset-opaque",
+                exact_reference="obs://dev-bucket/opaque-key",
+                compound_suffix="",
+                authority=authority,
+            ),
+        ),
+    )
+
+    record = persist_plan_and_outbox(store, "run-1", 0, prepared, _plan(1))[0]
+    grant = (
+        ResearchDispatchOutbox(store)
+        .load(record.dispatch_id)
+        .payload["research_grants"][0]
+    )
+
+    assert grant["exact_reference"] == "obs://dev-bucket/opaque-key"
+    assert grant["compound_suffix"] == ""
+
+
 def test_plan_write_failure_rolls_back_every_private_projection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -306,22 +306,25 @@ async def test_inventory_enforces_lane_and_structural_count_bounds(
         assert not port.resolve_calls
 
 
-async def test_inventory_rejects_invalid_metadata_and_format() -> None:
-    """Placeholders and format-invalid managed snapshots fail closed."""
+async def test_inventory_accepts_unrecognized_managed_dataset_format() -> None:
+    """Trusted server classification opens the native path for any format."""
     port = RecordingResearchObjectPort()
-    unsupported = replace(
-        _managed("file_bad", "obs://dev-bucket/managed.exe"),
+    managed = replace(
+        _managed("file_bad", "obs://dev-bucket/managed-object"),
         snapshot_digest="managed-bad",
     )
 
-    with pytest.raises(ResearchInputFailure) as caught:
-        await build_research_inventory(
-            _request(parsed_input=_parsed(), managed_assets=(unsupported,)),
-            port,
-        )
+    inventory = await build_research_inventory(
+        _request(parsed_input=_parsed(), managed_assets=(managed,)),
+        port,
+    )
 
-    assert caught.value.code == "research_dataset_format_unsupported"
-    assert not port.resolve_calls
+    assert len(inventory.entries) == 1
+    assert inventory.entries[0].exact_reference == (
+        "obs://dev-bucket/managed-object"
+    )
+    assert not inventory.entries[0].compound_suffix
+    assert len(port.resolve_calls) == 1
 
 
 @pytest.mark.parametrize("purpose", ("document", "dataset"))

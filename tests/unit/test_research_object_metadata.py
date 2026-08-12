@@ -293,6 +293,30 @@ async def test_direct_resolve_uses_exact_metadata_head_only() -> None:
     assert "a.vcf" not in resolved[0].authority_id
 
 
+async def test_direct_resolve_accepts_opaque_managed_key_without_suffix() -> (
+    None
+):
+    """Trusted managed objects may have no client-visible filename suffix."""
+    fake_obs = FakeObsClient()
+    fake_obs.metadata["opaque-key"] = _ObjectMetadata(17)
+    request = ResearchObjectResolveRequest(
+        parent_run_id="run-parent",
+        execution_fingerprint="exec-fingerprint",
+        objects=(
+            ResearchObjectCandidate(
+                dataset_id="dataset-opaque",
+                exact_reference="obs://dev-bucket/opaque-key",
+                compound_suffix="",
+            ),
+        ),
+    )
+
+    resolved = await _port(fake_obs).resolve(request)
+
+    assert [item.dataset_id for item in resolved] == ["dataset-opaque"]
+    assert fake_obs.calls == [("head", "dev-bucket", "opaque-key")]
+
+
 async def test_direct_resolve_sanitizes_client_factory_failure(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

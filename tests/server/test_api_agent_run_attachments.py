@@ -328,7 +328,12 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
         assert resolution["effective_query"] == f"{slug} query"
         snapshot = resolution["managed_snapshot_json"]
         assert tuple(item["exact_reference"] for item in snapshot) == tuple(
-            references
+            (
+                reference.replace("/obs/", "obs://", 1)
+                if reference.startswith("/obs/")
+                else reference
+            )
+            for reference in references
         )
         assert tuple(item["purpose"] for item in snapshot) == (
             "document",
@@ -636,10 +641,15 @@ async def test_managed_dataset_empty_value_still_submits(
     ).load_resolution(response.json()["run_id"])
     assert resolution is not None
     assert resolution["status"] == "pending"
-    assert resolution["managed_snapshot_json"][0]["exact_reference"] == (
+    dataset_reference = (
         resolver.resolve_bundle([{"asset_id": dataset_id}], "u1")
         .datasets[0]
         .reference
+    )
+    assert resolution["managed_snapshot_json"][0]["exact_reference"] == (
+        dataset_reference.replace("/obs/", "obs://", 1)
+        if dataset_reference.startswith("/obs/")
+        else dataset_reference
     )
     assert resolution["managed_snapshot_json"][0]["purpose"] == "dataset"
     assert not captured

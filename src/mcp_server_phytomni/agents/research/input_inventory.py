@@ -178,9 +178,9 @@ async def build_research_inventory(
 ) -> ResearchInputInventory:
     """Merge managed assets first and pasted source order second.
 
-    Every duplicate, limit, format, and managed-state check completes before
-    object metadata resolution.  The port is only asked for exact-key metadata;
-    it never receives a request to read an object body.
+    Every duplicate, limit, structural, and managed-state check completes
+    before object metadata resolution.  The port is only asked for exact-key
+    metadata; it never receives a request to read an object body.
     """
     drafts = _preflight(request)
     authorities = await _resolve_drafts(drafts, object_port)
@@ -292,7 +292,7 @@ def managed_research_assets_from_bundle(
             )
         snapshot = ManagedResearchAssetSnapshot(
             asset_id=asset.asset_id,
-            exact_reference=asset.reference,
+            exact_reference=_canonical_managed_reference(asset.reference),
             size_bytes=asset.size_bytes,
             purpose=asset.purpose,
             completed=True,
@@ -310,6 +310,16 @@ def managed_research_assets_from_bundle(
             )
         )
     return tuple(snapshots)
+
+
+def _canonical_managed_reference(reference: str) -> str:
+    """Convert the resolver's obsfs path to Research's opaque URI form."""
+    if not reference.startswith("/obs/"):
+        return reference
+    bucket, separator, key = reference.removeprefix("/obs/").partition("/")
+    if not bucket or not separator or not key:
+        return reference
+    return f"obs://{bucket}/{key}"
 
 
 def _request_with_current_managed_assets(
@@ -411,11 +421,6 @@ def _managed_draft(
         asset.exact_reference, bucket
     )
     format_descriptor = classify_scientific_reference(asset.exact_reference)
-    if asset.purpose == "dataset" and format_descriptor is None:
-        raise research_input_failure(
-            "research_dataset_format_unsupported",
-            "Research dataset format is unsupported.",
-        )
     suffix = (
         "" if format_descriptor is None else format_descriptor.canonical_suffix
     )

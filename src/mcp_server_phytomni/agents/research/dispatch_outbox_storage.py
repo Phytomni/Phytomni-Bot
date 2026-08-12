@@ -303,8 +303,10 @@ def _research_grants(
             "grant_id": getattr(authority, "authority_id", None),
             "snapshot_digest": getattr(snapshot, "snapshot_digest", None),
         }
-        if not all(
-            isinstance(value, str) and value for value in values.values()
+        if any(
+            not isinstance(value, str)
+            or (not value and name != "compound_suffix")
+            for name, value in values.items()
         ):
             raise error_factory()
         grants.append(
