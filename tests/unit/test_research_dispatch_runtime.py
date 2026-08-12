@@ -60,13 +60,16 @@ def _bindings(metadata: Any) -> Any:
 
 def _grant_payload(
     snapshot: ResearchObjectSnapshot,
+    *,
+    exact_reference: str = "obs://bucket/data.tsv",
+    compound_suffix: str = ".tsv",
 ) -> list[dict[str, object]]:
     """Build one persisted grant sidecar for binding verification tests."""
     return [
         {
             "dataset_id": snapshot.dataset_id,
-            "exact_reference": "obs://bucket/data.tsv",
-            "compound_suffix": ".tsv",
+            "exact_reference": exact_reference,
+            "compound_suffix": compound_suffix,
             "grant_id": "grant-old",
             "snapshot": research_object_snapshot_payload(snapshot),
         }
@@ -137,6 +140,39 @@ async def test_runtime_verify_direct_restart_fallback_rotates_grant() -> None:
 
     assert verified.grant_ids == ("grant-new",)
     assert verified.payload["research_grants"][0]["grant_id"] == "grant-new"
+
+
+@pytest.mark.asyncio
+async def test_runtime_verify_accepts_opaque_managed_grant() -> None:
+    """Direct restart recovery preserves grants without a file suffix."""
+    snapshot = _snapshot()
+    payload = {
+        "research_grants": _grant_payload(
+            snapshot,
+            exact_reference="obs://bucket/opaque-asset",
+            compound_suffix="",
+        )
+    }
+
+    class RestartPort(DirectResearchObjectMetadataPort):
+        """Force the documented in-memory-authority restart path."""
+
+        async def verify(self, request: Any) -> tuple[Any, ...]:
+            del request
+            raise ResearchObjectMetadataError()
+
+        async def resolve(self, request: Any) -> tuple[Any, ...]:
+            del request
+            return (
+                ResearchObjectAuthority("dataset-1", "grant-new", snapshot),
+            )
+
+    verified = await _bindings(
+        RestartPort("bucket", InlineObsRuntime(object))
+    ).verify(_record(payload=payload))
+
+    assert verified.grant_ids == ("grant-new",)
+    assert verified.payload["research_grants"][0]["compound_suffix"] == ""
 
 
 @pytest.mark.asyncio

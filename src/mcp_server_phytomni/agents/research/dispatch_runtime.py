@@ -326,8 +326,13 @@ def _grant_bindings(
         grant_id = item.get("grant_id")
         snapshot = _snapshot_from_payload(item.get("snapshot"))
         if not all(
-            isinstance(text, str) and text
-            for text in (dataset_id, reference, suffix, grant_id)
+            isinstance(text, str) and (text or name == "compound_suffix")
+            for name, text in (
+                ("dataset_id", dataset_id),
+                ("exact_reference", reference),
+                ("compound_suffix", suffix),
+                ("grant_id", grant_id),
+            )
         ):
             raise ResearchObjectMetadataError()
         dataset_text = cast(str, dataset_id)
