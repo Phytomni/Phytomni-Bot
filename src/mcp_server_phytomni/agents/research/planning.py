@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -30,6 +29,7 @@ from .input_contracts import (
     research_input_failure,
 )
 from .input_preparation import PreparedResearchInput
+from .resolver_policy import canonical_json_bytes
 
 __all__ = [
     "ResearchChildPlan",
@@ -616,14 +616,7 @@ def _invalid_data_description(value: object) -> bool:
 
 
 def _digest(value: object) -> str:
-    """Return a process-independent SHA-256 over canonical JSON."""
-    encoded = json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
 
 def research_planning_failure() -> ResearchInputFailure:
