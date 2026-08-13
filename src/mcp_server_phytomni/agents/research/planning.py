@@ -255,8 +255,10 @@ def _validate_prepared(prepared: PreparedResearchInput) -> None:
     """Validate the final native projection and its immutable data map."""
     if not isinstance(prepared, PreparedResearchInput):
         raise _planning_failure()
-    if _invalid_bounded_query_text(
-        prepared.effective_query, _MAX_EFFECTIVE_QUERY_CHARS
+    if _invalid_bounded_text(
+        prepared.effective_query,
+        _MAX_EFFECTIVE_QUERY_CHARS,
+        allowed_control_chars="\t\n\r",
     ):
         raise _planning_failure()
     if not isinstance(prepared.obs_file_list, tuple) or any(
@@ -586,25 +588,20 @@ def _safe_run_id(run_id: object) -> str:
         raise _planning_failure() from error
 
 
-def _invalid_bounded_text(value: object, limit: int) -> bool:
+def _invalid_bounded_text(
+    value: object,
+    limit: int,
+    *,
+    allowed_control_chars: str = "",
+) -> bool:
     """Return whether a value is not a bounded nonblank string."""
     return (
         not isinstance(value, str)
         or not value.strip()
         or len(value) > limit
-        or any(ord(char) < 32 for char in value)
-    )
-
-
-def _invalid_bounded_query_text(value: object, limit: int) -> bool:
-    """Allow ordinary multiline whitespace in a bounded user query."""
-    return (
-        not isinstance(value, str)
-        or not value.strip()
-        or len(value) > limit
         or any(
-            ord(character) < 32 and character not in "\t\n\r"
-            for character in value
+            ord(char) < 32 and char not in allowed_control_chars
+            for char in value
         )
     )
 
