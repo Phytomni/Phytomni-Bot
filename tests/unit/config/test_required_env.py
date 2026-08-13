@@ -14,8 +14,8 @@ from mcp_server_phytomni.config.required_env import (
     DATA_REQUIRED_ENDPOINT_FIELDS,
     DEEP_GENOME_REQUIRED_ENDPOINT_FIELDS,
     REQUIRED_DEPLOYMENT_FIELDS,
-    REQUIRED_OUTBOUND_FIELDS,
     REQUIRED_OPERATOR_SECRET_FIELDS,
+    REQUIRED_OUTBOUND_FIELDS,
     SERVER_REQUIRED_ENDPOINT_FIELDS,
     missing_environment,
 )
@@ -49,7 +49,8 @@ def test_deployment_required_fields_cover_every_runtime_subclass() -> None:
 def test_outbound_required_fields_are_the_finite_logical_pool_contract() -> (
     None
 ):
-    """The startup contract contains twelve capacities and one wait threshold."""
+    """The startup contract contains twelve capacities and one wait
+    threshold."""
     expected = {
         "OUTBOUND_LLM_CONCURRENCY",
         "OUTBOUND_RETRIEVAL_CONCURRENCY",
@@ -73,7 +74,8 @@ def test_outbound_required_fields_are_the_finite_logical_pool_contract() -> (
 def test_outbound_required_fields_are_documented_and_seeded_for_tests() -> (
     None
 ):
-    """Every required pool setting appears once in docs, env, and test setup."""
+    """Every required pool setting appears once in docs, env, and test
+    setup."""
     env_example = (
         _REPOSITORY_ROOT / "src/mcp_server_phytomni/config/.env.example"
     ).read_text(encoding="utf-8")
