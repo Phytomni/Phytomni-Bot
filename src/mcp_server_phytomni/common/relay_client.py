@@ -74,7 +74,13 @@ _GRANT_FIELDS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class RelayRequestOptions:
-    """Shared error, header, and timeout options for one relay call."""
+    """Shared error, header, and timeout options for one relay call.
+
+    Attributes:
+        message: Key-free error prefix used when the relay call fails.
+        extra_headers: Optional business headers forwarded by the relay.
+        request_timeout: Optional per-request timeout override in seconds.
+    """
 
     message: str
     extra_headers: Mapping[str, str] | None = None
@@ -184,42 +190,24 @@ class RelayClient:
     ) -> Any:
         """POST ``json_body`` to a relay route and return parsed JSON.
 
-        ``extra_headers`` carries business request headers the relay
-        forwards upstream (e.g. ``X-Workspace-Id`` for NL2SQL).
-        ``request_timeout`` overrides the client's default for this call.
+        Args:
+            relay_path: Path under the fixed ``/v1/relay`` prefix.
+            json_body: JSON-compatible request body.
+            pool: Final typed logical pool for this network attempt.
+            options: Key-free failure message plus optional business headers
+                and per-request timeout.
+
+        Returns:
+            The parsed relay JSON response.
+
+        Raises:
+            McpError: If the request fails or returns invalid JSON.
         """
         request = JsonPostRequest(
             url=self.relay_url(relay_path),
             method="POST",
             headers=self._auth_headers(options.extra_headers),
             json_body=json_body,
-        )
-        return await self._request_json(
-            request,
-            options.message,
-            pool=pool,
-            request_timeout=options.request_timeout,
-        )
-
-    async def post_data(
-        self,
-        relay_path: str,
-        data: Any,
-        *,
-        pool: OutboundPoolName,
-        options: RelayRequestOptions,
-    ) -> Any:
-        """POST a form/raw ``data`` body to a relay route, parse JSON.
-
-        For boundaries that send form-encoded bodies rather than JSON
-        (the remote task-manager create/update POSTs); the relay
-        forwards the body verbatim.
-        """
-        request = JsonPostRequest(
-            url=self.relay_url(relay_path),
-            method="POST",
-            headers=self._auth_headers(options.extra_headers),
-            data=data,
         )
         return await self._request_json(
             request,
@@ -238,7 +226,18 @@ class RelayClient:
     ) -> Any:
         """GET a relay route and parse JSON.
 
-        ``request_timeout`` overrides the client's default for this call.
+        Args:
+            relay_path: Path under the fixed ``/v1/relay`` prefix.
+            pool: Final typed logical pool for this network attempt.
+            options: Key-free failure message plus optional business headers
+                and per-request timeout.
+            query: Optional query parameters encoded onto the relay URL.
+
+        Returns:
+            The parsed relay JSON response.
+
+        Raises:
+            McpError: If the request fails or returns invalid JSON.
         """
         request = JsonPostRequest(
             url=self.relay_url(relay_path, query),

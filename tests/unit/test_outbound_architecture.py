@@ -9,12 +9,16 @@ from __future__ import annotations
 import ast
 import asyncio
 import re
-from collections import Counter
 from pathlib import Path
+from typing import Literal
 
 import httpx
 import pytest
 from mcp.shared.exceptions import McpError
+from tests.support.outbound_pool_contracts import (
+    RELAY_GENERIC_CALLS,
+    RelayGenericCall,
+)
 
 from mcp_server_phytomni.common.http import (
     JsonPostRequest,
@@ -160,40 +164,24 @@ def test_pool_binding_never_accepts_literal_or_url_derived_names() -> None:
             )
 
 
-def test_relay_pool_selection_is_typed_at_each_generic_call_site() -> None:
-    """Relay paths and HTTP methods can never derive a logical pool."""
+def _relay_client_methods() -> dict[str, ast.AsyncFunctionDef]:
+    """Return async methods declared directly on ``RelayClient``."""
     relay_source = _RELAY_CLIENT.read_text(encoding="utf-8")
     relay_tree = ast.parse(relay_source, str(_RELAY_CLIENT))
-    assert "_relay_pool" not in {
-        node.name
-        for node in ast.walk(relay_tree)
-        if isinstance(node, ast.FunctionDef)
+    relay_class = next(
+        node
+        for node in relay_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RelayClient"
+    )
+    return {
+        node.name: node
+        for node in relay_class.body
+        if isinstance(node, ast.AsyncFunctionDef)
     }
-
-    generic_methods = {"post_json", "post_data", "get_json"}
-    for path in _production_sources():
-        tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if not isinstance(node.func, ast.Attribute):
-                continue
-            if node.func.attr not in generic_methods:
-                continue
-            pool_keywords = [
-                keyword.value
-                for keyword in node.keywords
-                if keyword.arg == "pool"
-            ]
-            assert len(pool_keywords) == 1, f"{path}:{node.lineno}"
-            pool = pool_keywords[0]
-            assert isinstance(pool, ast.Attribute), f"{path}:{node.lineno}"
-            assert isinstance(pool.value, ast.Name), f"{path}:{node.lineno}"
-            assert pool.value.id == "OutboundPoolName", f"{path}:{node.lineno}"
 
 
 def _relay_path_template(node: ast.expr) -> str:
-    """Render one literal or formatted relay path without caller values."""
+    """Render one bounded relay path without caller-controlled values."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     if isinstance(node, ast.JoinedStr):
@@ -209,113 +197,224 @@ def _relay_path_template(node: ast.expr) -> str:
     raise AssertionError("relay path must be a literal or bounded template")
 
 
-def test_wave_two_generic_relay_operations_are_mapped_exactly_once() -> None:
-    """Every generic RelayClient operation has one typed mapping."""
-    expected = Counter(
-        {
-            (
-                "agents/analyst/graph.py",
-                "post_json",
-                "analysis/tasks",
-                "ANALYSIS_CONTROL",
-            ): 1,
-            (
-                "agents/analyst/task_ops.py",
-                "get_json",
-                "analysis/{}",
-                "ANALYSIS_STATUS",
-            ): 1,
-            (
-                "agents/analyst/task_ops.py",
-                "get_json",
-                "analysis/{}/logs",
-                "ANALYSIS_STATUS",
-            ): 1,
-            (
-                "agents/analyst/task_ops.py",
-                "post_json",
-                "analysis/{}/terminate",
-                "ANALYSIS_CONTROL",
-            ): 1,
-            (
-                "agents/data/nl2sql.py",
-                "post_json",
-                "database/nl2sql",
-                "NL2SQL",
-            ): 1,
-            (
-                "agents/evolution/agent.py",
-                "get_json",
-                "spa-faq/{}",
-                "SPA_FAQ",
-            ): 1,
-            (
-                "agents/knowledge/retrieval.py",
-                "post_json",
-                "retrieve/search",
-                "RETRIEVAL",
-            ): 1,
-            (
-                "agents/knowledge/retrieval.py",
-                "post_json",
-                "rerank/rank",
-                "RERANK",
-            ): 1,
-            ("agents/shared/sql.py", "post_json", "bi/query", "BI"): 1,
-            (
-                "common/relay_client.py",
-                "get_json",
-                "capabilities",
-                "RELAY_CONTROL",
-            ): 1,
-            (
-                "common/relay_client.py",
-                "post_json",
-                "research-input/object-grants",
-                "RELAY_CONTROL",
-            ): 1,
-            (
-                "common/relay_client.py",
-                "post_json",
-                "research-input/object-grants/verify",
-                "RELAY_CONTROL",
-            ): 1,
-            (
-                "common/relay_client.py",
-                "post_json",
-                "research-input/object-grants/revoke",
-                "RELAY_CONTROL",
-            ): 1,
-            ("common/relay_client.py", "get_json", "obs/list", "OBS"): 1,
-        }
+def _contains_relay_client_factory(node: ast.AST) -> bool:
+    """Return whether an expression obtains a concrete RelayClient."""
+    factories = {"RelayClient", "build_relay_client", "current_relay_client"}
+    return any(
+        isinstance(child, ast.Call)
+        and (
+            isinstance(child.func, ast.Name)
+            and child.func.id in factories
+            or isinstance(child.func, ast.Attribute)
+            and child.func.attr in factories
+        )
+        for child in ast.walk(node)
     )
-    actual: Counter[tuple[str, str, str, str]] = Counter()
-    generic_methods = {"post_json", "post_data", "get_json"}
-    for path in _production_sources():
-        tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if not isinstance(node.func, ast.Attribute):
-                continue
-            if node.func.attr not in generic_methods or not node.args:
-                continue
-            pool = next(
-                keyword.value
-                for keyword in node.keywords
-                if keyword.arg == "pool"
-            )
-            assert isinstance(pool, ast.Attribute)
-            actual[
-                (
-                    str(path.relative_to(_SOURCE_ROOT)),
-                    node.func.attr,
-                    _relay_path_template(node.args[0]),
-                    pool.attr,
-                )
-            ] += 1
 
-    assert actual == expected
+
+def _scope_nodes(function: ast.AST) -> tuple[ast.AST, ...]:
+    """Return nodes owned by one function, excluding nested definitions."""
+    body = getattr(function, "body")
+    pending = list(body)
+    owned: list[ast.AST] = []
+    while pending:
+        node = pending.pop()
+        owned.append(node)
+        if isinstance(
+            node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
+            continue
+        pending.extend(ast.iter_child_nodes(node))
+    return tuple(owned)
+
+
+def _relay_aliases(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> set[str]:
+    """Resolve local names built from or annotated as RelayClient."""
+    arguments = (
+        *function.args.posonlyargs,
+        *function.args.args,
+        *function.args.kwonlyargs,
+    )
+    aliases = {
+        argument.arg
+        for argument in arguments
+        if argument.annotation is not None
+        and ast.unparse(argument.annotation).rsplit(".", maxsplit=1)[-1]
+        == "RelayClient"
+    }
+    assignments = [
+        node
+        for node in _scope_nodes(function)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+    ]
+    changed = True
+    while changed:
+        changed = False
+        for assignment in assignments:
+            value = assignment.value
+            if value is None:
+                continue
+            names = {
+                child.id
+                for child in ast.walk(value)
+                if isinstance(child, ast.Name)
+            }
+            if not (
+                _contains_relay_client_factory(value)
+                or names.intersection(aliases)
+            ):
+                continue
+            targets = (
+                assignment.targets
+                if isinstance(assignment, ast.Assign)
+                else [assignment.target]
+            )
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id not in aliases:
+                    aliases.add(target.id)
+                    changed = True
+    return aliases
+
+
+def _generic_relay_calls(path: Path) -> set[RelayGenericCall]:
+    """Extract only calls whose receiver is statically one RelayClient."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
+    parents = {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    calls: set[RelayGenericCall] = set()
+    for node in ast.walk(tree):
+        if (
+            not isinstance(node, ast.Call)
+            or not isinstance(node.func, ast.Attribute)
+            or node.func.attr not in {"get_json", "post_json"}
+        ):
+            continue
+        parent = parents.get(node)
+        while parent is not None and not isinstance(
+            parent, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
+            parent = parents.get(parent)
+        assert isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef))
+        classes: list[str] = []
+        owner_node: ast.AST | None = parent
+        while owner_node is not None:
+            if isinstance(owner_node, ast.ClassDef):
+                classes.append(owner_node.name)
+            owner_node = parents.get(owner_node)
+        owner = ".".join((*reversed(classes), parent.name))
+        receiver = node.func.value
+        aliases = _relay_aliases(parent)
+        is_relay_receiver = (
+            isinstance(receiver, ast.Call)
+            and _contains_relay_client_factory(receiver)
+            or isinstance(receiver, ast.Name)
+            and receiver.id in aliases
+            or isinstance(receiver, ast.Name)
+            and receiver.id == "self"
+            and classes == ["RelayClient"]
+        )
+        if not is_relay_receiver:
+            continue
+        assert node.args
+        pool_values = [
+            keyword.value for keyword in node.keywords if keyword.arg == "pool"
+        ]
+        assert len(pool_values) == 1, f"{path}:{node.lineno}"
+        pool = pool_values[0]
+        assert isinstance(pool, ast.Attribute), f"{path}:{node.lineno}"
+        assert isinstance(pool.value, ast.Name), f"{path}:{node.lineno}"
+        assert pool.value.id == "OutboundPoolName", f"{path}:{node.lineno}"
+        method: Literal["get_json", "post_json"] = (
+            "get_json" if node.func.attr == "get_json" else "post_json"
+        )
+        calls.add(
+            RelayGenericCall(
+                str(path.relative_to(_SOURCE_ROOT)),
+                owner,
+                method,
+                _relay_path_template(node.args[0]),
+                OutboundPoolName[pool.attr],
+            )
+        )
+    return calls
+
+
+def test_every_production_generic_relay_call_matches_typed_inventory() -> None:
+    """All concrete RelayClient JSON calls have one exact owned mapping."""
+    actual: set[RelayGenericCall] = set()
+    for path in _production_sources():
+        actual.update(_generic_relay_calls(path))
+    assert len(RELAY_GENERIC_CALLS) == len(set(RELAY_GENERIC_CALLS))
+    assert actual == set(RELAY_GENERIC_CALLS)
+
+
+def test_relay_client_has_one_narrow_typed_pool_contract() -> None:
+    """Generic relay JSON calls pass their required enum through unchanged."""
+    methods = _relay_client_methods()
+    assert "post_data" not in methods
+    for method_name in ("post_json", "get_json"):
+        method = methods[method_name]
+        keyword_only = dict(
+            zip(method.args.kwonlyargs, method.args.kw_defaults, strict=True)
+        )
+        pool_arg = next(arg for arg in keyword_only if arg.arg == "pool")
+        assert keyword_only[pool_arg] is None
+        assert pool_arg.annotation is not None
+        assert ast.unparse(pool_arg.annotation) == "OutboundPoolName"
+        options_arg = next(arg for arg in keyword_only if arg.arg == "options")
+        assert keyword_only[options_arg] is None
+        assert options_arg.annotation is not None
+        assert ast.unparse(options_arg.annotation) == "RelayRequestOptions"
+
+        request_calls = [
+            node
+            for node in ast.walk(method)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "_request_json"
+        ]
+        assert len(request_calls) == 1
+        pool_value = next(
+            keyword.value
+            for keyword in request_calls[0].keywords
+            if keyword.arg == "pool"
+        )
+        assert isinstance(pool_value, ast.Name)
+        assert pool_value.id == "pool"
+
+        docstring = ast.get_docstring(method) or ""
+        assert "Args:" in docstring
+        assert "pool:" in docstring
+        assert "options:" in docstring
+
+
+def test_relay_client_never_infers_pool_from_path_or_method() -> None:
+    """The typed relay client has no obsolete or inferred pool selector."""
+    relay_tree = ast.parse(
+        _RELAY_CLIENT.read_text(encoding="utf-8"), str(_RELAY_CLIENT)
+    )
+    assert "_relay_pool" not in {
+        node.name
+        for node in ast.walk(relay_tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    request_method = _relay_client_methods()["_request_json"]
+    for_pool_calls = [
+        node
+        for node in ast.walk(request_method)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "for_pool"
+    ]
+    assert len(for_pool_calls) == 1
+    assert len(for_pool_calls[0].args) == 1
+    assert isinstance(for_pool_calls[0].args[0], ast.Name)
+    assert for_pool_calls[0].args[0].id == "pool"
 
 
 def test_snapshot_repr_contains_only_fixed_observability_fields() -> None:
