@@ -170,6 +170,39 @@ async def test_stream_phyto_chat_chunks_yields_provider_chunks(
     assert "Simplified Chinese" in captured["params"]["messages"][0]["content"]
 
 
+async def test_stream_phyto_chat_chunks_builds_messages_with_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provider receives system, bounded history, then current user."""
+    _install_default_prompt(monkeypatch)
+    captured: dict[str, Any] = {}
+
+    async def fake_create(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        captured["params"] = kwargs
+        return _iter_chunks([])
+
+    _patch_openai_runtime(monkeypatch, fake_create, captured)
+
+    async for _ in chat_service.stream_phyto_chat_chunks(
+        user_query="follow up",
+        conversation_messages=(
+            {"role": "user", "content": "first question"},
+            {"role": "assistant", "content": "first answer"},
+        ),
+        **_stream_kwargs(),
+    ):
+        pass
+
+    messages = captured["params"]["messages"]
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"].endswith("system prompt")
+    assert messages[1:] == [
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "first answer"},
+        {"role": "user", "content": "follow up"},
+    ]
+
+
 async def test_stream_relay_carries_internal_timeout_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

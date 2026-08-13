@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property, partial
 from importlib import import_module
@@ -76,7 +76,7 @@ from .lifecycle_contract import (
 )
 from .openai_mapping import (
     MODEL_TO_TOOL,
-    flatten_messages,
+    split_chat_messages,
     to_chat_completion,
     tool_accepts_obs,
     tool_for_model,
@@ -439,6 +439,8 @@ class _RouteAdapters:
         arguments: dict[str, object],
         payload: ChatCompletionRequest,
         user_query: str,
+        conversation_messages: Sequence[Mapping[str, str]] = (),
+        private_agent_state: Mapping[str, Any] | None = None,
     ) -> Response:
         """Stream a chat completion through the app-level seam."""
         return await _app_attr("_stream_chat_response")(
@@ -446,6 +448,8 @@ class _RouteAdapters:
             arguments=arguments,
             payload=payload,
             user_query=user_query,
+            conversation_messages=conversation_messages,
+            private_agent_state=private_agent_state,
         )
 
     async def review_chat_completion(
@@ -565,7 +569,7 @@ def _build_agent_dependencies(
             input=agent_routes.AgentChatInputDependencies(
                 tool_for_model=tool_for_model,
                 tool_accepts_obs=tool_accepts_obs,
-                flatten_messages=flatten_messages,
+                split_chat_messages=split_chat_messages,
                 resolve_chat_query=adapters.resolve_chat_query,
                 brief_gene_resolver=adapters.brief_gene_resolver,
             ),

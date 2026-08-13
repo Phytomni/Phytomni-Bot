@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from fastapi import (
@@ -591,6 +591,8 @@ async def _stream_chat_response(
     arguments: dict[str, object],
     payload: ChatCompletionRequest,
     user_query: str,
+    conversation_messages: Sequence[Mapping[str, str]] = (),
+    private_agent_state: Mapping[str, Any] | None = None,
 ) -> StreamingResponse:
     """Validate and build a streaming chat response."""
     if tool_name == "ReviewAgent":
@@ -617,6 +619,8 @@ async def _stream_chat_response(
         arguments=arguments,
         payload=payload,
         user_query=user_query,
+        conversation_messages=conversation_messages,
+        private_agent_state=private_agent_state,
     )
 
 

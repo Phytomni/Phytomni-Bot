@@ -83,6 +83,7 @@ def _patch_stream(
 
 
 async def test_chat_stream_emits_six_event_sequence(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """ChatAgent streaming yields RunStarted..RunFinished around deltas."""
@@ -94,6 +95,7 @@ async def test_chat_stream_emits_six_event_sequence(
         }
 
     monkeypatch.setattr(mcp_app, "stream_phyto_chat_chunks", fake_stream)
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path))
 
     events = [
         e
@@ -120,6 +122,7 @@ async def test_chat_stream_emits_six_event_sequence(
 
 async def test_invoke_tool_streamed_reaches_primitive_with_standard_kwargs(
     demo_data_dir: Path,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The chat handler's standard kwargs reach the streaming primitive.
@@ -143,6 +146,7 @@ async def test_invoke_tool_streamed_reaches_primitive_with_standard_kwargs(
         },
     ]
     captured = _patch_stream(monkeypatch, payloads)
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path))
 
     events = await _drain(
         mcp_app.invoke_tool_streamed(
@@ -194,6 +198,53 @@ def test_prepare_tool_stream_builds_graph_target_before_iteration(
 
     assert hasattr(events, "__aiter__")
     build.assert_called_once()
+
+
+def test_prepare_knowledge_stream_seeds_query_and_private_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Knowledge streaming separates retrieval from generation history."""
+    captured: dict[str, Any] = {}
+
+    def fake_build(
+        tool_name: str,
+        args: Any,
+        *,
+        conversation_messages: Any,
+        private_agent_state: Any,
+    ) -> tuple[object, dict[str, Any]]:
+        captured.update(
+            tool_name=tool_name,
+            user_query=args.user_query,
+            conversation_messages=conversation_messages,
+            private_agent_state=private_agent_state,
+        )
+        return object(), {}
+
+    monkeypatch.setattr(mcp_app, "_build_graph_stream_target", fake_build)
+
+    events = mcp_app.prepare_tool_stream(
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        {"user_query": "follow up", "obs_file_list": []},
+        run_id="run-1",
+        dialogue_id=None,
+        conversation_messages=(
+            {"role": "user", "content": "first question"},
+            {"role": "assistant", "content": "first answer"},
+        ),
+        private_agent_state={"retrieval_query": "follow up"},
+    )
+
+    assert hasattr(events, "__aiter__")
+    assert captured == {
+        "tool_name": "KnowledgeAgent",
+        "user_query": "follow up",
+        "conversation_messages": (
+            {"role": "user", "content": "first question"},
+            {"role": "assistant", "content": "first answer"},
+        ),
+        "private_agent_state": {"retrieval_query": "follow up"},
+    }
 
 
 async def test_invoke_tool_streamed_raises_mcperror_for_unknown_tool(

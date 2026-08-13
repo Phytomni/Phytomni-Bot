@@ -356,6 +356,8 @@ def prepare_tool_stream(
     *,
     run_id: str,
     dialogue_id: str | None,
+    conversation_messages: Sequence[Mapping[str, str]] = (),
+    private_agent_state: Mapping[str, Any] | None = None,
 ) -> AsyncIterator[AguiEvent]:
     """Validate and prepare a raw AG-UI event iterator synchronously.
 
@@ -396,13 +398,19 @@ def prepare_tool_stream(
             cast(ChatAgent, args),
             run_id=run_id,
             dialogue_id=dialogue_id,
+            conversation_messages=conversation_messages,
         )
     if tool_name in {
         PhytomniAgents.KNOWLEDGE_AGENT.value,
         PhytomniAgents.REVIEW_AGENT.value,
         PhytomniAgents.BRIEF_GENE_AGENT.value,
     }:
-        app, initial_state = _build_graph_stream_target(tool_name, args)
+        app, initial_state = _build_graph_stream_target(
+            tool_name,
+            args,
+            conversation_messages=conversation_messages,
+            private_agent_state=private_agent_state,
+        )
         return _stream_graph_agent(
             app,
             initial_state,
@@ -447,12 +455,15 @@ async def _stream_chat_events(
     *,
     run_id: str,
     dialogue_id: str | None,
+    conversation_messages: Sequence[Mapping[str, str]] = (),
 ) -> AsyncIterator[AguiEvent]:
     """Project provider chat deltas into raw AG-UI event frames."""
     yield run_started(run_id, dialogue_id)
     message_id = IdFactory().new_id("msg")
     started = False
-    async for chunk in _stream_chat_agent(args):
+    async for chunk in _stream_chat_agent(
+        args, conversation_messages=conversation_messages
+    ):
         delta = _chunk_content_delta(chunk)
         if not delta:
             continue
@@ -466,7 +477,11 @@ async def _stream_chat_events(
 
 
 def _build_graph_stream_target(
-    tool_name: str, args: BaseModel
+    tool_name: str,
+    args: BaseModel,
+    *,
+    conversation_messages: Sequence[Mapping[str, str]] = (),
+    private_agent_state: Mapping[str, Any] | None = None,
 ) -> tuple[Any, Mapping[str, Any]]:
     """Acquire the cached compiled app + seeded state for a graph agent.
 
@@ -488,10 +503,21 @@ def _build_graph_stream_target(
     """
     if tool_name == PhytomniAgents.KNOWLEDGE_AGENT.value:
         knowledge_args = cast(KnowledgeAgent, args)
+        retrieval_query = (
+            private_agent_state.get("retrieval_query")
+            if private_agent_state is not None
+            else None
+        )
         return knowledge_stream_target(
             knowledge_args.user_query,
             obs_file_list=knowledge_args.obs_file_list,
             locale=knowledge_args.locale,
+            conversation_messages=conversation_messages,
+            retrieval_query=(
+                retrieval_query
+                if isinstance(retrieval_query, str)
+                else knowledge_args.user_query
+            ),
         )
     if tool_name == PhytomniAgents.BRIEF_GENE_AGENT.value:
         return brief_gene_stream_seed(cast(BriefGeneAgent, args))
@@ -830,6 +856,8 @@ def _chunk_content_delta(chunk: Mapping[str, Any]) -> str:
 
 async def _stream_chat_agent(
     args: ChatAgent,
+    *,
+    conversation_messages: Sequence[Mapping[str, str]] = (),
 ) -> AsyncIterator[dict[str, Any]]:
     """Stream phyto-chat chunks using the chat handler's standard kwargs.
 
@@ -849,6 +877,7 @@ async def _stream_chat_agent(
     call_kwargs = chat_call_kwargs(
         args, scratch_server_dir(chat_config, "chat"), chat_config, runtime
     )
+    call_kwargs["conversation_messages"] = conversation_messages
     async for chunk in stream_phyto_chat_chunks(**call_kwargs):
         yield chunk
 

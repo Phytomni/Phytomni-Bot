@@ -175,12 +175,24 @@ def _register_chat_route(
             resolved_input=resolved_input,
         )
         if payload.stream:
+            conversation_messages = (
+                prepared["conversation_messages"]
+                if tool_name in {"ChatAgent", "KnowledgeAgent"}
+                else ()
+            )
+            private_agent_state = (
+                {"retrieval_query": prepared["user_query"]}
+                if tool_name == "KnowledgeAgent"
+                else None
+            )
             response = (
                 await dependencies.chat.execution.stream_chat_completion(
                     tool_name=tool_name,
                     arguments=prepared["arguments"],
                     payload=payload,
                     user_query=prepared["user_query"],
+                    conversation_messages=conversation_messages,
+                    private_agent_state=private_agent_state,
                 )
             )
             evidence = prepared["evidence"]
@@ -210,7 +222,7 @@ async def _prepare_ordinary_chat_request(
     tool_name: str,
     resolved_input: Any,
 ) -> dict[str, Any]:
-    """Flatten, resolve, and attach documents for one ordinary chat call."""
+    """Split, resolve, and attach documents for one ordinary chat call."""
     accepts_obs = dependencies.chat.input.tool_accepts_obs(tool_name)
     if payload.obs_file_list and not accepts_obs:
         raise HTTPException(
@@ -218,17 +230,17 @@ async def _prepare_ordinary_chat_request(
             detail=f"model {payload.model} does not accept obs_file_list",
         )
     try:
-        user_query = dependencies.chat.input.flatten_messages(payload.messages)
+        turn = dependencies.chat.input.split_chat_messages(payload.messages)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     resolve_http_locale(
         explicit=payload.locale,
         accept_language=request.headers.get("accept-language"),
-        latest_user_query=user_query,
+        latest_user_query=turn.current_query,
     )
     user_query, resolve_meta = (
         await dependencies.chat.input.resolve_chat_query(
-            raw_query=user_query,
+            raw_query=turn.current_query,
             resolve_flag=bool(payload.resolve_gene_id),
             tool_name=tool_name,
             brief_gene_resolver=dependencies.chat.input.brief_gene_resolver,
@@ -248,6 +260,7 @@ async def _prepare_ordinary_chat_request(
     )
     return {
         "user_query": user_query,
+        "conversation_messages": turn.conversation_messages,
         "resolve_meta": resolve_meta,
         "arguments": arguments,
         "evidence": attachment_context.evidence,
@@ -262,8 +275,21 @@ async def _finalize_ordinary_chat_response(
     prepared: Mapping[str, Any],
 ) -> JSONResponse:
     """Invoke one ordinary chat agent and project its redacted completion."""
+    conversation_messages = (
+        prepared["conversation_messages"]
+        if tool_name in {"ChatAgent", "KnowledgeAgent"}
+        else ()
+    )
+    private_agent_state = (
+        {"retrieval_query": prepared["user_query"]}
+        if tool_name == "KnowledgeAgent"
+        else None
+    )
     envelope = await dependencies.chat.execution.invoke_tool_enveloped(
-        tool_name, prepared["arguments"]
+        tool_name,
+        prepared["arguments"],
+        conversation_messages=conversation_messages,
+        private_agent_state=private_agent_state,
     )
     formatted_dict = _formatted_with_metadata(
         envelope, prepared["resolve_meta"]

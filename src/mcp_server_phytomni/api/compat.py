@@ -12,7 +12,7 @@ at call time.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Mapping, Sequence
 from importlib import import_module
 from typing import Any
 
@@ -347,6 +347,8 @@ async def _stream_chat_completion(
     arguments: dict[str, Any],
     payload: ChatCompletionRequest,
     user_query: str,
+    conversation_messages: Sequence[Mapping[str, str]] = (),
+    private_agent_state: Mapping[str, Any] | None = None,
 ) -> StreamingResponse:
     """Compatibility seam for the extracted HTTP streaming runtime."""
     return await streaming.stream_chat_completion(
@@ -355,6 +357,8 @@ async def _stream_chat_completion(
         payload=payload,
         user_query=user_query,
         dependencies=_streaming_dependencies(),
+        conversation_messages=conversation_messages,
+        private_agent_state=private_agent_state,
     )
 
 

@@ -21,9 +21,14 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
+from dataclasses import dataclass
 from typing import Any, cast
 
 from ..mcp.result_formatting import AguiEvent
+from ..runtime.conversation_context.models import (
+    MAX_CONTEXT_ITEMS,
+    MAX_CONTEXT_TEXT_CHARS,
+)
 from ..storage.path_policy import IdFactory
 from .agent_capabilities import (
     get_agent_slug_for_tool,
@@ -31,8 +36,9 @@ from .agent_capabilities import (
 )
 
 __all__ = [
+    "ChatTurnInput",
     "MODEL_TO_TOOL",
-    "flatten_messages",
+    "split_chat_messages",
     "to_chat_completion",
     "to_chat_completion_chunks",
     "tool_accepts_obs",
@@ -41,6 +47,15 @@ __all__ = [
     "tool_accepts_stream",
     "tool_for_model",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class ChatTurnInput:
+    """Current user query plus bounded private generation history."""
+
+    current_query: str
+    conversation_messages: tuple[dict[str, str], ...]
+
 
 # Chat-like agents exposed through /v1/chat/completions.
 MODEL_TO_TOOL = {
@@ -118,32 +133,37 @@ def tool_accepts_stream(tool_name: str) -> bool:
     return tool_name in _STREAM_CAPABLE_TOOLS
 
 
-def flatten_messages(
-    messages: Sequence[Any],
-) -> str:
-    """Flatten OpenAI chat messages into a single user query.
-
-    A lone user message is returned verbatim so identifier-driven tools
-    (BriefGene takes a gene/transcript id) see the raw content; any
-    multi-message conversation keeps ``role: content`` blocks to
-    preserve turn context.
-
-    Args:
-        messages: Sequence of objects exposing ``role`` and ``content``.
-
-    Returns:
-        The user content verbatim for a single user message, or the
-        conversation rendered as ``role: content`` blocks otherwise.
-
-    Raises:
-        ValueError: When no user message is present.
-    """
+def split_chat_messages(messages: Sequence[Any]) -> ChatTurnInput:
+    """Split the final user query from bounded generation history."""
     msgs = list(messages)
-    if not any(getattr(m, "role", None) == "user" for m in msgs):
-        raise ValueError("messages must include a user message")
-    if len(msgs) == 1 and getattr(msgs[0], "role", None) == "user":
-        return str(msgs[0].content)
-    return "\n\n".join(f"{m.role}: {m.content}" for m in msgs)
+    if not msgs:
+        raise ValueError("messages must end with a non-blank user message")
+    final = msgs[-1]
+    current_query = getattr(final, "content", None)
+    if (
+        getattr(final, "role", None) != "user"
+        or not isinstance(current_query, str)
+        or not current_query.strip()
+    ):
+        raise ValueError("messages must end with a non-blank user message")
+
+    history = []
+    for message in msgs[:-1]:
+        role = getattr(message, "role", None)
+        content = getattr(message, "content", None)
+        if (
+            role not in {"user", "assistant"}
+            or not isinstance(content, str)
+            or not content.strip()
+        ):
+            continue
+        history.append(
+            {"role": role, "content": content[:MAX_CONTEXT_TEXT_CHARS]}
+        )
+    return ChatTurnInput(
+        current_query=current_query,
+        conversation_messages=tuple(history[-MAX_CONTEXT_ITEMS:]),
+    )
 
 
 def to_chat_completion(

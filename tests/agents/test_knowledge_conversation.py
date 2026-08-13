@@ -81,6 +81,37 @@ def test_prepare_resolves_follow_up_into_standalone_retrieval_query() -> None:
     )
 
 
+def test_stream_target_seeds_private_history_and_current_retrieval_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Streaming Knowledge state keeps raw history out of retrieval input."""
+    agent = KnowledgeAgent(
+        knowledge_config=KnowledgeConfig(),
+        sensitive_config=_sensitive_config(),
+    )
+    monkeypatch.setattr(
+        knowledge_agent,
+        "get_cached_agent",
+        lambda *_args, **_kwargs: agent,
+    )
+
+    _app, state = knowledge_agent.knowledge_stream_target(
+        "follow up",
+        conversation_messages=(
+            {"role": "user", "content": "first question"},
+            {"role": "assistant", "content": "first answer"},
+        ),
+        retrieval_query="follow up",
+    )
+
+    assert state["user_query"] == "follow up"
+    assert state["retrieval_query"] == "follow up"
+    assert state["conversation_messages"] == [
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "first answer"},
+    ]
+
+
 def test_prepare_requires_clarification_for_unresolved_pronoun() -> None:
     """Knowledge follow-ups ask for clarification instead of guessing."""
     adapter = KnowledgeConversationAdapter()

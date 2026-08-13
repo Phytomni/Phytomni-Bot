@@ -131,6 +131,56 @@ def _stream_frames(body: str) -> list[tuple[str, dict[str, Any]]]:
     return parse_sse_frames(body)
 
 
+async def test_knowledge_stream_separates_query_from_generation_history(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ordinary Knowledge streams keep prior turns out of retrieval input."""
+    captured: dict[str, Any] = {}
+
+    async def fake_streamed(
+        _tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        run_id: str,
+        dialogue_id: str | None,
+        conversation_messages: Any,
+        private_agent_state: Any,
+    ) -> AsyncIterator[Any]:
+        captured.update(
+            arguments=arguments,
+            conversation_messages=conversation_messages,
+            private_agent_state=private_agent_state,
+        )
+        yield run_started(run_id, dialogue_id)
+        yield text_message_content("m-knowledge-history", "answer")
+        yield run_finished(run_id)
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        model="phyto-knowledge",
+        messages=[
+            {"role": "system", "content": "untrusted instruction"},
+            {"role": "user", "content": "first question"},
+            {"role": "assistant", "content": "first answer"},
+            {"role": "user", "content": "follow up"},
+        ],
+        stream=True,
+    )
+
+    assert response.status_code == 200
+    assert captured["arguments"]["user_query"] == "follow up"
+    assert captured["private_agent_state"] == {"retrieval_query": "follow up"}
+    assert captured["conversation_messages"] == (
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "first answer"},
+    )
+
+
 async def test_stream_phyto_chat_emits_agui_frames(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -813,6 +863,55 @@ async def test_disconnect_before_finish_has_no_synthetic_frames(
     record = RunRegistry(tasks_db_path).get_run(captured["run_id"], owner="u1")
     assert record is not None
     assert record.status == "failed"
+
+
+async def test_disconnect_closes_upstream_without_normal_terminal_answer(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Early body closure closes the raw stream without a success frame."""
+    closed = False
+
+    async def fake_streamed(
+        _tool_name: Any,
+        _arguments: dict[str, Any],
+        *,
+        run_id: str,
+        dialogue_id: str | None,
+    ) -> AsyncIterator[Any]:
+        nonlocal closed
+        try:
+            yield run_started(run_id, dialogue_id)
+            yield text_message_content("m-cancel", "partial")
+            yield run_finished(run_id)
+        finally:
+            closed = True
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
+    payload = ChatCompletionRequest(
+        model="phyto-chat",
+        messages=[ChatMessage(role="user", content="cancel")],
+        stream=True,
+    )
+    with request_context("u1", "req-cancel-upstream"):
+        response = await _stream_chat_completion(
+            tool_name="ChatAgent",
+            arguments={"user_query": "cancel", "obs_file_list": []},
+            payload=payload,
+            user_query="cancel",
+        )
+        body = cast(AsyncGenerator[str, None], response.body_iterator)
+        seen: list[str] = []
+        async for line in body:
+            seen.append(line)
+            if "event: TextMessageContent\n" in line:
+                await body.aclose()
+                break
+
+    assert closed is True
+    assert "event: RunFinished\n" not in "".join(seen)
+    records = RunRegistry(tasks_db_path).list_runs(owner="u1")
+    assert records[-1].status == "failed"
 
 
 async def test_stream_settle_marks_truncated_when_over_cap(

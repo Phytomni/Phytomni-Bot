@@ -15,12 +15,13 @@ from fastapi.responses import Response
 from ...runtime.conversation_context.adapters import (
     ConversationContextExecutor,
 )
+from ..openai_mapping import ChatTurnInput
 from ..schemas import AgentRunRequest
 from .uploads import AgentUploadDependencies
 
 type AgentRun = Callable[..., Awaitable[tuple[dict[str, Any], int]]]
 type ChatResponse = Callable[..., Awaitable[Response]]
-type QueryFlattener = Callable[[Any], str]
+type ChatMessageSplitter = Callable[[Any], ChatTurnInput]
 type ChatResolver = Callable[..., Awaitable[tuple[str, dict[str, Any]]]]
 
 
@@ -51,7 +52,7 @@ class AgentChatInputDependencies:
 
     tool_for_model: Callable[[str], str | None]
     tool_accepts_obs: Callable[[str], bool]
-    flatten_messages: QueryFlattener
+    split_chat_messages: ChatMessageSplitter
     resolve_chat_query: ChatResolver
     brief_gene_resolver: Callable[..., Awaitable[Any]]
 

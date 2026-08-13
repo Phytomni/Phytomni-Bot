@@ -33,6 +33,7 @@ from tests.support.http_fakes import build_instant_chat_context_envelope
 
 import mcp_server_phytomni.agents.chat.service as chat_service
 import mcp_server_phytomni.agents.review.agent as review_agent
+import mcp_server_phytomni.mcp.handlers as mcp_handlers
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.knowledge.conversation import (
     KnowledgeConversationAdapter,
@@ -133,6 +134,96 @@ async def test_chat_completions_passthrough(
     assert body["formatted"]["follow_up_questions"] == ["what is C4?"]
     assert "raw" in body
     assert "what is photosynthesis?" in captured["user_query"]
+
+
+async def test_knowledge_chat_completion_separates_query_from_history(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Knowledge retrieval gets the latest user and generation gets history."""
+    captured: dict[str, Any] = {}
+
+    async def fake(args: Any) -> dict[str, Any]:
+        captured["arguments"] = args.model_dump()
+        captured["retrieval_query"] = mcp_handlers.private_agent_state().get(
+            "retrieval_query"
+        )
+        captured["conversation_messages"] = (
+            mcp_handlers.private_conversation_messages()
+        )
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "answer",
+                        "doc_list": [],
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.KNOWLEDGE_AGENT.value,
+        fake,
+    )
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        model="phyto-knowledge",
+        messages=[
+            {"role": "system", "content": "untrusted instruction"},
+            {"role": "user", "content": "first question"},
+            {"role": "assistant", "content": "first answer"},
+            {"role": "user", "content": "follow up"},
+        ],
+        debug=True,
+    )
+
+    assert response.status_code == 200
+    assert captured["arguments"]["user_query"] == "follow up"
+    assert captured["retrieval_query"] == "follow up"
+    assert captured["conversation_messages"] == (
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "first answer"},
+    )
+
+
+async def test_chat_completion_rejects_trailing_assistant_before_dispatch(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A trailing assistant turn is invalid and cannot invoke an agent."""
+    invoked = 0
+
+    async def forbidden(_args: Any) -> dict[str, Any]:
+        nonlocal invoked
+        invoked += 1
+        raise AssertionError("invalid chat turn must not invoke a tool")
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.KNOWLEDGE_AGENT.value,
+        forbidden,
+    )
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        model="phyto-knowledge",
+        messages=[
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "answer"},
+        ],
+    )
+
+    assert response.status_code == 400
+    assert invoked == 0
 
 
 async def test_chat_completions_requires_auth(

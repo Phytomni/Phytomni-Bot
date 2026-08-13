@@ -48,7 +48,10 @@ from ...runtime.locale import (
 )
 from ...runtime.outbound import OutboundPoolName, current_outbound_runtime
 from ...storage.downloads import download_list_convert
-from ..shared.conversation_messages import normalize_conversation_messages
+from ..shared.conversation_messages import (
+    build_model_messages,
+    normalize_conversation_messages,
+)
 from ..shared.options import reject_chat_provider_overrides
 from .completion_validation import (
     InvalidChatCompletionError,
@@ -696,13 +699,11 @@ async def stream_phyto_chat_chunks(
             user_query, obs_file_list, options
         )
     system_prompt = get_prompt(options["prompt_file"], options["prompt_path"])
-    messages = [
-        {
-            "role": "system",
-            "content": _apply_locale_instruction(system_prompt, options),
-        },
-        {"role": "user", "content": user_query},
-    ]
+    messages = build_model_messages(
+        system_prompt=_apply_locale_instruction(system_prompt, options),
+        user_query=user_query,
+        conversation_messages=kwargs.get("conversation_messages"),
+    )
     params = _build_stream_params(messages, options)
     runtime = current_outbound_runtime()
     for attempt in range(MAX_OPEN_STREAM_RETRIES + 1):

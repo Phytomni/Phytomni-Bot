@@ -10,6 +10,7 @@ Functions: multi_retrieve, multi_retrieve_generate, rerank, retrieve,
     retrieve_generate.
 """
 
+from collections.abc import Mapping, Sequence
 from contextvars import ContextVar, Token
 from typing import Any, Literal
 
@@ -781,6 +782,9 @@ def knowledge_stream_target(
     user_query: str,
     obs_file_list: list[str] | None = None,
     locale: SupportedLocale | None = None,
+    *,
+    conversation_messages: Sequence[Mapping[str, object]] = (),
+    retrieval_query: str | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """Return the cached KnowledgeAgent app + seeded streaming state.
 
@@ -815,6 +819,8 @@ def knowledge_stream_target(
         user_query,
         obs_file_list=obs_file_list,
         locale=locale,
+        conversation_messages=conversation_messages,
+        retrieval_query=retrieval_query,
     )
 
 

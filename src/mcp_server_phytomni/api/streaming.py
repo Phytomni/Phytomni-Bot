@@ -14,7 +14,13 @@ bind application-specific registry, graph, and request-context seams through
 from __future__ import annotations
 
 import inspect
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
 from contextlib import suppress
 from dataclasses import dataclass
 from importlib import import_module
@@ -118,6 +124,7 @@ class _PreparedStream:
     owner: str
     agent_slug: str | None
     expected_revision: int
+    raw_events: AsyncIterator[AguiEvent]
     accumulator: StreamAnswerAccumulator
     lifecycle_state: StreamLifecycleState
 
@@ -157,6 +164,8 @@ class _StreamPreparationRequest:
     payload: ChatCompletionRequest
     user_query: str
     dependencies: StreamingDependencies
+    conversation_messages: Sequence[Mapping[str, str]] = ()
+    private_agent_state: Mapping[str, Any] | None = None
     raw_event_factory: Callable[[str], AsyncIterator[AguiEvent]] | None = None
 
 
@@ -302,16 +311,25 @@ async def _prepare_stream(
         "run", agent_slug or "chat"
     )
     try:
-        raw_events = (
-            request.raw_event_factory(run_id)
-            if request.raw_event_factory is not None
-            else request.dependencies.request.prepare_tool_stream(
+        if request.raw_event_factory is not None:
+            raw_events = request.raw_event_factory(run_id)
+        else:
+            private_kwargs: dict[str, Any] = {}
+            if request.conversation_messages:
+                private_kwargs["conversation_messages"] = (
+                    request.conversation_messages
+                )
+            if request.private_agent_state is not None:
+                private_kwargs["private_agent_state"] = (
+                    request.private_agent_state
+                )
+            raw_events = request.dependencies.request.prepare_tool_stream(
                 request.tool_name,
                 request.arguments,
                 run_id=run_id,
                 dialogue_id=request.payload.dialogue_id,
+                **private_kwargs,
             )
-        )
     except Exception as exc:
         raise stream_setup_error(exc, priming=False) from exc
 
@@ -359,6 +377,7 @@ async def _prepare_stream(
         owner=owner,
         agent_slug=agent_slug,
         expected_revision=0,
+        raw_events=raw_events,
         accumulator=accumulator,
         lifecycle_state=lifecycle_state,
     )
@@ -654,6 +673,8 @@ async def stream_chat_completion(
     payload: ChatCompletionRequest,
     user_query: str,
     dependencies: StreamingDependencies,
+    conversation_messages: Sequence[Mapping[str, str]] = (),
+    private_agent_state: Mapping[str, Any] | None = None,
 ) -> StreamingResponse:
     """Prepare and wrap one streamed tool response."""
     if (
@@ -698,6 +719,8 @@ async def stream_chat_completion(
                 payload=payload,
                 user_query=user_query,
                 dependencies=dependencies,
+                conversation_messages=conversation_messages,
+                private_agent_state=private_agent_state,
                 raw_event_factory=(
                     (
                         lambda run_id: _prepare_contextual_raw_events(
@@ -789,6 +812,9 @@ async def stream_chat_completion(
                 if callable(closer):
                     await cast(Callable[[], Awaitable[None]], closer)()
             finally:
+                raw_closer = getattr(prepared.raw_events, "aclose", None)
+                if callable(raw_closer):
+                    await cast(Callable[[], Awaitable[None]], raw_closer)()
                 if (
                     prepared.agent_slug is not None
                     and not prepared.lifecycle_state.durably_settled
