@@ -14,7 +14,7 @@ from typing import Any, cast
 import pytest
 from fastapi.responses import StreamingResponse
 from pydantic import SecretStr
-from starlette.requests import Request
+from starlette.requests import ClientDisconnect, Request
 from tests.support.outbound_fakes import ControlledByteStream
 from tests.support.relay_request import relay_request_scope
 
@@ -30,9 +30,14 @@ from mcp_server_phytomni.common.relay_client import (
     RelayClient,
     RelayRequestOptions,
 )
-from mcp_server_phytomni.runtime.outbound import OutboundPoolName
+from mcp_server_phytomni.runtime.outbound import (
+    OutboundPoolName,
+    aclose_outbound_runtime,
+)
 
 pytestmark = pytest.mark.server
+
+_TEST_TIMEOUT_SECONDS = 2.0
 
 
 def _request() -> Request:
@@ -62,13 +67,83 @@ async def _body(response: StreamingResponse) -> bytes:
     return b"".join([chunk async for chunk in iterator])
 
 
+async def _wait_for_event(event: asyncio.Event) -> None:
+    """Wait for a test synchronization event under a hard deadline."""
+    await asyncio.wait_for(event.wait(), timeout=_TEST_TIMEOUT_SECONDS)
+
+
+async def _settle_task(task: asyncio.Task[Any]) -> None:
+    """Cancel and reap a spawned test task under a hard deadline."""
+    if not task.done():
+        task.cancel()
+    await asyncio.wait_for(
+        asyncio.gather(task, return_exceptions=True),
+        timeout=_TEST_TIMEOUT_SECONDS,
+    )
+
+
+def _assert_terminal_outcome(
+    snapshot: Any,
+    *,
+    completed: int = 0,
+    failed: int = 0,
+    cancelled: int = 0,
+) -> None:
+    """Assert one released lease has exactly one classified outcome."""
+    assert snapshot.started == 1
+    assert snapshot.completed == completed
+    assert snapshot.failed == failed
+    assert snapshot.cancelled == cancelled
+    assert snapshot.started == (
+        snapshot.completed + snapshot.failed + snapshot.cancelled
+    )
+    assert snapshot.in_use == 0
+    assert snapshot.waiting == 0
+
+
+def _assert_source_closed_before_release(close_snapshots: list[Any]) -> None:
+    """Assert the source closed once while its target lease was held."""
+    assert len(close_snapshots) == 1
+    assert close_snapshots[0].in_use == 1
+
+
+def _record_response_closes(
+    monkeypatch: pytest.MonkeyPatch,
+    response: Any,
+) -> list[None]:
+    """Count one upstream response's close calls without changing behavior."""
+    close_calls: list[None] = []
+    original_close = response.aclose
+
+    async def close() -> None:
+        close_calls.append(None)
+        await original_close()
+
+    monkeypatch.setattr(response, "aclose", close)
+    return close_calls
+
+
+def _is_nonempty_body(message: Any) -> bool:
+    """Return whether one ASGI message carries a response body chunk."""
+    if message.get("type") != "http.response.body":
+        return False
+    return bool(message.get("body"))
+
+
 async def test_forward_stream_holds_pool_until_eof(
     monkeypatch: pytest.MonkeyPatch,
     outbound_runtime: Any,
     tmp_path: Path,
 ) -> None:
     """A streamed relay lease spans headers, body EOF, and source close."""
-    source = ControlledByteStream(b"first", b"second")
+    close_snapshots: list[Any] = []
+    source = ControlledByteStream(
+        b"first",
+        b"second",
+        on_close=lambda: close_snapshots.append(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
+        ),
+    )
     outbound_runtime.transport.enqueue(
         headers={"content-type": "application/json"},
         stream=source,
@@ -96,8 +171,8 @@ async def test_forward_stream_holds_pool_until_eof(
 
     assert await _body(response) == b"firstsecond"
     released = outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
-    assert released.in_use == 0
-    assert released.completed == 1
+    _assert_terminal_outcome(released, completed=1)
+    _assert_source_closed_before_release(close_snapshots)
     assert source.closed is True
 
 
@@ -107,7 +182,14 @@ async def test_forward_stream_close_releases_pool_and_source(
     tmp_path: Path,
 ) -> None:
     """Closing a partially consumed relay stream releases both resources."""
-    source = ControlledByteStream(b"first", b"second")
+    close_snapshots: list[Any] = []
+    source = ControlledByteStream(
+        b"first",
+        b"second",
+        on_close=lambda: close_snapshots.append(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
+        ),
+    )
     outbound_runtime.transport.enqueue(
         headers={"content-type": "application/json"},
         stream=source,
@@ -133,10 +215,338 @@ async def test_forward_stream_close_releases_pool_and_source(
     await iterator.aclose()
 
     released = outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
-    assert released.in_use == 0
-    assert released.completed == 1
+    _assert_terminal_outcome(released, cancelled=1)
+    _assert_source_closed_before_release(close_snapshots)
     assert source.closed is True
     assert store.query()[0].error_type == "client_disconnected"
+
+
+async def test_forward_stream_close_before_first_chunk_releases_ownership(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+    tmp_path: Path,
+) -> None:
+    """Pre-iteration close eagerly releases every streamed owner once."""
+    close_snapshots: list[Any] = []
+    source = ControlledByteStream(
+        b"unread",
+        on_close=lambda: close_snapshots.append(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
+        ),
+    )
+    outbound_runtime.transport.enqueue(stream=source)
+    queued_response = outbound_runtime.transport.responses[-1]
+    assert not isinstance(queued_response, Exception)
+    response_close_calls = _record_response_closes(
+        monkeypatch, queued_response
+    )
+    monkeypatch.setattr(
+        forward_module,
+        "current_outbound_runtime",
+        lambda: outbound_runtime.runtime,
+    )
+    store = RelayAuditStore(str(tmp_path / "relay.sqlite"))
+    response = await forward_relay_request(
+        request=_request(),
+        body=b"{}",
+        upstream=_upstream(),
+        principal=ApiPrincipal(user_id="u1", key_prefix="ptm_test"),
+        audit_store=store,
+    )
+
+    assert isinstance(response, StreamingResponse)
+    assert (
+        outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM).in_use
+        == 1
+    )
+    iterator = cast(Any, response.body_iterator)
+    current_task = asyncio.current_task()
+    assert current_task is not None
+    cancelling_before_close = current_task.cancelling()
+    await asyncio.wait_for(
+        asyncio.gather(iterator.aclose(), iterator.aclose()),
+        timeout=_TEST_TIMEOUT_SECONDS,
+    )
+    assert current_task.cancelling() == cancelling_before_close
+
+    released = outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
+    _assert_terminal_outcome(released, cancelled=1)
+    _assert_source_closed_before_release(close_snapshots)
+    assert source.closed is True
+    assert len(response_close_calls) == 1
+    assert store.query()[0].error_type == "client_disconnected"
+    await asyncio.wait_for(
+        aclose_outbound_runtime(), timeout=_TEST_TIMEOUT_SECONDS
+    )
+
+
+async def test_forward_stream_asgi_disconnect_before_first_byte_releases(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+    tmp_path: Path,
+) -> None:
+    """An ASGI disconnect while awaiting byte one cancels every owner."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    close_snapshots: list[Any] = []
+    source = ControlledByteStream(
+        b"late",
+        entered=entered,
+        release=release,
+        on_close=lambda: close_snapshots.append(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
+        ),
+    )
+    outbound_runtime.transport.enqueue(stream=source)
+    monkeypatch.setattr(
+        forward_module,
+        "current_outbound_runtime",
+        lambda: outbound_runtime.runtime,
+    )
+    store = RelayAuditStore(str(tmp_path / "relay.sqlite"))
+    response = await forward_relay_request(
+        request=_request(),
+        body=b"{}",
+        upstream=_upstream(),
+        principal=ApiPrincipal(user_id="u1", key_prefix="ptm_test"),
+        audit_store=store,
+    )
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, str]:
+        await _wait_for_event(entered)
+        return {"type": "http.disconnect"}
+
+    async def send(message: Any) -> None:
+        sent.append(message)
+
+    try:
+        await asyncio.wait_for(
+            response(relay_request_scope(), receive, send),
+            timeout=_TEST_TIMEOUT_SECONDS,
+        )
+    finally:
+        release.set()
+
+    assert sent[0]["type"] == "http.response.start"
+    _assert_terminal_outcome(
+        outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM),
+        cancelled=1,
+    )
+    _assert_source_closed_before_release(close_snapshots)
+    assert source.closed is True
+    assert store.query()[0].error_type == "client_disconnected"
+    await asyncio.wait_for(
+        aclose_outbound_runtime(), timeout=_TEST_TIMEOUT_SECONDS
+    )
+
+
+async def test_forward_stream_asgi_disconnect_after_first_byte_releases(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+    tmp_path: Path,
+) -> None:
+    """A disconnect during downstream send closes every streamed owner."""
+    first_body_sent = asyncio.Event()
+    release_send = asyncio.Event()
+    close_snapshots: list[Any] = []
+    source = ControlledByteStream(
+        b"first",
+        b"second",
+        on_close=lambda: close_snapshots.append(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
+        ),
+    )
+    outbound_runtime.transport.enqueue(stream=source)
+    queued_response = outbound_runtime.transport.responses[-1]
+    assert not isinstance(queued_response, Exception)
+    response_close_calls = _record_response_closes(
+        monkeypatch, queued_response
+    )
+    monkeypatch.setattr(
+        forward_module,
+        "current_outbound_runtime",
+        lambda: outbound_runtime.runtime,
+    )
+    store = RelayAuditStore(str(tmp_path / "relay.sqlite"))
+    response = await forward_relay_request(
+        request=_request(),
+        body=b"{}",
+        upstream=_upstream(),
+        principal=ApiPrincipal(user_id="u1", key_prefix="ptm_test"),
+        audit_store=store,
+    )
+    assert isinstance(response, StreamingResponse)
+
+    async def receive() -> dict[str, str]:
+        await _wait_for_event(first_body_sent)
+        return {"type": "http.disconnect"}
+
+    async def send(message: Any) -> None:
+        if _is_nonempty_body(message):
+            first_body_sent.set()
+            await _wait_for_event(release_send)
+
+    iterator = cast(Any, response.body_iterator)
+    try:
+        await asyncio.wait_for(
+            response(relay_request_scope(), receive, send),
+            timeout=_TEST_TIMEOUT_SECONDS,
+        )
+
+        _assert_terminal_outcome(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM),
+            cancelled=1,
+        )
+        _assert_source_closed_before_release(close_snapshots)
+        assert source.closed is True
+        assert len(response_close_calls) == 1
+        assert store.query()[0].error_type == "client_disconnected"
+        await asyncio.wait_for(
+            aclose_outbound_runtime(), timeout=_TEST_TIMEOUT_SECONDS
+        )
+    finally:
+        release_send.set()
+        await asyncio.wait_for(
+            iterator.aclose(), timeout=_TEST_TIMEOUT_SECONDS
+        )
+
+
+async def test_forward_stream_asgi_send_error_releases_and_reraises(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+    tmp_path: Path,
+) -> None:
+    """An ASGI 2.4 send failure closes ownership before reraising."""
+    close_snapshots: list[Any] = []
+    source = ControlledByteStream(
+        b"first",
+        b"second",
+        on_close=lambda: close_snapshots.append(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
+        ),
+    )
+    outbound_runtime.transport.enqueue(stream=source)
+    queued_response = outbound_runtime.transport.responses[-1]
+    assert not isinstance(queued_response, Exception)
+    response_close_calls = _record_response_closes(
+        monkeypatch, queued_response
+    )
+    monkeypatch.setattr(
+        forward_module,
+        "current_outbound_runtime",
+        lambda: outbound_runtime.runtime,
+    )
+    store = RelayAuditStore(str(tmp_path / "relay.sqlite"))
+    response = await forward_relay_request(
+        request=_request(),
+        body=b"{}",
+        upstream=_upstream(),
+        principal=ApiPrincipal(user_id="u1", key_prefix="ptm_test"),
+        audit_store=store,
+    )
+    assert isinstance(response, StreamingResponse)
+    scope = relay_request_scope()
+    scope["asgi"] = {"spec_version": "2.4"}
+
+    async def receive() -> dict[str, str]:
+        raise AssertionError("ASGI 2.4 streaming must not poll receive")
+
+    async def send(message: Any) -> None:
+        if _is_nonempty_body(message):
+            raise OSError("downstream send closed")
+
+    iterator = cast(Any, response.body_iterator)
+    try:
+        with pytest.raises(ClientDisconnect):
+            await asyncio.wait_for(
+                response(scope, receive, send),
+                timeout=_TEST_TIMEOUT_SECONDS,
+            )
+
+        _assert_terminal_outcome(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM),
+            cancelled=1,
+        )
+        _assert_source_closed_before_release(close_snapshots)
+        assert source.closed is True
+        assert len(response_close_calls) == 1
+        assert store.query()[0].error_type == "client_disconnected"
+    finally:
+        await asyncio.wait_for(
+            iterator.aclose(), timeout=_TEST_TIMEOUT_SECONDS
+        )
+
+
+async def test_forward_stream_asgi_caller_cancel_releases_and_reraises(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+    tmp_path: Path,
+) -> None:
+    """Caller cancellation closes response ownership and still propagates."""
+    first_body_sent = asyncio.Event()
+    release_send = asyncio.Event()
+    close_snapshots: list[Any] = []
+    source = ControlledByteStream(
+        b"first",
+        b"second",
+        on_close=lambda: close_snapshots.append(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
+        ),
+    )
+    outbound_runtime.transport.enqueue(stream=source)
+    queued_response = outbound_runtime.transport.responses[-1]
+    assert not isinstance(queued_response, Exception)
+    response_close_calls = _record_response_closes(
+        monkeypatch, queued_response
+    )
+    monkeypatch.setattr(
+        forward_module,
+        "current_outbound_runtime",
+        lambda: outbound_runtime.runtime,
+    )
+    store = RelayAuditStore(str(tmp_path / "relay.sqlite"))
+    response = await forward_relay_request(
+        request=_request(),
+        body=b"{}",
+        upstream=_upstream(),
+        principal=ApiPrincipal(user_id="u1", key_prefix="ptm_test"),
+        audit_store=store,
+    )
+    assert isinstance(response, StreamingResponse)
+    scope = relay_request_scope()
+    scope["asgi"] = {"spec_version": "2.4"}
+
+    async def receive() -> dict[str, str]:
+        raise AssertionError("ASGI 2.4 streaming must not poll receive")
+
+    async def send(message: Any) -> None:
+        if _is_nonempty_body(message):
+            first_body_sent.set()
+            await _wait_for_event(release_send)
+
+    task = asyncio.create_task(response(scope, receive, send))
+    try:
+        await _wait_for_event(first_body_sent)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=_TEST_TIMEOUT_SECONDS)
+
+        _assert_terminal_outcome(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM),
+            cancelled=1,
+        )
+        _assert_source_closed_before_release(close_snapshots)
+        assert source.closed is True
+        assert len(response_close_calls) == 1
+        assert store.query()[0].error_type == "client_disconnected"
+    finally:
+        release_send.set()
+        await _settle_task(task)
+        await asyncio.wait_for(
+            cast(Any, response.body_iterator).aclose(),
+            timeout=_TEST_TIMEOUT_SECONDS,
+        )
 
 
 async def test_forward_stream_closes_source_before_releasing_pool_on_eof(
@@ -168,11 +578,10 @@ async def test_forward_stream_closes_source_before_releasing_pool_on_eof(
 
     assert isinstance(response, StreamingResponse)
     assert await _body(response) == b"body"
-    assert len(close_snapshots) == 1
-    assert close_snapshots[0].in_use == 1
-    assert (
-        outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM).in_use
-        == 0
+    _assert_source_closed_before_release(close_snapshots)
+    _assert_terminal_outcome(
+        outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM),
+        completed=1,
     )
 
 
@@ -207,13 +616,61 @@ async def test_forward_stream_upstream_failure_closes_before_pool_release(
 
     assert isinstance(response, StreamingResponse)
     assert await _body(response) == b"first"
-    assert len(close_snapshots) == 1
-    assert close_snapshots[0].in_use == 1
-    assert (
-        outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM).in_use
-        == 0
+    _assert_source_closed_before_release(close_snapshots)
+    _assert_terminal_outcome(
+        outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM),
+        failed=1,
     )
     assert store.query()[0].error_type == "OSError"
+
+
+async def test_forward_stream_deadline_closes_before_failed_pool_release(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+    tmp_path: Path,
+) -> None:
+    """A body deadline audits partial output, closes, then fails the lease."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    close_snapshots: list[Any] = []
+    source = ControlledByteStream(
+        b"late",
+        entered=entered,
+        release=release,
+        on_close=lambda: close_snapshots.append(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
+        ),
+    )
+    outbound_runtime.transport.enqueue(stream=source)
+    monkeypatch.setattr(
+        forward_module,
+        "current_outbound_runtime",
+        lambda: outbound_runtime.runtime,
+    )
+    monkeypatch.setattr(
+        forward_module,
+        "_relay_timeout_seconds",
+        lambda **_kwargs: 0.01,
+    )
+    store = RelayAuditStore(str(tmp_path / "relay.sqlite"))
+    response = await forward_relay_request(
+        request=_request(),
+        body=b"{}",
+        upstream=_upstream(),
+        principal=ApiPrincipal(user_id="u1", key_prefix="ptm_test"),
+        audit_store=store,
+    )
+
+    assert isinstance(response, StreamingResponse)
+    assert await _body(response) == b""
+    assert entered.is_set()
+    _assert_source_closed_before_release(close_snapshots)
+    _assert_terminal_outcome(
+        outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM),
+        failed=1,
+    )
+    assert source.closed is True
+    assert store.query()[0].error_type == "deadline_exceeded"
 
 
 async def test_forward_stream_cancel_closes_source_and_releases_pool(
@@ -224,7 +681,15 @@ async def test_forward_stream_cancel_closes_source_and_releases_pool(
     """Cancelling downstream body iteration closes source and target lease."""
     entered = asyncio.Event()
     release = asyncio.Event()
-    source = ControlledByteStream(b"late", entered=entered, release=release)
+    close_snapshots: list[Any] = []
+    source = ControlledByteStream(
+        b"late",
+        entered=entered,
+        release=release,
+        on_close=lambda: close_snapshots.append(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
+        ),
+    )
     outbound_runtime.transport.enqueue(stream=source)
     monkeypatch.setattr(
         forward_module,
@@ -243,19 +708,27 @@ async def test_forward_stream_cancel_closes_source_and_releases_pool(
     iterator = cast(Any, response.body_iterator)
     consumer = asyncio.create_task(anext(iterator))
 
-    await entered.wait()
-    assert (
-        outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM).in_use
-        == 1
-    )
-    consumer.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await consumer
-    await iterator.aclose()
+    try:
+        await _wait_for_event(entered)
+        assert (
+            outbound_runtime.runtime.pools.snapshot(
+                OutboundPoolName.LLM
+            ).in_use
+            == 1
+        )
+        consumer.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(consumer, timeout=_TEST_TIMEOUT_SECONDS)
+    finally:
+        release.set()
+        await _settle_task(consumer)
+        await asyncio.wait_for(
+            iterator.aclose(), timeout=_TEST_TIMEOUT_SECONDS
+        )
 
     released = outbound_runtime.runtime.pools.snapshot(OutboundPoolName.LLM)
-    assert released.in_use == 0
-    assert released.cancelled == 0
+    _assert_terminal_outcome(released, cancelled=1)
+    _assert_source_closed_before_release(close_snapshots)
     assert source.closed is True
     assert store.query()[0].error_type == "client_disconnected"
 
@@ -271,7 +744,7 @@ async def test_operator_relay_finishes_iam_before_target_pool(
 
     async def blocked_inject() -> dict[str, str]:
         iam_entered.set()
-        await release_iam.wait()
+        await _wait_for_event(release_iam)
         return {"X-Auth-Token": "operator-token"}
 
     outbound_runtime.transport.enqueue(content=b"{}")
@@ -296,16 +769,20 @@ async def test_operator_relay_finishes_iam_before_target_pool(
         )
     )
 
-    await iam_entered.wait()
-    snapshot = outbound_runtime.runtime.pools.snapshot(
-        OutboundPoolName.ANALYSIS_CONTROL
-    )
-    assert snapshot.started == 0
-    assert snapshot.in_use == 0
-    assert snapshot.waiting == 0
+    try:
+        await _wait_for_event(iam_entered)
+        snapshot = outbound_runtime.runtime.pools.snapshot(
+            OutboundPoolName.ANALYSIS_CONTROL
+        )
+        assert snapshot.started == 0
+        assert snapshot.in_use == 0
+        assert snapshot.waiting == 0
 
-    release_iam.set()
-    response = await task
+        release_iam.set()
+        response = await asyncio.wait_for(task, timeout=_TEST_TIMEOUT_SECONDS)
+    finally:
+        release_iam.set()
+        await _settle_task(task)
     assert response.status_code == 200
     final = outbound_runtime.runtime.pools.snapshot(
         OutboundPoolName.ANALYSIS_CONTROL

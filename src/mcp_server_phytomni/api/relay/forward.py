@@ -35,6 +35,7 @@ import httpx
 from fastapi import HTTPException
 from fastapi.responses import Response, StreamingResponse
 from starlette.requests import Request
+from starlette.types import Receive, Scope, Send
 
 from ...config.defaults import (
     ApiConfig,
@@ -290,6 +291,77 @@ class TeeOutcome:
     error_type: str | None = None
 
 
+class _RelayStreamPoolError(RuntimeError):
+    """Classify an internally consumed stream failure for pool accounting."""
+
+
+class _RelayResponseBody(AsyncIterator[bytes]):
+    """Own streamed relay cleanup before and after body iteration starts."""
+
+    def __init__(
+        self,
+        body: AsyncGenerator[bytes, None],
+        *,
+        close_unstarted: Callable[[], Awaitable[None]],
+    ) -> None:
+        self._body = body
+        self._close_unstarted = close_unstarted
+        self._started = False
+        self._close_task: asyncio.Task[None] | None = None
+
+    def __aiter__(self) -> _RelayResponseBody:
+        """Return this single-owner iterator."""
+        return self
+
+    async def __anext__(self) -> bytes:
+        """Yield the next body chunk unless eager close already started."""
+        if self._close_task is not None:
+            await asyncio.shield(self._close_task)
+            raise StopAsyncIteration
+        self._started = True
+        return await anext(self._body)
+
+    async def aclose(self) -> None:
+        """Close exactly once, including before the body generator starts."""
+        if self._close_task is None:
+
+            async def close() -> None:
+                """Run the one cleanup path in an independently owned task."""
+                if self._started:
+                    await self._body.aclose()
+                else:
+                    await self._close_unstarted()
+
+            self._close_task = asyncio.create_task(close())
+        await asyncio.shield(self._close_task)
+
+
+class _RelayStreamingResponse(StreamingResponse):
+    """Close the owned relay body whenever the ASGI response call ends."""
+
+    def __init__(
+        self,
+        body: _RelayResponseBody,
+        *,
+        status_code: int,
+        headers: Mapping[str, str],
+    ) -> None:
+        super().__init__(body, status_code=status_code, headers=headers)
+        self._owned_body = body
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        """Serve the response and deterministically close its body owner."""
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await self._owned_body.aclose()
+
+
 async def tee_and_stream(
     source: AsyncIterator[bytes],
     *,
@@ -479,12 +551,16 @@ def _streaming_relay_response(
     """Build a streamed 2xx relay response that tees + audits on end.
 
     The upstream stream and the shared-client context are released in the
-    body generator's finally via ``stack.aclose()`` so they outlive this
-    function until the client has consumed the whole response.
+    body generator's finally so they outlive this function until the client
+    has consumed the whole response. The tee's terminal reason is projected
+    onto the owning stack exit so the pool lease records the real outcome.
     """
     status = upstream.status_code
+    terminal_outcome: TeeOutcome | None = None
 
     async def _on_complete(outcome: TeeOutcome) -> None:
+        nonlocal terminal_outcome
+        terminal_outcome = outcome
         body_text = sanitize_audit_body(outcome.body, cap)
         if outcome.truncated:
             dropped = outcome.total_bytes - len(outcome.body)
@@ -504,10 +580,31 @@ def _streaming_relay_response(
             error_type=error_type,
         )
 
-    async def _stream() -> AsyncIterator[bytes]:
+    async def _close_stack(stream_error: BaseException | None) -> None:
+        exit_error = stream_error
+        if terminal_outcome is not None:
+            reason = terminal_outcome.finish_reason
+            if reason is RelayFinishReason.CLIENT_DISCONNECTED:
+                exit_error = asyncio.CancelledError()
+            elif reason in {
+                RelayFinishReason.UPSTREAM_ABORTED,
+                RelayFinishReason.DEADLINE_EXCEEDED,
+            }:
+                exit_error = _RelayStreamPoolError()
+        if exit_error is None:
+            await stack.aclose()
+            return
+        await stack.__aexit__(
+            type(exit_error),
+            exit_error,
+            exit_error.__traceback__,
+        )
+
+    async def _stream() -> AsyncGenerator[bytes, None]:
         # aclosing() guarantees the tee's finally (the audit write) runs
         # when the client disconnects: closing this outer generator does
         # NOT cascade into the inner tee, so it must be closed explicitly.
+        stream_error: BaseException | None = None
         try:
             async with aclosing(
                 tee_and_stream(
@@ -519,11 +616,30 @@ def _streaming_relay_response(
             ) as teed:
                 async for chunk in teed:
                     yield chunk
+        except BaseException as exc:
+            stream_error = exc
+            raise
         finally:
-            await stack.aclose()
+            await _close_stack(stream_error)
 
-    return StreamingResponse(
-        _stream(),
+    async def _close_unstarted() -> None:
+        try:
+            await _on_complete(
+                TeeOutcome(
+                    body=b"",
+                    truncated=False,
+                    total_bytes=0,
+                    finish_reason=RelayFinishReason.CLIENT_DISCONNECTED,
+                )
+            )
+        finally:
+            await _close_stack(None)
+
+    return _RelayStreamingResponse(
+        _RelayResponseBody(
+            _stream(),
+            close_unstarted=_close_unstarted,
+        ),
         status_code=status,
         headers=filter_response_headers(upstream.headers),
     )
