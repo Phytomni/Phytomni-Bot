@@ -254,7 +254,8 @@ def mark_admission_launch_failed(
             "lease_expires_at = CASE WHEN ? = 1 THEN ? ELSE NULL END, "
             "failure_code = ?, "
             "failure_retryable = ?, updated_at = ?, revision = revision + 1 "
-            "WHERE run_id = ? AND kind = 'resolve_root' AND state = 'pending'",
+            "WHERE run_id = ? AND kind = 'resolve_root' "
+            "AND state IN ('pending', 'leased')",
             (root_state, retry, now, failure.code, retry, now, run_id),
         )
         if resolution.rowcount != 1 or root.rowcount != 1:

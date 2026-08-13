@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -394,6 +395,84 @@ def test_retry_admission_cas_grants_one_of_eight_workers(
             "FROM runs WHERE run_id = ?",
             (admitted.run_id,),
         ).fetchone() == ("running", None, "input_resolution", None, None, 2)
+
+
+def test_launch_failure_after_root_claim_settles_and_queues_grants(
+    tmp_path: Path,
+) -> None:
+    """A synchronous post-plan failure closes its leased root and grants."""
+    store, database = _store(tmp_path)
+    admitted = admit_research_request(
+        _request("claimed-launch-failure"), store
+    )
+    fingerprint = "f" * 64
+    projection = json.dumps(
+        {
+            "authority_ids": ["grant-1"],
+            "research_grant_binding": {
+                "parent_run_id": admitted.run_id,
+                "execution_fingerprint": fingerprint,
+            },
+        },
+        sort_keys=True,
+    )
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE research_work_units SET state = 'leased', "
+            "lease_owner = 'root-owner', attempt = 1, revision = 1 "
+            "WHERE run_id = ? AND kind = 'resolve_root'",
+            (admitted.run_id,),
+        )
+        connection.execute(
+            "UPDATE research_input_resolutions SET status = 'planning', "
+            "last_stage = 'planning', final_projection_json = ?, revision = 1 "
+            "WHERE run_id = ?",
+            (projection, admitted.run_id),
+        )
+        connection.execute(
+            "UPDATE runs SET stage = 'planning', revision = 1 "
+            "WHERE run_id = ?",
+            (admitted.run_id,),
+        )
+
+    failure = AdmissionLaunchFailure(
+        code="research_run_tracking_failed",
+        retryable=False,
+        status_hint=502,
+        stage="planning",
+    )
+
+    assert store.mark_admission_launch_failed(admitted.run_id, failure)
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT status, error, stage FROM runs WHERE run_id = ?",
+            (admitted.run_id,),
+        ).fetchone() == ("failed", "research_run_tracking_failed", None)
+        assert connection.execute(
+            "SELECT status, failure_code, failure_retryable "
+            "FROM research_input_resolutions WHERE run_id = ?",
+            (admitted.run_id,),
+        ).fetchone() == ("failed", "research_run_tracking_failed", 0)
+        assert connection.execute(
+            "SELECT state, lease_owner, failure_code FROM research_work_units "
+            "WHERE run_id = ? AND kind = 'resolve_root'",
+            (admitted.run_id,),
+        ).fetchone() == (
+            "terminal_failed",
+            None,
+            "research_run_tracking_failed",
+        )
+        assert connection.execute(
+            "SELECT authority_parent_run_id, execution_fingerprint, "
+            "grant_ids_json, state FROM research_grant_revocations "
+            "WHERE run_id = ?",
+            (admitted.run_id,),
+        ).fetchone() == (
+            admitted.run_id,
+            fingerprint,
+            '["grant-1"]',
+            "pending",
+        )
 
 
 def test_admission_validates_query_digest_and_hides_public_query(
