@@ -111,7 +111,9 @@ def _operator_pool_capture(
         captured.append(kwargs["upstream"])
         return Response(status_code=200)
 
-    async def fixed_body(_request: Request, _max_bytes: int) -> bytes:
+    async def fixed_body(request: Request, _max_bytes: int) -> bytes:
+        if request.url.path == "/v1/relay/analysis/tasks":
+            return b'{"compute_resource":"small"}'
         return b"{}"
 
     monkeypatch.setattr(relay_routes, "forward_relay_request", capture_forward)
@@ -136,6 +138,7 @@ def _operator_pool_capture(
             DATABASE_URL="https://database.test/nl2sql",
             ANALYSIS_URL="https://analysis.test/tasks",
             ANALYSIS_REGION="test-region",
+            APP_ID={"small": "operator-small-app"},
             SPA_FAQ_URL="https://spa.test/{repo_id}",
         ),
     )
@@ -145,10 +148,13 @@ def _operator_pool_capture(
         lambda: SimpleNamespace(
             BASE_URL="https://llm.test/v1",
             API_KEY=SecretStr("llm-key"),
+            MODEL_ID="operator-llm-model",
             CODER_URL="https://coder.test/v1",
             CODER_API_KEY=SecretStr("coder-key"),
+            CODER_MODEL="operator-coder-model",
             EMBED_URL="https://embed.test/v1",
             EMBED_API_KEY=SecretStr("embed-key"),
+            EMBED_MODEL="operator-embed-model",
         ),
     )
     return captured

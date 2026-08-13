@@ -733,7 +733,11 @@ async def test_analysis_relay_verifies_and_strips_research_sidecar(
         "/v1/relay/analysis/tasks",
         headers={"Authorization": f"Bearer {combined_key}"},
         json={
-            "analysis_request": {"name": "analysis-task", "tasks": []},
+            "analysis_request": {
+                "name": "analysis-task",
+                "compute_resource": "small",
+                "tasks": [],
+            },
             "research_input_grants": {
                 "schema_version": 1,
                 "parent_run_id": _PARENT_RUN_ID,
@@ -753,18 +757,23 @@ async def test_analysis_relay_verifies_and_strips_research_sidecar(
     )
 
     assert response.status_code == 200
-    assert captured == [b'{"name":"analysis-task","tasks":[]}']
+    expected_app_id = relay_routes.DeepGenomeConfig().APP_ID["small"]
+    assert json.loads(captured[0]) == {
+        "name": "analysis-task",
+        "tasks": [],
+        "tool_id": expected_app_id,
+    }
     assert grant["grant_id"].encode() not in captured[0]
     assert _REFERENCE.encode() not in captured[0]
 
 
-async def test_analysis_relay_preserves_ordinary_body_without_sidecar(
+async def test_analysis_relay_binds_ordinary_body_to_operator_app(
     client: httpx.AsyncClient,
     relay_key: Callable[..., str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Ordinary analysis relay requests retain their exact body bytes."""
-    raw_body = b'{"name":"ordinary","tasks":[]}'
+    """Ordinary analysis requests also use the operator's selected app."""
+    raw_body = b'{"name":"ordinary","compute_resource":"small","tasks":[]}'
     captured: list[bytes] = []
 
     async def _forward(**kwargs: Any) -> Response:
@@ -779,7 +788,12 @@ async def test_analysis_relay_preserves_ordinary_body_without_sidecar(
     )
 
     assert response.status_code == 200
-    assert captured == [raw_body]
+    expected_app_id = relay_routes.DeepGenomeConfig().APP_ID["small"]
+    assert json.loads(captured[0]) == {
+        "name": "ordinary",
+        "tasks": [],
+        "tool_id": expected_app_id,
+    }
 
 
 @pytest.mark.parametrize("mutation", ["snapshot", "duplicate"])

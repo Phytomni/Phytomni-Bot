@@ -381,19 +381,19 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
   **Path:** `/v1/relay/llm/chat/completions`
   **Auth:** relay
   **Purpose:** Chat LLM relay (transparent); injects the operator
-  `Authorization: Bearer` key.
+  `Authorization: Bearer` key and replaces `model` with operator `MODEL_ID`.
 
 - **Method:** `POST`
   **Path:** `/v1/relay/coder/chat/completions`
   **Auth:** relay
   **Purpose:** Coder model relay (transparent); injects the operator coder
-  Bearer key.
+  Bearer key and replaces `model` with operator `CODER_MODEL`.
 
 - **Method:** `POST`
   **Path:** `/v1/relay/embed/embeddings`
   **Auth:** relay
   **Purpose:** Embedding relay (transparent); injects the operator embed Bearer
-  key (OpenAI shape, OQ-001).
+  key and replaces `model` with operator `EMBED_MODEL` (OpenAI shape, OQ-001).
 
 - **Method:** `POST`
   **Path:** `/v1/relay/retrieve/search`
@@ -452,7 +452,8 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
   **Path:** `/v1/relay/analysis/tasks`
   **Auth:** relay
   **Purpose:** Analysis-platform submit relay (envelope); injects the operator
-  IAM `X-Auth-Token` for the analysis region.
+  IAM `X-Auth-Token` for the analysis region and maps the child
+  `compute_resource` tier to the operator-owned `APP_ID`.
 
 - **Method:** `GET`
   **Path:** `/v1/relay/analysis/{task_id}`
@@ -1423,6 +1424,14 @@ credential header cannot leak. Platform-family routes
 (`retrieve` / `rerank` / `database` / `analysis` / `bi`) are
 *envelope*: a `2xx` body is returned as-is and any upstream error is
 mapped to the unified error envelope.
+
+**Operator-owned request bindings.** Each OpenAI-family request must be a JSON
+object; the relay replaces its `model` field with `MODEL_ID`, `CODER_MODEL`, or
+`EMBED_MODEL` before forwarding. Analysis submit requests carry a semantic
+`compute_resource` selector (`small`, `medium`, or `large`); the relay removes
+that selector and replaces any caller `tool_id` with the matching operator
+`APP_ID`, so a relay child needs neither provider model names nor analysis app
+UUIDs.
 
 **Per-service upstream credential injected:**
 

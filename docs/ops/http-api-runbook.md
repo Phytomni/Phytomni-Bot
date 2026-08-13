@@ -497,17 +497,20 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 - **Method:** `POST`
   **Path:** `/v1/relay/llm/chat/completions`
   **Auth:** relay
-  **Operational use:** Chat LLM relay (transparent, Bearer-injected).
+  **Operational use:** Chat LLM relay (transparent, Bearer-injected); operator
+  `MODEL_ID` replaces the caller model.
 
 - **Method:** `POST`
   **Path:** `/v1/relay/coder/chat/completions`
   **Auth:** relay
-  **Operational use:** Coder model relay (transparent, Bearer-injected).
+  **Operational use:** Coder model relay (transparent, Bearer-injected);
+  operator `CODER_MODEL` replaces the caller model.
 
 - **Method:** `POST`
   **Path:** `/v1/relay/embed/embeddings`
   **Auth:** relay
-  **Operational use:** Embedding relay (transparent, Bearer-injected; OQ-001).
+  **Operational use:** Embedding relay (transparent, Bearer-injected); operator
+  `EMBED_MODEL` replaces the caller model (OQ-001).
 
 - **Method:** `POST`
   **Path:** `/v1/relay/retrieve/search`
@@ -560,7 +563,8 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
   **Path:** `/v1/relay/analysis/tasks`
   **Auth:** relay
   **Operational use:** Analysis-platform submit relay (envelope, IAM
-  `X-Auth-Token`).
+  `X-Auth-Token`); maps child `compute_resource` to operator `APP_ID` and
+  replaces any caller `tool_id`.
 
 - **Method:** `GET`
   **Path:** `/v1/relay/analysis/{task_id}`
@@ -1628,6 +1632,13 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   / `.env.encrypted` the rest of the service uses (`API_KEY`,
   `CODER_API_KEY`, `EMBED_API_KEY`, and the IAM user credentials); no
   relay-specific secret exists.
+
+- **Keep provider identifiers operator-side.** OpenAI-family request bodies
+  must be JSON objects; the relay replaces `model` with the configured
+  `MODEL_ID`, `CODER_MODEL`, or `EMBED_MODEL`. Analysis children send only a
+  `small`, `medium`, or `large` `compute_resource`; the operator removes it and
+  injects the matching `APP_ID`, so do not provision these model names or app
+  UUIDs in the child environment.
 
 - **Query the audit.** Every relay call is recorded in the local audit
   store (`RELAY_AUDIT_DB_PATH`). Query it with the service token:

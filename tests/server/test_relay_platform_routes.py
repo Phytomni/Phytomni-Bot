@@ -13,6 +13,7 @@ config-resolved URL and map an upstream error to the unified envelope.
 from __future__ import annotations
 
 import contextlib
+import json
 from collections.abc import AsyncGenerator, Callable
 from types import SimpleNamespace
 from typing import Any
@@ -61,6 +62,11 @@ _PLATFORM_URLS = SimpleNamespace(
     DATABASE_URL="https://db.test/nl2sql",
     ANALYSIS_URL="https://analysis.test/tasks",
     ANALYSIS_REGION="cn-analysis",
+    APP_ID={
+        "small": "operator-small-app",
+        "medium": "operator-medium-app",
+        "large": "operator-large-app",
+    },
     SPA_FAQ_URL="http://spa.test/{repo_id}/faq",
 )
 
@@ -168,11 +174,51 @@ async def test_analysis_route_passes_its_region(
     response = await client.post(
         "/v1/relay/analysis/tasks",
         headers={"Authorization": f"Bearer {relay_key('analysis')}"},
-        content=b"{}",
+        json={
+            "name": "analysis-job",
+            "compute_resource": "medium",
+            "tool_id": "customer-selected-app",
+        },
     )
 
     assert response.status_code == 200
     assert seen[0].headers["x-auth-token"] == "iam-token:cn-analysis"
+    assert json.loads(seen[0].content) == {
+        "name": "analysis-job",
+        "tool_id": "operator-medium-app",
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {},
+        {"compute_resource": ""},
+        {"compute_resource": "gpu"},
+        {"compute_resource": 1},
+    ),
+)
+async def test_analysis_route_rejects_invalid_compute_selector(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    payload: object,
+) -> None:
+    """Only a configured semantic tier can select an operator app UUID."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        pytest.fail("invalid analysis selector reached the upstream")
+
+    _patch_platform(monkeypatch, handler)
+
+    response = await client.post(
+        "/v1/relay/analysis/tasks",
+        headers={"Authorization": f"Bearer {relay_key('analysis')}"},
+        json=payload,
+    )
+
+    assert response.status_code == 400
 
 
 async def test_bi_route_runs_gauss_server_side(

@@ -11,6 +11,7 @@ to a config-resolved upstream URL with the client query dropped.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from types import SimpleNamespace
 
@@ -41,12 +42,84 @@ def _patch_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = SimpleNamespace(
         BASE_URL="https://llm.test/v1",
         API_KEY=SecretStr("sk-llm-op"),
+        MODEL_ID="operator-llm-model",
         CODER_URL="https://coder.test/api/v2",
         CODER_API_KEY=SecretStr("sk-coder-op"),
+        CODER_MODEL="operator-coder-model",
         EMBED_URL="https://embed.test/v1/",
         EMBED_API_KEY=SecretStr("sk-embed-op"),
+        EMBED_MODEL="operator-embed-model",
     )
     monkeypatch.setattr(routes_module, "get_sensitive_config", lambda: fake)
+
+
+@pytest.mark.parametrize(
+    ("service", "operator_model"),
+    (
+        ("llm", "operator-llm-model"),
+        ("coder", "operator-coder-model"),
+        ("embed", "operator-embed-model"),
+    ),
+)
+async def test_openai_routes_replace_customer_model_with_operator_model(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    service: str,
+    operator_model: str,
+) -> None:
+    """A relay child never needs or selects an operator provider model."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=b"{}",
+        )
+
+    patch_mock_transport(monkeypatch, forward_module, handler)
+    _patch_secrets(monkeypatch)
+    path = "embeddings" if service == "embed" else "chat/completions"
+
+    response = await client.post(
+        f"/v1/relay/{service}/{path}",
+        headers={"Authorization": f"Bearer {relay_key(service)}"},
+        json={"model": "customer-selected-model", "input": "sentinel"},
+    )
+
+    assert response.status_code == 200
+    forwarded = json.loads(seen[0].content)
+    assert forwarded == {"model": operator_model, "input": "sentinel"}
+
+
+@pytest.mark.parametrize("body", (b"{", b"[]"))
+async def test_openai_routes_reject_invalid_json_before_forwarding(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    body: bytes,
+) -> None:
+    """Only a JSON object can cross the operator-credentialed boundary."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        pytest.fail("invalid relay JSON reached the upstream")
+
+    patch_mock_transport(monkeypatch, forward_module, handler)
+    _patch_secrets(monkeypatch)
+
+    response = await client.post(
+        "/v1/relay/llm/chat/completions",
+        headers={
+            "Authorization": f"Bearer {relay_key('llm')}",
+            "Content-Type": "application/json",
+        },
+        content=body,
+    )
+
+    assert response.status_code == 400
 
 
 async def test_llm_route_injects_bearer_and_drops_query(

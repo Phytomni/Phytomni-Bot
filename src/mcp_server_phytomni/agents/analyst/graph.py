@@ -332,10 +332,15 @@ class AnalystGraphMixin:
             "compute_resource", self.analyst_config.COMPUTE_RESOURCE
         )
         resource = self.analyst_config.RESOURCE[compute_res]
+        app_binding = (
+            {"compute_resource": compute_res}
+            if relay_mode_enabled()
+            else {"tool_id": self.analyst_config.APP_ID[compute_res]}
+        )
         return job_name, {
             "name": job_name,
             "timeout": self.analyst_config.ANALYSIS_JOB_TIMEOUT,
-            "tool_id": self.analyst_config.APP_ID[compute_res],
+            **app_binding,
             "tool_type": "app",
             "tasks": [
                 {

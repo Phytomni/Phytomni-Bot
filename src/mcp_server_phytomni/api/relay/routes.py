@@ -71,6 +71,7 @@ class _OpenAIRelaySpec:
     method: str
     url_field: str
     key_field: str
+    model_field: str
     pool: OutboundPoolName
 
 
@@ -109,6 +110,7 @@ _OPENAI_RELAYS = (
         method="POST",
         url_field="BASE_URL",
         key_field="API_KEY",
+        model_field="MODEL_ID",
         pool=OutboundPoolName.LLM,
     ),
     _OpenAIRelaySpec(
@@ -117,6 +119,7 @@ _OPENAI_RELAYS = (
         method="POST",
         url_field="CODER_URL",
         key_field="CODER_API_KEY",
+        model_field="CODER_MODEL",
         pool=OutboundPoolName.LLM,
     ),
     _OpenAIRelaySpec(
@@ -125,6 +128,7 @@ _OPENAI_RELAYS = (
         method="POST",
         url_field="EMBED_URL",
         key_field="EMBED_API_KEY",
+        model_field="EMBED_MODEL",
         pool=OutboundPoolName.LLM,
     ),
 )
@@ -231,6 +235,7 @@ def _openai_relay_handler(
         sensitive = get_sensitive_config()
         base = getattr(sensitive, spec.url_field).rstrip("/")
         key = getattr(sensitive, spec.key_field).get_secret_value()
+        body = _bind_operator_model(body, getattr(sensitive, spec.model_field))
 
         async def _inject() -> dict[str, str]:
             return {"Authorization": f"Bearer {key}"}
@@ -250,6 +255,24 @@ def _openai_relay_handler(
         )
 
     return _handler
+
+
+def _bind_operator_model(body: bytes, model: str) -> bytes:
+    """Replace an untrusted relay model with the operator-owned model."""
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, ValueError):
+        raise HTTPException(
+            status_code=400, detail="invalid OpenAI relay request"
+        ) from None
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=400, detail="invalid OpenAI relay request"
+        )
+    payload["model"] = model
+    return json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
 
 
 def _platform_relay_handler(
@@ -291,6 +314,7 @@ def _research_analysis_relay_handler(
         config = ApiConfig()
         body = await read_relay_body(request, config.RELAY_REQUEST_MAX_BYTES)
         body = _unwrap_research_analysis_body(body, principal, grant_store)
+        body = _bind_operator_analysis_app(body)
         return await _forward_platform_body(
             request=request,
             body=body,
@@ -299,6 +323,33 @@ def _research_analysis_relay_handler(
         )
 
     return _handler
+
+
+def _bind_operator_analysis_app(body: bytes) -> bytes:
+    """Resolve a child compute tier to the operator-owned analysis app UUID."""
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, ValueError):
+        raise HTTPException(
+            status_code=400, detail="invalid analysis relay request"
+        ) from None
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=400, detail="invalid analysis relay request"
+        )
+    compute_resource = payload.pop("compute_resource", None)
+    app_ids = DeepGenomeConfig().APP_ID
+    if (
+        not isinstance(compute_resource, str)
+        or compute_resource not in app_ids
+    ):
+        raise HTTPException(
+            status_code=400, detail="invalid analysis relay request"
+        )
+    payload["tool_id"] = app_ids[compute_resource]
+    return json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
 
 
 async def _forward_platform_body(

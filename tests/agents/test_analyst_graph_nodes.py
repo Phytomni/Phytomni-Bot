@@ -357,6 +357,21 @@ async def test_submit_payload_uses_remote_job_timeout() -> None:
     assert payload["timeout"] == 33
 
 
+async def test_relay_submit_payload_uses_compute_selector_without_app_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A relay child selects a tier without knowing the operator app UUID."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    monkeypatch.setenv("PHYTOMNI_RELAY_BASE_URL", "https://relay.test")
+    monkeypatch.setenv("PHYTOMNI_RELAY_API_KEY", "relay-key")
+    agent = _make_agent(APP_ID={})
+
+    payload = await _capture_create_payload(agent)
+
+    assert payload["compute_resource"] == "small"
+    assert "tool_id" not in payload
+
+
 async def test_check_post_node_treats_malformed_json_as_rejected() -> None:
     """Bad critic JSON degrades to score=0, REJECTED, empty feedback.
 
