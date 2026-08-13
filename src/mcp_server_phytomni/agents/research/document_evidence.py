@@ -308,19 +308,20 @@ def _query_units(
         text = request.effective_query[start:index]
         original_start = mapping[start]
         original_end = mapping[index - 1] + 1
-        span = SourceSpan(original_start, original_end, "query")
-        units.append(
-            _unit(
-                _UnitSpec(
-                    evidence_id=f"query_span_{len(units) + 1:03d}",
-                    source_kind="query",
-                    source_ordinal=len(units),
-                    source_span=span,
-                    text=text,
-                    dataset_ids=datasets,
+        if text.strip():
+            span = SourceSpan(original_start, original_end, "query")
+            units.append(
+                _unit(
+                    _UnitSpec(
+                        evidence_id=f"query_span_{len(units) + 1:03d}",
+                        source_kind="query",
+                        source_ordinal=len(units),
+                        source_span=span,
+                        text=text,
+                        dataset_ids=datasets,
+                    )
                 )
             )
-        )
         start = index
     return tuple(units)
 

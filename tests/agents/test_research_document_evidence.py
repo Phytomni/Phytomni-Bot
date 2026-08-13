@@ -193,6 +193,33 @@ async def test_evidence_is_ordered_and_stable() -> None:
     )
 
 
+async def test_query_evidence_skips_whitespace_only_gap_spans() -> None:
+    """Removed-reference gaps do not become empty evidence units."""
+    dataset = _entry("dataset_001", "matrix.csv", "dataset", 7)
+    query = "Question\n\n"
+    request = ResearchEvidenceRequest(
+        inventory=research_inventory_partitions(
+            (dataset,), digest="inventory-digest"
+        ),
+        effective_query=query,
+        effective_to_original=(*range(8), 100, 200),
+    )
+
+    evidence = await extract_research_evidence(
+        request,
+        _Downloader({}),
+        _Converter({}),
+    )
+
+    query_units = [
+        unit for unit in evidence.units if unit.source_kind == "query"
+    ]
+    assert [
+        (unit.evidence_id, unit.source_ordinal, unit.text)
+        for unit in query_units
+    ] == [("query_span_001", 0, "Question")]
+
+
 async def test_extracted_evidence_is_shared_without_redownload() -> None:
     """A single extraction result supports both downstream consumers."""
     entries = (
