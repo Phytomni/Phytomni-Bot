@@ -34,6 +34,9 @@ from ._subgraph_branch_fakes import failing_async_object
 pytestmark = pytest.mark.agent
 
 _CORE_MODULE = "mcp_server_phytomni.agents.brief_gene.core"
+_KNOWLEDGE_SUBGRAPH_MODULE = (
+    "mcp_server_phytomni.agents.brief_gene.graph_knowledge_subgraph"
+)
 
 
 def _install_fake_knowledge_app(
@@ -178,6 +181,40 @@ async def test_retrieve_worker_factory_success_path(
 
     assert delta["retrieve_indexed_results"] == [
         (0, [{"title": "doc0"}]),
+    ]
+
+
+async def test_retrieve_worker_uses_standard_graph_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each mounted retrieval gets an isolated checkpoint configuration."""
+    fake_app = failing_async_object(
+        "ainvoke",
+        AssertionError("worker bypassed the standard graph runner"),
+    )
+    calls: list[tuple[object, object]] = []
+
+    async def invoke(app: object, payload: object) -> dict[str, object]:
+        calls.append((app, payload))
+        return {"retrieved_docs": [{"title": "isolated"}]}
+
+    monkeypatch.setattr(
+        f"{_KNOWLEDGE_SUBGRAPH_MODULE}.ainvoke_graph",
+        invoke,
+    )
+    agent = _build_agent(monkeypatch=monkeypatch)
+    worker = agent.make_retrieve_worker_node(
+        cast(CompiledStateGraph, fake_app)
+    )
+    state = _gene_found_state()
+    state["task_index"] = 3
+    state["knowledge_input"] = {"user_query": "q3"}
+
+    delta = await worker(state)
+
+    assert calls == [(fake_app, {"user_query": "q3"})]
+    assert delta["retrieve_indexed_results"] == [
+        (3, [{"title": "isolated"}]),
     ]
 
 

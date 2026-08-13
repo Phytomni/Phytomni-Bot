@@ -26,6 +26,7 @@ from ...graphs.brief_gene_to_knowledge_adapters import (
     extract_brief_gene_knowledge_response,
 )
 from ...mcp.progress_events import emit_progress
+from ...runtime.langgraph_runner import ainvoke_graph
 from ..shared.parallel_dispatch import DegradedRecord, redact_failure_message
 from .pipeline import _dedupe, _format_docs
 
@@ -233,7 +234,10 @@ class BriefGeneKnowledgeSubgraphMixin:
             task_index = state.get("task_index", 0)
             knowledge_input = state.get("knowledge_input", {})
             try:
-                knowledge_output = await knowledge_app.ainvoke(knowledge_input)
+                knowledge_output = await ainvoke_graph(
+                    knowledge_app,
+                    knowledge_input,
+                )
                 docs = extract_brief_gene_knowledge_response(knowledge_output)
                 return {
                     "retrieve_indexed_results": [(task_index, docs)],
