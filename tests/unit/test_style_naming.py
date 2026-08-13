@@ -172,7 +172,7 @@ def test_shared_checker_owns_source_suppression_inventory():
         [
             sys.executable,
             str(root / "scripts/check_static_analysis_exemptions.py"),
-            "inventory",
+            "check",
             "--scope",
             "source",
             "--format",

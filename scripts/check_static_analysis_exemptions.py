@@ -211,7 +211,16 @@ def _filter_result(
 def _registry_for_scope(registry: Registry, scope: str) -> Registry:
     """Limit partial reconciliation to the findings that scope observes."""
     if scope != "cross-file":
-        return registry
+        if scope != "source":
+            return registry
+        return replace(
+            registry,
+            exemptions=tuple(
+                item
+                for item in registry.exemptions
+                if item.mechanism.value in {"inline", "marker"}
+            ),
+        )
     return replace(
         registry,
         exemptions=tuple(

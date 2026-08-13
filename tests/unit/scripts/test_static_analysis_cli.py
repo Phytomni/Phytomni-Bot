@@ -197,8 +197,8 @@ tests = ["tests/unit/test_example.py"]
     )
 
 
-def test_cross_file_scope_keeps_project_registry_empty() -> None:
-    """Partial cross-file checks do not reintroduce closed exemptions."""
+def test_cross_file_scope_keeps_only_diagnostic_exemptions() -> None:
+    """Partial cross-file checks ignore inline and marker exemptions."""
     registry = cli.load_registry(
         Path(__file__).resolve().parents[3]
         / "static-analysis-exemptions.toml",
@@ -206,7 +206,10 @@ def test_cross_file_scope_keeps_project_registry_empty() -> None:
     )
     scoped = getattr(cli, "_registry_for_scope")(registry, "cross-file")
 
-    assert not scoped.exemptions
+    assert scoped.exemptions
+    assert all(
+        item.mechanism.value == "diagnostic" for item in scoped.exemptions
+    )
 
 
 def test_check_pylint_reads_nul_paths_with_spaces(
