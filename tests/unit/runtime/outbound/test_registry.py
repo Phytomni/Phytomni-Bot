@@ -125,6 +125,58 @@ async def test_independent_pools_do_not_block_one_another() -> None:
 
 
 @pytest.mark.asyncio
+async def test_wave_two_pools_saturate_independently() -> None:
+    """All six Wave 2 pools reach capacity and queue only their own excess."""
+    names = (
+        OutboundPoolName.ANALYSIS_STATUS,
+        OutboundPoolName.ANALYSIS_CONTROL,
+        OutboundPoolName.NL2SQL,
+        OutboundPoolName.IAM,
+        OutboundPoolName.BI,
+        OutboundPoolName.RELAY_CONTROL,
+    )
+    registry = OutboundPoolRegistry(
+        _capacities(**{name.value: 1 for name in names}),
+        wait_warn_seconds=1.0,
+    )
+    release = asyncio.Event()
+    entered = {name: asyncio.Event() for name in names}
+
+    async def hold(name: OutboundPoolName) -> None:
+        """Occupy one service pool without affecting any other pool."""
+        async with registry.lease(name):
+            entered[name].set()
+            await release.wait()
+
+    async def queue(name: OutboundPoolName) -> None:
+        """Queue behind the matching holder until the common release."""
+        async with registry.lease(name):
+            return None
+
+    holders = [asyncio.create_task(hold(name)) for name in names]
+    await asyncio.gather(*(event.wait() for event in entered.values()))
+    waiters = [asyncio.create_task(queue(name)) for name in names]
+    await asyncio.gather(
+        *(_wait_for_waiters(registry, name, 1) for name in names)
+    )
+
+    for name in names:
+        snapshot = registry.snapshot(name)
+        assert snapshot.capacity == 1
+        assert snapshot.in_use == 1
+        assert snapshot.waiting == 1
+        assert snapshot.max_in_use == 1
+
+    release.set()
+    await asyncio.gather(*holders, *waiters)
+    for name in names:
+        snapshot = registry.snapshot(name)
+        assert snapshot.in_use == 0
+        assert snapshot.waiting == 0
+        assert snapshot.started == 2
+
+
+@pytest.mark.asyncio
 async def test_cancelled_waiter_is_removed_from_snapshot() -> None:
     """Cancellation while queued cannot strand a logical waiter."""
     registry = OutboundPoolRegistry(_capacities(llm=1), wait_warn_seconds=0.01)
