@@ -13,6 +13,7 @@ raise / timeout). HTTP wrappers themselves stay e2e-covered.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -25,7 +26,12 @@ from mcp_server_phytomni.agents.analyst.task_ops import (
     wait_for_completion,
 )
 from mcp_server_phytomni.runtime.outbound import OutboundPoolName
-from tests.support.outbound_fakes import ControlledByteStream
+from tests.support.outbound_fakes import (
+    ControlledByteStream,
+    bounded_await,
+    bounded_wait_for_event,
+    managed_async_task,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -189,23 +195,27 @@ async def test_analysis_poll_sleep_holds_no_status_slot(
 
     monkeypatch.setattr(task_ops_module, "get_token", fake_token)
     monkeypatch.setattr(task_ops_module, "relay_mode_enabled", lambda: False)
-    monkeypatch.setattr(task_ops_module.asyncio, "sleep", controlled_sleep)
+    monkeypatch.setattr(
+        task_ops_module,
+        "asyncio",
+        SimpleNamespace(sleep=controlled_sleep),
+    )
     outbound_runtime.transport.enqueue(content=b'{"status":"RUNNING"}')
     outbound_runtime.transport.enqueue(content=b'{"status":"SUCCEEDED"}')
-    task = asyncio.create_task(
-        wait_for_completion("sleep-task", poll_interval=1, max_poll=30)
-    )
+    async with managed_async_task(
+        wait_for_completion("sleep-task", poll_interval=1, max_poll=30),
+        release_events=(release_sleep,),
+    ) as task:
+        await bounded_wait_for_event(sleep_entered, task=task)
+        snapshot = outbound_runtime.runtime.pools.snapshot(
+            OutboundPoolName.ANALYSIS_STATUS
+        )
+        assert snapshot.started == 1
+        assert snapshot.in_use == 0
+        assert snapshot.waiting == 0
 
-    await sleep_entered.wait()
-    snapshot = outbound_runtime.runtime.pools.snapshot(
-        OutboundPoolName.ANALYSIS_STATUS
-    )
-    assert snapshot.started == 1
-    assert snapshot.in_use == 0
-    assert snapshot.waiting == 0
-
-    release_sleep.set()
-    assert await task == {"status": "SUCCEEDED"}
+        release_sleep.set()
+        assert await bounded_await(task) == {"status": "SUCCEEDED"}
 
 
 async def test_analysis_poll_cancellation_closes_source_and_releases_status(
@@ -227,24 +237,24 @@ async def test_analysis_poll_cancellation_closes_source_and_releases_status(
     monkeypatch.setattr(task_ops_module, "get_token", fake_token)
     monkeypatch.setattr(task_ops_module, "relay_mode_enabled", lambda: False)
     outbound_runtime.transport.enqueue(stream=source)
-    task = asyncio.create_task(
-        wait_for_completion("cancel-task", poll_interval=1, max_poll=30)
-    )
+    async with managed_async_task(
+        wait_for_completion("cancel-task", poll_interval=1, max_poll=30),
+        release_events=(hold_source,),
+    ) as task:
+        await bounded_wait_for_event(source_entered, task=task)
+        held = outbound_runtime.runtime.pools.snapshot(
+            OutboundPoolName.ANALYSIS_STATUS
+        )
+        assert held.in_use == 1
+        assert held.waiting == 0
 
-    await source_entered.wait()
-    held = outbound_runtime.runtime.pools.snapshot(
-        OutboundPoolName.ANALYSIS_STATUS
-    )
-    assert held.in_use == 1
-    assert held.waiting == 0
-
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    released = outbound_runtime.runtime.pools.snapshot(
-        OutboundPoolName.ANALYSIS_STATUS
-    )
-    assert released.in_use == 0
-    assert released.waiting == 0
-    assert released.cancelled == 1
-    assert source.closed is True
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await bounded_await(task)
+        released = outbound_runtime.runtime.pools.snapshot(
+            OutboundPoolName.ANALYSIS_STATUS
+        )
+        assert released.in_use == 0
+        assert released.waiting == 0
+        assert released.cancelled == 1
+        assert source.closed is True

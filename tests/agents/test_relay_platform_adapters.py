@@ -46,6 +46,11 @@ from mcp_server_phytomni.agents.shared.sql import relay_bi_query
 from mcp_server_phytomni.common.http import JsonPostRetry
 from mcp_server_phytomni.common.relay_client import RelayRequestOptions
 from mcp_server_phytomni.runtime.outbound import OutboundPoolName
+from tests.support.outbound_fakes import (
+    bounded_await,
+    bounded_wait_for_event,
+    managed_async_task,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -412,20 +417,20 @@ async def test_spa_faq_waits_for_iam_before_target_pool(
     outbound_runtime.transport.enqueue(
         content=b'{"total":1,"records":[{"answer":"9606.1"}]}'
     )
-    task = asyncio.create_task(
-        find_spa_taxids("Arabidopsis", request_timeout=1.0)
-    )
+    async with managed_async_task(
+        find_spa_taxids("Arabidopsis", request_timeout=1.0),
+        release_events=(release_iam,),
+    ) as task:
+        await bounded_wait_for_event(iam_entered, task=task)
+        snapshot = outbound_runtime.runtime.pools.snapshot(
+            OutboundPoolName.SPA_FAQ
+        )
+        assert snapshot.started == 0
+        assert snapshot.in_use == 0
+        assert snapshot.waiting == 0
 
-    await iam_entered.wait()
-    snapshot = outbound_runtime.runtime.pools.snapshot(
-        OutboundPoolName.SPA_FAQ
-    )
-    assert snapshot.started == 0
-    assert snapshot.in_use == 0
-    assert snapshot.waiting == 0
-
-    release_iam.set()
-    assert await task == ["9606"]
+        release_iam.set()
+        assert await bounded_await(task) == ["9606"]
 
 
 async def test_bi_query_operator_mode_runs_gauss_query(monkeypatch):

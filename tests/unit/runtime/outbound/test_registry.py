@@ -9,6 +9,11 @@ import asyncio
 import logging
 
 import pytest
+from tests.support.outbound_fakes import (
+    bounded_await,
+    bounded_wait_for_event,
+    managed_async_task,
+)
 
 from mcp_server_phytomni.runtime.outbound import (
     OutboundPoolName,
@@ -17,6 +22,133 @@ from mcp_server_phytomni.runtime.outbound import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+async def test_bounded_await_times_out() -> None:
+    """A missing synchronization signal fails within the chosen deadline."""
+    with pytest.raises(TimeoutError):
+        await bounded_await(asyncio.Event().wait(), timeout_seconds=0.01)
+
+
+async def test_bounded_event_wait_surfaces_child_failure() -> None:
+    """A pre-signal child failure remains the immediately visible error."""
+    signal = asyncio.Event()
+
+    async def fail_before_signal() -> None:
+        raise RuntimeError("child failed before signal")
+
+    async with managed_async_task(fail_before_signal()) as task:
+        with pytest.raises(RuntimeError, match="child failed before signal"):
+            await bounded_wait_for_event(
+                signal,
+                task=task,
+            )
+
+
+async def test_bounded_event_wait_rejects_successful_early_exit() -> None:
+    """A child return before its expected signal is not treated as success."""
+    signal = asyncio.Event()
+
+    async def return_before_signal() -> None:
+        return None
+
+    async with managed_async_task(return_before_signal()) as task:
+        with pytest.raises(
+            AssertionError,
+            match="task completed before expected event",
+        ):
+            await bounded_wait_for_event(signal, task=task)
+
+
+async def test_bounded_event_wait_times_out_while_child_runs() -> None:
+    """A live child without its expected signal reaches a finite deadline."""
+    signal = asyncio.Event()
+    release = asyncio.Event()
+
+    async def wait_for_release() -> None:
+        await release.wait()
+
+    async with managed_async_task(
+        wait_for_release(),
+        release_events=(release,),
+    ) as task:
+        with pytest.raises(TimeoutError):
+            await bounded_wait_for_event(
+                signal,
+                task=task,
+                timeout_seconds=0.01,
+            )
+
+
+async def test_managed_async_task_releases_and_cleans_up() -> None:
+    """A failing test body cannot strand its controlled child task."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    task: asyncio.Task[None] | None = None
+
+    async def wait_for_release() -> None:
+        entered.set()
+        await release.wait()
+
+    with pytest.raises(RuntimeError, match="test body failed"):
+        async with managed_async_task(
+            wait_for_release(),
+            release_events=(release,),
+        ) as task:
+            await bounded_wait_for_event(entered, task=task)
+            raise RuntimeError("test body failed")
+
+    assert release.is_set()
+    assert task is not None
+    assert task.done()
+    assert task.cancelled()
+
+
+async def _wait_through_first_cancellation(entered: asyncio.Event) -> None:
+    """Remain active until the cleanup deadline issues a second cancel."""
+    entered.set()
+    try:
+        await asyncio.Event().wait()
+    except asyncio.CancelledError:
+        await asyncio.Event().wait()
+
+
+async def test_managed_task_preserves_body_error_on_cleanup_timeout() -> None:
+    """A bounded cleanup failure cannot replace the test body's error."""
+    entered = asyncio.Event()
+    task: asyncio.Task[None] | None = None
+
+    with pytest.raises(RuntimeError, match="test body failed") as error:
+        async with managed_async_task(
+            _wait_through_first_cancellation(entered),
+            timeout_seconds=0.01,
+        ) as task:
+            await bounded_wait_for_event(entered, task=task)
+            raise RuntimeError("test body failed")
+
+    assert error.value.__notes__ == [
+        "managed_async_task cleanup failed; body error preserved"
+    ]
+    assert task is not None
+    assert task.done()
+    assert task.cancelled()
+
+
+async def test_managed_task_surfaces_timeout_after_normal_body() -> None:
+    """A bounded cleanup failure remains visible after a successful body."""
+    entered = asyncio.Event()
+    task: asyncio.Task[None] | None = None
+
+    with pytest.raises(TimeoutError):
+        async with managed_async_task(
+            _wait_through_first_cancellation(entered),
+            timeout_seconds=0.01,
+        ) as task:
+            await bounded_wait_for_event(entered, task=task)
+
+    assert task is not None
+    assert task.done()
+    assert task.cancelled()
 
 
 def _capacities(**overrides: int) -> dict[OutboundPoolName, int]:
@@ -154,26 +286,38 @@ async def test_wave_two_pools_saturate_independently() -> None:
             return None
 
     holders = [asyncio.create_task(hold(name)) for name in names]
-    await asyncio.gather(*(event.wait() for event in entered.values()))
-    waiters = [asyncio.create_task(queue(name)) for name in names]
-    await asyncio.gather(
-        *(_wait_for_waiters(registry, name, 1) for name in names)
-    )
+    waiters: list[asyncio.Task[None]] = []
+    try:
+        for name, holder in zip(names, holders, strict=True):
+            await bounded_wait_for_event(entered[name], task=holder)
+        waiters = [asyncio.create_task(queue(name)) for name in names]
+        await bounded_await(
+            asyncio.gather(
+                *(_wait_for_waiters(registry, name, 1) for name in names)
+            )
+        )
 
-    for name in names:
-        snapshot = registry.snapshot(name)
-        assert snapshot.capacity == 1
-        assert snapshot.in_use == 1
-        assert snapshot.waiting == 1
-        assert snapshot.max_in_use == 1
+        for name in names:
+            snapshot = registry.snapshot(name)
+            assert snapshot.capacity == 1
+            assert snapshot.in_use == 1
+            assert snapshot.waiting == 1
+            assert snapshot.max_in_use == 1
 
-    release.set()
-    await asyncio.gather(*holders, *waiters)
-    for name in names:
-        snapshot = registry.snapshot(name)
-        assert snapshot.in_use == 0
-        assert snapshot.waiting == 0
-        assert snapshot.started == 2
+        release.set()
+        await bounded_await(asyncio.gather(*holders, *waiters))
+        for name in names:
+            snapshot = registry.snapshot(name)
+            assert snapshot.in_use == 0
+            assert snapshot.waiting == 0
+            assert snapshot.started == 2
+    finally:
+        release.set()
+        for task in (*holders, *waiters):
+            task.cancel()
+        await bounded_await(
+            asyncio.gather(*holders, *waiters, return_exceptions=True)
+        )
 
 
 @pytest.mark.asyncio

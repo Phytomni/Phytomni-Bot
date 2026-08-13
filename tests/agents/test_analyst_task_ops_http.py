@@ -20,6 +20,11 @@ from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.analyst import task_ops as task_ops_module
 from mcp_server_phytomni.runtime.outbound import OutboundPoolName
+from tests.support.outbound_fakes import (
+    bounded_await,
+    bounded_wait_for_event,
+    managed_async_task,
+)
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("outbound_runtime")]
 
@@ -155,13 +160,15 @@ async def test_analysis_waits_for_iam_before_target_pool(
     monkeypatch.setattr(task_ops_module, "get_token", blocked_token)
     monkeypatch.setattr(task_ops_module, "relay_mode_enabled", lambda: False)
     outbound_runtime.transport.enqueue(content=response_body)
-    task = asyncio.create_task(operation("ordering-task"))
+    async with managed_async_task(
+        operation("ordering-task"),
+        release_events=(release_iam,),
+    ) as task:
+        await bounded_wait_for_event(iam_entered, task=task)
+        snapshot = outbound_runtime.runtime.pools.snapshot(pool)
+        assert snapshot.started == 0
+        assert snapshot.in_use == 0
+        assert snapshot.waiting == 0
 
-    await iam_entered.wait()
-    snapshot = outbound_runtime.runtime.pools.snapshot(pool)
-    assert snapshot.started == 0
-    assert snapshot.in_use == 0
-    assert snapshot.waiting == 0
-
-    release_iam.set()
-    assert await task == expected
+        release_iam.set()
+        assert await bounded_await(task) == expected

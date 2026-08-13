@@ -32,6 +32,11 @@ from mcp_server_phytomni.runtime.outbound import (
     OutboundPoolName,
     OutboundPoolRegistry,
 )
+from tests.support.outbound_fakes import (
+    bounded_await,
+    bounded_wait_for_event,
+    managed_async_task,
+)
 
 
 def _run_kwargs(
@@ -524,23 +529,26 @@ async def test_nl2sql_waits_for_iam_before_target_pool(
     monkeypatch.setattr(nl2sql_module, "get_token", blocked_token)
     monkeypatch.setattr(nl2sql_module, "relay_mode_enabled", lambda: False)
     outbound_runtime.transport.enqueue(content=b'{"answer":"ok"}')
-    task = asyncio.create_task(
-        execute_nl2sql_request(
-            Nl2SqlRequest.from_kwargs(
-                "iam ordering marker",
-                {"max_retries": 0},
-            )
+    request = execute_nl2sql_request(
+        Nl2SqlRequest.from_kwargs(
+            "iam ordering marker",
+            {"max_retries": 0},
         )
     )
+    async with managed_async_task(
+        request,
+        release_events=(release_iam,),
+    ) as task:
+        await bounded_wait_for_event(iam_entered, task=task)
+        snapshot = outbound_runtime.runtime.pools.snapshot(
+            OutboundPoolName.NL2SQL
+        )
+        assert snapshot.started == 0
+        assert snapshot.in_use == 0
+        assert snapshot.waiting == 0
 
-    await iam_entered.wait()
-    snapshot = outbound_runtime.runtime.pools.snapshot(OutboundPoolName.NL2SQL)
-    assert snapshot.started == 0
-    assert snapshot.in_use == 0
-    assert snapshot.waiting == 0
-
-    release_iam.set()
-    assert await task == {"answer": "ok"}
+        release_iam.set()
+        assert await bounded_await(task) == {"answer": "ok"}
 
 
 async def test_nl2sql_rotation_backoff_holds_no_target_slot(
@@ -567,26 +575,29 @@ async def test_nl2sql_rotation_backoff_holds_no_target_slot(
     monkeypatch.setattr(nl2sql_module, "relay_mode_enabled", lambda: False)
     outbound_runtime.transport.enqueue(status=504)
     outbound_runtime.transport.enqueue(content=b'{"answer":"recovered"}')
-    task = asyncio.create_task(
-        execute_nl2sql_request(
-            Nl2SqlRequest.from_kwargs(
-                "rotation release marker",
-                {"max_retries": 1, "retriable_codes": (504,)},
-            )
+    request = execute_nl2sql_request(
+        Nl2SqlRequest.from_kwargs(
+            "rotation release marker",
+            {"max_retries": 1, "retriable_codes": (504,)},
         )
     )
+    async with managed_async_task(
+        request,
+        release_events=(release_backoff,),
+    ) as task:
+        await bounded_wait_for_event(backoff_entered, task=task)
+        assert len(snapshots) == 1
+        assert snapshots[0].started == 1
+        assert snapshots[0].in_use == 0
+        assert snapshots[0].waiting == 0
 
-    await backoff_entered.wait()
-    assert len(snapshots) == 1
-    assert snapshots[0].started == 1
-    assert snapshots[0].in_use == 0
-    assert snapshots[0].waiting == 0
-
-    release_backoff.set()
-    assert await task == {"answer": "recovered"}
-    final = outbound_runtime.runtime.pools.snapshot(OutboundPoolName.NL2SQL)
-    assert final.started == 2
-    assert final.in_use == 0
+        release_backoff.set()
+        assert await bounded_await(task) == {"answer": "recovered"}
+        final = outbound_runtime.runtime.pools.snapshot(
+            OutboundPoolName.NL2SQL
+        )
+        assert final.started == 2
+        assert final.in_use == 0
 
 
 async def test_execute_nl2sql_rotates_dialog_id_on_retry(

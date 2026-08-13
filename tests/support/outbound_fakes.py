@@ -5,7 +5,16 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Mapping
+import asyncio
+import sys
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Iterable,
+    Mapping,
+)
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from types import ModuleType, SimpleNamespace
@@ -22,6 +31,84 @@ from mcp_server_phytomni.runtime.outbound import (
     aclose_outbound_runtime,
     init_outbound_runtime,
 )
+
+
+async def bounded_await[ResultT](
+    awaitable: Awaitable[ResultT],
+    *,
+    timeout_seconds: float = 5.0,
+) -> ResultT:
+    """Await one test synchronization point under a finite deadline."""
+    async with asyncio.timeout(timeout_seconds):
+        return await awaitable
+
+
+async def bounded_wait_for_event(
+    event: asyncio.Event,
+    *,
+    task: asyncio.Task[Any],
+    timeout_seconds: float = 5.0,
+) -> None:
+    """Wait for an event or surface premature owned-task completion."""
+    if event.is_set():
+        return
+    event_waiter = asyncio.create_task(event.wait())
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            completed, _pending = await asyncio.wait(
+                (event_waiter, task),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if event_waiter in completed:
+                await event_waiter
+                return
+            await task
+            raise AssertionError("task completed before expected event")
+    finally:
+        event_waiter.cancel()
+        await bounded_await(
+            asyncio.gather(event_waiter, return_exceptions=True),
+            timeout_seconds=timeout_seconds,
+        )
+
+
+@asynccontextmanager
+async def managed_async_task[ResultT](
+    coroutine: Coroutine[Any, Any, ResultT],
+    *,
+    release_events: Iterable[asyncio.Event] = (),
+    timeout_seconds: float = 5.0,
+) -> AsyncIterator[asyncio.Task[ResultT]]:
+    """Own one spawned test task and guarantee bounded cleanup."""
+    task = asyncio.create_task(coroutine)
+    try:
+        yield task
+    finally:
+        body_error = sys.exception()
+
+        async def clean_up() -> None:
+            """Release gates and consume the owned task under its deadline."""
+            for event in release_events:
+                event.set()
+            task.cancel()
+            await bounded_await(
+                asyncio.gather(task, return_exceptions=True),
+                timeout_seconds=timeout_seconds,
+            )
+
+        cleanup_task = asyncio.create_task(clean_up())
+        cleanup_error = (
+            await asyncio.gather(
+                cleanup_task,
+                return_exceptions=True,
+            )
+        )[0]
+        if isinstance(cleanup_error, BaseException):
+            if body_error is None:
+                raise cleanup_error
+            body_error.add_note(
+                "managed_async_task cleanup failed; body error preserved"
+            )
 
 
 class _ImmediateLease:
