@@ -135,10 +135,13 @@ async def _admit_replay_and_assert_conflict(
         await client.post(
             "/v1/agents/research/runs", headers=headers, json=request
         ),
-        expected_status=200,
+        expected_status=202,
     )
     assert_redacted_evidence(replay_body, config)
     assert replay_body.get("run_id") == run_id, "replay created another run"
+    assert (
+        replay_body.get("status") == "running"
+    ), "running replay returned the wrong lifecycle state"
 
     conflict_body = _json_object(
         await client.post(
