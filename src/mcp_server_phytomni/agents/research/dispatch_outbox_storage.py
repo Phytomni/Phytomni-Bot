@@ -13,7 +13,11 @@ from importlib import import_module
 from typing import Any, NamedTuple, cast
 
 from ...runtime.sqlite import sqlite_transaction
-from ...storage.research_objects import RESEARCH_OBJECT_SNAPSHOT_FIELD_NAMES
+from ...storage.research_objects import (
+    RESEARCH_OBJECT_SNAPSHOT_FIELD_NAMES,
+    ResearchObjectCandidate,
+    research_object_authority_scope,
+)
 
 
 class SqlContext(NamedTuple):
@@ -242,6 +246,7 @@ def plan_children(
         research_grants, resolved_grant_ids = _research_grants(
             prepared, error_factory
         )
+        grant_binding = _grant_binding(research_grants)
         payload = {
             "context": getattr(child, "context", ""),
             "data_list": list(data.items()),
@@ -257,6 +262,7 @@ def plan_children(
         }
         if research_grants:
             payload["research_grants"] = research_grants
+            payload["research_grant_binding"] = grant_binding
         return {
             "dispatch_id": f"{run_id}:dispatch:{ordinal}",
             "child_ordinal": ordinal,
@@ -320,6 +326,34 @@ def _research_grants(
         )
         grant_ids.append(cast(str, values["grant_id"]))
     return tuple(grants), tuple(grant_ids)
+
+
+def provisional_grant_binding(
+    prepared: object, error_factory: Callable[[], Exception]
+) -> dict[str, str] | None:
+    """Project the exact inventory-scoped authority binding."""
+    grants = _research_grants(prepared, error_factory)[0]
+    return _grant_binding(grants)
+
+
+def _grant_binding(
+    grants: Sequence[Mapping[str, Any]],
+) -> dict[str, str] | None:
+    if not grants:
+        return None
+    candidates = tuple(
+        ResearchObjectCandidate(
+            dataset_id=cast(str, grant["dataset_id"]),
+            exact_reference=cast(str, grant["exact_reference"]),
+            compound_suffix=cast(str, grant["compound_suffix"]),
+        )
+        for grant in grants
+    )
+    scope = research_object_authority_scope(candidates)
+    return {
+        "parent_run_id": f"inventory-{scope}",
+        "execution_fingerprint": scope,
+    }
 
 
 def existing_plan_rows(

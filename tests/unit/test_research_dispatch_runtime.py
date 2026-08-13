@@ -194,6 +194,10 @@ async def test_runtime_rebinds_and_releases_provisional_relay_grant() -> None:
     ]
     assert rebound.grant_ids == ("grant-final",)
     assert rebound.payload["research_grants"][0]["grant_id"] == "grant-final"
+    assert rebound.payload["research_grant_binding"] == {
+        "parent_run_id": "run-1",
+        "execution_fingerprint": "f" * 64,
+    }
 
 
 @pytest.mark.asyncio

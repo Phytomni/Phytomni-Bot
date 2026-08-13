@@ -62,6 +62,7 @@ from mcp_server_phytomni.storage.research_objects import (
     ResearchObjectCandidate,
     ResearchObjectResolveRequest,
     ResearchObjectSnapshot,
+    research_object_authority_scope,
 )
 
 pytestmark = pytest.mark.unit
@@ -244,6 +245,28 @@ def test_plan_persists_exact_private_authority_bindings(
     assert grant["dataset_id"] == "dataset-001"
     assert grant["exact_reference"] == "obs://dev-bucket/dataset-001.tsv"
     assert grant["snapshot_digest"] == "snapshot-001"
+    scope = research_object_authority_scope(
+        (
+            ResearchObjectCandidate(
+                "dataset-001",
+                "obs://dev-bucket/dataset-001.tsv",
+                ".tsv",
+            ),
+        )
+    )
+    expected_binding = {
+        "parent_run_id": f"inventory-{scope}",
+        "execution_fingerprint": scope,
+    }
+    assert durable.payload["research_grant_binding"] == expected_binding
+    with sqlite3.connect(store.db_path) as connection:
+        row = connection.execute(
+            "SELECT final_projection_json FROM research_input_resolutions "
+            "WHERE run_id = 'run-1'"
+        ).fetchone()
+    assert row is not None
+    encoded = row[0]
+    assert json.loads(encoded)["research_grant_binding"] == expected_binding
 
 
 def test_plan_persists_server_owned_binding_without_suffix(

@@ -188,6 +188,10 @@ class _RuntimeBindings:
         rotated, grant_ids = _validated_rotation(expected, fresh)
         payload = dict(row.payload)
         payload["research_grants"] = rotated
+        payload["research_grant_binding"] = {
+            "parent_run_id": row.run_id,
+            "execution_fingerprint": row.dispatch_fingerprint,
+        }
         return replace(row, payload=payload, grant_ids=tuple(grant_ids))
 
     async def _rebind_provisional(
@@ -235,6 +239,10 @@ class _RuntimeBindings:
             raise
         payload = dict(row.payload)
         payload["research_grants"] = rotated
+        payload["research_grant_binding"] = {
+            "parent_run_id": row.run_id,
+            "execution_fingerprint": row.dispatch_fingerprint,
+        }
         return replace(row, payload=payload, grant_ids=tuple(grant_ids))
 
 

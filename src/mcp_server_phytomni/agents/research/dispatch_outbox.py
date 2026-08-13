@@ -670,7 +670,7 @@ def _final_projection(prepared: object) -> dict[str, Any]:
         raise ResearchPlanCommitError()
     if not isinstance(data, Mapping):
         raise ResearchPlanCommitError()
-    return {
+    projection: dict[str, Any] = {
         "authority_ids": tuple(getattr(prepared, "authority_ids", ())),
         "data_list": list(data.items()),
         "effective_query": query,
@@ -681,6 +681,12 @@ def _final_projection(prepared: object) -> dict[str, Any]:
         "obs_file_list": documents,
         "schema_version": 1,
     }
+    grant_binding = _storage.provisional_grant_binding(
+        prepared, ResearchPlanCommitError
+    )
+    if grant_binding is not None:
+        projection["research_grant_binding"] = grant_binding
+    return projection
 
 
 def _load_row(

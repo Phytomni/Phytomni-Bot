@@ -12,6 +12,9 @@ from ..agents.research.input_contracts import (
     ResearchInputFailure,
     research_input_failure,
 )
+from ..agents.research.recovery_support import (
+    revoke_registered_research_run,
+)
 from ..runtime.research_input_store_support import AdmissionLaunchFailure
 
 
@@ -78,8 +81,14 @@ async def launch_worker(
         if inspect.isawaitable(launched):
             launched = await launched
     except ResearchInputFailure as exc:
-        raise launch_failure(store, admitted.run_id, exc) from exc
+        launch_failure(store, admitted.run_id, exc)
+        await revoke_registered_research_run(admitted.run_id)
+        raise
     except Exception as exc:
-        raise launch_failure(store, admitted.run_id) from exc
+        failure = launch_failure(store, admitted.run_id)
+        await revoke_registered_research_run(admitted.run_id)
+        raise failure from exc
     if launched is False:
-        raise launch_failure(store, admitted.run_id)
+        failure = launch_failure(store, admitted.run_id)
+        await revoke_registered_research_run(admitted.run_id)
+        raise failure

@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
 _GRANT_REVOKE_COLUMNS = (
     ("run_id", "TEXT NOT NULL"),
+    ("authority_parent_run_id", "TEXT NOT NULL DEFAULT ''"),
     ("execution_fingerprint", "TEXT NOT NULL"),
     ("grant_ids_json", "TEXT NOT NULL"),
     ("state", "TEXT NOT NULL DEFAULT 'pending'"),
@@ -100,6 +101,16 @@ class ResearchCancellationOutcome:
     revision: int
 
 
+@dataclass(frozen=True, slots=True)
+class ResearchGrantRevocation:
+    """Exact durable authority binding awaiting terminal cleanup."""
+
+    owner_run_id: str
+    parent_run_id: str
+    execution_fingerprint: str
+    grant_ids: tuple[str, ...]
+
+
 class _ResearchInputStoreBindings:
     """Mixin exposing the durable resolver binding operations."""
 
@@ -168,21 +179,17 @@ class _ResearchInputStoreBindings:
 
     def pending_grant_revocations(
         self, limit: int = 32
-    ) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+    ) -> tuple[ResearchGrantRevocation, ...]:
         """Return a bounded opaque view of pending grant revocations."""
         return pending_grant_revocations(self, limit)
 
     def mark_grant_revoked(
         self,
-        parent_run_id: str,
-        execution_fingerprint: str,
-        grant_ids: Sequence[str],
+        revocation: ResearchGrantRevocation,
         now: datetime | None = None,
     ) -> int:
         """Complete a pending grant revoke with a private CAS update."""
-        return mark_grant_revoked(
-            self, parent_run_id, execution_fingerprint, grant_ids, now
-        )
+        return mark_grant_revoked(self, revocation, now)
 
 
 def mark_admission_launch_failed(
@@ -253,6 +260,7 @@ def mark_admission_launch_failed(
         if resolution.rowcount != 1 or root.rowcount != 1:
             connection.rollback()
             return False
+        queue_grants(connection, run_id, now)
     return True
 
 
@@ -344,64 +352,117 @@ def _grant_ids(value: object) -> tuple[str, ...]:
     return tuple(item for item in decoded if isinstance(item, str) and item)
 
 
-def _queue_grant_revocation(connection: Any, run_id: str, now: str) -> None:
-    """Persist grant IDs in Bot state, never in the operator grant store."""
+def queue_grants(
+    connection: Any, run_id: str, now: str, changed: int = 1
+) -> None:
+    """Persist exact authority bindings, never operator-private grant state."""
+    if changed <= 0:
+        return
+    private_schema = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'research_input_resolutions'"
+    ).fetchone()
+    if private_schema is None:
+        return
     resolution = connection.execute(
-        "SELECT execution_fingerprint, final_projection_json FROM "
-        "research_input_resolutions WHERE run_id = ?",
+        "SELECT resolution.final_projection_json FROM "
+        "research_input_resolutions AS resolution JOIN runs "
+        "ON resolution.run_id = runs.run_id WHERE resolution.run_id = ? "
+        "AND runs.status IN ('succeeded', 'failed', 'cancelled')",
         (run_id,),
     ).fetchone()
     if resolution is None:
         return
-    fingerprint = resolution[0]
-    if not isinstance(fingerprint, str) or not fingerprint:
-        return
-    grant_ids: set[str] = set()
+    groups: dict[tuple[str, str], set[str]] = {}
     try:
-        projection = json.loads(resolution[1] or "{}")
+        projection = json.loads(resolution[0] or "{}")
     except (TypeError, ValueError):
         projection = {}
     if isinstance(projection, Mapping):
-        grant_ids.update(_grant_ids(projection.get("authority_ids")))
+        _append_grant_group(
+            groups,
+            projection.get("research_grant_binding"),
+            projection.get("authority_ids"),
+        )
     rows = connection.execute(
-        "SELECT grant_ids_json FROM research_dispatch_outbox "
-        "WHERE run_id = ? AND state = 'cancelled'",
+        "SELECT payload_json, grant_ids_json FROM research_dispatch_outbox "
+        "WHERE run_id = ?",
         (run_id,),
     ).fetchall()
     for row in rows:
-        grant_ids.update(_grant_ids(row[0]))
-    if not grant_ids:
+        try:
+            payload = json.loads(row[0] or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        if isinstance(payload, Mapping):
+            _append_grant_group(
+                groups,
+                payload.get("research_grant_binding"),
+                row[1],
+            )
+    for (authority_parent, fingerprint), grant_ids in groups.items():
+        encoded = json.dumps(sorted(grant_ids), separators=(",", ":"))
+        connection.execute(
+            "INSERT INTO research_grant_revocations ("
+            "run_id, authority_parent_run_id, execution_fingerprint, "
+            "grant_ids_json, state, schema_version, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 'pending', 1, ?, ?) "
+            "ON CONFLICT(run_id, execution_fingerprint) DO UPDATE SET "
+            "authority_parent_run_id = excluded.authority_parent_run_id, "
+            "grant_ids_json = excluded.grant_ids_json, state = 'pending', "
+            "updated_at = excluded.updated_at, revoked_at = NULL",
+            (run_id, authority_parent, fingerprint, encoded, now, now),
+        )
+
+
+def _append_grant_group(
+    groups: dict[tuple[str, str], set[str]],
+    raw_binding: object,
+    raw_grant_ids: object,
+) -> None:
+    """Add one validated private binding and its opaque grant IDs."""
+    if not isinstance(raw_binding, Mapping):
         return
-    encoded = json.dumps(sorted(grant_ids), separators=(",", ":"))
-    connection.execute(
-        "INSERT INTO research_grant_revocations ("
-        "run_id, execution_fingerprint, grant_ids_json, state, "
-        "schema_version, created_at, updated_at) VALUES (?, ?, ?, 'pending', "
-        "1, ?, ?) ON CONFLICT(run_id, execution_fingerprint) DO UPDATE SET "
-        "grant_ids_json = excluded.grant_ids_json, state = 'pending', "
-        "updated_at = excluded.updated_at, revoked_at = NULL",
-        (run_id, fingerprint, encoded, now, now),
-    )
+    parent = raw_binding.get("parent_run_id")
+    fingerprint = raw_binding.get("execution_fingerprint")
+    grant_ids = _grant_ids(raw_grant_ids)
+    if (
+        not isinstance(parent, str)
+        or not parent
+        or not isinstance(fingerprint, str)
+        or not fingerprint
+        or not grant_ids
+    ):
+        return
+    groups.setdefault((parent, fingerprint), set()).update(grant_ids)
 
 
 def pending_grant_revocations(
     store: Any, limit: int = 32
-) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+) -> tuple[ResearchGrantRevocation, ...]:
     """Return bounded opaque grant groups awaiting revocation."""
     if limit <= 0:
         return ()
     with sqlite_transaction(store.db_path) as connection:
         rows = connection.execute(
-            "SELECT run_id, execution_fingerprint, grant_ids_json "
+            "SELECT run_id, authority_parent_run_id, "
+            "execution_fingerprint, grant_ids_json "
             "FROM research_grant_revocations WHERE state = 'pending' "
-            "ORDER BY run_id LIMIT ?",
+            "ORDER BY run_id, execution_fingerprint LIMIT ?",
             (limit,),
         ).fetchall()
     return tuple(
-        (run_id, fingerprint, grant_ids)
-        for run_id, fingerprint, encoded in rows
+        ResearchGrantRevocation(
+            run_id,
+            authority_parent,
+            fingerprint,
+            grant_ids,
+        )
+        for run_id, authority_parent, fingerprint, encoded in rows
         if isinstance(run_id, str)
         and run_id
+        and isinstance(authority_parent, str)
+        and authority_parent
         and isinstance(fingerprint, str)
         and fingerprint
         and (grant_ids := _grant_ids(encoded))
@@ -410,28 +471,38 @@ def pending_grant_revocations(
 
 def mark_grant_revoked(
     store: Any,
-    parent_run_id: str,
-    execution_fingerprint: str,
-    grant_ids: Sequence[str],
+    revocation: ResearchGrantRevocation,
     now: datetime | None = None,
 ) -> int:
     """Finish a pending grant revoke with an idempotent private CAS."""
-    if not grant_ids:
+    if not revocation.grant_ids:
         return 0
     timestamp = _utc_iso(now or datetime.now(UTC))
     with sqlite_transaction(store.db_path) as connection:
         row = connection.execute(
             "SELECT grant_ids_json FROM research_grant_revocations WHERE "
-            "run_id = ? AND execution_fingerprint = ? AND state = 'pending'",
-            (parent_run_id, execution_fingerprint),
+            "run_id = ? AND authority_parent_run_id = ? AND "
+            "execution_fingerprint = ? AND state = 'pending'",
+            (
+                revocation.owner_run_id,
+                revocation.parent_run_id,
+                revocation.execution_fingerprint,
+            ),
         ).fetchone()
-        if row is None or set(_grant_ids(row[0])) != set(grant_ids):
+        if row is None or set(_grant_ids(row[0])) != set(revocation.grant_ids):
             return 0
         cursor = connection.execute(
             "UPDATE research_grant_revocations SET state = 'revoked', "
             "updated_at = ?, revoked_at = ? WHERE run_id = ? AND "
-            "execution_fingerprint = ? AND state = 'pending'",
-            (timestamp, timestamp, parent_run_id, execution_fingerprint),
+            "authority_parent_run_id = ? AND execution_fingerprint = ? "
+            "AND state = 'pending'",
+            (
+                timestamp,
+                timestamp,
+                revocation.owner_run_id,
+                revocation.parent_run_id,
+                revocation.execution_fingerprint,
+            ),
         )
     return cursor.rowcount
 
@@ -522,7 +593,6 @@ def cancel_research_run(
             "AND state IN ('pending', 'leased')",
             (now, now, run_id),
         )
-        _queue_grant_revocation(connection, run_id, now)
         updated = connection.execute(
             "UPDATE runs SET status = 'cancelled', stage = NULL, "
             "error = NULL, "
@@ -533,6 +603,7 @@ def cancel_research_run(
         )
         if updated.rowcount != 1:
             raise ResearchCancellationConflict()
+        queue_grants(connection, run_id, now)
     return ResearchCancellationOutcome(
         run_id, "cancelled", False, expected_revision + 1
     )

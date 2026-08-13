@@ -26,6 +26,7 @@ from .live_tasks import (
     register_live_task,
 )
 from .research_input_store import purge_research_children
+from .research_input_store_support import queue_grants
 from .run_registry_delivery import (
     DeliveryFailure,
     DeliveryRevision,
@@ -596,6 +597,7 @@ class RunRegistry(RunRegistryViewsMixin):
                     expected_revision,
                 ),
             )
+            queue_grants(conn, run_id, now, cursor.rowcount)
             return cursor.rowcount == 1
 
     def update_request_info(
@@ -706,6 +708,7 @@ class RunRegistry(RunRegistryViewsMixin):
                 "AND revision = ?",
                 parameters,
             )
+            queue_grants(conn, request.run_id, now, cursor.rowcount)
             return cursor.rowcount > 0
 
     setattr(settle_run, "__signature__", _SETTLE_RUN_SIGNATURE)
@@ -945,7 +948,7 @@ class RunRegistry(RunRegistryViewsMixin):
             + (_ZERO_OWNED_CHILD_SQL if require_zero_child else "")
         )
         with sqlite_transaction(self.db_path) as conn:
-            conn.execute(
+            changed = conn.execute(
                 query,
                 (
                     outcome.status,
@@ -962,6 +965,7 @@ class RunRegistry(RunRegistryViewsMixin):
                     current.revision,
                 ),
             )
+            queue_grants(conn, current.spec.run_id, now, changed.rowcount)
         return self.get_run(current.spec.run_id, owner=current.spec.user_id)
 
 

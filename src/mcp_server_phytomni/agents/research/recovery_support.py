@@ -13,6 +13,7 @@ from datetime import datetime
 from hashlib import sha256
 from typing import Any
 
+from ...runtime.research_input_store_support import ResearchGrantRevocation
 from ...runtime.research_input_types import ResearchWorkUnitRecord
 from .input_contracts import TokenEstimator
 from .resolver_policy import (
@@ -143,15 +144,6 @@ _recovery_failures: tuple[type[Exception], ...] = (Exception,)
 _SERVICES: list[Any] = []
 
 
-@dataclass(frozen=True, slots=True)
-class ResearchGrantRevocation:
-    """Opaque durable grant-revocation request for one cancelled parent."""
-
-    parent_run_id: str
-    execution_fingerprint: str
-    grant_ids: tuple[str, ...]
-
-
 GrantRevoke = Callable[[ResearchGrantRevocation], object]
 _ACTIVE_RESEARCH_TASKS: dict[str, set[asyncio.Task[Any]]] = {}
 _GRANT_REVOKERS: dict[str, GrantRevoke | None] = {}
@@ -199,7 +191,7 @@ def cancel_registered_research_tasks(run_id: str) -> int:
 async def revoke_registered_research_run(
     run_id: str, now: datetime | None = None
 ) -> None:
-    """Run post-commit revoke hooks for one cancelled Research parent."""
+    """Run post-commit revoke hooks for one terminal Research parent."""
     for service in tuple(_SERVICES):
         await recover_pending_grants(service, now or datetime.now(), run_id)
 
@@ -207,7 +199,7 @@ async def revoke_registered_research_run(
 async def recover_pending_grants(
     service: Any, now: datetime, run_id: str | None = None
 ) -> None:
-    """Retry bounded grant revocation without reopening a cancelled parent."""
+    """Retry bounded grant revocation without reopening a terminal parent."""
     callback = _GRANT_REVOKERS.get(getattr(service.store, "db_path", ""))
     if callback is None:
         return
@@ -217,18 +209,15 @@ async def recover_pending_grants(
         )
     except _recovery_failures:
         return
-    for parent, fingerprint, grant_ids in pending:
-        if run_id is not None and parent != run_id:
+    for request in pending:
+        if run_id is not None and request.owner_run_id != run_id:
             continue
-        request = ResearchGrantRevocation(parent, fingerprint, grant_ids)
         try:
             result = callback(request)
             if inspect.isawaitable(result):
                 result = await result
             if result is not False:
-                service.store.mark_grant_revoked(
-                    parent, fingerprint, grant_ids, now
-                )
+                service.store.mark_grant_revoked(request, now)
         except _recovery_failures:
             continue
 

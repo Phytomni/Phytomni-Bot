@@ -174,14 +174,22 @@ def _seed_pending_grant_outbox(
     db_path: str,
     run_id: str,
     grant_ids: tuple[str, ...],
-    fingerprint: str,
+    *,
+    binding: tuple[str, str] | None = None,
+    state: str = "pending",
 ) -> None:
     """Create a pending Bot outbox row with private authority IDs."""
     now = "2026-08-09T00:00:00+00:00"
+    authority_parent, fingerprint = binding or (run_id, "fingerprint-1")
+    encoded_binding = {
+        "parent_run_id": authority_parent,
+        "execution_fingerprint": fingerprint,
+    }
     projection = json.dumps(
         {
             "authority_ids": list(grant_ids),
             "execution_fingerprint": fingerprint,
+            "research_grant_binding": encoded_binding,
         }
     )
     with closed_sqlite_connection(db_path) as connection:
@@ -202,13 +210,14 @@ def _seed_pending_grant_outbox(
             "(outbox_id, run_id, unit_id, state, child_ordinal, "
             "dispatch_fingerprint, payload_json, grant_ids_json, "
             "created_at, updated_at) VALUES "
-            "(?, ?, ?, 'pending', 0, ?, ?, ?, ?, ?)",
+            "(?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
             (
                 f"{run_id}:dispatch:0",
                 run_id,
                 f"{run_id}:dispatch:0",
+                state,
                 f"{run_id}:child-fingerprint",
-                "{}",
+                json.dumps({"research_grant_binding": encoded_binding}),
                 json.dumps(list(grant_ids)),
                 now,
                 now,
@@ -531,7 +540,6 @@ async def test_recovery_retries_pending_grant_revoke_without_reopening_parent(
         db_path,
         "run-cancel-grant",
         ("grant-1",),
-        "fingerprint-1",
     )
     cancel_research_run(store, "run-cancel-grant", "u1", 0)
     calls: list[ResearchGrantRevocation] = []
@@ -561,7 +569,52 @@ async def test_recovery_retries_pending_grant_revoke_without_reopening_parent(
             "WHERE run_id = 'run-cancel-grant'"
         ).fetchone() == ("revoked",)
     assert len(calls) == 2
+    assert calls[0] == ResearchGrantRevocation(
+        owner_run_id="run-cancel-grant",
+        parent_run_id="run-cancel-grant",
+        execution_fingerprint="fingerprint-1",
+        grant_ids=("grant-1",),
+    )
     assert _run_row(db_path, "run-cancel-grant")[0] == "cancelled"
+
+
+def test_terminal_settlement_queues_child_scoped_grant_binding(
+    tmp_path: Path,
+) -> None:
+    """Succeeded or failed Research parents retain exact revoke authority."""
+    store, db_path = _seed_research_parent(
+        tmp_path, "run-terminal-grant", outbox_state=None
+    )
+    _seed_pending_grant_outbox(
+        db_path,
+        "run-terminal-grant",
+        ("grant-final",),
+        binding=("run-terminal-grant", "child-fingerprint"),
+        state="accepted",
+    )
+    registry = RunRegistry(db_path)
+    current = registry.get_run("run-terminal-grant", owner="u1")
+    assert current is not None
+
+    assert registry.settle_run(
+        "run-terminal-grant",
+        owner="u1",
+        status="failed",
+        result={},
+        error="task_failed",
+        expected_revision=current.revision,
+    )
+    settled = registry.get_run("run-terminal-grant", owner="u1")
+
+    assert settled is not None and settled.status == "failed"
+    assert store.pending_grant_revocations() == (
+        ResearchGrantRevocation(
+            owner_run_id="run-terminal-grant",
+            parent_run_id="run-terminal-grant",
+            execution_fingerprint="child-fingerprint",
+            grant_ids=("grant-final",),
+        ),
+    )
 
 
 @pytest.mark.asyncio
@@ -573,14 +626,15 @@ async def test_production_runtime_wires_metadata_revoke_for_cancelled_grants(
         tmp_path, "run-cancel-production-grant", outbox_state=None
     )
     authority_db = str(tmp_path / "independent-authority.sqlite3")
+    authority_parent = "inventory-authority-scope"
     authority_store, grant_id = _seed_authority_grant(
-        authority_db, "run-cancel-production-grant", "fingerprint-1"
+        authority_db, authority_parent, "fingerprint-1"
     )
     _seed_pending_grant_outbox(
         db_path,
         "run-cancel-production-grant",
         (grant_id,),
-        "fingerprint-1",
+        binding=(authority_parent, "fingerprint-1"),
     )
     cancel_research_run(store, "run-cancel-production-grant", "u1", 0)
 
@@ -615,7 +669,7 @@ async def test_production_runtime_wires_metadata_revoke_for_cancelled_grants(
 
     metadata.revoke.assert_awaited_once_with(
         ResearchObjectRevokeRequest(
-            parent_run_id="run-cancel-production-grant",
+            parent_run_id=authority_parent,
             execution_fingerprint="fingerprint-1",
             authority_ids=(grant_id,),
         )
