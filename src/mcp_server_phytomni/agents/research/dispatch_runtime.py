@@ -34,6 +34,7 @@ from ...storage.research_objects import (
     ResearchObjectRevokeRequest,
     ResearchObjectSnapshot,
     ResearchObjectVerifyRequest,
+    research_object_authority_scope,
     research_object_snapshot_payload,
 )
 from .dispatch_outbox import (
@@ -159,6 +160,12 @@ class _RuntimeBindings:
             ResearchObjectAuthority(dataset_id, grant_id, snapshot)
             for dataset_id, _reference, _suffix, grant_id, snapshot in expected
         )
+        if row.state in ("pending", "leased"):
+            return await self._rebind_provisional(
+                row,
+                candidates,
+                expected,
+            )
         request = ResearchObjectVerifyRequest(
             row.run_id, row.dispatch_fingerprint, persisted
         )
@@ -178,12 +185,54 @@ class _RuntimeBindings:
                     row.run_id, row.dispatch_fingerprint, candidates
                 )
             )
-        if len(fresh) != len(expected):
-            raise ResearchObjectMetadataError()
-        by_dataset = {authority.dataset_id: authority for authority in fresh}
-        if set(by_dataset) != {item[0] for item in expected}:
-            raise ResearchObjectMetadataError()
-        rotated, grant_ids = _rotate_grants(expected, by_dataset)
+        rotated, grant_ids = _validated_rotation(expected, fresh)
+        payload = dict(row.payload)
+        payload["research_grants"] = rotated
+        return replace(row, payload=payload, grant_ids=tuple(grant_ids))
+
+    async def _rebind_provisional(
+        self,
+        row: ResearchDispatchRecord,
+        candidates: tuple[ResearchObjectCandidate, ...],
+        expected: tuple[
+            tuple[str, str, str, str, ResearchObjectSnapshot], ...
+        ],
+    ) -> ResearchDispatchRecord:
+        """Replace inventory-scoped grants with one child-scoped grant set."""
+        fresh = await self.metadata_port.resolve(
+            ResearchObjectResolveRequest(
+                row.run_id,
+                row.dispatch_fingerprint,
+                candidates,
+            )
+        )
+        try:
+            rotated, grant_ids = _validated_rotation(expected, fresh)
+        except ResearchObjectMetadataError:
+            await _revoke_best_effort(
+                self.metadata_port,
+                row.run_id,
+                row.dispatch_fingerprint,
+                tuple(authority.authority_id for authority in fresh),
+            )
+            raise
+        provisional_scope = research_object_authority_scope(candidates)
+        try:
+            await self.metadata_port.revoke(
+                ResearchObjectRevokeRequest(
+                    f"inventory-{provisional_scope}",
+                    provisional_scope,
+                    tuple(item[3] for item in expected),
+                )
+            )
+        except ResearchObjectMetadataError:
+            await _revoke_best_effort(
+                self.metadata_port,
+                row.run_id,
+                row.dispatch_fingerprint,
+                tuple(grant_ids),
+            )
+            raise
         payload = dict(row.payload)
         payload["research_grants"] = rotated
         return replace(row, payload=payload, grant_ids=tuple(grant_ids))
@@ -252,6 +301,42 @@ def _rotate_grants(
             }
         )
     return rotated, grant_ids
+
+
+def _validated_rotation(
+    expected: Sequence[tuple[str, str, str, str, ResearchObjectSnapshot]],
+    fresh: Sequence[ResearchObjectAuthority],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Validate one complete authority set before rotating private IDs."""
+    if len(fresh) != len(expected):
+        raise ResearchObjectMetadataError()
+    by_dataset = {authority.dataset_id: authority for authority in fresh}
+    if set(by_dataset) != {item[0] for item in expected}:
+        raise ResearchObjectMetadataError()
+    if len({authority.authority_id for authority in fresh}) != len(fresh):
+        raise ResearchObjectMetadataError()
+    return _rotate_grants(expected, by_dataset)
+
+
+async def _revoke_best_effort(
+    metadata_port: ResearchObjectMetadataPort,
+    parent_run_id: str,
+    execution_fingerprint: str,
+    authority_ids: tuple[str, ...],
+) -> None:
+    """Try to release a newly minted grant set after a failed rebind."""
+    if not authority_ids:
+        return
+    try:
+        await metadata_port.revoke(
+            ResearchObjectRevokeRequest(
+                parent_run_id,
+                execution_fingerprint,
+                authority_ids,
+            )
+        )
+    except ResearchObjectMetadataError:
+        return
 
 
 def build_research_object_metadata_port() -> ResearchObjectMetadataPort:

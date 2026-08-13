@@ -41,6 +41,7 @@ from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
 from mcp_server_phytomni.storage.research_objects import (
     ResearchObjectAuthority,
     ResearchObjectResolveRequest,
+    ResearchObjectRevokeRequest,
     ResearchObjectSnapshot,
     ResearchObjectVerifyRequest,
 )
@@ -133,6 +134,7 @@ class _RuntimeMetadataPort:
     def __init__(self) -> None:
         self.resolve_calls: list[ResearchObjectResolveRequest] = []
         self.verify_calls: list[ResearchObjectVerifyRequest] = []
+        self.revoke_calls: list[ResearchObjectRevokeRequest] = []
         self.generation = 0
 
     async def resolve(
@@ -174,7 +176,7 @@ class _RuntimeMetadataPort:
 
     async def revoke(self, request: Any) -> None:
         """Accept revocation calls without retaining private state."""
-        del request
+        self.revoke_calls.append(request)
 
 
 class _RuntimeProvider:
@@ -829,11 +831,11 @@ async def test_production_runtime_wires_analyst_and_rotation(
     assert accepted.state == "accepted"
     assert replay.state == "accepted"
     assert len(submitted) == 1
-    assert not metadata.resolve_calls
-    assert len(metadata.verify_calls) == 1
-    assert metadata.verify_calls[0].parent_run_id == "run-runtime"
-    assert metadata.verify_calls[0].execution_fingerprint == fingerprint
-    assert metadata.verify_calls[0].authorities[0].authority_id == "grant-000"
+    assert len(metadata.resolve_calls) == 1
+    assert metadata.resolve_calls[0].parent_run_id == "run-runtime"
+    assert metadata.resolve_calls[0].execution_fingerprint == fingerprint
+    assert not metadata.verify_calls
+    assert len(metadata.revoke_calls) == 1
     assert (
         submitted[0][0]["research_grant_sidecar"]["objects"][0]["grant_id"]
         == "grant-001"

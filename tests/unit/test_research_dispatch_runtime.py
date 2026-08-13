@@ -8,13 +8,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from tests.support.outbound_fakes import InlineObsRuntime
 
 from mcp_server_phytomni.agents.research import dispatch_runtime
 from mcp_server_phytomni.agents.research.dispatch_outbox import (
+    DispatchState,
     ResearchDispatchRecord,
 )
 from mcp_server_phytomni.storage.research_objects import (
@@ -22,7 +23,10 @@ from mcp_server_phytomni.storage.research_objects import (
     RelayResearchObjectMetadataPort,
     ResearchObjectAuthority,
     ResearchObjectMetadataError,
+    ResearchObjectResolveRequest,
+    ResearchObjectRevokeRequest,
     ResearchObjectSnapshot,
+    research_object_authority_scope,
     research_object_snapshot_payload,
 )
 
@@ -33,6 +37,7 @@ def _record(
     *,
     remote_task_id: str | None = "task-1",
     payload: Mapping[str, Any] | None = None,
+    state: DispatchState = "sent",
 ) -> ResearchDispatchRecord:
     """Build the smallest durable child record accepted by the bindings."""
     return ResearchDispatchRecord(
@@ -40,7 +45,7 @@ def _record(
         run_id="run-1",
         child_ordinal=0,
         dispatch_fingerprint="f" * 64,
-        state="sent",
+        state=state,
         remote_task_id=remote_task_id,
         revision=1,
         payload=payload or {},
@@ -140,6 +145,55 @@ async def test_runtime_verify_direct_restart_fallback_rotates_grant() -> None:
 
     assert verified.grant_ids == ("grant-new",)
     assert verified.payload["research_grants"][0]["grant_id"] == "grant-new"
+
+
+@pytest.mark.asyncio
+async def test_runtime_rebinds_and_releases_provisional_relay_grant() -> None:
+    """A first child claim replaces its inventory-scoped relay authority."""
+    snapshot = _snapshot()
+    payload = {"research_grants": _grant_payload(snapshot)}
+    resolved: list[ResearchObjectResolveRequest] = []
+    revoked: list[ResearchObjectRevokeRequest] = []
+
+    async def resolve(
+        request: ResearchObjectResolveRequest,
+    ) -> tuple[ResearchObjectAuthority, ...]:
+        resolved.append(request)
+        return (ResearchObjectAuthority("dataset-1", "grant-final", snapshot),)
+
+    async def verify(_request: Any) -> tuple[Any, ...]:
+        raise AssertionError("a provisional grant cannot be final-verified")
+
+    async def revoke(request: ResearchObjectRevokeRequest) -> None:
+        revoked.append(request)
+
+    port = RelayResearchObjectMetadataPort(
+        cast(
+            Any,
+            SimpleNamespace(
+                resolve_research_objects=resolve,
+                verify_research_objects=verify,
+                revoke_research_objects=revoke,
+            ),
+        )
+    )
+
+    rebound = await _bindings(port).verify(
+        _record(payload=payload, state="leased")
+    )
+
+    assert resolved[0].parent_run_id == "run-1"
+    assert resolved[0].execution_fingerprint == "f" * 64
+    provisional_scope = research_object_authority_scope(resolved[0].objects)
+    assert revoked == [
+        ResearchObjectRevokeRequest(
+            f"inventory-{provisional_scope}",
+            provisional_scope,
+            ("grant-old",),
+        )
+    ]
+    assert rebound.grant_ids == ("grant-final",)
+    assert rebound.payload["research_grants"][0]["grant_id"] == "grant-final"
 
 
 @pytest.mark.asyncio

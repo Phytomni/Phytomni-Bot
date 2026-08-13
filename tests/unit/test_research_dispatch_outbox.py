@@ -15,7 +15,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from tests.agents import (
@@ -58,12 +58,10 @@ from mcp_server_phytomni.runtime.research_input_store_support import (
 from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
 from mcp_server_phytomni.storage.research_objects import (
     DirectResearchObjectMetadataPort,
-    RelayResearchObjectMetadataPort,
     ResearchObjectAuthority,
     ResearchObjectCandidate,
     ResearchObjectResolveRequest,
     ResearchObjectSnapshot,
-    ResearchObjectVerifyRequest,
 )
 
 pytestmark = pytest.mark.unit
@@ -841,7 +839,7 @@ def test_api_lifespan_runtime_constructs_and_registers_worker(
     )
     monkeypatch.setattr(
         dispatch_runtime,
-        "_metadata_port",
+        "build_research_object_metadata_port",
         MetadataPortType,
     )
 
@@ -858,64 +856,6 @@ def test_api_lifespan_runtime_constructs_and_registers_worker(
             "sensitive_config": sensitive,
         }
     ]
-
-
-@pytest.mark.asyncio
-async def test_relay_runtime_verifies_and_rotates_before_submit(
-    tmp_path: Path,
-) -> None:
-    """The relay port receives the persisted grant and returns its rotation."""
-    store = coordinator_store(tmp_path, "relay-runtime")
-    requests: list[ResearchObjectVerifyRequest] = []
-
-    async def verify(
-        request: ResearchObjectVerifyRequest,
-    ) -> tuple[ResearchObjectAuthority, ...]:
-        """Return one operator-approved replacement for each grant."""
-        requests.append(request)
-        return tuple(
-            ResearchObjectAuthority(
-                authority.dataset_id,
-                "relay-grant-001",
-                authority.snapshot,
-            )
-            for authority in request.authorities
-        )
-
-    relay_port = RelayResearchObjectMetadataPort(
-        cast(Any, SimpleNamespace(verify_research_objects=verify))
-    )
-    submitted: list[Any] = []
-    runtime = dispatch_runtime.build_research_dispatch_runtime(
-        store,
-        ProviderType(),
-        analyst_agent=analyst_factory(submitted),
-        analyst_config=type("Config", (), {"USER_ID": "owner"})(),
-        sensitive_config=object(),
-        metadata_port=relay_port,
-        lease_owner="relay-worker",
-    )
-    record = persist_plan_and_outbox(
-        store,
-        "run-runtime",
-        0,
-        prepared_factory(),
-        plan_factory(hashlib.sha256(str(tmp_path).encode()).hexdigest()),
-    )[0]
-
-    disposition = await runtime.outbox.dispatch_once(
-        record.dispatch_id, "relay-worker"
-    )
-
-    assert disposition.state == "accepted"
-    assert len(requests) == 1
-    assert requests[0].parent_run_id == "run-runtime"
-    assert requests[0].execution_fingerprint == record.dispatch_fingerprint
-    assert requests[0].authorities[0].authority_id == "grant-000"
-    assert (
-        submitted[0][0]["research_grant_sidecar"]["objects"][0]["grant_id"]
-        == "relay-grant-001"
-    )
 
 
 @pytest.mark.asyncio
