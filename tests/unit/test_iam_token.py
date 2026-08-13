@@ -21,6 +21,7 @@ import pytest
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.auth import iam
+from mcp_server_phytomni.runtime.outbound import OutboundPoolName
 
 
 @pytest.mark.usefixtures("instant_retry_sleep")
@@ -44,6 +45,9 @@ async def test_get_token_retries_transient_connect_error_then_succeeds(
 
     assert token == "tok-abc-123"
     assert len(outbound_runtime.transport.requests) == 2
+    snapshot = outbound_runtime.runtime.pools.snapshot(OutboundPoolName.IAM)
+    assert snapshot.started == 2
+    assert snapshot.in_use == 0
 
 
 @pytest.mark.usefixtures("instant_retry_sleep")

@@ -11,6 +11,7 @@ the post-retry exhaust path (``McpError`` raise). Sibling
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 
@@ -18,6 +19,7 @@ import pytest
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.analyst import task_ops as task_ops_module
+from mcp_server_phytomni.runtime.outbound import OutboundPoolName
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("outbound_runtime")]
 
@@ -114,3 +116,52 @@ async def test_task_delete_raises_mcperror_when_all_retries_exhaust(
         McpError, match="Failed to delete task after all retries"
     ):
         await task_ops_module.task_delete("t-4")
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        (
+            task_ops_module.task_status,
+            OutboundPoolName.ANALYSIS_STATUS,
+            b'{"status":"SUCCEEDED"}',
+            {"status": "SUCCEEDED"},
+        ),
+        (
+            task_ops_module.task_delete,
+            OutboundPoolName.ANALYSIS_CONTROL,
+            b"{}",
+            "Delete task ordering-task success.",
+        ),
+    ],
+)
+async def test_analysis_waits_for_iam_before_target_pool(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+    case: tuple[Any, OutboundPoolName, bytes, Any],
+) -> None:
+    """Blocked IAM cannot start analysis status or control target work."""
+    operation, pool, response_body, expected = case
+    iam_entered = asyncio.Event()
+    release_iam = asyncio.Event()
+
+    async def blocked_token(*, request_timeout: float, region: str) -> str:
+        assert request_timeout > 0
+        assert region
+        iam_entered.set()
+        await release_iam.wait()
+        return "test-token"
+
+    monkeypatch.setattr(task_ops_module, "get_token", blocked_token)
+    monkeypatch.setattr(task_ops_module, "relay_mode_enabled", lambda: False)
+    outbound_runtime.transport.enqueue(content=response_body)
+    task = asyncio.create_task(operation("ordering-task"))
+
+    await iam_entered.wait()
+    snapshot = outbound_runtime.runtime.pools.snapshot(pool)
+    assert snapshot.started == 0
+    assert snapshot.in_use == 0
+    assert snapshot.waiting == 0
+
+    release_iam.set()
+    assert await task == expected

@@ -8,6 +8,7 @@ Covers graph routing, NL2SQL dialog id policy, DataAgent graph invocation, and
 legacy rewrite_nl2sql wrapper thread-id compatibility.
 """
 
+import asyncio
 import importlib
 from types import SimpleNamespace
 from typing import Any, cast
@@ -505,6 +506,87 @@ async def test_nl2sql_capacity_one_uses_one_network_lease(
     snapshot = pools.snapshot(OutboundPoolName.NL2SQL)
     assert snapshot.started == 1
     assert snapshot.in_use == 0
+
+
+async def test_nl2sql_waits_for_iam_before_target_pool(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+) -> None:
+    """A blocked IAM mint cannot occupy or start the NL2SQL target pool."""
+    iam_entered = asyncio.Event()
+    release_iam = asyncio.Event()
+
+    async def blocked_token(**_kwargs: Any) -> str:
+        iam_entered.set()
+        await release_iam.wait()
+        return "token-xyz"
+
+    monkeypatch.setattr(nl2sql_module, "get_token", blocked_token)
+    monkeypatch.setattr(nl2sql_module, "relay_mode_enabled", lambda: False)
+    outbound_runtime.transport.enqueue(content=b'{"answer":"ok"}')
+    task = asyncio.create_task(
+        execute_nl2sql_request(
+            Nl2SqlRequest.from_kwargs(
+                "iam ordering marker",
+                {"max_retries": 0},
+            )
+        )
+    )
+
+    await iam_entered.wait()
+    snapshot = outbound_runtime.runtime.pools.snapshot(OutboundPoolName.NL2SQL)
+    assert snapshot.started == 0
+    assert snapshot.in_use == 0
+    assert snapshot.waiting == 0
+
+    release_iam.set()
+    assert await task == {"answer": "ok"}
+
+
+async def test_nl2sql_rotation_backoff_holds_no_target_slot(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+) -> None:
+    """A rotated-conversation backoff runs after the failed lease releases."""
+    backoff_entered = asyncio.Event()
+    release_backoff = asyncio.Event()
+    snapshots: list[Any] = []
+
+    async def fake_token(**_kwargs: Any) -> str:
+        return "token-xyz"
+
+    async def blocked_backoff(_attempt: int) -> None:
+        snapshots.append(
+            outbound_runtime.runtime.pools.snapshot(OutboundPoolName.NL2SQL)
+        )
+        backoff_entered.set()
+        await release_backoff.wait()
+
+    monkeypatch.setattr(nl2sql_module, "get_token", fake_token)
+    monkeypatch.setattr(nl2sql_module, "_rotation_backoff", blocked_backoff)
+    monkeypatch.setattr(nl2sql_module, "relay_mode_enabled", lambda: False)
+    outbound_runtime.transport.enqueue(status=504)
+    outbound_runtime.transport.enqueue(content=b'{"answer":"recovered"}')
+    task = asyncio.create_task(
+        execute_nl2sql_request(
+            Nl2SqlRequest.from_kwargs(
+                "rotation release marker",
+                {"max_retries": 1, "retriable_codes": (504,)},
+            )
+        )
+    )
+
+    await backoff_entered.wait()
+    assert len(snapshots) == 1
+    assert snapshots[0].started == 1
+    assert snapshots[0].in_use == 0
+    assert snapshots[0].waiting == 0
+
+    release_backoff.set()
+    assert await task == {"answer": "recovered"}
+    final = outbound_runtime.runtime.pools.snapshot(OutboundPoolName.NL2SQL)
+    assert final.started == 2
+    assert final.in_use == 0
 
 
 async def test_execute_nl2sql_rotates_dialog_id_on_retry(

@@ -13,6 +13,7 @@ exercise them without a protected-access access expression.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 from dataclasses import dataclass, field
 from typing import Any
@@ -43,6 +44,7 @@ from mcp_server_phytomni.agents.knowledge.retrieval import (
 from mcp_server_phytomni.agents.shared import sql as shared_sql
 from mcp_server_phytomni.agents.shared.sql import relay_bi_query
 from mcp_server_phytomni.common.http import JsonPostRetry
+from mcp_server_phytomni.runtime.outbound import OutboundPoolName
 
 pytestmark = pytest.mark.agent
 
@@ -369,6 +371,40 @@ async def test_find_spa_taxids_routes_through_relay(monkeypatch):
     assert relay.calls[0]["query"]["question"] == "Arabidopsis"
     assert relay.calls[0]["query"]["page_size"] == "10"
     assert relay.calls[0]["timeout"] == 1.0
+
+
+async def test_spa_faq_waits_for_iam_before_target_pool(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+) -> None:
+    """A direct SPA lookup does not occupy capacity while IAM is pending."""
+    iam_entered = asyncio.Event()
+    release_iam = asyncio.Event()
+
+    async def blocked_token(**_kwargs: Any) -> str:
+        iam_entered.set()
+        await release_iam.wait()
+        return "test-token"
+
+    monkeypatch.setattr(evolution_agent, "get_token", blocked_token)
+    monkeypatch.setattr(evolution_agent, "relay_mode_enabled", lambda: False)
+    outbound_runtime.transport.enqueue(
+        content=b'{"total":1,"records":[{"answer":"9606.1"}]}'
+    )
+    task = asyncio.create_task(
+        find_spa_taxids("Arabidopsis", request_timeout=1.0)
+    )
+
+    await iam_entered.wait()
+    snapshot = outbound_runtime.runtime.pools.snapshot(
+        OutboundPoolName.SPA_FAQ
+    )
+    assert snapshot.started == 0
+    assert snapshot.in_use == 0
+    assert snapshot.waiting == 0
+
+    release_iam.set()
+    assert await task == ["9606"]
 
 
 async def test_bi_query_operator_mode_runs_gauss_query(monkeypatch):

@@ -24,6 +24,8 @@ from mcp_server_phytomni.agents.analyst.task_ops import (
     _common_request_kwargs,
     wait_for_completion,
 )
+from mcp_server_phytomni.runtime.outbound import OutboundPoolName
+from tests.support.outbound_fakes import ControlledByteStream
 
 pytestmark = pytest.mark.unit
 
@@ -168,3 +170,81 @@ async def test_wait_for_completion_times_out_when_max_poll_exceeded(
 
     with pytest.raises(asyncio.TimeoutError, match="Exceeded max polling"):
         await wait_for_completion("T1", poll_interval=0, max_poll=0)
+
+
+async def test_analysis_poll_sleep_holds_no_status_slot(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+) -> None:
+    """The poll interval begins only after the status attempt releases."""
+    sleep_entered = asyncio.Event()
+    release_sleep = asyncio.Event()
+
+    async def fake_token(**_kwargs: Any) -> str:
+        return "test-token"
+
+    async def controlled_sleep(_delay: float) -> None:
+        sleep_entered.set()
+        await release_sleep.wait()
+
+    monkeypatch.setattr(task_ops_module, "get_token", fake_token)
+    monkeypatch.setattr(task_ops_module, "relay_mode_enabled", lambda: False)
+    monkeypatch.setattr(task_ops_module.asyncio, "sleep", controlled_sleep)
+    outbound_runtime.transport.enqueue(content=b'{"status":"RUNNING"}')
+    outbound_runtime.transport.enqueue(content=b'{"status":"SUCCEEDED"}')
+    task = asyncio.create_task(
+        wait_for_completion("sleep-task", poll_interval=1, max_poll=30)
+    )
+
+    await sleep_entered.wait()
+    snapshot = outbound_runtime.runtime.pools.snapshot(
+        OutboundPoolName.ANALYSIS_STATUS
+    )
+    assert snapshot.started == 1
+    assert snapshot.in_use == 0
+    assert snapshot.waiting == 0
+
+    release_sleep.set()
+    assert await task == {"status": "SUCCEEDED"}
+
+
+async def test_analysis_poll_cancellation_closes_source_and_releases_status(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+) -> None:
+    """Cancelling an active poll leaves no borrower, waiter, or open body."""
+    source_entered = asyncio.Event()
+    hold_source = asyncio.Event()
+    source = ControlledByteStream(
+        b'{"status":"RUNNING"}',
+        entered=source_entered,
+        release=hold_source,
+    )
+
+    async def fake_token(**_kwargs: Any) -> str:
+        return "test-token"
+
+    monkeypatch.setattr(task_ops_module, "get_token", fake_token)
+    monkeypatch.setattr(task_ops_module, "relay_mode_enabled", lambda: False)
+    outbound_runtime.transport.enqueue(stream=source)
+    task = asyncio.create_task(
+        wait_for_completion("cancel-task", poll_interval=1, max_poll=30)
+    )
+
+    await source_entered.wait()
+    held = outbound_runtime.runtime.pools.snapshot(
+        OutboundPoolName.ANALYSIS_STATUS
+    )
+    assert held.in_use == 1
+    assert held.waiting == 0
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    released = outbound_runtime.runtime.pools.snapshot(
+        OutboundPoolName.ANALYSIS_STATUS
+    )
+    assert released.in_use == 0
+    assert released.waiting == 0
+    assert released.cancelled == 1
+    assert source.closed is True
