@@ -207,6 +207,26 @@ async def test_plan_is_ordered_deterministic_and_side_effect_free() -> None:
     )
 
 
+async def test_planner_accepts_multiline_effective_query() -> None:
+    """A parsed multiline query can reach planning after path removal."""
+    prepared = replace(
+        _prepared(),
+        effective_query=(
+            "Compare the supplied datasets.\n"
+            "Prioritize reproducible drought-response signals."
+        ),
+    )
+    provider = _GoalProvider((ResearchGoal(goal="Compare datasets"),))
+
+    plan = await build_research_plan(
+        _request(prepared=prepared),
+        provider,
+    )
+
+    assert provider.calls == 1
+    assert plan.children[0].goal_description == "Compare datasets"
+
+
 async def test_provider_order_that_is_not_canonical_fails_closed() -> None:
     """A provider cannot silently change child identity by changing order."""
     goals = (
@@ -298,6 +318,7 @@ async def test_planner_rejects_invalid_public_execution_controls(
     [
         cast(Any, object()),
         replace(_prepared(), effective_query=""),
+        replace(_prepared(), effective_query="query\x00payload"),
         replace(_prepared(), obs_file_list=cast(Any, ["obs://asset"])),
         replace(_prepared(), data_list=cast(Any, {"obs://asset": "data"})),
     ],

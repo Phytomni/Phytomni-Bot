@@ -255,7 +255,7 @@ def _validate_prepared(prepared: PreparedResearchInput) -> None:
     """Validate the final native projection and its immutable data map."""
     if not isinstance(prepared, PreparedResearchInput):
         raise _planning_failure()
-    if _invalid_bounded_text(
+    if _invalid_bounded_query_text(
         prepared.effective_query, _MAX_EFFECTIVE_QUERY_CHARS
     ):
         raise _planning_failure()
@@ -593,6 +593,19 @@ def _invalid_bounded_text(value: object, limit: int) -> bool:
         or not value.strip()
         or len(value) > limit
         or any(ord(char) < 32 for char in value)
+    )
+
+
+def _invalid_bounded_query_text(value: object, limit: int) -> bool:
+    """Allow ordinary multiline whitespace in a bounded user query."""
+    return (
+        not isinstance(value, str)
+        or not value.strip()
+        or len(value) > limit
+        or any(
+            ord(character) < 32 and character not in "\t\n\r"
+            for character in value
+        )
     )
 
 
