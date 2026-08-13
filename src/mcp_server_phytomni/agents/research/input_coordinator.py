@@ -21,11 +21,15 @@ from .input_contracts import (
     ResearchInputFailure,
     research_input_failure,
 )
-from .input_inventory import same_research_inventory_snapshot
+from .input_inventory import (
+    ResearchInputInventory,
+    same_research_inventory_snapshot,
+)
 from .input_preparation import (
     PreparedResearchInput,
     join_prepared_research_input,
     with_execution_fingerprint,
+    with_revalidated_authorities,
 )
 from .recovery import recover_registered_request
 from .recovery_support import (
@@ -276,6 +280,8 @@ class ResearchInputCoordinator:
         self._ensure_not_cancelled(run_id, "revalidation")
         if not same_research_inventory_snapshot(inventory, refreshed):
             raise _snapshot_drift()
+        if isinstance(refreshed, ResearchInputInventory):
+            prepared = with_revalidated_authorities(prepared, refreshed)
         prepared = await self._validate_native(dependencies, prepared, context)
         self._ensure_not_cancelled(run_id, "native_validation")
         await self._persist(run_id, prepared, context, lease_owner)

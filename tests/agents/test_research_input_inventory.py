@@ -42,10 +42,13 @@ class RecordingResearchObjectPort:
 
     def __init__(self) -> None:
         self.resolve_calls: list[ResearchObjectResolveRequest] = []
+        self.verify_calls: list[ResearchObjectVerifyRequest] = []
+        self.revoke_calls: list[ResearchObjectRevokeRequest] = []
         self.authority_override: tuple[ResearchObjectAuthority, ...] | None = (
             None
         )
         self.metadata_etag: str | None = None
+        self.rotated_authority_id: str | None = None
 
     async def resolve(
         self, request: ResearchObjectResolveRequest
@@ -77,11 +80,30 @@ class RecordingResearchObjectPort:
     async def verify(
         self, request: ResearchObjectVerifyRequest
     ) -> tuple[ResearchObjectAuthority, ...]:
-        """Return supplied authorities for this resolve-only inventory fake."""
-        return request.authorities
+        """Return current metadata and an optional rotated authority ID."""
+        self.verify_calls.append(request)
+        return tuple(
+            replace(
+                authority,
+                authority_id=(
+                    self.rotated_authority_id or authority.authority_id
+                ),
+                snapshot=(
+                    replace(
+                        authority.snapshot,
+                        etag=self.metadata_etag,
+                        snapshot_digest="snapshot-changed",
+                    )
+                    if self.metadata_etag is not None
+                    else authority.snapshot
+                ),
+            )
+            for authority in request.authorities
+        )
 
     async def revoke(self, request: ResearchObjectRevokeRequest) -> None:
         """Accept no-op revocation for this stateless fake."""
+        self.revoke_calls.append(request)
 
 
 def _managed(
@@ -427,6 +449,25 @@ async def test_revalidation_rejects_current_object_metadata_drift() -> None:
         )
 
     assert caught.value.code == "research_input_resolution_failed"
+
+
+async def test_revalidation_verifies_without_minting_a_second_authority() -> (
+    None
+):
+    """Final snapshot fencing rotates the existing provisional authority."""
+    request = _request(parsed_input=_parsed("obs://dev-bucket/pasted.tsv"))
+    port = RecordingResearchObjectPort()
+    inventory = await build_research_inventory(request, port)
+    port.rotated_authority_id = "authority-rotated"
+
+    refreshed = await revalidate_research_inventory(request, inventory, port)
+
+    assert len(port.resolve_calls) == 1
+    assert len(port.verify_calls) == 1
+    assert port.verify_calls[0].authorities == inventory.authorities
+    assert refreshed.authorities[0].authority_id == "authority-rotated"
+    assert refreshed.entries[0].authority_id == "authority-rotated"
+    assert not port.revoke_calls
 
 
 @pytest.mark.parametrize(

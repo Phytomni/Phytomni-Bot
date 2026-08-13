@@ -21,10 +21,13 @@ from ...storage.research_objects import (
     ResearchObjectMetadataPort,
     ResearchObjectResolveRequest,
     ResearchObjectRevokeRequest,
+    ResearchObjectVerifyRequest,
+    research_object_authority_scope,
 )
 from .input_contracts import (
     ParsedResearchInput,
     PastedDatasetCandidate,
+    ResearchInputFailure,
     SourceSpan,
     research_input_failure,
 )
@@ -214,12 +217,16 @@ async def validate_research_inventory(
     except BaseException:
         if authorities:
             await _revoke_provisional(
-                object_port, _metadata_scope(drafts), authorities
+                object_port,
+                research_object_authority_scope(_dataset_candidates(drafts)),
+                authorities,
             )
         raise
     if authorities:
         await _revoke_provisional(
-            object_port, _metadata_scope(drafts), authorities
+            object_port,
+            research_object_authority_scope(_dataset_candidates(drafts)),
+            authorities,
         )
 
 
@@ -247,7 +254,7 @@ async def revalidate_research_inventory(
     *,
     managed_asset_resolver: ManagedResearchAssetResolver | None = None,
 ) -> ResearchInputInventory:
-    """Re-resolve all inputs and reject any immutable snapshot drift.
+    """Reverify all inputs and reject any immutable snapshot drift.
 
     Managed assets require an owner-bound resolver so revalidation never trusts
     the old request snapshot after an asset was reclaimed or changed.
@@ -255,7 +262,21 @@ async def revalidate_research_inventory(
     refreshed_request = _request_with_current_managed_assets(
         request, managed_asset_resolver
     )
-    refreshed = await build_research_inventory(refreshed_request, object_port)
+    drafts = _preflight(refreshed_request)
+    authorities = await _verify_drafts(
+        drafts,
+        inventory.authorities,
+        object_port,
+    )
+    entries = _entries_from_drafts(drafts, authorities)
+    refreshed = _inventory(
+        entries,
+        tuple(
+            authorities[entry.dataset_id]
+            for entry in entries
+            if entry.dataset_id in authorities
+        ),
+    )
     if not _same_inventory_snapshot(inventory, refreshed):
         raise research_input_failure(
             "research_input_resolution_failed",
@@ -504,18 +525,10 @@ async def _resolve_drafts(
     drafts: tuple[_DraftEntry, ...], object_port: ResearchObjectMetadataPort
 ) -> dict[str, ResearchObjectAuthority]:
     """Resolve exact-key metadata for datasets only after local preflight."""
-    candidates = tuple(
-        ResearchObjectCandidate(
-            dataset_id=draft.dataset_id,
-            exact_reference=draft.exact_reference,
-            compound_suffix=draft.compound_suffix,
-        )
-        for draft in drafts
-        if draft.purpose == "dataset"
-    )
+    candidates = _dataset_candidates(drafts)
     if not candidates:
         return {}
-    scope = _metadata_scope(drafts)
+    scope = research_object_authority_scope(candidates)
     try:
         authorities = await object_port.resolve(
             ResearchObjectResolveRequest(
@@ -529,6 +542,58 @@ async def _resolve_drafts(
             "research_dataset_not_found",
             "Research dataset metadata could not be verified.",
         ) from error
+    return _authority_map(candidates, authorities)
+
+
+async def _verify_drafts(
+    drafts: tuple[_DraftEntry, ...],
+    persisted: tuple[ResearchObjectAuthority, ...],
+    object_port: ResearchObjectMetadataPort,
+) -> dict[str, ResearchObjectAuthority]:
+    """Verify provisional authorities without minting a second grant set."""
+    candidates = _dataset_candidates(drafts)
+    if not candidates:
+        if persisted:
+            raise _metadata_resolution_failure()
+        return {}
+    persisted_by_dataset = _authority_map(candidates, persisted)
+    scope = research_object_authority_scope(candidates)
+    try:
+        authorities = await object_port.verify(
+            ResearchObjectVerifyRequest(
+                parent_run_id=f"inventory-{scope}",
+                execution_fingerprint=scope,
+                authorities=tuple(
+                    persisted_by_dataset[candidate.dataset_id]
+                    for candidate in candidates
+                ),
+            )
+        )
+    except ResearchObjectMetadataError as error:
+        raise _metadata_resolution_failure() from error
+    return _authority_map(candidates, authorities)
+
+
+def _dataset_candidates(
+    drafts: tuple[_DraftEntry, ...],
+) -> tuple[ResearchObjectCandidate, ...]:
+    """Project ordered dataset drafts into exact-key metadata candidates."""
+    return tuple(
+        ResearchObjectCandidate(
+            dataset_id=draft.dataset_id,
+            exact_reference=draft.exact_reference,
+            compound_suffix=draft.compound_suffix,
+        )
+        for draft in drafts
+        if draft.purpose == "dataset"
+    )
+
+
+def _authority_map(
+    candidates: tuple[ResearchObjectCandidate, ...],
+    authorities: tuple[ResearchObjectAuthority, ...],
+) -> dict[str, ResearchObjectAuthority]:
+    """Validate one complete, unique authority set by dataset identity."""
     requested_ids = {candidate.dataset_id for candidate in candidates}
     authorities_by_dataset: dict[str, ResearchObjectAuthority] = {}
     for authority in authorities:
@@ -546,21 +611,15 @@ async def _resolve_drafts(
         or len({authority.authority_id for authority in authorities})
         != len(authorities)
     ):
-        raise research_input_failure(
-            "research_input_resolution_failed",
-            "Research dataset metadata could not be verified.",
-        )
+        raise _metadata_resolution_failure()
     return authorities_by_dataset
 
 
-def _metadata_scope(drafts: tuple[_DraftEntry, ...]) -> str:
-    """Return the deterministic scope used by provisional metadata grants."""
-    return _digest(
-        [
-            (draft.dataset_id, draft.exact_reference)
-            for draft in drafts
-            if draft.purpose == "dataset"
-        ]
+def _metadata_resolution_failure() -> ResearchInputFailure:
+    """Build the stable failure for malformed metadata authority sets."""
+    return research_input_failure(
+        "research_input_resolution_failed",
+        "Research dataset metadata could not be verified.",
     )
 
 

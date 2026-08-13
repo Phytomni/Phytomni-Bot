@@ -52,6 +52,7 @@ from mcp_server_phytomni.agents.research.input_preparation import (
     join_prepared_research_input,
     prepare_research_input_for_remote_inspection,
     with_execution_fingerprint,
+    with_revalidated_authorities,
 )
 from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
 from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
@@ -182,6 +183,7 @@ def test_join_carries_exact_private_authority_binding() -> None:
             snapshot_digest="snapshot-dataset-002",
         ),
     )
+    entry = replace(entry, authority_id=authority.authority_id)
     inventory = ResearchInputInventory(
         entries=(entry,),
         documents=(),
@@ -202,6 +204,59 @@ def test_join_carries_exact_private_authority_binding() -> None:
             authority=authority,
         ),
     )
+
+
+def test_revalidation_rotates_prepared_authority_without_identity_drift() -> (
+    None
+):
+    """A verified provisional rotation reaches durable preparation."""
+    entry = _entry("dataset_002", 0)
+    snapshot = ResearchObjectSnapshot(
+        dataset_id=entry.dataset_id,
+        size_bytes=10,
+        etag="etag-1",
+        version_id="version-1",
+        last_modified="2026-08-08T00:00:00+00:00",
+        placeholder=False,
+        snapshot_digest="snapshot-dataset-002",
+    )
+    initial_authority = ResearchObjectAuthority(
+        entry.dataset_id,
+        "grant-initial",
+        snapshot,
+    )
+    initial_entry = replace(entry, authority_id=initial_authority.authority_id)
+    inventory = ResearchInputInventory(
+        entries=(initial_entry,),
+        documents=(),
+        datasets=(initial_entry,),
+        digest="inventory-digest",
+        authorities=(initial_authority,),
+    )
+    prepared = join_prepared_research_input(
+        inventory,
+        _resolution((entry.dataset_id, "grounded description")),
+    )
+    rotated_authority = replace(
+        initial_authority,
+        authority_id="grant-rotated",
+    )
+    rotated_entry = replace(
+        initial_entry,
+        authority_id=rotated_authority.authority_id,
+    )
+    refreshed = replace(
+        inventory,
+        entries=(rotated_entry,),
+        datasets=(rotated_entry,),
+        authorities=(rotated_authority,),
+    )
+
+    rotated = with_revalidated_authorities(prepared, refreshed)
+
+    assert rotated.execution_fingerprint == prepared.execution_fingerprint
+    assert rotated.authority_ids == ("grant-rotated",)
+    assert rotated.authorities[0].authority == rotated_authority
 
 
 @pytest.mark.parametrize(
@@ -543,6 +598,7 @@ class _RestartHeadPort:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, ...]] = []
+        self.references_by_authority: dict[str, str] = {}
 
     async def resolve(
         self, request: Any
@@ -551,7 +607,7 @@ class _RestartHeadPort:
         self.calls.append(
             tuple(item.exact_reference for item in request.objects)
         )
-        return tuple(
+        authorities = tuple(
             ResearchObjectAuthority(
                 item.dataset_id,
                 f"grant-{item.dataset_id}",
@@ -567,9 +623,24 @@ class _RestartHeadPort:
             )
             for item in request.objects
         )
+        self.references_by_authority.update(
+            {
+                authority.authority_id: candidate.exact_reference
+                for candidate, authority in zip(
+                    request.objects, authorities, strict=True
+                )
+            }
+        )
+        return authorities
 
     async def verify(self, request: Any) -> tuple[Any, ...]:
-        """Retain the metadata-port verify shape for this local port."""
+        """Record the exact references re-read by authority verification."""
+        self.calls.append(
+            tuple(
+                self.references_by_authority[authority.authority_id]
+                for authority in request.authorities
+            )
+        )
         return request.authorities
 
     async def revoke(self, request: Any) -> None:

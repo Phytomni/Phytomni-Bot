@@ -10,7 +10,10 @@ from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any
 
-from ...storage.research_objects import ResearchObjectAuthority
+from ...storage.research_objects import (
+    ResearchObjectAuthority,
+    ResearchObjectSnapshot,
+)
 from .description_resolver import (
     ResearchResolutionResponse,
     ResolvedResearchDataset,
@@ -26,6 +29,7 @@ __all__ = [
     "join_prepared_research_input",
     "prepare_research_input_for_remote_inspection",
     "with_execution_fingerprint",
+    "with_revalidated_authorities",
 ]
 
 PREPARATION_SCHEMA_VERSION = 1
@@ -189,6 +193,26 @@ def with_execution_fingerprint(
     )
 
 
+def with_revalidated_authorities(
+    prepared: PreparedResearchInput,
+    inventory: ResearchInputInventory,
+) -> PreparedResearchInput:
+    """Replace only opaque IDs after final inventory verification."""
+    if not isinstance(prepared, PreparedResearchInput):
+        raise _failure()
+    _validate_inventory(inventory)
+    refreshed = _prepared_authorities(inventory)
+    before = tuple(_authority_identity(item) for item in prepared.authorities)
+    after = tuple(_authority_identity(item) for item in refreshed)
+    if before != after:
+        raise _failure()
+    return replace(
+        prepared,
+        authority_ids=tuple(item.authority.authority_id for item in refreshed),
+        authorities=refreshed,
+    )
+
+
 def _validate_inventory(inventory: ResearchInputInventory) -> None:
     """Reject forged or internally inconsistent inventory partitions."""
     if not isinstance(inventory, ResearchInputInventory):
@@ -302,9 +326,17 @@ def _prepared_authorities(
     by_dataset = {
         authority.dataset_id: authority for authority in inventory.authorities
     }
-    if inventory.authorities and set(by_dataset) != {
-        entry.dataset_id for entry in inventory.datasets
-    }:
+    expected_ids = {entry.dataset_id for entry in inventory.datasets}
+    if inventory.authorities and (
+        len(by_dataset) != len(inventory.authorities)
+        or set(by_dataset) != expected_ids
+        or len({authority.authority_id for authority in inventory.authorities})
+        != len(inventory.authorities)
+        or any(
+            entry.authority_id != by_dataset[entry.dataset_id].authority_id
+            for entry in inventory.datasets
+        )
+    ):
         raise _failure()
     return tuple(
         PreparedResearchAuthority(
@@ -315,6 +347,19 @@ def _prepared_authorities(
         )
         for entry in inventory.datasets
         if entry.dataset_id in by_dataset
+    )
+
+
+def _authority_identity(
+    item: PreparedResearchAuthority,
+) -> tuple[str, str, str, str, ResearchObjectSnapshot]:
+    """Return the immutable portion of one prepared authority binding."""
+    return (
+        item.dataset_id,
+        item.exact_reference,
+        item.compound_suffix,
+        item.authority.dataset_id,
+        item.authority.snapshot,
     )
 
 
