@@ -15,6 +15,8 @@ from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.shared import sql as shared_sql
 from mcp_server_phytomni.common.http import JsonPostRetry
+from mcp_server_phytomni.common.relay_client import RelayRequestOptions
+from mcp_server_phytomni.runtime.outbound import OutboundPoolName
 
 pytestmark = [pytest.mark.unit, pytest.mark.agent]
 
@@ -91,18 +93,18 @@ async def test_relay_bi_query_timeout_is_key_free(
 
     async def slow_post_json(
         _path: str,
-        *,
         json_body: Any,
-        message: str,
-        request_timeout: float | None = None,
+        *,
+        pool: OutboundPoolName,
+        options: RelayRequestOptions,
     ) -> Any:
         captured.update(
             path=_path,
             body=json_body,
-            message=message,
-            request_timeout=request_timeout,
+            pool=pool,
+            message=options.message,
+            request_timeout=options.request_timeout,
         )
-        _ = (json_body, message, request_timeout)
         await asyncio.sleep(0.05)
         return {"message": "ok", "data": []}
 
@@ -124,29 +126,34 @@ async def test_relay_bi_query_timeout_is_key_free(
     assert captured == {
         "path": "bi/query",
         "body": {"sql": "SELECT 3", "returnType": "json"},
+        "pool": OutboundPoolName.BI,
         "message": "BI query failed",
         "request_timeout": 0.001,
     }
 
 
-async def test_relay_bi_query_without_timeout_keeps_legacy_call_shape(
+async def test_relay_bi_query_without_timeout_uses_typed_call_shape(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Existing relay clients remain valid when no timeout is requested."""
+    """The relay path always uses the typed pool and options contract."""
 
-    async def legacy_post_json(
+    async def typed_post_json(
         _path: str,
-        *,
         json_body: Any,
-        message: str,
+        *,
+        pool: OutboundPoolName,
+        options: RelayRequestOptions,
     ) -> Any:
-        _ = (json_body, message)
+        assert json_body == {"sql": "SELECT 4", "returnType": "json"}
+        assert pool is OutboundPoolName.BI
+        assert options.message == "BI query failed"
+        assert options.request_timeout is None
         return {"message": "ok", "data": []}
 
     monkeypatch.setattr(
         shared_sql,
         "current_relay_client",
-        lambda: SimpleNamespace(post_json=legacy_post_json),
+        lambda: SimpleNamespace(post_json=typed_post_json),
     )
 
     result = await shared_sql.relay_bi_query(
