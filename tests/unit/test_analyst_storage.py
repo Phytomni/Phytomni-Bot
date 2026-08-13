@@ -513,3 +513,60 @@ async def test_download_obs_out_falls_back_to_sdk_when_obsfs_missing(
     assert (tmp_path / "downloads" / "task-1" / "keep.txt").read_text(
         encoding="utf-8"
     ) == "sdk"
+
+
+async def test_download_obs_out_releases_obs_lease_between_list_pages(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Each paginated SDK list request owns a separate OBS lease."""
+
+    def list_page(**kwargs: Any) -> SimpleNamespace:
+        """Build a page from the requested marker."""
+        marker = kwargs["marker"]
+        contents = [
+            SimpleNamespace(
+                key=(
+                    "results/first.txt"
+                    if marker is None
+                    else "results/second.txt"
+                )
+            )
+        ]
+        body = SimpleNamespace(
+            contents=contents,
+            is_truncated=marker is None,
+            next_marker="page-2" if marker is None else None,
+        )
+        return SimpleNamespace(status=200, body=body)
+
+    list_objects = Mock(side_effect=list_page)
+    client = SimpleNamespace(listObjects=list_objects)
+
+    async def run(_profile: Any, operation: Any) -> Any:
+        """Execute one lease-scoped SDK action against the fake client."""
+        return operation(client)
+
+    runtime = SimpleNamespace(run=AsyncMock(side_effect=run))
+    monkeypatch.setattr(
+        analyst_storage,
+        "_direct_obs_runtime",
+        lambda: runtime,
+    )
+
+    statuses = await analyst_storage.download_obs_out(
+        "task-1",
+        "/obs/phytomni/results",
+        download_path=str(tmp_path / "downloads"),
+        bucket_name="phytomni",
+        obsfs_mount_root=str(tmp_path / "missing"),
+        target_file_feature=[".csv"],
+        if_download_all=False,
+    )
+
+    assert statuses == []
+    assert [call.kwargs["marker"] for call in list_objects.call_args_list] == [
+        None,
+        "page-2",
+    ]
+    assert runtime.run.await_count == 2

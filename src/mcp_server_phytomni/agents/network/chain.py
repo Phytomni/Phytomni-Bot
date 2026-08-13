@@ -26,10 +26,9 @@ from typing import Any, Final
 from ...config.defaults import DeepGenomeConfig, GeneNetworkConfig
 from ...runtime.outbound import ObsProfileName, current_outbound_runtime
 from ...storage.downloads import download_obs_file
-from ...storage.obs_relay_ops import ObsAccessOptions, list_object_keys
+from ...storage.obs_relay_ops import ObsAccessOptions, list_object_keys_page
 from ...storage.obs_storage import (
     normalize_obs_object_key,
-    obsfs_or_sdk,
     obsfs_path_for,
 )
 from ...storage.path_policy import RunIdentity
@@ -249,73 +248,40 @@ def _obsfs_top20_match(output_dir: str, bucket_name: str) -> str | None:
     return matches[0].name
 
 
-def _sdk_top20_match(
-    output_dir: str, bucket_name: str, client: Any
-) -> str | None:
-    """Return the first object key matching ``TOP20_GLOB`` via the SDK.
-
-    Args:
-        output_dir: Network envelope's output directory.
-        bucket_name: OBS bucket name used by the network config.
-        client: Runtime-owned OBS client for the SDK fallback.
-
-    Returns:
-        The matched object key (full prefix + filename), or ``None``
-        if no file under the prefix matches the glob.
-    """
-    try:
-        keys = list_object_keys(
-            bucket=bucket_name,
-            prefix=output_dir,
-            access=ObsAccessOptions(client=client),
-        )
-    except OSError:
-        return None
-    for key in keys:
-        basename = key.rsplit("/", 1)[-1]
-        if fnmatch.fnmatchcase(basename, TOP20_GLOB):
-            return key
-    return None
-
-
-def _find_top20_object_key(
-    output_dir: str, bucket_name: str, client: Any
+async def _find_sdk_top20_object_key(
+    output_dir: str,
+    bucket_name: str,
+    obs_runtime: Any,
 ) -> str:
-    """Return the OBS object key for the top20 file under the network dir.
-
-    Tries the obsfs glob first; falls back to the OBS SDK listObjects
-    helper when obsfs is not mounted. Raises
-    ``ChainTop20MissingError`` when no file matches the glob in either
-    source.
-
-    Args:
-        output_dir: Network envelope's output directory.
-        bucket_name: OBS bucket name used by the network config.
-        client: Runtime-owned OBS client for the SDK fallback.
-
-    Returns:
-        OBS object key suitable for ``download_obs_file``.
-
-    Raises:
-        ChainTop20MissingError: When neither obsfs nor the SDK find
-            a matching file.
-    """
-
-    def _obsfs_action() -> str:
-        basename = _obsfs_top20_match(output_dir, bucket_name)
-        if basename is None:
-            raise FileNotFoundError("no obsfs match")
-        return _build_top20_object_key(output_dir, basename, bucket_name)
-
-    def _sdk_action() -> str:
-        key = _sdk_top20_match(output_dir, bucket_name, client)
-        if key is None:
-            raise FileNotFoundError("no SDK match")
-        return key
-
+    """Return a top-20 key while leasing each SDK list page separately."""
+    marker: str | None = None
     try:
-        return obsfs_or_sdk(_obsfs_action, _sdk_action)
-    except (OSError, ValueError) as exc:
+        object_prefix = normalize_obs_object_key(output_dir, bucket_name)
+        while True:
+
+            def list_page(client: Any) -> tuple[list[str], str | None]:
+                """List one page using the runtime-lent OBS client."""
+                try:
+                    return list_object_keys_page(
+                        bucket_name,
+                        object_prefix,
+                        marker,
+                        access=ObsAccessOptions(client=client),
+                    )
+                except OSError:
+                    raise FileNotFoundError("no SDK match") from None
+
+            keys, marker = await obs_runtime.run(
+                ObsProfileName.PRIMARY,
+                list_page,
+            )
+            for key in keys:
+                basename = key.rsplit("/", 1)[-1]
+                if fnmatch.fnmatchcase(basename, TOP20_GLOB):
+                    return key
+            if marker is None:
+                break
+    except OSError as exc:
         raise ChainTop20MissingError(
             output_dir=output_dir,
             filename=TOP20_GLOB,
@@ -324,6 +290,24 @@ def _find_top20_object_key(
                 f"output_dir; last error: {exc}"
             ),
         ) from exc
+    except ValueError as exc:
+        raise ChainTop20MissingError(
+            output_dir=output_dir,
+            filename=TOP20_GLOB,
+            message=(
+                f"no file matching {TOP20_GLOB!r} under network "
+                f"output_dir; last error: {exc}"
+            ),
+        ) from exc
+    missing = FileNotFoundError("no SDK match")
+    raise ChainTop20MissingError(
+        output_dir=output_dir,
+        filename=TOP20_GLOB,
+        message=(
+            f"no file matching {TOP20_GLOB!r} under network output_dir; "
+            f"last error: {missing}"
+        ),
+    ) from missing
 
 
 def _scratch_dir_for(user_id: str | None) -> Path:
@@ -366,17 +350,25 @@ async def _download_top20_csv(output_dir: str, scratch_dir: Path) -> Path:
             object key is empty, or the SDK download fails.
     """
     network_config = GeneNetworkConfig()
-    obs_runtime = current_outbound_runtime().obs
-    if obs_runtime is None:
-        raise RuntimeError("OBS runtime is unavailable")
-    object_key = await obs_runtime.run(
-        ObsProfileName.PRIMARY,
-        lambda client: _find_top20_object_key(
+    basename = _obsfs_top20_match(
+        output_dir,
+        network_config.BUCKET_NAME,
+    )
+    if basename is not None:
+        object_key = _build_top20_object_key(
+            output_dir,
+            basename,
+            network_config.BUCKET_NAME,
+        )
+    else:
+        obs_runtime = current_outbound_runtime().obs
+        if obs_runtime is None:
+            raise RuntimeError("OBS runtime is unavailable")
+        object_key = await _find_sdk_top20_object_key(
             output_dir,
             network_config.BUCKET_NAME,
-            client,
-        ),
-    )
+            obs_runtime,
+        )
     if not object_key:
         raise ChainTop20MissingError(
             output_dir=output_dir,

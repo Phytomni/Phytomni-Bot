@@ -438,30 +438,59 @@ def _download_output_path(task_dir: str, download_path: str) -> Path:
     return output_path
 
 
-def _list_obs_object_keys(
+def _list_obs_object_keys_page(
     obs_client: Any,
     options: ObsDownloadOptions,
     obs_output_path: str,
-):
-    """Yield downloadable object keys from a paginated OBS listing."""
+    marker: Any,
+) -> tuple[list[str], Any, bool]:
+    """Return one downloadable-object page and its pagination state."""
+    file_response = obs_client.listObjects(
+        bucketName=options.bucket_name,
+        prefix=obs_output_path,
+        marker=marker,
+        max_keys=options.max_keys,
+        encoding_type="url",
+    )
+    file_body = _valid_obs_file_body(file_response)
+    object_keys = []
+    if file_body and hasattr(file_body, "contents"):
+        object_keys = [
+            content.key
+            for content in file_body.contents
+            if not content.key.endswith("/")
+        ]
+    truncated = _is_truncated_listing(file_body)
+    next_marker = getattr(file_body, "next_marker", None)
+    return object_keys, next_marker, truncated
+
+
+async def _list_all_obs_object_keys(
+    runtime: Any,
+    options: ObsDownloadOptions,
+    object_prefix: str,
+) -> list[str]:
+    """List all pages while giving each SDK request its own OBS lease."""
     marker = options.marker
+    object_keys: list[str] = []
     while True:
-        file_response = obs_client.listObjects(
-            bucketName=options.bucket_name,
-            prefix=obs_output_path,
-            marker=marker,
-            max_keys=options.max_keys,
-            encoding_type="url",
+
+        def list_page(client: Any) -> tuple[list[str], Any, bool]:
+            """List one page without extending the OBS lease."""
+            return _list_obs_object_keys_page(
+                client,
+                options,
+                object_prefix,
+                marker,
+            )
+
+        page_keys, marker, truncated = await runtime.run(
+            ObsProfileName.PRIMARY,
+            list_page,
         )
-        file_body = _valid_obs_file_body(file_response)
-        if file_body and hasattr(file_body, "contents"):
-            for content in file_body.contents:
-                object_key = content.key
-                if not object_key.endswith("/"):
-                    yield object_key
-        if not _is_truncated_listing(file_body):
-            break
-        marker = getattr(file_body, "next_marker", None)
+        object_keys.extend(page_keys)
+        if not truncated:
+            return object_keys
 
 
 def _valid_obs_file_body(file_response: Any):
@@ -674,11 +703,10 @@ async def _download_obs_out_sdk(
             obs_output_path,
             options.bucket_name,
         )
-        object_keys = await runtime.run(
-            ObsProfileName.PRIMARY,
-            lambda client: tuple(
-                _list_obs_object_keys(client, options, object_prefix)
-            ),
+        object_keys = await _list_all_obs_object_keys(
+            runtime,
+            options,
+            object_prefix,
         )
         statuses: list[str] = []
         for object_key in object_keys:
@@ -687,7 +715,7 @@ async def _download_obs_out_sdk(
                 continue
 
             def download_one(client: Any, key: str = object_key) -> str:
-                """Download the current object without capturing the key."""
+                """Download the current object with its bound key."""
                 return _download_obs_object(
                     client,
                     headers,
