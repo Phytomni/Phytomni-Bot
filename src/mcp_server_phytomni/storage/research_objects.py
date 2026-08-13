@@ -99,12 +99,15 @@ def research_object_authority_scope(
         (candidate.dataset_id, candidate.exact_reference)
         for candidate in objects
     ]
-    encoded = json.dumps(
-        coordinates,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
+    encoded = (
+        json.JSONEncoder(
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        .encode(coordinates)
+        .encode("utf-8")
+    )
     return hashlib.sha256(encoded).hexdigest()
 
 
