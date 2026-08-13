@@ -16,9 +16,26 @@ import pytest
 from scripts import evaluate_agent_routing as cli
 from scripts.agent_routing_eval.dataset import AgentRoutingCase
 from scripts.agent_routing_eval.reporting import GitState
-from scripts.agent_routing_eval.runner import RunOutcome
+from scripts.agent_routing_eval.runner import (
+    EvaluationIncompleteError,
+    RunOutcome,
+)
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _stub_outbound_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep CLI lifecycle tests offline until they inject event observers."""
+
+    async def init() -> None:
+        return None
+
+    async def close() -> None:
+        return None
+
+    monkeypatch.setattr(cli, "init_outbound_runtime", init, raising=False)
+    monkeypatch.setattr(cli, "aclose_outbound_runtime", close, raising=False)
 
 
 def _case() -> AgentRoutingCase:
@@ -328,3 +345,193 @@ def test_run_cli_forwards_injected_selector(
 
     assert result == 0
     assert seen.get("selector") is sentinel_selector
+
+
+def test_run_cli_returns_two_for_evaluator_runtime_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Evaluator runtime failures preserve the configuration-error exit."""
+    _patch_cases(monkeypatch)
+    events: list[str] = []
+
+    async def init() -> None:
+        events.append("init")
+
+    async def close() -> None:
+        events.append("close")
+
+    async def evaluator(*_args: Any, **_kwargs: Any) -> tuple[RunOutcome, ...]:
+        events.append("evaluate")
+        raise RuntimeError("evaluator failed")
+
+    monkeypatch.setattr(cli, "init_outbound_runtime", init)
+    monkeypatch.setattr(cli, "aclose_outbound_runtime", close)
+
+    result = cli.run_cli(
+        ["--mode", "quick", "--output-dir", str(tmp_path)],
+        git_state=GitState(branch="release", head="b" * 40, dirty=False),
+        config_loader=_config,
+        evaluator=evaluator,
+    )
+    captured = capsys.readouterr()
+
+    assert result == 2
+    assert captured.out == ""
+    assert (
+        captured.err.strip()
+        == "Evaluation configuration or dataset validation failed."
+    )
+    assert events == ["init", "evaluate", "close"]
+
+
+def test_run_cli_owns_outbound_runtime_for_success(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A successful evaluator runs while the CLI-owned runtime is active."""
+    _patch_cases(monkeypatch)
+    events: list[str] = []
+    active = False
+
+    async def init() -> None:
+        nonlocal active
+        events.append("init")
+        active = True
+
+    async def close() -> None:
+        nonlocal active
+        events.append("close")
+        active = False
+
+    async def evaluator(
+        cases: tuple[AgentRoutingCase, ...], **_kwargs: Any
+    ) -> tuple[RunOutcome, ...]:
+        events.append(f"evaluate:{'active' if active else 'inactive'}")
+        return (_outcome(cases[0], 1),)
+
+    monkeypatch.setattr(cli, "init_outbound_runtime", init)
+    monkeypatch.setattr(cli, "aclose_outbound_runtime", close)
+
+    result = cli.run_cli(
+        ["--mode", "quick", "--output-dir", str(tmp_path)],
+        git_state=GitState(branch="release", head="b" * 40, dirty=False),
+        config_loader=_config,
+        evaluator=evaluator,
+    )
+
+    assert result == 0
+    assert events == ["init", "evaluate:active", "close"]
+    assert active is False
+
+
+def test_run_cli_closes_outbound_runtime_after_incomplete_evaluation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An incomplete evaluator closes the CLI-owned runtime before exit 3."""
+    _patch_cases(monkeypatch)
+    events: list[str] = []
+    active = False
+
+    async def init() -> None:
+        nonlocal active
+        events.append("init")
+        active = True
+
+    async def close() -> None:
+        nonlocal active
+        events.append("close")
+        active = False
+
+    async def evaluator(*_args: Any, **_kwargs: Any) -> tuple[RunOutcome, ...]:
+        events.append(f"evaluate:{'active' if active else 'inactive'}")
+        raise EvaluationIncompleteError
+
+    monkeypatch.setattr(cli, "init_outbound_runtime", init)
+    monkeypatch.setattr(cli, "aclose_outbound_runtime", close)
+
+    result = cli.run_cli(
+        ["--mode", "quick", "--output-dir", str(tmp_path)],
+        git_state=GitState(branch="release", head="c" * 40, dirty=False),
+        config_loader=_config,
+        evaluator=evaluator,
+    )
+
+    assert result == 3
+    assert events == ["init", "evaluate:active", "close"]
+    assert active is False
+
+
+def test_run_cli_closes_outbound_runtime_after_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A cancelled evaluator closes the CLI-owned runtime before exit 3."""
+    _patch_cases(monkeypatch)
+    events: list[str] = []
+    active = False
+
+    async def init() -> None:
+        nonlocal active
+        events.append("init")
+        active = True
+
+    async def close() -> None:
+        nonlocal active
+        events.append("close")
+        active = False
+
+    async def evaluator(*_args: Any, **_kwargs: Any) -> tuple[RunOutcome, ...]:
+        events.append(f"evaluate:{'active' if active else 'inactive'}")
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(cli, "init_outbound_runtime", init)
+    monkeypatch.setattr(cli, "aclose_outbound_runtime", close)
+
+    result = cli.run_cli(
+        ["--mode", "quick", "--output-dir", str(tmp_path)],
+        git_state=GitState(branch="release", head="d" * 40, dirty=False),
+        config_loader=_config,
+        evaluator=evaluator,
+    )
+
+    assert result == 3
+    assert events == ["init", "evaluate:active", "close"]
+    assert active is False
+
+
+def test_run_cli_propagates_outbound_runtime_cleanup_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Runtime cleanup errors remain visible to the CLI caller."""
+    _patch_cases(monkeypatch)
+    events: list[str] = []
+
+    async def init() -> None:
+        events.append("init")
+
+    async def close() -> None:
+        events.append("close")
+        raise RuntimeError("cleanup failed")
+
+    async def evaluator(
+        cases: tuple[AgentRoutingCase, ...], **_kwargs: Any
+    ) -> tuple[RunOutcome, ...]:
+        events.append("evaluate")
+        return (_outcome(cases[0], 1),)
+
+    monkeypatch.setattr(cli, "init_outbound_runtime", init)
+    monkeypatch.setattr(cli, "aclose_outbound_runtime", close)
+
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        cli.run_cli(
+            ["--mode", "quick", "--output-dir", str(tmp_path)],
+            git_state=GitState(branch="release", head="e" * 40, dirty=False),
+            config_loader=_config,
+            evaluator=evaluator,
+        )
+
+    assert events == ["init", "evaluate", "close"]

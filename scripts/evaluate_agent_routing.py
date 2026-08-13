@@ -20,6 +20,10 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import ValidationError
 
 from mcp_server_phytomni.config.settings import get_sensitive_config
+from mcp_server_phytomni.runtime.outbound import (
+    aclose_outbound_runtime,
+    init_outbound_runtime,
+)
 
 if TYPE_CHECKING:
     from scripts.agent_routing_eval.dataset import (
@@ -89,6 +93,10 @@ _THRESHOLD_ERROR = "Routing benchmark thresholds failed."
 _DIRTY_ERROR = (
     "Benchmark requires a clean tree; use --allow-dirty for diagnostics."
 )
+
+
+class _OutboundRuntimeCleanupError(RuntimeError):
+    """Keep outbound-runtime cleanup failures visible to CLI callers."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,9 +296,18 @@ def _execute(inputs: _RunInputs) -> int:
         }
         if inputs.selector is not None:
             evaluator_kwargs["selector"] = inputs.selector
-        outcomes = asyncio.run(
-            inputs.evaluator(inputs.cases, **evaluator_kwargs)
-        )
+
+        async def evaluate_with_outbound_runtime() -> Sequence[RunOutcome]:
+            await init_outbound_runtime()
+            try:
+                return await inputs.evaluator(inputs.cases, **evaluator_kwargs)
+            finally:
+                try:
+                    await aclose_outbound_runtime()
+                except Exception as error:
+                    raise _OutboundRuntimeCleanupError(str(error)) from error
+
+        outcomes = asyncio.run(evaluate_with_outbound_runtime())
     except asyncio.CancelledError:
         if not partial_paths:
             write_partial(())
@@ -326,14 +343,14 @@ def _execute(inputs: _RunInputs) -> int:
     return 0
 
 
-def _run(
+def _prepare_run(
     options: CliOptions,
     *,
     git_state: GitState,
     selector: Selector | None,
     config_loader: Callable[[], Any],
     evaluator: Callable[..., Any],
-) -> int:
+) -> _RunInputs | int:
     """Validate execution inputs before starting provider work."""
     if (
         options.mode == "benchmark"
@@ -345,16 +362,14 @@ def _run(
 
     cases = _load_cases(options.dataset)
     model_id, endpoint_hash = _provider_metadata(config_loader)
-    return _execute(
-        _RunInputs(
-            options=options,
-            cases=cases,
-            git_state=git_state,
-            model_id=model_id,
-            endpoint_hash=endpoint_hash,
-            selector=selector,
-            evaluator=evaluator,
-        )
+    return _RunInputs(
+        options=options,
+        cases=cases,
+        git_state=git_state,
+        model_id=model_id,
+        endpoint_hash=endpoint_hash,
+        selector=selector,
+        evaluator=evaluator,
     )
 
 
@@ -370,13 +385,18 @@ def run_cli(
     try:
         options = parse_args(argv)
         state = git_state if git_state is not None else collect_git_state()
-        return _run(
+        prepared = _prepare_run(
             options,
             git_state=state,
             selector=selector,
             config_loader=config_loader,
             evaluator=evaluator,
         )
+        if isinstance(prepared, int):
+            return prepared
+        return _execute(prepared)
+    except _OutboundRuntimeCleanupError:
+        raise
     except (
         DatasetValidationError,
         ValidationError,
