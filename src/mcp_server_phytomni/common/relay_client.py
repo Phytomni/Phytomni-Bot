@@ -51,6 +51,7 @@ from .http import (
 
 __all__ = [
     "RelayClient",
+    "RelayRequestOptions",
     "ResearchRelayCapabilities",
     "build_relay_client",
     "current_relay_client",
@@ -58,38 +59,7 @@ __all__ = [
 ]
 
 _RELAY_PREFIX = "v1/relay"
-_MISSING = object()
 _RESEARCH_PROTOCOL = "research_object_grant_v1"
-
-_RELAY_SERVICE_POOLS = {
-    "bi": OutboundPoolName.BI,
-    "coder": OutboundPoolName.LLM,
-    "database": OutboundPoolName.NL2SQL,
-    "embed": OutboundPoolName.LLM,
-    "llm": OutboundPoolName.LLM,
-    "obs": OutboundPoolName.OBS,
-    "rerank": OutboundPoolName.RERANK,
-    "retrieve": OutboundPoolName.RETRIEVAL,
-    "spa-faq": OutboundPoolName.SPA_FAQ,
-}
-
-
-def _relay_pool(relay_path: str, method: str) -> OutboundPoolName:
-    """Resolve one fixed relay route to its final logical service pool."""
-    normalized = relay_path.lstrip("/")
-    service = normalized.partition("/")[0]
-    if service in {"capabilities", "research-input"}:
-        return OutboundPoolName.RELAY_CONTROL
-    if service == "analysis":
-        return (
-            OutboundPoolName.ANALYSIS_STATUS
-            if method.upper() == "GET"
-            else OutboundPoolName.ANALYSIS_CONTROL
-        )
-    try:
-        return _RELAY_SERVICE_POOLS[service]
-    except KeyError as exc:
-        raise ValueError(f"unsupported relay service: {service}") from exc
 
 
 _RESEARCH_SCHEMA_VERSION = 1
@@ -102,34 +72,13 @@ _GRANT_FIELDS = frozenset(
 )
 
 
-def _post_json_options(
-    args: tuple[Any, ...], kwargs: Mapping[str, Any]
-) -> tuple[Any, str, Mapping[str, str] | None, float | None]:
-    """Normalize the historical keyword-only POST options."""
-    names = ("json_body", "message", "extra_headers", "request_timeout")
-    values: dict[str, Any] = {
-        "json_body": _MISSING,
-        "message": _MISSING,
-        "extra_headers": None,
-        "request_timeout": None,
-    }
-    if len(args) > len(names):
-        raise TypeError("too many relay POST options")
-    values.update(zip(names, args, strict=False))
-    unknown = set(kwargs).difference(names)
-    if unknown:
-        raise TypeError(
-            "unexpected relay POST options: " + ", ".join(sorted(unknown))
-        )
-    values.update(kwargs)
-    if values["json_body"] is _MISSING or values["message"] is _MISSING:
-        raise TypeError("relay post_json requires json_body and message")
-    return (
-        values["json_body"],
-        values["message"],
-        values["extra_headers"],
-        values["request_timeout"],
-    )
+@dataclass(frozen=True, slots=True)
+class RelayRequestOptions:
+    """Shared error, header, and timeout options for one relay call."""
+
+    message: str
+    extra_headers: Mapping[str, str] | None = None
+    request_timeout: float | None = None
 
 
 @dataclass(frozen=True)
@@ -228,8 +177,10 @@ class RelayClient:
     async def post_json(
         self,
         relay_path: str,
-        *args: Any,
-        **kwargs: Any,
+        json_body: Any,
+        *,
+        pool: OutboundPoolName,
+        options: RelayRequestOptions,
     ) -> Any:
         """POST ``json_body`` to a relay route and return parsed JSON.
 
@@ -237,24 +188,26 @@ class RelayClient:
         forwards upstream (e.g. ``X-Workspace-Id`` for NL2SQL).
         ``request_timeout`` overrides the client's default for this call.
         """
-        json_body, message, extra_headers, request_timeout = (
-            _post_json_options(args, kwargs)
-        )
         request = JsonPostRequest(
             url=self.relay_url(relay_path),
             method="POST",
-            headers=self._auth_headers(extra_headers),
+            headers=self._auth_headers(options.extra_headers),
             json_body=json_body,
         )
         return await self._request_json(
             request,
-            message,
-            pool=_relay_pool(relay_path, "POST"),
-            request_timeout=request_timeout,
+            options.message,
+            pool=pool,
+            request_timeout=options.request_timeout,
         )
 
     async def post_data(
-        self, relay_path: str, *, data: Any, message: str
+        self,
+        relay_path: str,
+        data: Any,
+        *,
+        pool: OutboundPoolName,
+        options: RelayRequestOptions,
     ) -> Any:
         """POST a form/raw ``data`` body to a relay route, parse JSON.
 
@@ -265,22 +218,23 @@ class RelayClient:
         request = JsonPostRequest(
             url=self.relay_url(relay_path),
             method="POST",
-            headers=self._auth_headers(),
+            headers=self._auth_headers(options.extra_headers),
             data=data,
         )
         return await self._request_json(
             request,
-            message,
-            pool=_relay_pool(relay_path, "POST"),
+            options.message,
+            pool=pool,
+            request_timeout=options.request_timeout,
         )
 
     async def get_json(
         self,
         relay_path: str,
         *,
-        message: str,
+        pool: OutboundPoolName,
+        options: RelayRequestOptions,
         query: Mapping[str, str] | None = None,
-        request_timeout: float | None = None,
     ) -> Any:
         """GET a relay route and parse JSON.
 
@@ -289,19 +243,21 @@ class RelayClient:
         request = JsonPostRequest(
             url=self.relay_url(relay_path, query),
             method="GET",
-            headers=self._auth_headers(),
+            headers=self._auth_headers(options.extra_headers),
         )
         return await self._request_json(
             request,
-            message,
-            pool=_relay_pool(relay_path, "GET"),
-            request_timeout=request_timeout,
+            options.message,
+            pool=pool,
+            request_timeout=options.request_timeout,
         )
 
     async def get_research_capabilities(self) -> ResearchRelayCapabilities:
         """Fetch and strictly decode the scoped Research relay capability."""
         payload = await self.get_json(
-            "capabilities", message=_RESEARCH_CAPABILITY_MESSAGE
+            "capabilities",
+            pool=OutboundPoolName.RELAY_CONTROL,
+            options=RelayRequestOptions(message=_RESEARCH_CAPABILITY_MESSAGE),
         )
         try:
             return _decode_research_capabilities(payload)
@@ -332,8 +288,9 @@ class RelayClient:
         }
         response = await self.post_json(
             "research-input/object-grants",
-            json_body=payload,
-            message=_RESEARCH_GRANT_MESSAGE,
+            payload,
+            pool=OutboundPoolName.RELAY_CONTROL,
+            options=RelayRequestOptions(message=_RESEARCH_GRANT_MESSAGE),
         )
         try:
             grants = _decode_grants(response, candidates)
@@ -372,8 +329,9 @@ class RelayClient:
         }
         response = await self.post_json(
             "research-input/object-grants/verify",
-            json_body=payload,
-            message=_RESEARCH_GRANT_MESSAGE,
+            payload,
+            pool=OutboundPoolName.RELAY_CONTROL,
+            options=RelayRequestOptions(message=_RESEARCH_GRANT_MESSAGE),
         )
         try:
             grants = _decode_grants(response, authorities)
@@ -400,13 +358,14 @@ class RelayClient:
         authority_ids = _revoke_authority_ids(request)
         response = await self.post_json(
             "research-input/object-grants/revoke",
-            json_body={
+            {
                 "schema_version": _RESEARCH_SCHEMA_VERSION,
                 "parent_run_id": request.parent_run_id,
                 "execution_fingerprint": request.execution_fingerprint,
                 "grant_ids": list(authority_ids),
             },
-            message=_RESEARCH_GRANT_MESSAGE,
+            pool=OutboundPoolName.RELAY_CONTROL,
+            options=RelayRequestOptions(message=_RESEARCH_GRANT_MESSAGE),
         )
         try:
             if (
@@ -506,7 +465,10 @@ class RelayClient:
         relay rejects a prefix outside the server-owned output root (403).
         """
         result = await self.get_json(
-            "obs/list", message=message, query={"prefix": obs_prefix}
+            "obs/list",
+            pool=OutboundPoolName.OBS,
+            options=RelayRequestOptions(message=message),
+            query={"prefix": obs_prefix},
         )
         keys = result.get("keys") if isinstance(result, dict) else None
         return list(keys) if isinstance(keys, list) else []

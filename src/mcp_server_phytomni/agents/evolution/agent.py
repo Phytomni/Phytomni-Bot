@@ -23,7 +23,7 @@ from mcp.shared.exceptions import McpError
 
 from ...auth.iam import get_token
 from ...common.prompts import get_prompt
-from ...common.relay_client import current_relay_client
+from ...common.relay_client import RelayRequestOptions, current_relay_client
 from ...config.defaults import DeepGenomeConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
@@ -104,13 +104,16 @@ async def find_spa_taxids(
         try:
             response_taxid_data = await current_relay_client().get_json(
                 f"spa-faq/{DEEP_GENOME_CONFIG.SPA_REPO_ID}",
+                pool=OutboundPoolName.SPA_FAQ,
+                options=RelayRequestOptions(
+                    message="SPA-FAQ lookup failed",
+                    request_timeout=timeout,
+                ),
                 query={
                     "question": spa_names,
                     "page_size": "10",
                     "page_num": "1",
                 },
-                message="SPA-FAQ lookup failed",
-                request_timeout=timeout,
             )
         except McpError:
             return []

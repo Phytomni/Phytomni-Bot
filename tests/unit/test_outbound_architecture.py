@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import re
+from collections import Counter
 from pathlib import Path
 
 import httpx
@@ -41,6 +42,7 @@ _OBS_OWNER = _SOURCE_ROOT / "runtime" / "outbound" / "obs.py"
 _GAUSS_OWNER = _SOURCE_ROOT / "agents" / "shared" / "gauss.py"
 _POOL_VALUE_TYPES = _SOURCE_ROOT / "runtime" / "outbound" / "models.py"
 _POOL_REGISTRY = _SOURCE_ROOT / "runtime" / "outbound" / "registry.py"
+_RELAY_CLIENT = _SOURCE_ROOT / "common" / "relay_client.py"
 _PRIVATE_MARKERS = (
     "url-marker",
     "header-marker",
@@ -156,6 +158,164 @@ def test_pool_binding_never_accepts_literal_or_url_derived_names() -> None:
                 and isinstance(node.args[0].func, ast.Name)
                 and node.args[0].func.id in {"str", "urlparse"}
             )
+
+
+def test_relay_pool_selection_is_typed_at_each_generic_call_site() -> None:
+    """Relay paths and HTTP methods can never derive a logical pool."""
+    relay_source = _RELAY_CLIENT.read_text(encoding="utf-8")
+    relay_tree = ast.parse(relay_source, str(_RELAY_CLIENT))
+    assert "_relay_pool" not in {
+        node.name
+        for node in ast.walk(relay_tree)
+        if isinstance(node, ast.FunctionDef)
+    }
+
+    generic_methods = {"post_json", "post_data", "get_json"}
+    for path in _production_sources():
+        tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr not in generic_methods:
+                continue
+            pool_keywords = [
+                keyword.value
+                for keyword in node.keywords
+                if keyword.arg == "pool"
+            ]
+            assert len(pool_keywords) == 1, f"{path}:{node.lineno}"
+            pool = pool_keywords[0]
+            assert isinstance(pool, ast.Attribute), f"{path}:{node.lineno}"
+            assert isinstance(pool.value, ast.Name), f"{path}:{node.lineno}"
+            assert pool.value.id == "OutboundPoolName", f"{path}:{node.lineno}"
+
+
+def _relay_path_template(node: ast.expr) -> str:
+    """Render one literal or formatted relay path without caller values."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            if isinstance(value, ast.Constant):
+                assert isinstance(value.value, str)
+                parts.append(value.value)
+            else:
+                assert isinstance(value, ast.FormattedValue)
+                parts.append("{}")
+        return "".join(parts)
+    raise AssertionError("relay path must be a literal or bounded template")
+
+
+def test_wave_two_generic_relay_operations_are_mapped_exactly_once() -> None:
+    """Every generic RelayClient operation has one typed mapping."""
+    expected = Counter(
+        {
+            (
+                "agents/analyst/graph.py",
+                "post_json",
+                "analysis/tasks",
+                "ANALYSIS_CONTROL",
+            ): 1,
+            (
+                "agents/analyst/task_ops.py",
+                "get_json",
+                "analysis/{}",
+                "ANALYSIS_STATUS",
+            ): 1,
+            (
+                "agents/analyst/task_ops.py",
+                "get_json",
+                "analysis/{}/logs",
+                "ANALYSIS_STATUS",
+            ): 1,
+            (
+                "agents/analyst/task_ops.py",
+                "post_json",
+                "analysis/{}/terminate",
+                "ANALYSIS_CONTROL",
+            ): 1,
+            (
+                "agents/data/nl2sql.py",
+                "post_json",
+                "database/nl2sql",
+                "NL2SQL",
+            ): 1,
+            (
+                "agents/evolution/agent.py",
+                "get_json",
+                "spa-faq/{}",
+                "SPA_FAQ",
+            ): 1,
+            (
+                "agents/knowledge/retrieval.py",
+                "post_json",
+                "retrieve/search",
+                "RETRIEVAL",
+            ): 1,
+            (
+                "agents/knowledge/retrieval.py",
+                "post_json",
+                "rerank/rank",
+                "RERANK",
+            ): 1,
+            ("agents/shared/sql.py", "post_json", "bi/query", "BI"): 1,
+            (
+                "common/relay_client.py",
+                "get_json",
+                "capabilities",
+                "RELAY_CONTROL",
+            ): 1,
+            (
+                "common/relay_client.py",
+                "post_json",
+                "research-input/object-grants",
+                "RELAY_CONTROL",
+            ): 1,
+            (
+                "common/relay_client.py",
+                "post_json",
+                "research-input/object-grants/verify",
+                "RELAY_CONTROL",
+            ): 1,
+            (
+                "common/relay_client.py",
+                "post_json",
+                "research-input/object-grants/revoke",
+                "RELAY_CONTROL",
+            ): 1,
+            ("common/relay_client.py", "get_json", "obs/list", "OBS"): 1,
+        }
+    )
+    actual: Counter[tuple[str, str, str, str]] = Counter()
+    generic_methods = {"post_json", "post_data", "get_json"}
+    for path in _production_sources():
+        tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr not in generic_methods or not node.args:
+                continue
+            pool = next(
+                keyword.value
+                for keyword in node.keywords
+                if keyword.arg == "pool"
+            )
+            assert isinstance(pool, ast.Attribute)
+            actual[
+                (
+                    str(path.relative_to(_SOURCE_ROOT)),
+                    node.func.attr,
+                    _relay_path_template(node.args[0]),
+                    pool.attr,
+                )
+            ] += 1
+
+    assert actual == expected
 
 
 def test_snapshot_repr_contains_only_fixed_observability_fields() -> None:

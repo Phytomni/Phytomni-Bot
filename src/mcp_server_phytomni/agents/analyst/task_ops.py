@@ -27,7 +27,7 @@ from ...common.http import (
     JsonPostRetry,
     request_response_with_retries,
 )
-from ...common.relay_client import current_relay_client
+from ...common.relay_client import RelayRequestOptions, current_relay_client
 from ...config.relay_mode import relay_mode_enabled
 from ...runtime.outbound import (
     OutboundPoolName,
@@ -81,7 +81,10 @@ async def task_status(
     if relay_mode_enabled():
         return await current_relay_client().get_json(
             f"analysis/{task_id}",
-            message=f"Check task {task_id} status failed",
+            pool=OutboundPoolName.ANALYSIS_STATUS,
+            options=RelayRequestOptions(
+                message=f"Check task {task_id} status failed"
+            ),
         )
     req = _common_request_kwargs(kwargs)
     client = current_outbound_http_client(OutboundPoolName.ANALYSIS_STATUS)
@@ -174,8 +177,11 @@ async def task_log(
     if relay_mode_enabled():
         return await current_relay_client().get_json(
             f"analysis/{task_id}/logs",
+            pool=OutboundPoolName.ANALYSIS_STATUS,
+            options=RelayRequestOptions(
+                message=f"Check task {task_id} log failed"
+            ),
             query={"task_name": f"analyst-agents-{compute_resource}"},
-            message=f"Check task {task_id} log failed",
         )
     req = _common_request_kwargs(kwargs)
     client = current_outbound_http_client(OutboundPoolName.ANALYSIS_STATUS)
@@ -232,8 +238,9 @@ async def task_delete(
     if relay_mode_enabled():
         await current_relay_client().post_json(
             f"analysis/{task_id}/terminate",
-            json_body={"force": True},
-            message="Failed to delete task",
+            {"force": True},
+            pool=OutboundPoolName.ANALYSIS_CONTROL,
+            options=RelayRequestOptions(message="Failed to delete task"),
         )
         return f"Delete task {task_id} success."
     req = _common_request_kwargs(kwargs)

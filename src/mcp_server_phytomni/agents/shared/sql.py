@@ -19,8 +19,9 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.http import JsonPostRetry
-from ...common.relay_client import current_relay_client
+from ...common.relay_client import RelayRequestOptions, current_relay_client
 from ...config.relay_mode import relay_mode_enabled
+from ...runtime.outbound import OutboundPoolName
 from .gauss import gauss_query
 
 __all__ = ["bi_query", "relay_bi_query", "sql_literal"]
@@ -51,19 +52,15 @@ async def relay_bi_query(
         The parsed BI JSON payload.
     """
     relay = current_relay_client()
-    if request_timeout is None:
-        request = relay.post_json(
-            "bi/query",
-            json_body={"sql": sql, "returnType": "json"},
-            message=message,
-        )
-    else:
-        request = relay.post_json(
-            "bi/query",
-            json_body={"sql": sql, "returnType": "json"},
+    request = relay.post_json(
+        "bi/query",
+        {"sql": sql, "returnType": "json"},
+        pool=OutboundPoolName.BI,
+        options=RelayRequestOptions(
             message=message,
             request_timeout=request_timeout,
-        )
+        ),
+    )
     if request_timeout is None:
         return await request
     try:

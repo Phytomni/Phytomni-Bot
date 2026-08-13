@@ -23,7 +23,7 @@ from ...common.http import (
     JsonPostRetry,
     post_json_with_retries,
 )
-from ...common.relay_client import current_relay_client
+from ...common.relay_client import RelayRequestOptions, current_relay_client
 from ...config.defaults import DataConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...func_cache import LONG_TTL_SECONDS, func_cache
@@ -328,9 +328,12 @@ async def _execute_nl2sql_via_relay(request: Nl2SqlRequest) -> Any:
         try:
             return await relay.post_json(
                 "database/nl2sql",
-                json_body=body,
-                message=_NL2SQL_FAIL,
-                extra_headers=extra_headers,
+                body,
+                pool=OutboundPoolName.NL2SQL,
+                options=RelayRequestOptions(
+                    message=_NL2SQL_FAIL,
+                    extra_headers=extra_headers,
+                ),
             )
         except McpError:
             if attempt == last_attempt:

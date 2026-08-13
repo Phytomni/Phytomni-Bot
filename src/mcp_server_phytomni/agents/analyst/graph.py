@@ -31,7 +31,7 @@ from ...common.http import (
     request_response_with_retries,
 )
 from ...common.prompts import get_prompt
-from ...common.relay_client import current_relay_client
+from ...common.relay_client import RelayRequestOptions, current_relay_client
 from ...config.relay_mode import relay_mode_enabled
 from ...runtime.artifact_roles import append_artifact_manifest_contract
 from ...runtime.outbound import (
@@ -388,8 +388,9 @@ class AnalystGraphMixin:
             relay_body = _relay_analysis_body(job_data, research_grant_sidecar)
             payload = await current_relay_client().post_json(
                 "analysis/tasks",
-                json_body=relay_body,
-                message="Failed to submit task",
+                relay_body,
+                pool=OutboundPoolName.ANALYSIS_CONTROL,
+                options=RelayRequestOptions(message="Failed to submit task"),
             )
             logger.info(
                 "Submit (relay): job_name=%s task_id=%s output_dir=%s "

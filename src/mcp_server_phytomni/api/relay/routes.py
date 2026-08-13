@@ -66,9 +66,21 @@ __all__ = [
 # to the configured base URL. The customer query string is never carried
 # onto the operator-credentialed call (the upstream URL is config-only).
 _OPENAI_RELAYS = (
-    ("llm", "chat/completions", "BASE_URL", "API_KEY"),
-    ("coder", "chat/completions", "CODER_URL", "CODER_API_KEY"),
-    ("embed", "embeddings", "EMBED_URL", "EMBED_API_KEY"),
+    ("llm", "chat/completions", "BASE_URL", "API_KEY", OutboundPoolName.LLM),
+    (
+        "coder",
+        "chat/completions",
+        "CODER_URL",
+        "CODER_API_KEY",
+        OutboundPoolName.LLM,
+    ),
+    (
+        "embed",
+        "embeddings",
+        "EMBED_URL",
+        "EMBED_API_KEY",
+        OutboundPoolName.LLM,
+    ),
 )
 
 # Platform-family relay services (ENVELOPE mode): the configured URL is
@@ -76,18 +88,39 @@ _OPENAI_RELAYS = (
 # "none" (upstream is unauthenticated) or "iam" (X-Auth-Token via
 # get_token, with the optional region attr).
 _PLATFORM_RELAYS = (
-    ("retrieve", "search", "RETRIEVE_URL", "none", None),
-    ("rerank", "rank", "RERANK_URL", "none", None),
-    ("database", "nl2sql", "DATABASE_URL", "iam", None),
-    ("analysis", "tasks", "ANALYSIS_URL", "iam", "ANALYSIS_REGION"),
+    (
+        "retrieve",
+        "search",
+        "RETRIEVE_URL",
+        "none",
+        None,
+        OutboundPoolName.RETRIEVAL,
+    ),
+    (
+        "rerank",
+        "rank",
+        "RERANK_URL",
+        "none",
+        None,
+        OutboundPoolName.RERANK,
+    ),
+    (
+        "database",
+        "nl2sql",
+        "DATABASE_URL",
+        "iam",
+        None,
+        OutboundPoolName.NL2SQL,
+    ),
+    (
+        "analysis",
+        "tasks",
+        "ANALYSIS_URL",
+        "iam",
+        "ANALYSIS_REGION",
+        OutboundPoolName.ANALYSIS_CONTROL,
+    ),
 )
-
-_OPERATOR_RELAY_POOLS = {
-    "analysis": OutboundPoolName.ANALYSIS_CONTROL,
-    "database": OutboundPoolName.NL2SQL,
-    "rerank": OutboundPoolName.RERANK,
-    "retrieve": OutboundPoolName.RETRIEVAL,
-}
 
 _PRIVATE_RESEARCH_KEYS = frozenset(
     ("research_grant_sidecar", "research_input_grants", "research_grants")
@@ -104,6 +137,7 @@ class _PlatformRelaySpec:
     url_attr: str
     inject_kind: str
     region_attr: str | None
+    pool: OutboundPoolName
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,7 +173,11 @@ def _build_platform_inject(
 
 
 def _openai_relay_handler(
-    name: str, path: str, url_field: str, key_field: str
+    name: str,
+    path: str,
+    url_field: str,
+    key_field: str,
+    pool: OutboundPoolName,
 ) -> Callable[..., Awaitable[Response]]:
     """Build a TRANSPARENT relay handler for one OpenAI-family service.
 
@@ -162,17 +200,16 @@ def _openai_relay_handler(
         async def _inject() -> dict[str, str]:
             return {"Authorization": f"Bearer {key}"}
 
-        upstream = RelayUpstream(
-            url=f"{base}/{path}",
-            error_mode=RelayErrorMode.TRANSPARENT,
-            service=name,
-            inject_headers=_inject,
-            pool=OutboundPoolName.LLM,
-        )
         return await forward_relay_request(
             request=request,
             body=body,
-            upstream=upstream,
+            upstream=RelayUpstream(
+                url=f"{base}/{path}",
+                error_mode=RelayErrorMode.TRANSPARENT,
+                service=name,
+                inject_headers=_inject,
+                pool=pool,
+            ),
             principal=principal,
             audit_store=get_audit_store(config.RELAY_AUDIT_DB_PATH),
         )
@@ -244,7 +281,7 @@ async def _forward_platform_body(
         error_mode=RelayErrorMode.ENVELOPE,
         service=spec.name,
         inject_headers=_build_platform_inject(spec.inject_kind, region),
-        pool=_OPERATOR_RELAY_POOLS[spec.name],
+        pool=spec.pool,
     )
     return await forward_relay_request(
         request=request,
@@ -460,14 +497,35 @@ def _invalid_research_sidecar() -> HTTPException:
 # an IAM X-Auth-Token for the analysis region. ``logs`` opts its task_name
 # query key back in; status/terminate carry no client query.
 _ANALYSIS_LIFECYCLE = (
-    ("", "GET", (), "analysis_status"),
-    ("/logs", "GET", ("task_name",), "analysis_logs"),
-    ("/terminate", "POST", (), "analysis_terminate"),
+    (
+        "",
+        "GET",
+        (),
+        "analysis_status",
+        OutboundPoolName.ANALYSIS_STATUS,
+    ),
+    (
+        "/logs",
+        "GET",
+        ("task_name",),
+        "analysis_logs",
+        OutboundPoolName.ANALYSIS_STATUS,
+    ),
+    (
+        "/terminate",
+        "POST",
+        (),
+        "analysis_terminate",
+        OutboundPoolName.ANALYSIS_CONTROL,
+    ),
 )
 
 
 def _analysis_lifecycle_handler(
-    suffix: str, query_allow: tuple[str, ...], operation: str
+    suffix: str,
+    query_allow: tuple[str, ...],
+    operation: str,
+    pool: OutboundPoolName,
 ) -> Callable[..., Awaitable[Response]]:
     """Build an IAM-injected handler for one analysis-lifecycle op.
 
@@ -498,11 +556,7 @@ def _analysis_lifecycle_handler(
             inject_headers=_build_platform_inject(
                 "iam", platform.ANALYSIS_REGION
             ),
-            pool=(
-                OutboundPoolName.ANALYSIS_CONTROL
-                if operation == "analysis_terminate"
-                else OutboundPoolName.ANALYSIS_STATUS
-            ),
+            pool=pool,
             operation=operation,
         )
         return await forward_relay_request(
@@ -626,22 +680,28 @@ def create_relay_router() -> APIRouter:
     # registration so capability and object-grant paths cannot be shadowed.
     add_research_input_routes(router)
 
-    for name, path, url_field, key_field in _OPENAI_RELAYS:
+    for openai_relay in _OPENAI_RELAYS:
         router.add_api_route(
-            f"/{name}/{path}",
-            _openai_relay_handler(name, path, url_field, key_field),
+            f"/{openai_relay[0]}/{openai_relay[1]}",
+            _openai_relay_handler(*openai_relay),
             methods=["POST"],
         )
 
-    for name, path, url_attr, inject_kind, region_attr in _PLATFORM_RELAYS:
-        spec = _PlatformRelaySpec(name, url_attr, inject_kind, region_attr)
+    for platform_relay in _PLATFORM_RELAYS:
+        spec = _PlatformRelaySpec(
+            platform_relay[0],
+            platform_relay[2],
+            platform_relay[3],
+            platform_relay[4],
+            platform_relay[5],
+        )
         handler = (
             _research_analysis_relay_handler(spec)
-            if name == "analysis" and path == "tasks"
+            if platform_relay[0] == "analysis" and platform_relay[1] == "tasks"
             else _platform_relay_handler(spec)
         )
         router.add_api_route(
-            f"/{name}/{path}",
+            f"/{platform_relay[0]}/{platform_relay[1]}",
             handler,
             methods=["POST"],
         )
@@ -650,11 +710,13 @@ def create_relay_router() -> APIRouter:
 
     # Registered after the literal /analysis/tasks submit route so a POST to
     # it matches the submit, not the {task_id} param route.
-    for suffix, method, query_allow, operation in _ANALYSIS_LIFECYCLE:
+    for lifecycle in _ANALYSIS_LIFECYCLE:
         router.add_api_route(
-            f"/analysis/{{task_id}}{suffix}",
-            _analysis_lifecycle_handler(suffix, query_allow, operation),
-            methods=[method],
+            f"/analysis/{{task_id}}{lifecycle[0]}",
+            _analysis_lifecycle_handler(
+                lifecycle[0], lifecycle[2], lifecycle[3], lifecycle[4]
+            ),
+            methods=[lifecycle[1]],
         )
 
     router.add_api_route(

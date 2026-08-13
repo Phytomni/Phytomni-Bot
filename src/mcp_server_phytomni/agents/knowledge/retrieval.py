@@ -27,7 +27,7 @@ from ...common.http import (
     post_json_with_retries,
 )
 from ...common.lists import split_list
-from ...common.relay_client import current_relay_client
+from ...common.relay_client import RelayRequestOptions, current_relay_client
 from ...config.relay_mode import relay_mode_enabled
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...runtime.outbound import OutboundPoolName, current_outbound_runtime
@@ -205,9 +205,12 @@ async def _retrieve_scope_docs(
     if relay_mode_enabled():
         result = await current_relay_client().post_json(
             "retrieve/search",
-            json_body=body,
-            message=message,
-            request_timeout=request.timeout,
+            body,
+            pool=OutboundPoolName.RETRIEVAL,
+            options=RelayRequestOptions(
+                message=message,
+                request_timeout=request.timeout,
+            ),
         )
     else:
         result = await post_json_with_retries(
@@ -399,9 +402,12 @@ async def _rerank_batch(
     if relay_mode_enabled():
         result = await current_relay_client().post_json(
             "rerank/rank",
-            json_body=body,
-            message="Failed to rerank",
-            request_timeout=request.timeout,
+            body,
+            pool=OutboundPoolName.RERANK,
+            options=RelayRequestOptions(
+                message="Failed to rerank",
+                request_timeout=request.timeout,
+            ),
         )
     else:
         result = await post_json_with_retries(

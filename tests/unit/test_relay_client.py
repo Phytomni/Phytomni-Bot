@@ -27,6 +27,7 @@ from mcp_server_phytomni.config.settings import (
     SensitiveConfig,
     get_sensitive_config,
 )
+from mcp_server_phytomni.runtime.outbound import OutboundPoolName
 from mcp_server_phytomni.storage.research_objects import (
     ResearchObjectCandidate,
     ResearchObjectResolveRequest,
@@ -91,8 +92,9 @@ async def test_post_json_sends_bearer_and_body(outbound_runtime: Any):
 
     result = await _client("k9").post_json(
         "retrieve/search",
-        json_body={"q": "gene"},
-        message="relay retrieve failed",
+        {"q": "gene"},
+        pool=OutboundPoolName.RETRIEVAL,
+        options=rc.RelayRequestOptions(message="relay retrieve failed"),
     )
 
     assert result == {"hits": []}
@@ -108,7 +110,9 @@ async def test_get_json_uses_get_method(outbound_runtime: Any):
     outbound_runtime.transport.enqueue(content=b'{"status": "done"}')
 
     result = await _client("k9").get_json(
-        "analysis/abc", message="relay status failed"
+        "analysis/abc",
+        pool=OutboundPoolName.ANALYSIS_STATUS,
+        options=rc.RelayRequestOptions(message="relay status failed"),
     )
 
     assert result == {"status": "done"}
@@ -126,9 +130,12 @@ async def test_post_json_accepts_request_timeout_override(
 
     result = await _client("k9").post_json(
         "retrieve/search",
-        json_body={"q": "gene"},
-        message="relay retrieve failed",
-        request_timeout=2.5,
+        {"q": "gene"},
+        pool=OutboundPoolName.RETRIEVAL,
+        options=rc.RelayRequestOptions(
+            message="relay retrieve failed",
+            request_timeout=2.5,
+        ),
     )
 
     assert result == {"ok": True}
@@ -145,8 +152,9 @@ async def test_non_retriable_status_raises_mcperror_without_key(
     with pytest.raises(McpError) as excinfo:
         await _client("super-secret").post_json(
             "retrieve/search",
-            json_body={},
-            message="relay retrieve failed",
+            {},
+            pool=OutboundPoolName.RETRIEVAL,
+            options=rc.RelayRequestOptions(message="relay retrieve failed"),
         )
 
     assert "super-secret" not in str(excinfo.value)
@@ -324,11 +332,18 @@ def _resolve_request() -> ResearchObjectResolveRequest:
 
 async def test_get_research_capabilities_decodes_scoped_handshake(monkeypatch):
     """The capability method uses the exact authenticated relay endpoint."""
-    seen: list[tuple[str, str]] = []
+    seen: list[tuple[str, OutboundPoolName, str]] = []
 
-    async def fake_get_json(self, path, *, message, **_kwargs):
-        del self
-        seen.append((path, message))
+    async def fake_get_json(
+        self,
+        path: str,
+        *,
+        pool: OutboundPoolName,
+        options: rc.RelayRequestOptions,
+        query=None,
+    ):
+        del self, query
+        seen.append((path, pool, options.message))
         return {
             "protocols": {"research_object_grant_v1": [1]},
             "research_object_grant": {"max_objects": 256},
@@ -338,7 +353,11 @@ async def test_get_research_capabilities_decodes_scoped_handshake(monkeypatch):
     capability = await _client("k9").get_research_capabilities()
 
     assert seen == [
-        ("capabilities", "relay research capability request failed")
+        (
+            "capabilities",
+            OutboundPoolName.RELAY_CONTROL,
+            "relay research capability request failed",
+        )
     ]
     assert capability.protocol_versions == (1,)
     assert capability.max_objects == 256
@@ -391,9 +410,15 @@ async def test_research_grant_methods_preserve_order_and_rotate_ids(
     calls: list[tuple[str, dict[str, Any]]] = []
 
     async def fake_post_json(
-        self, path: str, *, json_body: dict[str, Any], message: str, **_kwargs
+        self,
+        path: str,
+        json_body: dict[str, Any],
+        *,
+        pool: OutboundPoolName,
+        options: rc.RelayRequestOptions,
     ) -> dict[str, Any]:
-        del self, message
+        del self, options
+        assert pool is OutboundPoolName.RELAY_CONTROL
         calls.append((path, json_body))
         return responses.pop(0)
 
@@ -449,9 +474,14 @@ async def test_research_grant_decoder_rejects_duplicate_grant_ids(monkeypatch):
     response["grants"][1]["grant_id"] = "grant-2"
 
     async def fake_post_json(
-        self, path: str, *, json_body: dict[str, Any], message: str, **_kwargs
+        self,
+        path: str,
+        json_body: dict[str, Any],
+        *,
+        pool: OutboundPoolName,
+        options: rc.RelayRequestOptions,
     ) -> dict[str, Any]:
-        del self, path, json_body, message
+        del self, path, json_body, pool, options
         return response
 
     monkeypatch.setattr(rc.RelayClient, "post_json", fake_post_json)
@@ -485,9 +515,14 @@ async def test_research_grant_decoder_rejects_unsafe_response_fields(
         response["grants"][0]["snapshot"][field] = value
 
     async def fake_post_json(
-        self, path: str, *, json_body: dict[str, Any], message: str, **_kwargs
+        self,
+        path: str,
+        json_body: dict[str, Any],
+        *,
+        pool: OutboundPoolName,
+        options: rc.RelayRequestOptions,
     ) -> dict[str, Any]:
-        del self, path, json_body, message
+        del self, path, json_body, pool, options
         return response
 
     monkeypatch.setattr(rc.RelayClient, "post_json", fake_post_json)
@@ -500,9 +535,15 @@ async def test_revoke_research_objects_uses_only_opaque_grant_ids(monkeypatch):
     seen: dict[str, Any] = {}
 
     async def fake_post_json(
-        self, path: str, *, json_body: dict[str, Any], message: str, **_kwargs
+        self,
+        path: str,
+        json_body: dict[str, Any],
+        *,
+        pool: OutboundPoolName,
+        options: rc.RelayRequestOptions,
     ) -> dict[str, int]:
-        del self, message
+        del self, options
+        assert pool is OutboundPoolName.RELAY_CONTROL
         seen.update(path=path, body=json_body)
         return {"revoked": 2}
 

@@ -44,6 +44,7 @@ from mcp_server_phytomni.agents.knowledge.retrieval import (
 from mcp_server_phytomni.agents.shared import sql as shared_sql
 from mcp_server_phytomni.agents.shared.sql import relay_bi_query
 from mcp_server_phytomni.common.http import JsonPostRetry
+from mcp_server_phytomni.common.relay_client import RelayRequestOptions
 from mcp_server_phytomni.runtime.outbound import OutboundPoolName
 
 pytestmark = pytest.mark.agent
@@ -81,17 +82,21 @@ class _FakeRelay:
     async def post_json(
         self,
         relay_path: str,
-        **kwargs: Any,
+        json_body: Any,
+        *,
+        pool: OutboundPoolName,
+        options: RelayRequestOptions,
     ) -> Any:
         """Record a relay POST and return the canned response."""
         self.calls.append(
             {
                 "method": "POST",
                 "path": relay_path,
-                "body": kwargs.get("json_body"),
-                "message": kwargs.get("message"),
-                "extra_headers": kwargs.get("extra_headers"),
-                "timeout": kwargs.get("request_timeout"),
+                "pool": pool,
+                "body": json_body,
+                "message": options.message,
+                "extra_headers": options.extra_headers,
+                "timeout": options.request_timeout,
             }
         )
         return self.response
@@ -100,32 +105,39 @@ class _FakeRelay:
         self,
         relay_path: str,
         *,
-        message: str,
+        pool: OutboundPoolName,
+        options: RelayRequestOptions,
         query: dict[str, str] | None = None,
-        request_timeout: float | None = None,
     ) -> Any:
         """Record a relay GET and return the canned response."""
         self.calls.append(
             {
                 "method": "GET",
                 "path": relay_path,
-                "message": message,
+                "pool": pool,
+                "message": options.message,
                 "query": query,
-                "timeout": request_timeout,
+                "timeout": options.request_timeout,
             }
         )
         return self.response
 
     async def post_data(
-        self, relay_path: str, *, data: Any, message: str
+        self,
+        relay_path: str,
+        data: Any,
+        *,
+        pool: OutboundPoolName,
+        options: RelayRequestOptions,
     ) -> Any:
         """Record a relay form-data POST and return the canned response."""
         self.calls.append(
             {
                 "method": "POST_DATA",
                 "path": relay_path,
+                "pool": pool,
                 "data": data,
-                "message": message,
+                "message": options.message,
             }
         )
         return self.response
@@ -165,6 +177,7 @@ async def test_retrieve_scope_docs_routes_through_relay(monkeypatch):
 
     assert docs == [{"id": "d1"}]
     assert relay.calls[0]["path"] == "retrieve/search"
+    assert relay.calls[0]["pool"] is OutboundPoolName.RETRIEVAL
     assert relay.calls[0]["body"]["repo_id"] == "repo-1"
     assert relay.calls[0]["body"]["content"] == "leaf growth"
     assert relay.calls[0]["timeout"] == 1.0
@@ -192,6 +205,7 @@ async def test_rerank_batch_routes_through_relay(monkeypatch):
 
     assert ranked == [{"id": "r1"}]
     assert relay.calls[0]["path"] == "rerank/rank"
+    assert relay.calls[0]["pool"] is OutboundPoolName.RERANK
     assert relay.calls[0]["body"]["query"] == "leaf growth"
     assert relay.calls[0]["body"]["docs"] == [{"id": "d1"}]
     assert relay.calls[0]["timeout"] == 1.0
@@ -220,6 +234,7 @@ async def test_nl2sql_routes_through_relay_with_workspace_header(monkeypatch):
 
     assert result == {"data": [{"sql": "SELECT 1"}]}
     assert relay.calls[0]["path"] == "database/nl2sql"
+    assert relay.calls[0]["pool"] is OutboundPoolName.NL2SQL
     assert relay.calls[0]["extra_headers"] == {"X-Workspace-Id": "ws-1"}
     assert relay.calls[0]["body"]["message_content"] == "list genes"
 
@@ -234,6 +249,7 @@ async def test_task_status_routes_through_relay(monkeypatch):
     assert result == {"status": "running"}
     assert relay.calls[0]["method"] == "GET"
     assert relay.calls[0]["path"] == "analysis/task-9"
+    assert relay.calls[0]["pool"] is OutboundPoolName.ANALYSIS_STATUS
 
 
 async def test_analyst_submit_routes_through_relay(monkeypatch):
@@ -271,6 +287,7 @@ async def test_analyst_submit_routes_through_relay(monkeypatch):
     assert result["output_dir"] == "agent_data/user_data/cust42/runs/x/output/"
     assert relay.calls[0]["method"] == "POST"
     assert relay.calls[0]["path"] == "analysis/tasks"
+    assert relay.calls[0]["pool"] is OutboundPoolName.ANALYSIS_CONTROL
     assert relay.calls[0]["body"] == {"job": 1}
 
 
@@ -283,6 +300,7 @@ async def test_task_log_routes_through_relay_with_task_name_query(monkeypatch):
 
     assert result == {"log": "ok"}
     assert relay.calls[0]["path"] == "analysis/task-9/logs"
+    assert relay.calls[0]["pool"] is OutboundPoolName.ANALYSIS_STATUS
     assert relay.calls[0]["query"] == {"task_name": "analyst-agents-small"}
 
 
@@ -296,6 +314,7 @@ async def test_task_delete_routes_through_relay(monkeypatch):
     assert result == "Delete task task-9 success."
     assert relay.calls[0]["method"] == "POST"
     assert relay.calls[0]["path"] == "analysis/task-9/terminate"
+    assert relay.calls[0]["pool"] is OutboundPoolName.ANALYSIS_CONTROL
     assert relay.calls[0]["body"] == {"force": True}
 
 
@@ -308,6 +327,7 @@ async def test_relay_bi_query_posts_to_bi_query_route(monkeypatch):
 
     assert result == {"rows": [1]}
     assert relay.calls[0]["path"] == "bi/query"
+    assert relay.calls[0]["pool"] is OutboundPoolName.BI
     assert relay.calls[0]["body"] == {"sql": "SELECT 1", "returnType": "json"}
 
 
@@ -368,6 +388,7 @@ async def test_find_spa_taxids_routes_through_relay(monkeypatch):
     assert taxids == ["9606"]
     assert relay.calls[0]["method"] == "GET"
     assert relay.calls[0]["path"].startswith("spa-faq/")
+    assert relay.calls[0]["pool"] is OutboundPoolName.SPA_FAQ
     assert relay.calls[0]["query"]["question"] == "Arabidopsis"
     assert relay.calls[0]["query"]["page_size"] == "10"
     assert relay.calls[0]["timeout"] == 1.0
