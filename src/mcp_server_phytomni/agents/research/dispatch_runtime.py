@@ -46,6 +46,7 @@ from .recovery_support import ResearchGrantRevocation
 __all__ = [
     "ResearchDispatchRuntime",
     "build_research_dispatch_runtime",
+    "build_research_object_metadata_port",
 ]
 
 Clock = Callable[[], datetime]
@@ -198,7 +199,10 @@ def build_research_dispatch_runtime(
         analyst_agent=options["analyst_agent"],
         analyst_config=options["analyst_config"],
         sensitive_config=options["sensitive_config"],
-        metadata_port=options.get("metadata_port") or _metadata_port(),
+        metadata_port=(
+            options.get("metadata_port")
+            or build_research_object_metadata_port()
+        ),
     )
     clock = options.get("now") or (lambda: datetime.now(UTC))
     outbox = ResearchDispatchOutbox(
@@ -250,7 +254,7 @@ def _rotate_grants(
     return rotated, grant_ids
 
 
-def _metadata_port() -> ResearchObjectMetadataPort:
+def build_research_object_metadata_port() -> ResearchObjectMetadataPort:
     """Build the operator direct or customer relay metadata port."""
     if relay_mode_enabled():
         return RelayResearchObjectMetadataPort(current_relay_client())

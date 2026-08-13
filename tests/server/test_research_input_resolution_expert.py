@@ -339,7 +339,7 @@ def _install_count_http_seams(
     )
     monkeypatch.setattr(
         agent_runs_module,
-        "_direct_inventory_validator",
+        "_research_inventory_validator",
         lambda _config: validate_inventory,
     )
     monkeypatch.setattr(
@@ -897,7 +897,7 @@ async def _capture_five_research_http_forms(
     )
     monkeypatch.setattr(
         agent_runs_module,
-        "_direct_inventory_validator",
+        "_research_inventory_validator",
         lambda _config: validate_inventory,
     )
     monkeypatch.setattr(

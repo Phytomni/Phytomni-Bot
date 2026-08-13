@@ -28,6 +28,9 @@ from ..agents.brief_gene.resolve_query import resolve_brief_gene_user_query
 from ..agents.deep_genome.resolve_query import resolve_deep_genome_user_query
 from ..agents.design.resolve_query import resolve_design_user_query
 from ..agents.network.resolve_query import resolve_network_user_query
+from ..agents.research.dispatch_runtime import (
+    build_research_object_metadata_port,
+)
 from ..agents.research.input_inventory import (
     ManagedResearchAssetSnapshot,
     ResearchInventoryRequest,
@@ -44,14 +47,12 @@ from ..runtime.background_submission import (
     reserve_background_submission,
 )
 from ..runtime.locale import current_effective_locale
-from ..runtime.outbound import current_outbound_runtime
 from ..runtime.research_input_store import ResearchInputStore
 from ..runtime.run_registry import RunRegistry, RunRequestInfo
 from ..runtime.stage_trace import DataStage
 from ..runtime.submission_outcome import (
     project_submission_warnings as _project_warnings,
 )
-from ..storage.research_objects import DirectResearchObjectMetadataPort
 from . import research_capabilities, run_lifecycle
 from .attachments import (
     AttachmentContractError,
@@ -330,7 +331,7 @@ async def invoke_research_http_run(
         store=ResearchInputStore(db_path),
         config=config,
         managed_snapshot_resolver=resolve_snapshots,
-        inventory_validator=_direct_inventory_validator(config),
+        inventory_validator=_research_inventory_validator(config),
         worker_launcher=(
             None
             if (
@@ -371,10 +372,10 @@ async def invoke_research_http_run(
     )
 
 
-def _direct_inventory_validator(
+def _research_inventory_validator(
     config: ApiConfig,
 ) -> ResearchInventoryValidator:
-    """Build the direct metadata validator used after pure parsing."""
+    """Build the active direct or relay validator used after pure parsing."""
 
     async def validate(
         parsed: Any,
@@ -383,13 +384,7 @@ def _direct_inventory_validator(
         if not parsed.candidates:
             return
         source = ServerConfig()
-        obs_runtime = current_outbound_runtime().obs
-        if obs_runtime is None:
-            raise RuntimeError("OBS runtime is unavailable")
-        port = DirectResearchObjectMetadataPort(
-            bucket=source.BUCKET_NAME,
-            obs_runtime=obs_runtime,
-        )
+        port = build_research_object_metadata_port()
         await validate_research_inventory(
             ResearchInventoryRequest(
                 parsed_input=parsed,

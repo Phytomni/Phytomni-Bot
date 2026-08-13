@@ -268,6 +268,6 @@ def test_runtime_helper_contracts_reject_unsafe_shapes(
     monkeypatch.setattr(dispatch_runtime, "relay_mode_enabled", lambda: True)
     monkeypatch.setattr(dispatch_runtime, "current_relay_client", object)
     assert isinstance(
-        getattr(dispatch_runtime, "_metadata_port")(),
+        dispatch_runtime.build_research_object_metadata_port(),
         RelayResearchObjectMetadataPort,
     )

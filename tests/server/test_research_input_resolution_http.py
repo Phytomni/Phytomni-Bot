@@ -20,6 +20,9 @@ from typing import Any, cast
 import httpx
 import pytest
 
+from mcp_server_phytomni.agents.research import (
+    dispatch_runtime as research_dispatch_runtime,
+)
 from mcp_server_phytomni.agents.research.input_contracts import (
     research_input_failure,
 )
@@ -60,6 +63,9 @@ from mcp_server_phytomni.runtime.attachment_assets import (
 )
 from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
 from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
+from mcp_server_phytomni.storage.research_objects import (
+    RelayResearchObjectMetadataPort,
+)
 
 pytestmark = pytest.mark.server
 
@@ -475,6 +481,57 @@ def _resolved_research_bundle() -> ResolvedAttachmentBundle:
             ),
         )
     )
+
+
+async def test_production_inventory_uses_active_relay_metadata_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Relay admission must not construct or use the direct OBS port."""
+    relay_client = object()
+    captured: dict[str, Any] = {}
+
+    async def capture_inventory(request: Any, port: Any) -> None:
+        captured["request"] = request
+        captured["port"] = port
+
+    monkeypatch.setattr(
+        research_dispatch_runtime, "relay_mode_enabled", lambda: True
+    )
+    monkeypatch.setattr(
+        research_dispatch_runtime,
+        "current_relay_client",
+        lambda: relay_client,
+    )
+    monkeypatch.setattr(
+        research_dispatch_runtime,
+        "current_outbound_runtime",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("direct outbound runtime was accessed")
+        ),
+    )
+    monkeypatch.setattr(
+        agent_runs_module,
+        "ServerConfig",
+        lambda: SimpleNamespace(BUCKET_NAME="phytomni"),
+    )
+    monkeypatch.setattr(
+        agent_runs_module,
+        "validate_research_inventory",
+        capture_inventory,
+    )
+    parsed = parse_research_input(
+        'analyze\ndata: {"obs://phytomni/input.csv":""}',
+        "phytomni",
+    )
+
+    validator = agent_runs_module._research_inventory_validator(
+        cast(Any, ApiLimitsConfig())
+    )
+    await validator(parsed, ())
+
+    assert isinstance(captured["port"], RelayResearchObjectMetadataPort)
+    assert getattr(captured["port"], "_client") is relay_client
+    assert captured["request"].configured_bucket == "phytomni"
 
 
 async def test_production_replay_does_not_resolve_attachment_bundle(
