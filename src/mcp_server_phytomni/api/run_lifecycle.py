@@ -38,6 +38,7 @@ from ..runtime.conversation_context.store import ConversationContextStore
 from ..runtime.deep_genome_store import DeepGenomeStore
 from ..runtime.deep_genome_store_projection import snapshot_to_canonical_result
 from ..runtime.research_input_store import (
+    TERMINAL_RUN_STATUSES,
     ResearchCancellationConflict,
     ResearchCancellationNotFound,
     ResearchCancellationUnsupported,
@@ -566,6 +567,11 @@ async def fetch_owner_run(
     record = await registry.reconcile(run_id, owner=owner)
     if record is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+    if (
+        record.spec.agent == "research"
+        and record.status in TERMINAL_RUN_STATUSES
+    ):
+        await revoke_registered_research_run(run_id)
     return project_public_run_record(record, debug=debug, db_path=db_path)
 
 

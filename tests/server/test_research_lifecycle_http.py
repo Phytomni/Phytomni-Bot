@@ -14,12 +14,16 @@ import httpx
 import pytest
 from tests.support.sqlite import closed_sqlite_connection
 
+from mcp_server_phytomni.api import run_lifecycle
 from mcp_server_phytomni.api.lifecycle_contract import (
     ResearchFailureDetail,
     empty_agent_result,
     project_research_lifecycle,
 )
-from mcp_server_phytomni.api.run_lifecycle import project_public_run_record
+from mcp_server_phytomni.api.run_lifecycle import (
+    fetch_owner_run,
+    project_public_run_record,
+)
 from mcp_server_phytomni.mcp.formatting.models import ReportExecution
 from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
 from mcp_server_phytomni.runtime.run_registry import (
@@ -604,3 +608,62 @@ async def test_report_settlement_persists_report_assembly_stage(
     assert registry.transitions == [("report_assembly", "report_assembly")]
     assert settled.status == "succeeded"
     assert settled.stage is None
+
+
+async def test_terminal_reconcile_immediately_retries_grant_cleanup(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The HTTP read that settles Research also runs post-commit cleanup."""
+    db_path = str(tmp_path / "runs.db")
+    registry = RunRegistry(db_path)
+    registry.create_run(
+        RunSpec("run-terminal-cleanup", "u1", "research", "api")
+    )
+    running = registry.get_run("run-terminal-cleanup", owner="u1")
+    assert running is not None
+    assert registry.settle_run(
+        "run-terminal-cleanup",
+        owner="u1",
+        status="failed",
+        result=empty_agent_result(),
+        error="task_failed",
+        expected_revision=running.revision,
+    )
+    terminal = registry.get_run("run-terminal-cleanup", owner="u1")
+    assert terminal is not None
+
+    class TransitionRegistry:
+        """Expose one running-to-terminal reconcile transition."""
+
+        @staticmethod
+        def get_run(_run_id: str, *, owner: str) -> Any:
+            """Return the pre-reconcile running record."""
+            del owner
+            return running
+
+        @staticmethod
+        async def reconcile(_run_id: str, *, owner: str) -> Any:
+            """Return the post-reconcile terminal record."""
+            del owner
+            return terminal
+
+    cleaned: list[str] = []
+
+    async def revoke(run_id: str) -> None:
+        """Record the post-commit cleanup attempt."""
+        cleaned.append(run_id)
+
+    monkeypatch.setattr(
+        run_lifecycle, "revoke_registered_research_run", revoke
+    )
+
+    payload = await fetch_owner_run(
+        "run-terminal-cleanup",
+        owner="u1",
+        db_path=db_path,
+        registry_factory=lambda _path: TransitionRegistry(),
+    )
+
+    assert payload["status"] == "failed"
+    assert cleaned == ["run-terminal-cleanup"]
