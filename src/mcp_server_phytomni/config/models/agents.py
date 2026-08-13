@@ -157,6 +157,7 @@ class GeneNetworkConfig(AnalystConfig):
     DEEPGENOME_DATA: str = str(PRE_PREPARED_DATA_PATH)
 
 
+# pylint: disable-next=too-many-ancestors
 class DeepGenomeConfig(DataConfig, AnalystConfig):
     """Configuration settings specific to gene function analysis tasks."""
 
