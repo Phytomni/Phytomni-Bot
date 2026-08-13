@@ -11,6 +11,41 @@ from concurrent.futures import Future
 from typing import Any
 
 
+def _retrieve_future_result(
+    future: asyncio.Future[Any] | Future[Any],
+) -> None:
+    """Retrieve a completed future without propagating its result."""
+    if not future.cancelled():
+        future.exception()
+
+
+def _observe_cancelled_thread_wait(
+    future: Future[Any],
+    wrapped: asyncio.Future[Any],
+) -> None:
+    """Detach a cancelled waiter while observing both completion sources."""
+    if not wrapped.done():
+        wrapped.cancel()
+    if wrapped.done():
+        _retrieve_future_result(wrapped)
+    if future.done():
+        _retrieve_future_result(future)
+    else:
+        future.add_done_callback(_retrieve_future_result)
+
+
+def _completed_thread_future_result(
+    future: Future[Any],
+    wrapped: asyncio.Future[Any],
+) -> Any:
+    """Return a source result without depending on its wrapper callback."""
+    if wrapped.done():
+        return wrapped.result()
+    if not wrapped.cancel():
+        _retrieve_future_result(wrapped)
+    return future.result()
+
+
 async def wait_for_thread_event(event: asyncio.Event) -> None:
     """Wait for a worker-thread event while yielding to the event loop.
 
@@ -34,9 +69,16 @@ async def wait_for_thread_future(future: Future[Any]) -> Any:
     lets the caller retain normal cancellation and exception propagation.
     """
     wrapped = asyncio.wrap_future(future)
-    while not future.done():
-        try:
-            await asyncio.wait_for(asyncio.shield(wrapped), timeout=0.01)
-        except TimeoutError:
-            continue
-    return future.result()
+    try:
+        while not future.done():
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(wrapped),
+                    timeout=0.01,
+                )
+            except TimeoutError:
+                continue
+        return _completed_thread_future_result(future, wrapped)
+    except asyncio.CancelledError:
+        _observe_cancelled_thread_wait(future, wrapped)
+        raise
