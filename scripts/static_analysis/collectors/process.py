@@ -40,7 +40,12 @@ def tracked_git_files(
     root: Path,
     patterns: Sequence[str] = (),
 ) -> tuple[Path, ...]:
-    """Return tracked paths from Git, failing closed on command errors."""
+    """Return existing tracked paths, failing closed on Git errors.
+
+    Deleted work-tree paths remain in ``git ls-files`` until the change is
+    staged. Static-analysis consumers inspect the current tree, so those
+    paths must not be handed to source readers or linters.
+    """
     result = run_command(
         ("git", "ls-files", *patterns),
         root,
@@ -50,4 +55,8 @@ def tracked_git_files(
         raise CollectionError(
             f"git file inventory failed: {result.stderr.strip()}"
         )
-    return tuple(root / line for line in result.stdout.splitlines() if line)
+    return tuple(
+        path
+        for line in result.stdout.splitlines()
+        if line and (path := root / line).is_file()
+    )
