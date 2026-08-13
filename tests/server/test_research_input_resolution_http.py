@@ -71,7 +71,6 @@ pytestmark = pytest.mark.server
 
 
 def _store(tmp_path: Path) -> Any:
-    """Create the public tables before the Research private schema."""
     database = str(tmp_path / "research-http.sqlite")
     RunRegistry(database).create_run(
         RunSpec(
@@ -90,7 +89,6 @@ def _request(
     key: str | None = "http-key",
     managed_asset_ids: tuple[str, ...] = ("asset-1",),
 ) -> ResearchHttpAdmissionInput:
-    """Build one direct native HTTP request."""
     return ResearchHttpAdmissionInput(
         owner="owner-1",
         idempotency_key=key,
@@ -108,7 +106,6 @@ async def _assert_launch_failure(
     preflight: ResearchRoutePreflight,
     store: Any,
 ) -> str:
-    """Assert that a failed root launch settles every durable parent row."""
     with pytest.raises(ValueError) as caught:
         await preflight.admit(_request())
 
@@ -524,13 +521,14 @@ async def test_production_inventory_uses_active_relay_metadata_port(
         "phytomni",
     )
 
-    validator = agent_runs_module._research_inventory_validator(
-        cast(Any, ApiLimitsConfig())
+    validator_factory = getattr(
+        agent_runs_module, "_research_inventory_validator"
     )
+    validator = validator_factory(cast(Any, ApiLimitsConfig()))
     await validator(parsed, ())
 
     assert isinstance(captured["port"], RelayResearchObjectMetadataPort)
-    assert getattr(captured["port"], "_client") is relay_client
+    assert vars(captured["port"])["_client"] is relay_client
     assert captured["request"].configured_bucket == "phytomni"
 
 
@@ -963,11 +961,9 @@ async def test_relay_refresh_populates_the_serving_cache(
     )
 
     async def get_research_capabilities() -> ResearchRelayCapabilities:
-        """Return one bounded capability snapshot."""
         return received
 
     def current_relay_client() -> Any:
-        """Return the fake relay client for this cache test."""
         return SimpleNamespace(
             get_research_capabilities=get_research_capabilities
         )
@@ -997,8 +993,8 @@ async def test_relay_refresh_populates_the_serving_cache(
 
 
 def _noop_sync() -> None:
-    """Provide a tiny synchronous seam for isolated lifespan tests."""
+    pass
 
 
 async def _completed_async_call() -> None:
-    """Provide a tiny awaitable for isolated lifespan tests."""
+    pass
