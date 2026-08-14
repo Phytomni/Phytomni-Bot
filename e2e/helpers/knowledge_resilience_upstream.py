@@ -10,16 +10,17 @@ import os
 import socket
 import subprocess
 import sys
-import threading
 import time
 from collections import deque
 from collections.abc import Generator
 from contextlib import asynccontextmanager, contextmanager
-from typing import IO, Any, Literal, NamedTuple
+from typing import Any, Literal, NamedTuple, cast
 
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+from .loopback_process import LoopbackProcessConfig, boot_loopback_process
 
 KnowledgeScenarioMode = Literal[
     "complete",
@@ -37,13 +38,45 @@ _CURRENT_QUERY = "synthetic protein design question"
 _EARLIER_QUERY = "earlier question"
 _EARLIER_ANSWER = "earlier answer"
 _SECRET_MARKER = "synthetic-provider-secret"
+_SYNTHETIC_USAGE = (
+    ("prompt_tokens", 1),
+    ("completion_tokens", 1),
+    ("total_tokens", 2),
+)
 _STARTUP_DEADLINE = 30.0
+_PROCESS = LoopbackProcessConfig(
+    log_tail_lines=200,
+    termination_timeout_seconds=10,
+)
 
 
 class KnowledgeUpstream(NamedTuple):
     """Connection details for one isolated scripted upstream."""
 
     base_url: str
+
+
+class _ProviderObservations:
+    """Sanitized provider-call observations for one scenario."""
+
+    def __init__(self) -> None:
+        self.role_sequences: list[list[str]] = []
+        self.history_markers: list[dict[str, bool]] = []
+
+    def record(self, roles: list[str], markers: dict[str, bool]) -> None:
+        """Record one sanitized provider call."""
+        self.role_sequences.append(roles)
+        self.history_markers.append(markers)
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return detached provider observations."""
+        return {
+            "calls": len(self.role_sequences),
+            "role_sequences": [list(roles) for roles in self.role_sequences],
+            "history_markers": [
+                dict(markers) for markers in self.history_markers
+            ],
+        }
 
 
 class _ScenarioState:
@@ -56,11 +89,17 @@ class _ScenarioState:
         self.retrieve_contents: list[str] = []
         self.rerank_calls = 0
         self.rerank_ids: list[list[str]] = []
-        self.provider_role_sequences: list[list[str]] = []
-        self.provider_history_markers: list[dict[str, bool]] = []
+        self.provider = _ProviderObservations()
+
+    def record_retrieve(self, repo_id: str, content: str) -> int:
+        """Record one retrieve call and return its per-repository count."""
+        call_number = self.retrieve_calls.get(repo_id, 0) + 1
+        self.retrieve_calls[repo_id] = call_number
+        self.retrieve_contents.append(content)
+        return call_number
 
     def snapshot(self) -> dict[str, Any]:
-        """Return synthetic-only observations; never return headers or bodies."""
+        """Return synthetic observations without headers or bodies."""
         return {
             "mode": self.mode,
             "retrieve": {
@@ -71,15 +110,7 @@ class _ScenarioState:
                 "calls": self.rerank_calls,
                 "ids": [list(ids) for ids in self.rerank_ids],
             },
-            "provider": {
-                "calls": len(self.provider_role_sequences),
-                "role_sequences": [
-                    list(roles) for roles in self.provider_role_sequences
-                ],
-                "history_markers": [
-                    dict(markers) for markers in self.provider_history_markers
-                ],
-            },
+            "provider": self.provider.snapshot(),
         }
 
 
@@ -87,7 +118,7 @@ def _validate_mode(mode: str) -> KnowledgeScenarioMode:
     """Validate one scenario name without accepting arbitrary child input."""
     if mode not in _VALID_MODES:
         raise ValueError(f"unsupported Knowledge scenario: {mode!r}")
-    return mode  # type: ignore[return-value]
+    return cast(KnowledgeScenarioMode, mode)
 
 
 def _require_child_environment(mode: str) -> KnowledgeScenarioMode:
@@ -131,40 +162,40 @@ def create_app(mode: str | None = None) -> FastAPI:
         _require_child_environment(configured_mode)
         yield
 
-    app = FastAPI(
+    application = FastAPI(
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
     )
 
-    @app.get("/healthz")
+    @application.get("/healthz")
     async def healthz() -> dict[str, str]:
         """Report readiness without exposing scenario state."""
         return {"status": "ok"}
 
-    @app.get("/snapshot")
+    @application.get("/snapshot")
     async def snapshot() -> dict[str, Any]:
         """Return only bounded synthetic observations for the test."""
         async with state.lock:
             return state.snapshot()
 
-    @app.post("/retrieve", response_model=None)
+    @application.post("/retrieve", response_model=None)
     async def retrieve(request: Request) -> JSONResponse | dict[str, Any]:
         """Serve deterministic per-repository retrieve outcomes."""
         payload = await request.json()
         repo_id = payload.get("repo_id")
         content = payload.get("content")
         scope = payload.get("scope")
-        if not isinstance(repo_id, str) or not isinstance(content, str):
-            return JSONResponse({"error": _SECRET_MARKER}, status_code=400)
-        if scope != "doc":
+        if (
+            not isinstance(repo_id, str)
+            or not isinstance(content, str)
+            or scope != "doc"
+        ):
             return JSONResponse({"error": _SECRET_MARKER}, status_code=400)
 
         async with state.lock:
-            call_number = state.retrieve_calls.get(repo_id, 0) + 1
-            state.retrieve_calls[repo_id] = call_number
-            state.retrieve_contents.append(content)
+            call_number = state.record_retrieve(repo_id, content)
 
         if (
             state.mode == "partial_then_complete"
@@ -184,7 +215,7 @@ def create_app(mode: str | None = None) -> FastAPI:
             }
         return {"doc_list": [_valid_document(repo_id)]}
 
-    @app.post("/rerank", response_model=None)
+    @application.post("/rerank", response_model=None)
     async def rerank(request: Request) -> JSONResponse | dict[str, Any]:
         """Return valid scores or one deliberately invalid rank payload."""
         payload = await request.json()
@@ -192,14 +223,16 @@ def create_app(mode: str | None = None) -> FastAPI:
         docs = payload.get("docs")
         if not isinstance(query, str) or not isinstance(docs, list):
             return JSONResponse({"error": _SECRET_MARKER}, status_code=400)
-        ids = [
-            item.get("id")
-            for item in docs
-            if isinstance(item, dict) and isinstance(item.get("id"), str)
-        ]
+        ids: list[str] = []
+        for item in docs:
+            if not isinstance(item, dict):
+                continue
+            identifier = item.get("id")
+            if isinstance(identifier, str):
+                ids.append(identifier)
         async with state.lock:
             state.rerank_calls += 1
-            state.rerank_ids.append(list(ids))
+            state.rerank_ids.append(ids)
         if state.mode == "malformed" and "malformed-rerank" in query:
             return {
                 "rank_result": [{"id": "unknown-synthetic-id", "score": 0.91}],
@@ -212,7 +245,7 @@ def create_app(mode: str | None = None) -> FastAPI:
             ]
         }
 
-    @app.post("/v1/chat/completions")
+    @application.post("/v1/chat/completions")
     async def chat_completions(request: Request) -> dict[str, Any]:
         """Return one canonical non-streaming synthetic completion."""
         payload = await request.json()
@@ -242,8 +275,7 @@ def create_app(mode: str | None = None) -> FastAPI:
             ),
         }
         async with state.lock:
-            state.provider_role_sequences.append(roles)
-            state.provider_history_markers.append(markers)
+            state.provider.record(roles, markers)
         content = (
             "[]"
             if _is_follow_up_prompt(normalized_messages)
@@ -261,14 +293,10 @@ def create_app(mode: str | None = None) -> FastAPI:
                     "finish_reason": "stop",
                 }
             ],
-            "usage": {
-                "prompt_tokens": 1,
-                "completion_tokens": 1,
-                "total_tokens": 2,
-            },
+            "usage": dict(_SYNTHETIC_USAGE),
         }
 
-    return app
+    return application
 
 
 app = create_app()
@@ -279,12 +307,6 @@ def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
-
-
-def _drain(stream: IO[str], logs: deque[str]) -> None:
-    """Keep only a bounded sanitized subprocess log tail."""
-    for line in stream:
-        logs.append(line.rstrip("\n"))
 
 
 def _await_healthy(
@@ -308,7 +330,8 @@ def _await_healthy(
             pass
         time.sleep(0.1)
     raise RuntimeError(
-        f"Knowledge upstream did not become healthy; logs:\n{chr(10).join(logs)}"
+        "Knowledge upstream did not become healthy; logs:\n"
+        f"{chr(10).join(logs)}"
     )
 
 
@@ -342,29 +365,8 @@ def boot_knowledge_resilience_upstream(
         "--log-level",
         "warning",
     ]
-    logs: deque[str] = deque(maxlen=200)
-    with subprocess.Popen(
-        cmd,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    ) as proc:
-        assert proc.stdout is not None
-        drain = threading.Thread(
-            target=_drain, args=(proc.stdout, logs), daemon=True
-        )
-        drain.start()
-        try:
-            _await_healthy(proc, base_url, logs)
-            yield KnowledgeUpstream(base_url)
-        finally:
-            proc.terminate()
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-        drain.join(timeout=5)
+    with boot_loopback_process(cmd, env, base_url, _await_healthy, _PROCESS):
+        yield KnowledgeUpstream(base_url)
 
 
 __all__ = [

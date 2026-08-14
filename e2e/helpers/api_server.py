@@ -25,23 +25,27 @@ import os
 import socket
 import subprocess
 import sys
-import threading
 import time
 from collections import deque
 from collections.abc import AsyncGenerator, Generator, Mapping
 from contextlib import asynccontextmanager, contextmanager
-from typing import IO, NamedTuple
+from typing import NamedTuple
 
 import httpx
 import pytest
 
 from mcp_server_phytomni.api.auth import ApiKeyStore
 
+from .loopback_process import LoopbackProcessConfig, boot_loopback_process
+
 _STARTUP_DEADLINE_DEFAULT = 120.0
 _READ_TIMEOUT_DEFAULT = 1200.0
-_LOG_TAIL = 500
 _E2E_SERVICE_TOKEN = "e2e-service-token"
 _DEFAULT_APP_MODULE = "mcp_server_phytomni.api.server"
+_PROCESS = LoopbackProcessConfig(
+    log_tail_lines=500,
+    termination_timeout_seconds=30,
+)
 
 
 class ApiServer(NamedTuple):
@@ -128,20 +132,6 @@ def _read_timeout_seconds() -> float:
     """
     raw = os.environ.get("PHYTOMNI_E2E_API_READ_TIMEOUT_SECONDS")
     return float(raw) if raw else _READ_TIMEOUT_DEFAULT
-
-
-def _drain(stream: IO[str], sink: deque[str]) -> None:
-    """Copy a subprocess stream line-by-line into a bounded buffer.
-
-    Reading the pipe continuously prevents a full OS buffer from
-    stalling a 10-min server; only the most recent lines are kept.
-
-    Args:
-        stream: The child's merged stdout/stderr text stream.
-        sink: Bounded buffer retaining the most recent log lines.
-    """
-    for line in stream:
-        sink.append(line.rstrip("\n"))
 
 
 def _log_tail(logs: deque[str]) -> str:
@@ -245,31 +235,8 @@ def boot_phytomni_api(
     env["PHYTOMNI_API_SERVICE_TOKEN"] = _E2E_SERVICE_TOKEN
 
     cmd = _api_command(app_module, port)
-    logs: deque[str] = deque(maxlen=_LOG_TAIL)
-    with subprocess.Popen(
-        cmd,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    ) as proc:
-        assert proc.stdout is not None
-        drain = threading.Thread(
-            target=_drain, args=(proc.stdout, logs), daemon=True
-        )
-        drain.start()
-        try:
-            _await_healthy(proc, base_url, logs)
-            yield ApiServer(
-                base_url, created.api_key, user_id, _E2E_SERVICE_TOKEN
-            )
-        finally:
-            proc.terminate()
-            try:
-                proc.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-    drain.join(timeout=5)
+    with boot_loopback_process(cmd, env, base_url, _await_healthy, _PROCESS):
+        yield ApiServer(base_url, created.api_key, user_id, _E2E_SERVICE_TOKEN)
 
 
 @asynccontextmanager

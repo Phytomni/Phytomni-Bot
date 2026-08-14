@@ -294,6 +294,7 @@ async def test_find_spa_taxids_propagates_cancellation(
     relay: bool,
 ) -> None:
     """Cancellation is never projected as a taxonomy lookup failure."""
+    del outbound_runtime
     monkeypatch.setattr(evolution_agent, "relay_mode_enabled", lambda: relay)
 
     async def cancel_lookup(_path: str, **_kwargs: Any) -> Any:

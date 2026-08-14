@@ -21,6 +21,10 @@ from mcp_server_phytomni.agents.brief_gene.render import (
 )
 from mcp_server_phytomni.agents.data.agent import DataAgent
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
+from mcp_server_phytomni.agents.knowledge.retrieval import _retrieval_result
+from mcp_server_phytomni.agents.knowledge.retrieval_result import (
+    RetrievalResult,
+)
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 
 pytestmark = pytest.mark.agent
@@ -52,13 +56,8 @@ async def test_knowledge_retrieve_node_emits_progress(
     """KnowledgeAgent.retrieve_node emits a 'retrieving' tick."""
     seen = _install_writer(monkeypatch)
 
-    async def _fake_multi_retrieve(**_k: Any) -> dict[str, Any]:
-        return {
-            "doc_list": [],
-            "total": 0,
-            "outcome": "no_match",
-            "failures": [],
-        }
+    async def _fake_multi_retrieve(**_k: Any) -> RetrievalResult:
+        return _retrieval_result([], [])
 
     monkeypatch.setattr(
         "mcp_server_phytomni.agents.knowledge.agent.multi_retrieve",
@@ -151,6 +150,7 @@ async def test_review_retrieve_reduce_node_emits_progress(
         {
             "research_dimensions": ["dim1"],
             "retrieve_indexed_results": [(0, [])],
+            "retrieve_failed_indices": [],
             "total_length": 0,
         },
     )
@@ -364,7 +364,14 @@ async def test_brief_gene_retrieve_reduce_emits_progress(
     seen = _install_writer(monkeypatch)
 
     agent = BriefGeneAgent()
-    state = cast(Any, {"retrieve_indexed_results": []})
+    state = cast(
+        Any,
+        {
+            "retrieve_tasks": [],
+            "retrieve_indexed_results": [],
+            "retrieve_failed_indices": [],
+        },
+    )
     await agent.retrieve_reduce_node(state)
 
     assert "retrieving" in _phases(seen)

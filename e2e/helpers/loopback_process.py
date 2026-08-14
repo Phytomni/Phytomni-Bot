@@ -1,0 +1,67 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Shared subprocess lifecycle for loopback E2E services."""
+
+from __future__ import annotations
+
+import subprocess
+import threading
+from collections import deque
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import IO
+
+
+@dataclass(frozen=True)
+class LoopbackProcessConfig:
+    """Lifecycle bounds that differ between loopback test services."""
+
+    log_tail_lines: int
+    termination_timeout_seconds: float
+    drain_timeout_seconds: float = 5.0
+
+
+def _drain(stream: IO[str], logs: deque[str]) -> None:
+    """Keep a subprocess pipe flowing into its caller-bounded log tail."""
+    for line in stream:
+        logs.append(line.rstrip("\n"))
+
+
+@contextmanager
+def boot_loopback_process(
+    command: list[str],
+    environment: dict[str, str],
+    base_url: str,
+    health_check: Callable[[subprocess.Popen[str], str, deque[str]], None],
+    config: LoopbackProcessConfig,
+) -> Generator[None, None, None]:
+    """Run one loopback child with bounded logs and deterministic teardown."""
+    logs: deque[str] = deque(maxlen=config.log_tail_lines)
+    with subprocess.Popen(
+        command,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    ) as process:
+        assert process.stdout is not None
+        drain = threading.Thread(
+            target=_drain, args=(process.stdout, logs), daemon=True
+        )
+        drain.start()
+        try:
+            health_check(process, base_url, logs)
+            yield
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=config.termination_timeout_seconds)
+            except subprocess.TimeoutExpired:
+                process.kill()
+    drain.join(timeout=config.drain_timeout_seconds)
+
+
+__all__ = ["LoopbackProcessConfig", "boot_loopback_process"]

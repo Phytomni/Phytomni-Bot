@@ -454,7 +454,7 @@ def test_brief_gene_metadata_does_not_project_literature_degradation() -> None:
     }
     result = format_tool_result("BriefGeneAgent", payload)
     metadata = dict(result.metadata)
-    assert metadata == {}
+    assert not metadata
 
 
 def test_terminal_payload_contract_analyst_class() -> None:

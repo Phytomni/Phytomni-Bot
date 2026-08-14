@@ -1,5 +1,7 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
 """Regression tests for required Knowledge evidence at Analyst admission."""
 
 from __future__ import annotations
@@ -16,6 +18,10 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 import mcp_server_phytomni.agents.analyst.graph as analyst_graph
 from mcp_server_phytomni.agents.analyst.graph import AnalystGraphMixin
 from mcp_server_phytomni.agents.analyst.state import AnalystState
+from mcp_server_phytomni.agents.knowledge.retrieval import _retrieval_result
+from mcp_server_phytomni.agents.knowledge.retrieval_result import (
+    RetrievalResult,
+)
 from mcp_server_phytomni.config.defaults import AnalystConfig
 
 pytestmark = pytest.mark.agent
@@ -76,13 +82,8 @@ async def test_tool_retrieval_no_match_keeps_submit_path_usable(
 ) -> None:
     """A valid empty result remains a normal, empty tool context."""
 
-    async def no_match_retrieve(**_kwargs: Any) -> dict[str, Any]:
-        return {
-            "doc_list": [],
-            "total": 0,
-            "outcome": "no_match",
-            "failures": [],
-        }
+    async def no_match_retrieve(**_kwargs: Any) -> RetrievalResult:
+        return _retrieval_result([], [])
 
     monkeypatch.setattr(analyst_graph, "retrieve", no_match_retrieve)
 
