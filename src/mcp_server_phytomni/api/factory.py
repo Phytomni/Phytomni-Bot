@@ -26,15 +26,10 @@ from fastapi import (
     HTTPException,
     Request,
 )
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from google.protobuf import json_format
-from mcp.shared.exceptions import McpError
-from mcp.types import INTERNAL_ERROR
 from pydantic import ValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ..agents.knowledge.retrieval_result import RETRIEVAL_UNAVAILABLE_MESSAGE
 from ..agents.research.input_contracts import ResearchCoordinatorRequest
 from ..config.defaults import ApiConfig, BriefGeneConfig
 from ..config.settings import SensitiveConfig
@@ -47,7 +42,6 @@ from ..runtime.conversation_context.adapters import (
 from ..runtime.conversation_context.store import (
     ConversationContextStore,
 )
-from ..runtime.locale import message_for
 from ..runtime.memory import (
     MemorySchemaError,
     MemoryStore,
@@ -55,13 +49,11 @@ from ..runtime.memory import (
     memory_policy_from_config,
 )
 from ..runtime.run_registry import RunFilter, RunRegistry, RunRequestInfo
-from ..runtime.stage_trace import current_stage_trace
 from . import agent_runs as _agent_runs
 from . import app_support, run_lifecycle
 from . import stage_errors as _stage_errors
 from .a2a.executor import A2AHandlerOptions, A2ARequestHandler
 from .admin_auth import require_service_principal
-from .app_support import _SAFE_DEFAULT_MESSAGES, _ErrorResponseOptions
 from .auth import (
     ApiPrincipal,
     require_explicit_scope,
@@ -71,8 +63,8 @@ from .auth import (
     require_scope as build_scope_dependency,
 )
 from .context_executor_factory import build_context_executor
+from .error_handlers import register_error_handlers
 from .lifecycle_contract import (
-    LifecycleInvariantError,
     SafeApiError,
     canonicalize_agent_run_body,
     canonicalize_run_record,
@@ -102,11 +94,9 @@ from .schemas import (
     MemoryResponse,
     ResumeRequest,
 )
-from .stage_errors import safe_api_error_for_lifecycle as _safe_error
 from .upload_runtime import (
     UploadRuntime,
     install_upload_cors,
-    register_upload_error_handler,
 )
 
 __all__ = ["build_app"]
@@ -126,16 +116,6 @@ def _app_module() -> Any:
 def _app_attr(name: str) -> Any:
     """Resolve one compatibility seam from the public app module."""
     return getattr(_app_module(), name)
-
-
-def _is_invalid_upload_purpose_error(error: Mapping[str, Any]) -> bool:
-    """Match only the upload request's Pydantic purpose literal failure."""
-    location = error.get("loc", ())
-    return bool(
-        isinstance(location, (list, tuple))
-        and tuple(location) == ("body", "purpose")
-        and error.get("type") in {"missing", "literal_error"}
-    )
 
 
 def _api_config() -> ApiConfig:
@@ -836,138 +816,6 @@ def _register_a2a_routes(
         return await a2a_route.endpoint(request)
 
 
-def _register_error_handlers(app: FastAPI) -> None:
-    """Install the unified HTTP error envelope handlers."""
-
-    @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(
-        _request: Request,
-        exc: StarletteHTTPException,
-    ) -> JSONResponse:
-        """Render HTTP exceptions through the unified envelope."""
-        return _app_attr("_error_response")(
-            exc.status_code,
-            _SAFE_DEFAULT_MESSAGES.get(exc.status_code, "request failed"),
-            options=_ErrorResponseOptions(
-                headers=getattr(exc, "headers", None)
-            ),
-        )
-
-    @app.exception_handler(SafeApiError)
-    async def safe_api_error_handler(
-        _request: Request,
-        exc: SafeApiError,
-    ) -> JSONResponse:
-        """Render typed public-safe API errors through the unified envelope."""
-        return _app_attr("_error_response")(
-            exc.status_code,
-            exc.message,
-            options=_ErrorResponseOptions(
-                code=exc.code,
-                stage=exc.stage,
-                retryable=exc.retryable,
-            ),
-        )
-
-    @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(
-        _request: Request,
-        exc: RequestValidationError,
-    ) -> JSONResponse:
-        """Render request validation errors as 422 envelopes."""
-        if any(
-            "locale" in {str(part) for part in error.get("loc", ())}
-            for error in exc.errors()
-        ):
-            return _app_attr("_error_response")(
-                422,
-                message_for("unsupported_locale", "en-US"),
-                options=_ErrorResponseOptions(
-                    code="unsupported_locale",
-                    stage="request_validation",
-                    retryable=False,
-                ),
-            )
-        if any(
-            _is_invalid_upload_purpose_error(error) for error in exc.errors()
-        ):
-            return _app_attr("_error_response")(
-                422,
-                "attachment purpose is invalid",
-                options=_ErrorResponseOptions(
-                    code="attachment_purpose_invalid",
-                    stage="request_validation",
-                    retryable=False,
-                ),
-            )
-        return _app_attr("_error_response")(422, "request validation failed")
-
-    @app.exception_handler(LifecycleInvariantError)
-    async def lifecycle_exception_handler(
-        _request: Request,
-        exc: LifecycleInvariantError,
-    ) -> JSONResponse:
-        """Render lifecycle violations as safe internal error envelopes."""
-        safe_error = _safe_error(exc)
-        return _app_attr("_error_response")(
-            safe_error.status_code,
-            safe_error.message,
-            options=_ErrorResponseOptions(
-                code=safe_error.code,
-                stage=safe_error.stage,
-                retryable=safe_error.retryable,
-            ),
-        )
-
-    @app.exception_handler(McpError)
-    async def mcp_error_handler(
-        _request: Request,
-        exc: McpError,
-    ) -> JSONResponse:
-        """Project only fixed MCP failures into safe HTTP errors."""
-        if (
-            exc.error.code == INTERNAL_ERROR
-            and exc.error.message == RETRIEVAL_UNAVAILABLE_MESSAGE
-        ):
-            return _app_attr("_error_response")(
-                500,
-                RETRIEVAL_UNAVAILABLE_MESSAGE,
-                options=_ErrorResponseOptions(
-                    code="knowledge_retrieval_unavailable",
-                    stage="retrieval",
-                    retryable=True,
-                ),
-            )
-        return _app_attr("_error_response")(500, "internal server error")
-
-    @app.exception_handler(Exception)
-    async def unhandled_exception_handler(
-        _request: Request,
-        _exc: Exception,
-    ) -> JSONResponse:
-        """Render unexpected errors as 500 envelopes."""
-        failed_events = tuple(
-            event
-            for event in current_stage_trace()
-            if event.error_code is not None
-        )
-        if not failed_events:
-            return _app_attr("_error_response")(500, "internal server error")
-        event = failed_events[0]
-        status_code = event.final_http_status or 500
-        return _app_attr("_error_response")(
-            status_code,
-            _SAFE_DEFAULT_MESSAGES.get(status_code, "internal server error"),
-            options=_ErrorResponseOptions(
-                code=event.error_code,
-                stage=event.stage,
-                retryable=status_code in {502, 503, 504},
-            ),
-        )
-
-    register_upload_error_handler(app, _app_attr("_error_response"))
-
-
 def build_app(
     *,
     context_executor: ConversationContextExecutor | None = None,
@@ -1012,5 +860,5 @@ def build_app(
     _register_run_routes(app, runtime, adapters)
     _register_a2a_routes(app, scope)
     app.include_router(_app_attr("create_relay_router")())
-    _register_error_handlers(app)
+    register_error_handlers(app, _app_attr)
     return app
