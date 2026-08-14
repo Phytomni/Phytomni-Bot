@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import cast
@@ -190,7 +191,7 @@ async def test_http_poll_uses_environment_resolved_timeout(
 ) -> None:
     """HTTP polling resolves its default budget from the E2E environment."""
 
-    monotonic_values = iter((100.0, 101.5))
+    monotonic_values = iter((100.0, 101.5, 101.5))
     monkeypatch.setenv("PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS", "7.5")
     monkeypatch.setattr(
         polling,
@@ -222,7 +223,7 @@ async def test_http_poll_bounds_each_get_by_remaining_deadline(
         )
     )
 
-    monotonic_values = iter((10.0, 11.0, 14.0))
+    monotonic_values = iter((10.0, 11.0, 11.0, 14.0, 14.0))
     monkeypatch.setattr(
         polling,
         "time",
@@ -239,3 +240,206 @@ async def test_http_poll_bounds_each_get_by_remaining_deadline(
 
     assert terminal.status == "succeeded"
     assert client.timeouts == pytest.approx([9.0, 6.0])
+
+
+@pytest.mark.asyncio
+async def test_http_poll_rejects_terminal_response_after_deadline() -> None:
+    """Cancellation cannot turn an expired terminal response into success."""
+    cancelled = asyncio.Event()
+
+    async def delayed_terminal(
+        _path: str,
+        **_request_options: object,
+    ) -> httpx.Response:
+        """Suppress cancellation and return the terminal body too late."""
+        try:
+            await asyncio.sleep(0.05)
+        except asyncio.CancelledError:
+            cancelled.set()
+            return httpx.Response(
+                200,
+                json={"status": "succeeded", "result": {}},
+            )
+        return httpx.Response(
+            200,
+            json={"status": "succeeded", "result": {}},
+        )
+
+    client = cast(
+        httpx.AsyncClient,
+        SimpleNamespace(get=delayed_terminal),
+    )
+    with pytest.raises(polling.TaskPollingTimeoutError) as error:
+        await polling.poll_http_run_to_terminal(
+            client,
+            "run-late-terminal",
+            headers={"X-Service-Token": "test"},
+            timeout_seconds=0.01,
+        )
+
+    assert cancelled.is_set()
+    assert str(error.value) == (
+        "HTTP run did not reach a terminal status before the deadline"
+    )
+
+
+@pytest.mark.asyncio
+async def test_http_poll_normalizes_asyncio_deadline_timeout() -> None:
+    """The outer deadline cancels a delayed GET and exposes one safe error."""
+    cancelled = asyncio.Event()
+
+    async def delayed_response(
+        _path: str,
+        **_request_options: object,
+    ) -> httpx.Response:
+        """Remain pending until the absolute deadline cancels this await."""
+        try:
+            await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        raise AssertionError("deadline did not cancel the delayed GET")
+
+    client = cast(
+        httpx.AsyncClient,
+        SimpleNamespace(get=delayed_response),
+    )
+    with pytest.raises(polling.TaskPollingTimeoutError) as error:
+        await polling.poll_http_run_to_terminal(
+            client,
+            "run-asyncio-timeout",
+            headers={"X-Service-Token": "test"},
+            timeout_seconds=0.01,
+        )
+
+    assert cancelled.is_set()
+    assert str(error.value) == (
+        "HTTP run did not reach a terminal status before the deadline"
+    )
+    assert error.value.__suppress_context__ is True
+
+
+@pytest.mark.asyncio
+async def test_http_poll_normalizes_httpx_timeout() -> None:
+    """Transport timeout details never escape the polling boundary."""
+
+    async def timeout_response(
+        _path: str,
+        **_request_options: object,
+    ) -> httpx.Response:
+        """Raise an upstream-shaped timeout from the transport."""
+        raise httpx.ReadTimeout("secret upstream response details")
+
+    client = cast(
+        httpx.AsyncClient,
+        SimpleNamespace(get=timeout_response),
+    )
+    with pytest.raises(polling.TaskPollingTimeoutError) as error:
+        await polling.poll_http_run_to_terminal(
+            client,
+            "run-transport-timeout",
+            headers={"X-Service-Token": "test"},
+            timeout_seconds=1.0,
+        )
+
+    assert str(error.value) == (
+        "HTTP run did not reach a terminal status before the deadline"
+    )
+    assert error.value.__suppress_context__ is True
+
+
+@pytest.mark.asyncio
+async def test_http_poll_clamps_sleep_to_remaining_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A long poll interval cannot extend the absolute budget."""
+    clock = [20.0]
+    sleeps: list[float] = []
+
+    async def advance_clock(delay: float) -> None:
+        """Record the bounded sleep and advance the controlled clock."""
+        sleeps.append(delay)
+        clock[0] += delay
+
+    monkeypatch.setattr(
+        polling,
+        "time",
+        SimpleNamespace(monotonic=lambda: clock[0]),
+    )
+    monkeypatch.setattr(polling.asyncio, "sleep", advance_clock)
+    client = _TimeoutCapturingClient(({"status": "running", "result": {}},))
+
+    with pytest.raises(polling.TaskPollingTimeoutError):
+        await polling.poll_http_run_to_terminal(
+            cast(httpx.AsyncClient, client),
+            "run-short-budget",
+            headers={"X-Service-Token": "test"},
+            timeout_seconds=0.05,
+            poll_interval_seconds=0.2,
+        )
+
+    assert sleeps == pytest.approx([0.05])
+
+
+@pytest.mark.parametrize(
+    "raw_timeout",
+    ("", "invalid", "NaN", "Infinity", "-Infinity", "0", "-1"),
+)
+def test_resolved_timeout_rejects_invalid_budget(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_timeout: str,
+) -> None:
+    """Environment budgets share one deterministic validation failure."""
+    monkeypatch.setenv("PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS", raw_timeout)
+
+    with pytest.raises(ValueError) as error:
+        polling.resolve_timeout_seconds()
+
+    assert str(error.value) == (
+        "polling timeout must be finite and greater than zero"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "explicit_timeout",
+    ("", "invalid", float("nan"), float("inf"), float("-inf"), 0.0, -1.0),
+)
+async def test_http_poll_rejects_invalid_explicit_budget(
+    explicit_timeout: object,
+) -> None:
+    """Explicit budgets use the same finite positive validation contract."""
+    client = _TimeoutCapturingClient(({"status": "succeeded", "result": {}},))
+
+    with pytest.raises(ValueError) as error:
+        await polling.poll_http_run_to_terminal(
+            cast(httpx.AsyncClient, client),
+            "run-invalid-explicit-timeout",
+            headers={"X-Service-Token": "test"},
+            timeout_seconds=cast(float, explicit_timeout),
+        )
+
+    assert str(error.value) == (
+        "polling timeout must be finite and greater than zero"
+    )
+    assert client.timeouts == []
+
+
+@pytest.mark.asyncio
+async def test_explicit_timeout_wins_over_malformed_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A valid explicit budget bypasses an invalid environment override."""
+    monkeypatch.setenv("PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS", "invalid")
+    client = _TimeoutCapturingClient(({"status": "succeeded", "result": {}},))
+
+    terminal = await polling.poll_http_run_to_terminal(
+        cast(httpx.AsyncClient, client),
+        "run-explicit-timeout",
+        headers={"X-Service-Token": "test"},
+        timeout_seconds=2.0,
+    )
+
+    assert terminal.status == "succeeded"
+    assert client.timeout is not None
+    assert 0.0 < client.timeout <= 2.0

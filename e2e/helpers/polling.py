@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import sqlite3
@@ -61,6 +62,12 @@ TERMINAL_STATUSES = frozenset(
 )
 SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
 HTTP_TERMINAL_STATUSES = frozenset({"input_required", "succeeded", "failed"})
+_HTTP_RUN_DEADLINE_MESSAGE = (
+    "HTTP run did not reach a terminal status before the deadline"
+)
+_INVALID_POLL_TIMEOUT_MESSAGE = (
+    "polling timeout must be finite and greater than zero"
+)
 
 
 @dataclass(frozen=True)
@@ -128,7 +135,7 @@ class TaskState(_TaskProgress, DeepGenomeReportSnapshot, _TaskIdentity):
 
 
 class TaskPollingTimeoutError(TimeoutError):
-    """Raised when ``poll_until_done`` exceeds its deadline."""
+    """Raised when an E2E polling helper exceeds its deadline."""
 
 
 @dataclass(frozen=True)
@@ -159,8 +166,9 @@ async def poll_http_run_to_terminal(
         client: Authenticated HTTP client bound to the live API.
         run_id: Owner-scoped run id returned by a submit endpoint.
         headers: Authentication headers for the status route.
-        timeout_seconds: Monotonic local polling budget. Defaults to the
-            environment-aware :func:`resolve_timeout_seconds` value.
+        timeout_seconds: Finite positive monotonic local polling budget.
+            Defaults to the environment-aware
+            :func:`resolve_timeout_seconds` value.
         poll_interval_seconds: Delay between non-terminal reads.
 
     Returns:
@@ -170,11 +178,12 @@ async def poll_http_run_to_terminal(
         AssertionError: For malformed status responses or a regressing
             report revision.
         TaskPollingTimeoutError: If the local deadline expires.
+        ValueError: If the polling budget is not finite and positive.
     """
     effective_timeout = (
         resolve_timeout_seconds()
         if timeout_seconds is None
-        else timeout_seconds
+        else _validate_timeout_seconds(timeout_seconds)
     )
     deadline = time.monotonic() + effective_timeout
     revisions: list[int] = []
@@ -182,11 +191,15 @@ async def poll_http_run_to_terminal(
         remaining_seconds = deadline - time.monotonic()
         if remaining_seconds <= 0:
             break
-        response = await client.get(
-            f"/v1/runs/{run_id}",
-            headers=dict(headers),
-            timeout=remaining_seconds,
-        )
+        try:
+            async with asyncio.timeout(remaining_seconds):
+                response = await client.get(
+                    f"/v1/runs/{run_id}",
+                    headers=dict(headers),
+                    timeout=remaining_seconds,
+                )
+        except (TimeoutError, httpx.TimeoutException):
+            raise TaskPollingTimeoutError(_HTTP_RUN_DEADLINE_MESSAGE) from None
         assert (
             response.status_code == 200
         ), f"run status returned HTTP {response.status_code}"
@@ -202,6 +215,9 @@ async def poll_http_run_to_terminal(
                 raise AssertionError("run report revision regressed")
             if not revisions or revision != revisions[-1]:
                 revisions.append(revision)
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            break
         if status in HTTP_TERMINAL_STATUSES:
             _logger.info(
                 "live run terminal status=%s revisions=%s artifacts=%s",
@@ -218,25 +234,39 @@ async def poll_http_run_to_terminal(
                 result=result,
                 revisions=tuple(revisions),
             )
-        await asyncio.sleep(poll_interval_seconds)
-    raise TaskPollingTimeoutError(
-        "HTTP run did not reach a terminal status before the deadline"
-    )
+        await asyncio.sleep(min(poll_interval_seconds, remaining_seconds))
+    raise TaskPollingTimeoutError(_HTTP_RUN_DEADLINE_MESSAGE)
+
+
+def _validate_timeout_seconds(value: str | float) -> float:
+    """Return one finite timeout or raise the stable validation error."""
+    try:
+        timeout = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(_INVALID_POLL_TIMEOUT_MESSAGE) from None
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError(_INVALID_POLL_TIMEOUT_MESSAGE)
+    return timeout
 
 
 def resolve_timeout_seconds() -> float:
     """Return the polling timeout, honoring environment overrides.
 
     Override with ``PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS`` to extend the
-    default ten-minute wait without editing per-test source.
+    default ten-minute wait without editing per-test source. A configured
+    value must be finite and greater than zero.
 
     Returns:
         Timeout in seconds.
+
+    Raises:
+        ValueError: With a stable message when the configured value is empty,
+            malformed, non-finite, zero, or negative.
     """
     raw = os.environ.get("PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS")
-    if raw:
-        return float(raw)
-    return DEFAULT_TIMEOUT_SECONDS
+    if raw is not None:
+        return _validate_timeout_seconds(raw)
+    return _validate_timeout_seconds(DEFAULT_TIMEOUT_SECONDS)
 
 
 def resolve_db_path() -> Path:
