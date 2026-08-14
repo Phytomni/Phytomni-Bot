@@ -308,7 +308,7 @@ KNOWLEDGE_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
         "answer_context",
     },
     required_input_fields={"user_query"},
-    output_fields={"retrieved_docs", "final_response"},
+    output_fields={"retrieved_docs", "retrieval_outcome", "final_response"},
     expected_nodes={
         "__end__",
         "__start__",
@@ -466,6 +466,7 @@ class _KnowledgeState(TypedDict, total=False):
 
     user_query: str
     retrieved_docs: list[dict[str, Any]]
+    retrieval_outcome: str
     final_response: dict[str, Any]
 
 
@@ -480,6 +481,7 @@ def knowledge_output(content: str) -> dict[str, Any]:
     """Return the canonical Knowledge output used by dispatch tests."""
     return {
         "retrieved_docs": [],
+        "retrieval_outcome": "no_match",
         "final_response": {
             "choices": [{"message": {"content": content}}],
         },
@@ -687,8 +689,11 @@ class RecordingKnowledgeApp:
             if self._output is not None:
                 return deepcopy(self._output)
             query = str(state_copy.get("user_query", ""))
+            docs = deepcopy(self._docs_by_query.get(query, []))
             return {
-                "retrieved_docs": deepcopy(self._docs_by_query.get(query, [])),
+                "retrieved_docs": docs,
+                "retrieval_outcome": "complete" if docs else "no_match",
+                "final_response": {},
             }
 
         workflow: StateGraph = StateGraph(_KnowledgeState)

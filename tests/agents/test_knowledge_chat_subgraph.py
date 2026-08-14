@@ -190,7 +190,7 @@ async def test_generate_post_node_merges_doc_list_into_chat_response() -> None:
     message = result["main_response"]["choices"][0]["message"]
     assert message["content"] == "synthesised answer"
     assert message["doc_list"] == [{"title": "Plant Biology.pdf"}]
-    assert message["total"] == 10000
+    assert message["total"] == 1
 
 
 async def test_follow_up_prep_node_builds_chat_payload_and_pending_post() -> (
@@ -285,6 +285,7 @@ async def test_compiled_graph_flag_on_routes_through_shared_chat(
         """
         return {
             "retrieved_docs": [{"title": "Plant Biology.pdf"}],
+            "retrieval_outcome": "complete",
             "retrieve_context": "doc1 ... doc2 ...",
         }
 

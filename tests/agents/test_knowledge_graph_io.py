@@ -7,9 +7,9 @@
 Pins the public input/output contract: ``user_query`` is the only
 required ``KnowledgeInput`` key (rest default inside ``arun``),
 ``KnowledgeOutput`` always exposes ``retrieved_docs`` +
-``final_response``, and ``KnowledgeState`` carries every input +
-output key plus the intermediate slots node bodies write between
-them.
+``retrieval_outcome`` + ``final_response``, and ``KnowledgeState`` carries
+every input + output key plus the intermediate slots node bodies write
+between them.
 """
 
 from __future__ import annotations
@@ -68,8 +68,8 @@ def test_knowledge_input_required_keys_are_only_user_query() -> None:
     )
 
 
-def test_knowledge_output_carries_both_answer_paths() -> None:
-    """KnowledgeOutput always exposes retrieved_docs and final_response.
+def test_knowledge_output_carries_evidence_and_answer_paths() -> None:
+    """KnowledgeOutput always exposes evidence outcome and answer paths.
 
     Pins that ``arun`` callers can read whichever path their
     ``is_generate`` flag implied without an ``in`` guard:
@@ -79,7 +79,7 @@ def test_knowledge_output_carries_both_answer_paths() -> None:
     key.
     """
     assert _required(KnowledgeOutput) == frozenset(
-        {"retrieved_docs", "final_response"}
+        {"retrieved_docs", "retrieval_outcome", "final_response"}
     )
     assert _optional(KnowledgeOutput) == frozenset()
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.graphs.analyst_to_knowledge_adapters import (
     build_analyst_knowledge_input,
@@ -55,15 +56,41 @@ def test_input_factory_preserves_the_shared_retrieve_shape() -> None:
     assert analyst_payload.get("repo_id_dict") is not repo_id_dict
 
 
-def test_output_factory_defaults_missing_or_none_docs_to_empty() -> None:
-    """The common output projection keeps downstream loops list-shaped."""
+def test_output_factory_requires_a_consistent_knowledge_output() -> None:
+    """Missing evidence metadata is unavailable retrieval, not no-match."""
     extract_docs = make_knowledge_output_adapter("retrieved_docs")
-    docs = [{"title": "Paper", "content": "Evidence"}]
+    docs = [
+        {
+            "chunk_id": "paper-1",
+            "title": "Paper",
+            "content": "Evidence",
+        }
+    ]
+    complete = {
+        "retrieved_docs": docs,
+        "retrieval_outcome": "complete",
+        "final_response": {"content": "answer"},
+    }
 
-    assert extract_docs({"retrieved_docs": docs}) == docs
-    assert extract_docs({"retrieved_docs": docs}) is not docs
-    assert not extract_docs({"retrieved_docs": None})
-    assert not extract_docs({})
+    assert extract_docs(complete) == docs
+    assert extract_docs(complete) is not docs
+
+    no_match = {
+        "retrieved_docs": [],
+        "retrieval_outcome": "no_match",
+        "final_response": {},
+    }
+    assert not extract_docs(no_match)
+
+    for invalid in (
+        {"retrieved_docs": docs},
+        {"retrieved_docs": None},
+        {},
+    ):
+        with pytest.raises(
+            McpError, match="Knowledge retrieval temporarily unavailable"
+        ):
+            extract_docs(invalid)
 
 
 def test_domain_adapters_keep_named_boundaries_and_local_queries() -> None:
@@ -91,11 +118,17 @@ def test_domain_adapters_keep_named_boundaries_and_local_queries() -> None:
     )
 
     response: dict[str, Any] = {
-        "retrieved_docs": [{"title": "Paper"}],
+        "retrieved_docs": [
+            {"chunk_id": "paper-1", "title": "Paper", "content": "Evidence"}
+        ],
+        "retrieval_outcome": "complete",
         "final_response": {"content": "answer"},
     }
-    assert extract_analyst_knowledge_response(response) == [{"title": "Paper"}]
-    assert extract_review_knowledge_response(response) == [{"title": "Paper"}]
+    expected_docs = [
+        {"chunk_id": "paper-1", "title": "Paper", "content": "Evidence"}
+    ]
+    assert extract_analyst_knowledge_response(response) == expected_docs
+    assert extract_review_knowledge_response(response) == expected_docs
     assert extract_analyst_knowledge_response.__name__ == (
         "extract_analyst_knowledge_response"
     )

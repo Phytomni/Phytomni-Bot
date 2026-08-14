@@ -14,6 +14,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, cast
 
+from ..agents.knowledge.retrieval_result import (
+    RetrievalProtocolError,
+    require_retrieval_docs,
+    retrieval_unavailable_error,
+)
 from ..agents.knowledge.state import KnowledgeInput
 from ..agents.shared.options import resolve_agent_locale
 from ..runtime.locale import SupportedLocale
@@ -75,8 +80,7 @@ def make_knowledge_output_adapter(
     def _adapter(
         knowledge_output: Mapping[str, Any],
     ) -> list[dict[str, Any]]:
-        docs = knowledge_output.get(response_key)
-        return list(docs) if docs is not None else []
+        return _validated_output_docs(knowledge_output, response_key)
 
     _adapter.__name__ = f"knowledge_output_{response_key}"
     _adapter.__qualname__ = _adapter.__name__
@@ -105,5 +109,30 @@ def extract_retrieved_docs(
     knowledge_output: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     """Return the detached retrieved-doc list from a child graph result."""
-    docs = knowledge_output.get("retrieved_docs")
-    return list(docs) if docs is not None else []
+    return _validated_output_docs(knowledge_output, "retrieved_docs")
+
+
+def _validated_output_docs(
+    knowledge_output: Mapping[str, Any],
+    response_key: str,
+) -> list[dict[str, Any]]:
+    """Validate the complete KnowledgeOutput before projecting documents."""
+    try:
+        if not isinstance(knowledge_output, Mapping):
+            raise RetrievalProtocolError("Invalid knowledge output")
+        docs = require_retrieval_docs(
+            {"doc_list": knowledge_output[response_key]}
+        )
+        outcome = knowledge_output["retrieval_outcome"]
+        final_response = knowledge_output["final_response"]
+        if not isinstance(final_response, Mapping):
+            raise RetrievalProtocolError("Invalid knowledge output")
+        if outcome not in ("complete", "partial", "no_match"):
+            raise RetrievalProtocolError("Invalid knowledge output")
+        if outcome == "no_match" and docs:
+            raise RetrievalProtocolError("Invalid knowledge output")
+        if outcome in ("complete", "partial") and not docs:
+            raise RetrievalProtocolError("Invalid knowledge output")
+        return docs
+    except (KeyError, TypeError, RetrievalProtocolError) as exc:
+        raise retrieval_unavailable_error() from exc

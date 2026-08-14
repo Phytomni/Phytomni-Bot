@@ -239,7 +239,7 @@ async def _retrieve_raw_docs(
 @func_cache(
     key_params=["cache_key"],
     ttl=LONG_TTL_SECONDS,
-    cache_if=lambda docs: bool(docs),
+    cache_if=bool,
 )
 async def _retrieve_scope_docs(
     cache_key: _RetrieveScopeKey,
@@ -330,7 +330,7 @@ async def multi_retrieve(
     repo_id_dict: dict[str, int] | None = None,
     semaphore: asyncio.Semaphore | None = None,
     **kwargs: Any,
-) -> dict[str, Any]:
+) -> RetrievalResult:
     """Retrieve and merge documents from multiple repositories."""
     if repo_id_dict is None:
         repo_id_dict = dict(KNOWLEDGE_CONFIG.REPO_ID_DICT)

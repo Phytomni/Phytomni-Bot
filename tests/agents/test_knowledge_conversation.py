@@ -129,7 +129,12 @@ async def test_retrieve_node_uses_retrieval_query_only(
 
     async def fake_multi_retrieve(**kwargs: Any) -> dict[str, Any]:
         captured.update(kwargs)
-        return {"doc_list": []}
+        return {
+            "doc_list": [],
+            "total": 0,
+            "outcome": "no_match",
+            "failures": [],
+        }
 
     monkeypatch.setattr(knowledge_agent, "multi_retrieve", fake_multi_retrieve)
     agent = KnowledgeAgent(

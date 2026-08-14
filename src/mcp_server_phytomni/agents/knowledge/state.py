@@ -22,6 +22,7 @@ valid.
 from typing import Any, Required, TypedDict
 
 from ...runtime.locale import SupportedLocale
+from .retrieval_result import RetrievalOutcome
 
 
 class KnowledgeInput(TypedDict, total=False):
@@ -55,6 +56,7 @@ class KnowledgeOutput(TypedDict):
     """
 
     retrieved_docs: list[dict[str, Any]]
+    retrieval_outcome: RetrievalOutcome
     final_response: dict[str, Any]
 
 
@@ -80,6 +82,7 @@ class KnowledgeState(TypedDict):
     repo_id_dict: dict[str, int] | None
     upload_context: str
     retrieved_docs: list[dict[str, Any]]
+    retrieval_outcome: RetrievalOutcome
     retrieve_context: str
     main_response: dict[str, Any]
     is_generate: bool

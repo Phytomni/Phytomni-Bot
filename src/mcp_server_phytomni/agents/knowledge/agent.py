@@ -57,6 +57,11 @@ from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.memory_context import memory_context_for_graph
 from ..shared.options import resolve_agent_locale
 from .retrieval import multi_retrieve, rerank, retrieve
+from .retrieval_result import (
+    RetrievalProtocolError,
+    require_retrieval_result,
+    retrieval_unavailable_error,
+)
 from .state import (
     KnowledgeAgentState,
     KnowledgeInput,
@@ -310,14 +315,22 @@ class KnowledgeAgent:
             max_retries=self.knowledge_config.MAX_RETRIES,
         )
 
+        try:
+            validated_response = require_retrieval_result(retrieve_response)
+        except RetrievalProtocolError as exc:
+            raise retrieval_unavailable_error() from exc
+
+        docs = validated_response["doc_list"]
+        retrieval_outcome = validated_response["outcome"]
         retrieve_context, _ = format_retrieved_doc_context(
-            retrieve_response.get("doc_list", []),
+            docs,
             max_tokens=self.knowledge_config.MAX_TOKENS,
             initial_length=len(upload_context),
         )
 
         return {
-            "retrieved_docs": retrieve_response.get("doc_list", []),
+            "retrieved_docs": docs,
+            "retrieval_outcome": retrieval_outcome,
             "retrieve_context": retrieve_context,
         }
 
@@ -420,7 +433,7 @@ class KnowledgeAgent:
         phyto_response = dict(state.get("chat_response") or {})
         doc_list_payload = {
             "doc_list": state["retrieved_docs"],
-            "total": 10000,
+            "total": len(state["retrieved_docs"]),
         }
 
         if (
@@ -637,6 +650,7 @@ class KnowledgeAgent:
             "repo_id_dict": repo_id_dict,
             "upload_context": "",
             "retrieved_docs": [],
+            "retrieval_outcome": "no_match",
             "retrieve_context": "",
             "main_response": {},
             "is_generate": is_generate,

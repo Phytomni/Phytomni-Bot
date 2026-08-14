@@ -53,7 +53,12 @@ async def test_knowledge_retrieve_node_emits_progress(
     seen = _install_writer(monkeypatch)
 
     async def _fake_multi_retrieve(**_k: Any) -> dict[str, Any]:
-        return {"doc_list": []}
+        return {
+            "doc_list": [],
+            "total": 0,
+            "outcome": "no_match",
+            "failures": [],
+        }
 
     monkeypatch.setattr(
         "mcp_server_phytomni.agents.knowledge.agent.multi_retrieve",
@@ -188,7 +193,14 @@ async def test_data_retrieve_post_node_emits_progress(
     agent = DataAgent()
     state = cast(
         Any,
-        {"user_query": "q", "knowledge_response": {}},
+        {
+            "user_query": "q",
+            "knowledge_response": {
+                "retrieved_docs": [],
+                "retrieval_outcome": "no_match",
+                "final_response": {},
+            },
+        },
     )
     await agent.retrieve_post_node(state)
 

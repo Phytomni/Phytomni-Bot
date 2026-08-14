@@ -43,6 +43,10 @@ class RetrievalProtocolError(ValueError):
 
 RETRIEVAL_UNAVAILABLE_MESSAGE = "Knowledge retrieval temporarily unavailable"
 _INVALID_RETRIEVAL_RESPONSE = "Invalid retrieval response"
+_RETRIEVAL_OUTCOMES = frozenset({"complete", "no_match", "partial"})
+_FAILURE_KINDS = frozenset(
+    {"timeout", "transport", "upstream", "protocol", "auth", "unknown"}
+)
 
 
 def _finite_number(value: Any) -> bool:
@@ -114,6 +118,71 @@ def classify_retrieval_failure(
     return {"source": source, "kind": kind, "retryable": retryable}
 
 
+def _require_retrieval_failures(value: Any) -> list[RetrievalFailure]:
+    """Validate and detach bounded internal failure records."""
+    if not isinstance(value, list):
+        raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
+    failures: list[RetrievalFailure] = []
+    for failure in value:
+        if not isinstance(failure, Mapping):
+            raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
+        source = failure.get("source")
+        kind = failure.get("kind")
+        retryable = failure.get("retryable")
+        if (
+            not isinstance(source, str)
+            or not source.strip()
+            or kind not in _FAILURE_KINDS
+            or not isinstance(retryable, bool)
+        ):
+            raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
+        failures.append(
+            {"source": source, "kind": kind, "retryable": retryable}
+        )
+    return failures
+
+
+def require_retrieval_result(payload: Any) -> RetrievalResult:
+    """Validate one internal retrieval result and detach its mutable fields."""
+    if not isinstance(payload, Mapping):
+        raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
+    try:
+        docs = require_retrieval_docs(payload)
+        outcome = payload["outcome"]
+        total = payload["total"]
+        failures = payload["failures"]
+    except (KeyError, TypeError, RetrievalProtocolError) as exc:
+        raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE) from exc
+
+    if outcome not in _RETRIEVAL_OUTCOMES:
+        raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
+    if (
+        not isinstance(total, int)
+        or isinstance(total, bool)
+        or total != len(docs)
+    ):
+        raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
+    detached_failures = _require_retrieval_failures(failures)
+
+    if outcome == "no_match" and docs:
+        raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
+    if outcome in ("complete", "partial") and not docs:
+        raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
+    if outcome == "complete" and detached_failures:
+        raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
+    if outcome == "no_match" and detached_failures:
+        raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
+    if outcome == "partial" and not detached_failures:
+        raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
+
+    return {
+        "doc_list": docs,
+        "total": total,
+        "outcome": outcome,
+        "failures": detached_failures,
+    }
+
+
 def retrieval_unavailable_error() -> McpError:
     """Build the fixed public failure for unavailable reliable evidence."""
     return McpError(
@@ -123,15 +192,11 @@ def retrieval_unavailable_error() -> McpError:
 
 def cacheable_retrieval_result(result: Any) -> bool:
     """Return whether a complete non-empty result is safe to memoize."""
-    if not isinstance(result, Mapping):
-        return False
-    if result.get("outcome") != "complete" or result.get("failures") != []:
-        return False
     try:
-        docs = require_retrieval_docs(result)
+        validated = require_retrieval_result(result)
     except RetrievalProtocolError:
         return False
-    return bool(docs)
+    return validated["outcome"] == "complete" and bool(validated["doc_list"])
 
 
 __all__ = [
@@ -144,5 +209,6 @@ __all__ = [
     "cacheable_retrieval_result",
     "classify_retrieval_failure",
     "require_retrieval_docs",
+    "require_retrieval_result",
     "retrieval_unavailable_error",
 ]
