@@ -422,7 +422,7 @@ async def test_http_poll_rejects_invalid_explicit_budget(
     assert str(error.value) == (
         "polling timeout must be finite and greater than zero"
     )
-    assert client.timeouts == []
+    assert not client.timeouts
 
 
 @pytest.mark.asyncio
