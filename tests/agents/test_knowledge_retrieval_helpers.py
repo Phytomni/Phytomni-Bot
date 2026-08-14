@@ -239,25 +239,62 @@ def test_rerank_docs_rejects_missing_content() -> None:
         _rerank_docs([{"chunk_id": "c3", "title": "Paper C"}])
 
 
-def test_sorted_merged_docs_merges_and_trims_to_top_n() -> None:
-    """``_sorted_merged_docs`` merges results then truncates to top_n."""
+def test_sorted_merged_docs_is_stable_and_trims_to_top_n() -> None:
+    """Sort finite scores first and preserve source order for ties/misses."""
     results: list[Any] = [
         {
             "doc_list": [
-                {"chunk_id": "a", "title": "A", "content": "A", "score": 0.3},
-                {"chunk_id": "b", "title": "B", "content": "B", "score": 0.8},
+                {
+                    "chunk_id": "tie-a",
+                    "title": "Tie A",
+                    "content": "Tie A",
+                    "score": 0.8,
+                },
+                {
+                    "chunk_id": "missing-a",
+                    "title": "Missing A",
+                    "content": "Missing A",
+                },
             ]
         },
         {
             "doc_list": [
-                {"chunk_id": "c", "title": "C", "content": "C", "score": 0.5}
+                {
+                    "chunk_id": "tie-b",
+                    "title": "Tie B",
+                    "content": "Tie B",
+                    "score": 0.8,
+                },
+                {
+                    "chunk_id": "middle",
+                    "title": "Middle",
+                    "content": "Middle",
+                    "score": 0.5,
+                },
+                {
+                    "chunk_id": "missing-b",
+                    "title": "Missing B",
+                    "content": "Missing B",
+                },
+                {
+                    "chunk_id": "low",
+                    "title": "Low",
+                    "content": "Low",
+                    "score": 0.1,
+                },
             ]
         },
     ]
 
-    sorted_docs = _sorted_merged_docs(results, top_n=2)
+    sorted_docs = _sorted_merged_docs(results, top_n=5)
 
-    assert [doc["score"] for doc in sorted_docs] == [0.8, 0.5]
+    assert [doc["chunk_id"] for doc in sorted_docs] == [
+        "tie-a",
+        "tie-b",
+        "middle",
+        "low",
+        "missing-a",
+    ]
 
 
 def test_sorted_merged_docs_returns_all_when_top_n_is_zero() -> None:

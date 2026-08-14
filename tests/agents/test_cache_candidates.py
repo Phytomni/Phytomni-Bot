@@ -4,17 +4,19 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for cache integration points and idempotence contracts.
 
-Covers config-file change tracking and the retrieval composite caches,
-plus the network-formatting and DeepGenome BI lookup helpers whose
-function-result caches were removed (now pinned as plain idempotence:
-identical inputs return identical results, each call hitting the
-backend).
+Covers config-file change tracking, positive-only retrieval primitives,
+and uncached repository merging, plus the network-formatting and
+DeepGenome BI lookup helpers whose function-result caches were removed
+(now pinned as plain idempotence: identical inputs return identical
+results, each call hitting the backend).
 """
 
 import json
+from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
+from httpx import TimeoutException
 
 from mcp_server_phytomni.agents.brief_gene import agent as brief_gene_agents
 from mcp_server_phytomni.agents.deep_genome import agent as deep_genome_agents
@@ -28,10 +30,72 @@ from mcp_server_phytomni.agents.knowledge import (
     retrieval as knowledge_retrieval,
 )
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
+from mcp_server_phytomni.agents.knowledge.retrieval import _RetrieveCacheKey
+from mcp_server_phytomni.agents.knowledge.retrieval_options import (
+    RetrieveOptions,
+)
 from mcp_server_phytomni.agents.shared.analysis_storage import get_data_list
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
+from mcp_server_phytomni.func_cache import func_cache
+from mcp_server_phytomni.func_cache.core import CacheRuntime
+from mcp_server_phytomni.func_cache.serializer import dumps
 
 pytestmark = pytest.mark.agent
+
+
+def _cache_runtime(wrapper: Any) -> CacheRuntime:
+    """Return the runtime captured by one func_cache wrapper."""
+    return next(
+        cell.cell_contents
+        for cell in wrapper.__closure__ or ()
+        if isinstance(cell.cell_contents, CacheRuntime)
+    )
+
+
+def _isolated_cache_wrapper(wrapper: Any, db_path: str) -> Any:
+    """Clone one production cache wrapper onto an ephemeral database."""
+    runtime = _cache_runtime(wrapper)
+    options = runtime.options
+    return func_cache(
+        key_params=options.key_params,
+        db_path=db_path,
+        ttl=options.ttl,
+        compress=options.compress,
+        lock_timeout=options.lock_timeout,
+        lock_expire=options.lock_expire,
+        exclude_params=options.exclude_params,
+        cache_if=options.cache_if,
+    )(wrapper.__wrapped__)
+
+
+@pytest.fixture(name="isolated_retrieval_caches")
+def isolated_retrieval_caches_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> Iterator[dict[str, Any]]:
+    """Route Knowledge cache operations to one test-owned SQLite file."""
+    db_path = str(tmp_path / "retrieval-cache.sqlite")
+    caches = {
+        "retrieve": _isolated_cache_wrapper(
+            getattr(knowledge_retrieval, "_retrieve_cached"),
+            db_path,
+        ),
+        "scope": _isolated_cache_wrapper(
+            getattr(knowledge_retrieval, "_retrieve_scope_docs"),
+            db_path,
+        ),
+    }
+    monkeypatch.setattr(
+        knowledge_retrieval,
+        "_retrieve_cached",
+        caches["retrieve"],
+    )
+    monkeypatch.setattr(
+        knowledge_retrieval,
+        "_retrieve_scope_docs",
+        caches["scope"],
+    )
+    yield caches
 
 
 def test_get_data_list_tracks_config_file_changes(tmp_path):
@@ -120,6 +184,7 @@ def test_network_to_string_is_deterministic_for_identical_inputs():
 async def test_retrieve_caches_complete_non_empty_result(
     monkeypatch: pytest.MonkeyPatch,
     outbound_runtime: Any,
+    isolated_retrieval_caches: dict[str, Any],
 ):
     """Verify a complete non-empty direct result is cacheable.
 
@@ -128,9 +193,10 @@ async def test_retrieve_caches_complete_non_empty_result(
         outbound_runtime: Recording process-owned outbound runtime.
 
     Returns:
-        None after composite-cache hit/miss assertions pass.
+        None after primitive-cache hit/miss assertions pass.
     """
     knowledge_retrieval.clear_retrieval_caches()
+    assert isolated_retrieval_caches["retrieve"].cache_info()["count"] == 0
     calls = {"rerank": 0}
     outbound_runtime.transport.enqueue(
         content=(
@@ -214,6 +280,7 @@ async def test_retrieve_caches_complete_non_empty_result(
 async def test_no_match_is_not_cached(
     monkeypatch: pytest.MonkeyPatch,
     outbound_runtime: Any,
+    isolated_retrieval_caches: dict[str, Any],
 ):
     """A valid empty source is retried instead of becoming a durable miss."""
     knowledge_retrieval.clear_retrieval_caches()
@@ -263,13 +330,201 @@ async def test_no_match_is_not_cached(
     assert first["doc_list"] == []
     assert second["outcome"] == "complete"
     assert len(second["doc_list"]) == 1
+    assert isolated_retrieval_caches["retrieve"].cache_info()["count"] == 1
+    assert isolated_retrieval_caches["scope"].cache_info()["count"] == 1
     assert len(outbound_runtime.transport.requests) == 2
     assert calls == {"rerank": 1}
+
+
+async def test_repeated_no_match_stores_no_cache_rows(
+    outbound_runtime: Any,
+    isolated_retrieval_caches: dict[str, Any],
+) -> None:
+    """Repeated valid empties stay misses at both retrieval cache layers."""
+    knowledge_retrieval.clear_retrieval_caches()
+    outbound_runtime.transport.enqueue(content=b'{"doc_list":[]}')
+    outbound_runtime.transport.enqueue(content=b'{"doc_list":[]}')
+    kwargs = {
+        "retrieve_url": "https://example.invalid/retrieve",
+        "repo_id": "repo-empty",
+        "page_num": 1,
+        "page_size": 2,
+        "filter_string": None,
+        "scope": "doc",
+        "extra_repo_ids": None,
+        "rerank_url": "https://example.invalid/rerank",
+        "rerank_batch_size": 2,
+        "score_threshold": 0.2,
+    }
+
+    first = await knowledge_retrieval.retrieve("empty-twice", **kwargs)
+    second = await knowledge_retrieval.retrieve("empty-twice", **kwargs)
+
+    assert first["outcome"] == second["outcome"] == "no_match"
+    assert len(outbound_runtime.transport.requests) == 2
+    assert isolated_retrieval_caches["retrieve"].cache_info()["count"] == 0
+    assert isolated_retrieval_caches["scope"].cache_info()["count"] == 0
+
+
+async def test_public_retrieve_does_not_read_legacy_contract_key(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_retrieval_caches: dict[str, Any],
+) -> None:
+    """A public v2 request misses an otherwise identical v1 cache row."""
+    calls = 0
+    kwargs = {
+        "repo_id": "repo-versioned",
+        "scope": "doc",
+        "page_num": 1,
+        "page_size": 1,
+        "filter_string": None,
+        "extra_repo_ids": None,
+        "score_threshold": 0.0,
+    }
+    options = RetrieveOptions.from_kwargs(kwargs)
+    payload = options.payload_options
+    scope_key = getattr(knowledge_retrieval, "_retrieve_scope_key")(
+        "versioned-query",
+        options,
+        "doc",
+    )
+    assert scope_key.contract_version == 2
+    legacy_key = _RetrieveCacheKey(
+        1,
+        "versioned-query",
+        payload.repo_id,
+        options.scope,
+        payload.page_num,
+        payload.page_size,
+        payload.filter_string,
+        tuple(payload.extra_repo_ids or ()),
+        options.page_size,
+        options.score_threshold,
+    )
+
+    async def fake_raw(
+        _user_query: str,
+        _options: RetrieveOptions,
+    ) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        docs = [
+            {
+                "chunk_id": f"doc-{calls}",
+                "title": f"Title {calls}",
+                "content": f"Content {calls}",
+            }
+        ]
+        return {
+            "doc_list": docs,
+            "total": 1,
+            "outcome": "complete",
+            "failures": [],
+        }
+
+    async def fake_rerank(
+        *, doc_list: list[dict[str, Any]], **_kwargs: Any
+    ) -> list[dict[str, Any]]:
+        return [{**doc_list[0], "score": 0.9}]
+
+    monkeypatch.setattr(knowledge_retrieval, "_retrieve_raw_docs", fake_raw)
+    monkeypatch.setattr(knowledge_retrieval, "rerank", fake_rerank)
+    cache = isolated_retrieval_caches["retrieve"]
+
+    legacy = await cache(legacy_key, options=options)
+    current = await knowledge_retrieval.retrieve("versioned-query", **kwargs)
+    repeated = await knowledge_retrieval.retrieve("versioned-query", **kwargs)
+
+    assert legacy["doc_list"][0]["chunk_id"] == "doc-1"
+    assert current == repeated
+    assert current["doc_list"][0]["chunk_id"] == "doc-2"
+    assert calls == 2
+    assert cache.cache_info()["count"] == 2
+
+
+async def test_rejected_cached_partial_is_evicted_and_recomputed(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_retrieval_caches: dict[str, Any],
+) -> None:
+    """A historical partial v2 row cannot survive positive-only admission."""
+    options = RetrieveOptions.from_kwargs({"page_size": 1})
+    key = _RetrieveCacheKey(
+        contract_version=2,
+        user_query="rejected-hit",
+        repo_id=options.payload_options.repo_id,
+        scope=options.scope,
+        page_num=options.payload_options.page_num,
+        page_size=options.payload_options.page_size,
+        filter_string=options.payload_options.filter_string,
+        extra_repo_ids=tuple(options.payload_options.extra_repo_ids or ()),
+        top_n=options.page_size,
+        score_threshold=options.score_threshold,
+    )
+    rejected = {
+        "doc_list": [
+            {
+                "chunk_id": "stale",
+                "title": "Stale",
+                "content": "Stale partial evidence",
+                "score": 0.4,
+            }
+        ],
+        "total": 1,
+        "outcome": "partial",
+        "failures": [
+            {"source": "scope:doc", "kind": "timeout", "retryable": True}
+        ],
+    }
+    cache = isolated_retrieval_caches["retrieve"]
+    runtime = _cache_runtime(cache)
+    cache_hash = runtime.key_builder.build_key((key,), {"options": options})
+    runtime.storage.set(
+        runtime.key_builder.func_id,
+        cache_hash,
+        dumps(rejected, runtime.options.compress),
+        runtime.options.ttl,
+    )
+    calls = 0
+
+    async def fake_raw(
+        _user_query: str,
+        _options: RetrieveOptions,
+    ) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {
+            "doc_list": [
+                {
+                    "chunk_id": "fresh",
+                    "title": "Fresh",
+                    "content": "Fresh evidence",
+                }
+            ],
+            "total": 1,
+            "outcome": "complete",
+            "failures": [],
+        }
+
+    async def fake_rerank(
+        *, doc_list: list[dict[str, Any]], **_kwargs: Any
+    ) -> list[dict[str, Any]]:
+        return [{**doc_list[0], "score": 0.9}]
+
+    monkeypatch.setattr(knowledge_retrieval, "_retrieve_raw_docs", fake_raw)
+    monkeypatch.setattr(knowledge_retrieval, "rerank", fake_rerank)
+
+    result = await cache(key, options=options)
+
+    assert result["outcome"] == "complete"
+    assert result["doc_list"][0]["chunk_id"] == "fresh"
+    assert calls == 1
+    assert cache.cache_info()["count"] == 1
 
 
 async def test_multi_retrieve_dedupes_via_primitive_cache(
     monkeypatch: pytest.MonkeyPatch,
     outbound_runtime: Any,
+    isolated_retrieval_caches: dict[str, Any],
 ):
     """Verify multi_retrieve hits one retrieve HTTP per (repo, query) tuple.
 
@@ -336,6 +591,72 @@ async def test_multi_retrieve_dedupes_via_primitive_cache(
     # non-empty repository leaf is reused by its direct cache.
     assert len(outbound_runtime.transport.requests) == 2
     assert calls == {"rerank": 2}
+    assert isolated_retrieval_caches["retrieve"].cache_info()["count"] == 2
+
+
+async def test_partial_repository_merge_retries_only_failed_leaf(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_retrieval_caches: dict[str, Any],
+) -> None:
+    """Recompute a partial merge while reusing its successful repository."""
+    raw_calls = {"repo-a": 0, "repo-b": 0}
+    rerank_calls = {"repo-a": 0, "repo-b": 0}
+
+    async def fake_raw(
+        _user_query: str,
+        options: RetrieveOptions,
+    ) -> dict[str, Any]:
+        repo_id = options.payload_options.repo_id
+        raw_calls[repo_id] += 1
+        if repo_id == "repo-b" and raw_calls[repo_id] == 1:
+            raise TimeoutException("hidden repository failure")
+        docs = [
+            {
+                "chunk_id": repo_id,
+                "title": f"Title {repo_id}",
+                "content": f"Content {repo_id}",
+            }
+        ]
+        return {
+            "doc_list": docs,
+            "total": 1,
+            "outcome": "complete",
+            "failures": [],
+        }
+
+    async def fake_rerank(
+        *, doc_list: list[dict[str, Any]], **_kwargs: Any
+    ) -> list[dict[str, Any]]:
+        repo_id = doc_list[0]["chunk_id"]
+        rerank_calls[repo_id] += 1
+        return [{**doc_list[0], "score": 0.5}]
+
+    monkeypatch.setattr(knowledge_retrieval, "_retrieve_raw_docs", fake_raw)
+    monkeypatch.setattr(knowledge_retrieval, "rerank", fake_rerank)
+    knowledge_retrieval.clear_retrieval_caches()
+    kwargs: dict[str, Any] = {
+        "repo_id_dict": {"repo-b": 1, "repo-a": 1},
+        "scope": "doc",
+        "top_n": 2,
+        "score_threshold": 0.0,
+    }
+
+    first = await knowledge_retrieval.multi_retrieve("recover", **kwargs)
+    second = await knowledge_retrieval.multi_retrieve("recover", **kwargs)
+
+    assert first["outcome"] == "partial"
+    assert [doc["chunk_id"] for doc in first["doc_list"]] == ["repo-a"]
+    assert first["failures"] == [
+        {"source": "repo:1", "kind": "timeout", "retryable": True}
+    ]
+    assert second["outcome"] == "complete"
+    assert [doc["chunk_id"] for doc in second["doc_list"]] == [
+        "repo-a",
+        "repo-b",
+    ]
+    assert raw_calls == {"repo-a": 1, "repo-b": 2}
+    assert rerank_calls == {"repo-a": 1, "repo-b": 1}
+    assert isolated_retrieval_caches["retrieve"].cache_info()["count"] == 2
 
 
 async def test_gene_retrieve_is_idempotent_without_composite_cache():
