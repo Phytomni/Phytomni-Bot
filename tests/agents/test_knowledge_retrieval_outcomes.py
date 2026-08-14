@@ -11,7 +11,13 @@ from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 import pytest
-from httpx import TimeoutException
+from httpx import (
+    ConnectError,
+    HTTPStatusError,
+    Request,
+    Response,
+    TimeoutException,
+)
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.knowledge import retrieval as retrieval_mod
@@ -24,7 +30,12 @@ from mcp_server_phytomni.agents.knowledge.retrieval_options import (
 )
 from mcp_server_phytomni.agents.knowledge.retrieval_result import (
     RETRIEVAL_UNAVAILABLE_MESSAGE,
+    RetrievalProtocolError,
+    cacheable_retrieval_result,
+    classify_retrieval_failure,
     require_retrieval_docs,
+    require_retrieval_result,
+    retrieval_unavailable_error,
 )
 
 pytestmark = pytest.mark.unit
@@ -137,6 +148,7 @@ async def test_zero_reliable_docs_with_failure_is_unavailable(
     [
         {},
         {"doc_list": "not-a-list"},
+        {"doc_list": [None]},
         {"doc_list": [{"title": "title", "content": "content"}]},
         {"doc_list": [{"chunk_id": "id", "content": "content"}]},
         {"doc_list": [{"chunk_id": "id", "title": "title"}]},
@@ -168,6 +180,159 @@ def test_require_retrieval_docs_returns_detached_copies() -> None:
     docs[0]["title"] = "changed"
 
     assert original["title"] == "Title detached"
+
+
+def _failure(
+    *,
+    source: str = "scope:doc",
+    kind: str = "timeout",
+    retryable: bool = True,
+) -> dict[str, Any]:
+    return {"source": source, "kind": kind, "retryable": retryable}
+
+
+def _result(
+    *,
+    docs: list[dict[str, Any]] | None = None,
+    outcome: str = "complete",
+    failures: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    result_docs = [_doc("valid")] if docs is None else docs
+    return {
+        "doc_list": result_docs,
+        "total": len(result_docs),
+        "outcome": outcome,
+        "failures": [] if failures is None else failures,
+    }
+
+
+def test_require_retrieval_result_detaches_valid_payload() -> None:
+    """Detach complete and partial mutable evidence from caller state."""
+    original_doc = _doc("detached-result")
+    original_failure = _failure()
+    payload = _result(
+        docs=[original_doc],
+        outcome="partial",
+        failures=[original_failure],
+    )
+
+    result = require_retrieval_result(payload)
+    result["doc_list"][0]["title"] = "changed"
+    result["failures"][0]["source"] = "changed"
+
+    assert original_doc["title"] == "Title detached-result"
+    assert original_failure["source"] == "scope:doc"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {"doc_list": []},
+        _result(outcome="unsupported"),
+        {**_result(), "total": True},
+        {**_result(), "total": 2},
+        _result(docs=[_doc("unexpected")], outcome="no_match"),
+        _result(docs=[], outcome="complete"),
+        _result(failures=[_failure()]),
+        _result(docs=[], outcome="no_match", failures=[_failure()]),
+        _result(outcome="partial"),
+        {**_result(), "failures": "not-a-list"},
+        {**_result(), "failures": [None]},
+        {**_result(), "failures": [_failure(source=" ")]},
+        {**_result(), "failures": [_failure(kind="secret")]},
+        {**_result(), "failures": [_failure(retryable=cast(Any, 1))]},
+    ],
+)
+def test_require_retrieval_result_rejects_inconsistent_payloads(
+    payload: Any,
+) -> None:
+    """Reject malformed results and contradictory reliability metadata."""
+    with pytest.raises(
+        RetrievalProtocolError,
+        match="Invalid retrieval response",
+    ):
+        require_retrieval_result(payload)
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected_kind", "expected_retryable"),
+    [
+        (TimeoutException("hidden"), "timeout", True),
+        (
+            HTTPStatusError(
+                "hidden",
+                request=Request("GET", "https://private.invalid"),
+                response=Response(401),
+            ),
+            "auth",
+            False,
+        ),
+        (
+            HTTPStatusError(
+                "hidden",
+                request=Request("GET", "https://private.invalid"),
+                response=Response(429),
+            ),
+            "upstream",
+            True,
+        ),
+        (
+            HTTPStatusError(
+                "hidden",
+                request=Request("GET", "https://private.invalid"),
+                response=Response(404),
+            ),
+            "upstream",
+            False,
+        ),
+        (
+            ConnectError(
+                "hidden",
+                request=Request("GET", "https://private.invalid"),
+            ),
+            "transport",
+            True,
+        ),
+        (RetrievalProtocolError("hidden"), "protocol", False),
+        (retrieval_unavailable_error(), "upstream", True),
+        (RuntimeError("hidden"), "unknown", False),
+    ],
+)
+def test_classify_retrieval_failure_returns_bounded_metadata(
+    exc: Exception,
+    expected_kind: str,
+    expected_retryable: bool,
+) -> None:
+    """Classify failures without copying sensitive exception text."""
+    result = classify_retrieval_failure(exc, "scope:doc")
+
+    assert result == {
+        "source": "scope:doc",
+        "kind": expected_kind,
+        "retryable": expected_retryable,
+    }
+    assert "hidden" not in str(result)
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (_result(), True),
+        (_result(docs=[], outcome="no_match"), False),
+        (
+            _result(outcome="partial", failures=[_failure()]),
+            False,
+        ),
+        ({"doc_list": []}, False),
+    ],
+)
+def test_cacheable_retrieval_result_requires_complete_evidence(
+    payload: Any,
+    expected: bool,
+) -> None:
+    """Cache only validated, complete, non-empty evidence results."""
+    assert cacheable_retrieval_result(payload) is expected
 
 
 async def test_cancelled_scope_is_re_raised_unchanged(
