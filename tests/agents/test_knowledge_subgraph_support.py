@@ -54,7 +54,13 @@ async def test_mount_knowledge_node_registers_and_projects_response() -> None:
     assert result == {
         "knowledge_response": {
             "user_query": "query",
+            "final_response": {},
             "retrieved_docs": [{"title": "A"}],
         }
     }
-    assert fake.calls == [{"user_query": "query"}]
+    assert fake.calls == [
+        {
+            "user_query": "query",
+            "final_response": {},
+        }
+    ]

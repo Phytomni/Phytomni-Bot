@@ -39,7 +39,7 @@ def _fake_knowledge_app(response: dict[str, Any]) -> SimpleNamespace:
 
 @pytest.mark.asyncio
 async def test_node_wrapper_projects_state_and_stores_response():
-    """Wrapper builds KA input, awaits the app, stores response."""
+    """Wrapper seeds the unused answer output before invoking retrieve-only."""
     fake_app = _fake_knowledge_app(
         response={"retrieved_docs": [{"id": "doc-1"}]}
     )
@@ -54,7 +54,12 @@ async def test_node_wrapper_projects_state_and_stores_response():
     delta = await node({"query": "what is photosynthesis"})
 
     assert delta == {"docs": [{"id": "doc-1"}]}
-    assert fake_app.calls == [{"user_query": "what is photosynthesis"}]
+    assert fake_app.calls == [
+        {
+            "user_query": "what is photosynthesis",
+            "final_response": {},
+        }
+    ]
 
 
 @pytest.mark.asyncio

@@ -79,7 +79,7 @@ def make_knowledge_node_wrapper(
 
     async def _knowledge_node(state: Any) -> dict[str, Any]:
         ki = cast(KnowledgeInput, build_input_fn(state))
-        ko = await knowledge_app.ainvoke(ki)
+        ko = await knowledge_app.ainvoke({**ki, "final_response": {}})
         return {response_key: extract_output_fn(ko)}
 
     return _knowledge_node
