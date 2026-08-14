@@ -35,6 +35,10 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.agents.knowledge.retrieval import rerank
+from mcp_server_phytomni.runtime.outbound import (
+    aclose_outbound_runtime,
+    init_outbound_runtime,
+)
 
 pytestmark = pytest.mark.live
 
@@ -74,11 +78,15 @@ async def test_rerank_probe_ranks_seed_docs() -> None:
     """
     seed = _seed_docs()
 
-    ranked = await rerank(
-        user_query=_SEED_QUERY,
-        doc_list=seed,
-        score_threshold=0,
-    )
+    await init_outbound_runtime()
+    try:
+        ranked = await rerank(
+            user_query=_SEED_QUERY,
+            doc_list=seed,
+            score_threshold=0,
+        )
+    finally:
+        await aclose_outbound_runtime()
 
     assert ranked, "rerank returned no documents for the seed doc_list"
     seed_ids = {doc["chunk_id"] for doc in seed}
