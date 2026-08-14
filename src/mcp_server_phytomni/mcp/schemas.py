@@ -729,12 +729,13 @@ class PhytomniAgents(StrEnum):
     )
     DATA_AGENT = "DataAgent"
     DATA_AGENT_DESCRIPTION = (
-        "Use when the user asks for records, counts, comparisons, tables, "
-        "statistics, or other precise facts that require querying a "
-        "structured botanical database or SQL source. Return "
-        "database-backed results; do not choose this for narrative "
-        "literature synthesis, a one-gene function report, or execution "
-        "of a bioinformatics workflow."
+        "Select this agent when the desired answer is a database result "
+        "rather than a narrative explanation or submitted analysis. It "
+        "returns exact records, values, counts, comparisons, and tables for "
+        "constrained botanical queries, including gene, genomic-region, "
+        "sample, cultivar, trait, and interaction requests. Do not use it "
+        "for literature retrieval, paper replication, gene reports, or "
+        "workflow execution."
     )
     ANALYST_AGENT = "AnalystAgent"
     ANALYST_AGENT_DESCRIPTION = (
