@@ -12,12 +12,17 @@ ordering, and xray subgraph expansion.
 
 from __future__ import annotations
 
+import asyncio
 from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
 from langgraph.types import Send
+from mcp.shared.exceptions import McpError
 
+from mcp_server_phytomni.agents.knowledge.retrieval_result import (
+    RetrievalProtocolError,
+)
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.agents.review.state import DeepResearchState
 from mcp_server_phytomni.config.defaults import ReviewConfig
@@ -106,9 +111,21 @@ async def test_retrieve_worker_node_success_writes_indexed_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Worker writes ``(task_index, docs)`` on successful ainvoke."""
-    docs = [{"title": "Doc A", "content": "content-A"}]
+    docs = [
+        {
+            "chunk_id": "doc-a-1",
+            "title": "Doc A",
+            "content": "content-A",
+        }
+    ]
     fake_app = AsyncMock(
-        ainvoke=AsyncMock(return_value={"retrieved_docs": docs})
+        ainvoke=AsyncMock(
+            return_value={
+                "retrieved_docs": docs,
+                "retrieval_outcome": "complete",
+                "final_response": {},
+            }
+        )
     )
     agent = _build_agent(monkeypatch)
     worker = agent.make_retrieve_worker_node(fake_app)
@@ -132,14 +149,14 @@ async def test_retrieve_worker_node_success_writes_indexed_result(
 
 
 # ---------------------------------------------------------------------------
-# Worker exception: writes empty sentinel AND FailureRecord.
+# Worker exception: writes only the internal failed-index accumulator.
 # ---------------------------------------------------------------------------
 
 
-async def test_retrieve_worker_node_exception_writes_sentinel_and_failure(
+async def test_retrieve_worker_node_exception_writes_failed_index(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Worker writes ``[]`` sentinel AND FailureRecord dict on exception."""
+    """Worker does not turn a retrieval failure into valid empty evidence."""
     fake_app = AsyncMock(
         ainvoke=AsyncMock(side_effect=RuntimeError("backend timeout"))
     )
@@ -155,14 +172,29 @@ async def test_retrieve_worker_node_exception_writes_sentinel_and_failure(
     )
     result = await worker(state)
 
-    assert result["retrieve_indexed_results"] == [(1, [])]
-    failures = result.get("failures", [])
-    assert len(failures) == 1
-    rec = failures[0]
-    # FailureRecord is a TypedDict — check structural keys, not isinstance.
-    assert rec["kind"] == "execute"
-    assert "backend timeout" in rec["message"]
-    assert rec["task_label"] == "retrieve:1"
+    assert result == {"retrieve_failed_indices": [1]}
+
+
+async def test_retrieve_worker_reraises_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cancellation is never recorded as a failed retrieval."""
+    fake_app = AsyncMock(
+        ainvoke=AsyncMock(side_effect=asyncio.CancelledError())
+    )
+    agent = _build_agent(monkeypatch)
+    worker = agent.make_retrieve_worker_node(fake_app)
+
+    with pytest.raises(asyncio.CancelledError):
+        await worker(
+            cast(
+                DeepResearchState,
+                {
+                    "task_index": 1,
+                    "knowledge_payload": {"user_query": "drought"},
+                },
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +220,7 @@ async def test_retrieve_reduce_node_sorts_by_task_index(
             "research_dimensions": ["dim0", "dim1"],
             "total_length": 0,
             "retrieve_indexed_results": [(1, [doc_1]), (0, [doc_0])],
+            "retrieve_failed_indices": [],
         },
     )
     result = await agent.retrieve_reduce_node(state)
@@ -207,10 +240,10 @@ async def test_retrieve_reduce_node_sorts_by_task_index(
 async def test_retrieve_reduce_node_partial_failure_still_produces_n_params(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Reduce yields N dimension_params even when one worker returned ``[]``.
+    """Reduce yields N dimension_params when one worker failed.
 
-    The failed dimension gets empty fragments; the reduce does not skip
-    it, so ``draft_node`` still receives a slot for every dimension.
+    The failed dimensions get empty fragments; the reduce does not skip
+    them while reliable evidence from the remaining dimension is retained.
     """
     agent = _build_agent(monkeypatch)
     doc = {"title": "D2", "content": "c2"}
@@ -220,10 +253,9 @@ async def test_retrieve_reduce_node_partial_failure_still_produces_n_params(
             "research_dimensions": ["d0", "d1", "d2"],
             "total_length": 0,
             "retrieve_indexed_results": [
-                (0, []),  # failed
                 (1, [doc]),
-                (2, []),  # failed
             ],
+            "retrieve_failed_indices": [0, 2],
         },
     )
     result = await agent.retrieve_reduce_node(state)
@@ -233,6 +265,46 @@ async def test_retrieve_reduce_node_partial_failure_still_produces_n_params(
     assert params[0]["subtopic"] == "d0"
     assert params[1]["subtopic"] == "d1"
     assert params[2]["subtopic"] == "d2"
+
+
+async def test_retrieve_reduce_rejects_missing_dimension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An absent success/failure index is a retrieval protocol error."""
+    agent = _build_agent(monkeypatch)
+    state = cast(
+        DeepResearchState,
+        {
+            "research_dimensions": ["d0", "d1"],
+            "total_length": 0,
+            "retrieve_indexed_results": [(0, [])],
+            "retrieve_failed_indices": [],
+        },
+    )
+
+    with pytest.raises(RetrievalProtocolError):
+        await agent.retrieve_reduce_node(state)
+
+
+async def test_retrieve_reduce_fails_when_no_reliable_evidence_remains(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed dimension plus only no-match results cannot draft a report."""
+    agent = _build_agent(monkeypatch)
+    state = cast(
+        DeepResearchState,
+        {
+            "research_dimensions": ["d0", "d1"],
+            "total_length": 0,
+            "retrieve_indexed_results": [(1, [])],
+            "retrieve_failed_indices": [0],
+        },
+    )
+
+    with pytest.raises(
+        McpError, match="Knowledge retrieval temporarily unavailable"
+    ):
+        await agent.retrieve_reduce_node(state)
 
 
 # ---------------------------------------------------------------------------

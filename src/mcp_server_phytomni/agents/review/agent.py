@@ -21,6 +21,7 @@ from uuid import UUID
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph
 from langgraph.types import Send, interrupt
+from mcp.shared.exceptions import McpError
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
@@ -581,9 +582,10 @@ class DeepResearchAgent(
                     (task_index, result.get("revised_content", ""))
                 ],
                 "add_doc_list": list(result.get("add_doc_list", [])),
-                "failures": result.get("failures", []),
             }
         except _REVISED_WORKER_CAUGHT as exc:
+            if isinstance(exc, McpError):
+                raise
             logger.exception(
                 "revised worker failed: task_index=%s subtopic=%s",
                 task_index,
@@ -737,6 +739,7 @@ class DeepResearchAgent(
             "raw_doc_list": None,
             # Fan-out indexed_results accumulators
             "retrieve_indexed_results": [],
+            "retrieve_failed_indices": [],
             "draft_indexed_results": [],
             "review_indexed_results": [],
             "revised_indexed_results": [],

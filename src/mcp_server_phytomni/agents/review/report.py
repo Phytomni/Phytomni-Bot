@@ -24,8 +24,11 @@ from typing import TYPE_CHECKING, Any
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
-from ..shared.analysis import _compute_traceback_digest
-from ..shared.parallel_dispatch import FailureRecord
+from ..knowledge.retrieval_result import (
+    RetrievalProtocolError,
+    require_retrieval_docs,
+    retrieval_unavailable_error,
+)
 from .helpers import (
     CITATION_PATTERN,
     _doc_content,
@@ -49,39 +52,32 @@ else:
 _ADD_QUERY_FAILURE_TYPES: tuple[type[Exception], ...] = (Exception,)
 
 
-def _collect_add_query_failures(
-    subtopic_idx: int,
+def _partition_add_query_results(
     add_query_results: list[Any],
-) -> list[FailureRecord]:
-    """Build FailureRecord entries for failed add_query gather results.
+) -> tuple[list[list[dict[str, Any]] | None], int]:
+    """Normalize supplementary results without retaining failure details.
 
-    Walks the ``return_exceptions=True`` results from the supplementary
-    retrieval ``asyncio.gather`` and emits one ``FailureRecord`` per
-    ``Exception``-typed entry. Cancellation-class results
-    (``BaseException`` that is not ``Exception``, e.g.
-    ``asyncio.CancelledError`` or ``KeyboardInterrupt``) are re-raised
-    so shutdown and cancellation propagate instead of being silently
-    converted into degraded review output. Kept module-level (instead
-    of a mixin method) so ``_feedback_rag`` stays under pylint's
-    local-count threshold and so the failure-walk logic is one
-    ``import``-followed helper away from any future caller.
+    Valid document lists, including an empty list, remain distinguishable
+    from ordinary failures. Cancellation-class results are re-raised so
+    shutdown never becomes a degraded report.
     """
-    failures: list[FailureRecord] = []
-    for query_idx, result in enumerate(add_query_results):
+    normalized: list[list[dict[str, Any]] | None] = []
+    failure_count = 0
+    for result in add_query_results:
         if isinstance(result, BaseException) and not isinstance(
             result, Exception
         ):
             raise result
         if isinstance(result, _ADD_QUERY_FAILURE_TYPES):
-            failures.append(
-                FailureRecord(
-                    task_label=f"add_query:{subtopic_idx}:{query_idx}",
-                    message=str(result),
-                    kind="execute",
-                    traceback_digest=_compute_traceback_digest(result),
-                )
-            )
-    return failures
+            normalized.append(None)
+            failure_count += 1
+            continue
+        try:
+            normalized.append(require_retrieval_docs({"doc_list": result}))
+        except RetrievalProtocolError:
+            normalized.append(None)
+            failure_count += 1
+    return normalized, failure_count
 
 
 @dataclass(frozen=True)
@@ -165,14 +161,10 @@ class ReviewReportMixin:
     ) -> dict[str, Any]:
         """Retrieve additional evidence, revise, and audit citations.
 
-        Per-call ``self.ka.arun`` failures surface as ``FailureRecord``
-        entries on the returned ``failures`` list so the universal
-        failures channel records which add_query call failed.
-        Cancellation-class results propagate (see
-        ``_collect_add_query_failures``); the formatter filters any
-        ``BaseException`` entry at ``_format_supplementary_query`` so the
-        merged supplementary snippet block ignores failed calls exactly
-        as before.
+        Per-call ``self.ka.arun`` failures remain internal evidence
+        decisions. Existing main or supplementary evidence permits silent
+        continuation; when no reliable evidence remains the fixed retrieval
+        error is raised. Cancellation-class results propagate.
         """
         review_json = _extract_json_object(review_content)
         has_gaps = bool(review_json.get("has_critical_gaps", False))
@@ -181,7 +173,6 @@ class ReviewReportMixin:
             add_queries = []
 
         add_doc_list: list[dict[str, Any]] = []
-        failures: list[FailureRecord] = []
         content_to_check = draft_content
 
         if has_gaps and add_queries:
@@ -196,18 +187,20 @@ class ReviewReportMixin:
                 ],
                 return_exceptions=True,
             )
-            failures = _collect_add_query_failures(
-                subtopic_idx, add_query_results
+            normalized_results, failure_count = _partition_add_query_results(
+                add_query_results
             )
             new_knowledge_str = self._format_supplementary_results(
                 SupplementaryResultContext(
                     subtopic_idx=subtopic_idx,
                     add_queries=add_queries,
-                    add_query_results=add_query_results,
+                    add_query_results=normalized_results,
                     add_doc_list=add_doc_list,
                     draft_content=draft_content,
                 )
             )
+            if failure_count and not raw_doc_list and not add_doc_list:
+                raise retrieval_unavailable_error()
             if new_knowledge_str.strip():
                 feedback_response = await self._chat(
                     get_prompt(
@@ -231,7 +224,6 @@ class ReviewReportMixin:
         return {
             "revised_content": content_to_check,
             "add_doc_list": add_doc_list,
-            "failures": failures,
         }
 
     def _format_supplementary_results(

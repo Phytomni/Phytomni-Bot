@@ -117,6 +117,7 @@ class DeepResearchState(ParallelDispatchState):
     retrieve_indexed_results: Annotated[
         list[tuple[int, list[dict[str, Any]]]], operator.add
     ]
+    retrieve_failed_indices: Annotated[list[int], operator.add]
     draft_indexed_results: Annotated[list[tuple[int, str]], operator.add]
     review_indexed_results: Annotated[list[tuple[int, str]], operator.add]
     revised_indexed_results: Annotated[list[tuple[int, str]], operator.add]

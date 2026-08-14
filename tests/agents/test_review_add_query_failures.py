@@ -4,12 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Per-call failure tests for ``DeepResearchAgent._feedback_rag``.
 
-Topology C wires the supplementary-retrieval ``asyncio.gather`` so each
-failed ``self.ka.arun`` call surfaces as a ``FailureRecord`` on the
-returned ``failures`` list without spawning a new graph node. These
-tests pin the per-call accumulation, the per-query ``task_label`` form
-(``add_query:<subtopic_idx>:<query_idx>``), and the empty-failures
-contract when no add_query calls are issued.
+Topology C wires the supplementary-retrieval ``asyncio.gather`` so failed
+``self.ka.arun`` calls remain internal evidence decisions without exposing
+exception text or ``FailureRecord`` metadata. These tests pin silent
+continuation with existing evidence, sanitized failure when no evidence
+remains, and cancellation propagation.
 """
 
 from __future__ import annotations
@@ -18,12 +17,13 @@ import asyncio
 from typing import Any
 
 import pytest
+from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.agents.review.report import (
     ReviewReportMixin,
-    _collect_add_query_failures,
+    _partition_add_query_results,
 )
 from mcp_server_phytomni.config.defaults import ReviewConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
@@ -61,16 +61,14 @@ async def _audit_passthrough(
     return content_to_check
 
 
-async def test_feedback_rag_records_failure_for_single_failed_query(
+async def test_feedback_rag_silently_continues_with_main_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """One failed add_query call yields exactly one FailureRecord.
+    """One failed add_query call does not leak degradation metadata.
 
     Stubs ``KnowledgeAgent.arun`` so the second call
     (``query_idx == 1``) of three raises; the other two return empty
-    results. Verifies the ``task_label`` carries the subtopic and
-    query indices, ``kind`` is ``"execute"``, and the message round-
-    trips ``str(exc)``.
+    results. Existing main evidence lets the report continue normally.
     """
     monkeypatch.setattr(
         ReviewReportMixin, "_audit_citations", _audit_passthrough
@@ -99,30 +97,18 @@ async def test_feedback_rag_records_failure_for_single_failed_query(
         subtopic_idx=4,
         draft_content="draft-orig",
         review_content=review_content,
-        raw_doc_list=[],
+        raw_doc_list=[{"doc_id": "document 001", "content": "main"}],
     )
 
-    assert "failures" in result
-    failures = result["failures"]
-    assert len(failures) == 1
-    rec = failures[0]
-    assert rec["task_label"] == "add_query:4:1"
-    assert rec["kind"] == "execute"
-    assert rec["message"] == "boom"
-    assert rec["traceback_digest"]
+    assert result["revised_content"] == "draft-orig"
+    assert result["add_doc_list"] == []
+    assert "failures" not in result
 
 
-async def test_feedback_rag_records_failures_for_all_failed_queries(
+async def test_feedback_rag_fails_when_all_evidence_is_lost(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """All three add_query calls fail → three FailureRecord entries.
-
-    Verifies per-entry ``task_label`` increments ``query_idx`` 0/1/2;
-    ``add_doc_list`` stays empty because the formatter filters every
-    Exception result; ``revised_content`` falls through to
-    ``draft_content`` because the empty supplementary block bypasses
-    the feedback chat.
-    """
+    """All three add_query calls fail with no main evidence."""
     monkeypatch.setattr(
         ReviewReportMixin, "_audit_citations", _audit_passthrough
     )
@@ -150,27 +136,15 @@ async def test_feedback_rag_records_failures_for_all_failed_queries(
         '{"has_critical_gaps": true, '
         '"search_queries": ["q-a", "q-b", "q-c"]}'
     )
-    result = await getattr(agent, "_feedback_rag")(
-        subtopic_idx=0,
-        draft_content="draft-orig",
-        review_content=review_content,
-        raw_doc_list=[],
-    )
-
-    failures = result["failures"]
-    assert len(failures) == 3
-    for idx, expected_msg in enumerate(
-        ["first failure", "second failure", "third failure"]
+    with pytest.raises(
+        McpError, match="Knowledge retrieval temporarily unavailable"
     ):
-        rec = failures[idx]
-        assert rec["task_label"] == f"add_query:0:{idx}"
-        assert rec["kind"] == "execute"
-        assert rec["message"] == expected_msg
-        assert rec["traceback_digest"]
-    assert result["add_doc_list"] == []
-    # All add_query calls failed → supplementary block is empty →
-    # feedback chat is skipped → audit-passthrough echoes the draft.
-    assert result["revised_content"] == "draft-orig"
+        await getattr(agent, "_feedback_rag")(
+            subtopic_idx=0,
+            draft_content="draft-orig",
+            review_content=review_content,
+            raw_doc_list=[],
+        )
 
 
 @pytest.mark.parametrize(
@@ -181,17 +155,14 @@ async def test_feedback_rag_records_failures_for_all_failed_queries(
     ],
     ids=["no_gaps", "empty_search_queries"],
 )
-async def test_feedback_rag_failures_empty_when_no_add_queries(
+async def test_feedback_rag_has_no_failure_metadata_when_no_add_queries(
     monkeypatch: pytest.MonkeyPatch,
     review_content: str,
 ) -> None:
-    """The ``failures`` key is present and empty when no add_query runs.
+    """No supplementary retrieval creates no failure metadata.
 
     Both no-add_queries paths — ``has_critical_gaps=false`` and
-    ``search_queries=[]`` — short-circuit before the gather. The key
-    MUST still be present (the worker's ``result.get("failures", [])``
-    forward expects a list-typed delta on the universal failures
-    channel so the ``operator.add`` reducer never sees ``None``).
+    ``search_queries=[]`` — short-circuit before the gather.
     """
     monkeypatch.setattr(
         ReviewReportMixin, "_audit_citations", _audit_passthrough
@@ -220,29 +191,25 @@ async def test_feedback_rag_failures_empty_when_no_add_queries(
         raw_doc_list=[],
     )
 
-    assert "failures" in result
-    assert result["failures"] == []
+    assert "failures" not in result
     assert not arun_calls
 
 
-def test_collect_records_only_exception_results() -> None:
-    """Exception results become FailureRecords; clean results skipped."""
+def test_partition_counts_failures_without_retaining_exception_text() -> None:
+    """Partitioning keeps valid lists and replaces failures with no payload."""
     results: list[Any] = [[], RuntimeError("boom"), []]
-    failures = _collect_add_query_failures(3, results)
-    assert len(failures) == 1
-    assert failures[0]["task_label"] == "add_query:3:1"
-    assert failures[0]["message"] == "boom"
-    assert failures[0]["kind"] == "execute"
+    normalized, failure_count = _partition_add_query_results(results)
+    assert normalized == [[], None, []]
+    assert failure_count == 1
 
 
-def test_collect_reraises_cancellation_class() -> None:
+def test_partition_reraises_cancellation_class() -> None:
     """A CancelledError in the results propagates, not degrades.
 
     ``asyncio.gather(return_exceptions=True)`` can capture a child
-    ``CancelledError`` as a ``BaseException`` result; the walk must
-    re-raise it so cancellation aborts the review instead of being
-    recorded as a normal degraded ``FailureRecord``.
+    ``CancelledError`` as a ``BaseException`` result; the partitioner must
+    re-raise it so cancellation aborts the review instead of being retained.
     """
     results: list[Any] = [RuntimeError("ok-failure"), asyncio.CancelledError()]
     with pytest.raises(asyncio.CancelledError):
-        _collect_add_query_failures(0, results)
+        _partition_add_query_results(results)

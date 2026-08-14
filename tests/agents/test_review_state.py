@@ -58,6 +58,7 @@ def test_review_state_carries_indexed_accumulators() -> None:
     hints = get_type_hints(DeepResearchState, include_extras=True)
     for key in [
         "retrieve_indexed_results",
+        "retrieve_failed_indices",
         "draft_indexed_results",
         "review_indexed_results",
         "revised_indexed_results",

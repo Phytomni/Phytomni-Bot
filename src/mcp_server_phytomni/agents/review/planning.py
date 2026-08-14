@@ -30,8 +30,10 @@ from ...graphs.review_to_knowledge_adapters import (
 )
 from ...mcp.progress_events import emit_progress
 from ...storage.downloads import download_upload_context
-from ..shared.analysis import _compute_traceback_digest
-from ..shared.parallel_dispatch import FailureRecord
+from ..knowledge.retrieval_result import (
+    RetrievalProtocolError,
+    retrieval_unavailable_error,
+)
 from .helpers import _format_doc_fragment
 
 if TYPE_CHECKING:
@@ -41,15 +43,8 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# Workers MUST NOT raise per the TW-1 sentinel-coexistence contract:
-# downstream ``retrieve_reduce_node`` iterates the indexed-results list
-# one entry per dimension and would short-circuit on a propagated
-# exception. The factory-closure worker therefore catches Exception
-# broadly and writes BOTH a legacy empty-list sentinel AND a
-# ``FailureRecord`` to the shared failures channel. Mirrors the
-# ``_WORKFLOW_CAPTURED_EXCEPTIONS`` tuple shape in
-# ``runtime/langgraph_runner.py`` which carries the same design
-# intent through static analysis (pylint ``W0718``).
+# Ordinary retrieval failures stay in a private index accumulator. They are
+# not valid empty evidence and must not enter the public failures channel.
 _RETRIEVE_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
 
 
@@ -198,12 +193,9 @@ class ReviewPlanningMixin:
         name, i.e. ``retrieve_worker_node:<child>``.
 
         On success writes a single ``(task_index, docs)`` tuple into
-        ``retrieve_indexed_results`` via ``operator.add``. On exception
-        writes BOTH a legacy empty-list sentinel AND a ``FailureRecord``
-        into the shared failures channel (TW-1 coexistence —
-        ``retrieve_reduce_node`` downstream still iterates a list per
-        dimension; per-task failure detail surfaces in
-        ``raw.phytomni_state``).
+        ``retrieve_indexed_results`` via ``operator.add``. On ordinary
+        failure writes only the task index into the private failed-index
+        accumulator. Cancellation-class exceptions propagate unchanged.
 
         Args:
             knowledge_app: Compiled KnowledgeAgent subgraph for this
@@ -225,22 +217,13 @@ class ReviewPlanningMixin:
                     "retrieve_indexed_results": [(task_index, docs)],
                 }
             except _RETRIEVE_WORKER_CAUGHT as exc:
-                logger.exception(
-                    "retrieve worker failed: task_index=%s dimension=%s",
+                del exc
+                logger.warning(
+                    "review retrieve worker failed: "
+                    "task_index=%s kind=retrieval",
                     task_index,
-                    state.get("dimension"),
                 )
-                return {
-                    "retrieve_indexed_results": [(task_index, [])],
-                    "failures": [
-                        FailureRecord(
-                            task_label=f"retrieve:{task_index}",
-                            message=str(exc),
-                            kind="execute",
-                            traceback_digest=_compute_traceback_digest(exc),
-                        )
-                    ],
-                }
+                return {"retrieve_failed_indices": [task_index]}
 
         return _retrieve_worker
 
@@ -262,9 +245,47 @@ class ReviewPlanningMixin:
             detail="reducing retrieved dimensions",
         )
         dimensions = state["research_dimensions"]
-        indexed = sorted(state["retrieve_indexed_results"], key=lambda t: t[0])
-        # Rebuild a results list ordered by task_index for the fragment loop.
-        results = [docs for _, docs in indexed]
+        expected_indices = set(range(len(dimensions)))
+        indexed_by_index: dict[int, list[dict[str, Any]]] = {}
+        for entry in state["retrieve_indexed_results"]:
+            if (
+                not isinstance(entry, tuple)
+                or len(entry) != 2
+                or not isinstance(entry[0], int)
+                or entry[0] not in expected_indices
+                or entry[0] in indexed_by_index
+                or not isinstance(entry[1], list)
+            ):
+                raise RetrievalProtocolError(
+                    "Review retrieval index contract violated"
+                )
+            indexed_by_index[entry[0]] = entry[1]
+
+        failed_indices = state["retrieve_failed_indices"]
+        failed_set: set[int] = set()
+        for index in failed_indices:
+            if (
+                not isinstance(index, int)
+                or index not in expected_indices
+                or index in failed_set
+                or index in indexed_by_index
+            ):
+                raise RetrievalProtocolError(
+                    "Review retrieval index contract violated"
+                )
+            failed_set.add(index)
+
+        observed_indices = set(indexed_by_index) | failed_set
+        if observed_indices != expected_indices:
+            raise RetrievalProtocolError(
+                "Review retrieval index contract violated"
+            )
+
+        reliable_doc_count = sum(
+            len(docs) for docs in indexed_by_index.values()
+        )
+        if failed_set and reliable_doc_count == 0:
+            raise retrieval_unavailable_error()
 
         accumulator = RetrievalAccumulator(
             raw_docs=[],
@@ -275,7 +296,8 @@ class ReviewPlanningMixin:
             self.review_config.MAX_TOKENS - state["total_length"]
         ) / max(1, len(dimensions))
 
-        for index, result in enumerate(results):
+        for index in range(len(dimensions)):
+            result = indexed_by_index.get(index, [])
             fragments = self._dimension_fragments(
                 result,
                 accumulator,

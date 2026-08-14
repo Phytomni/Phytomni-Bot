@@ -113,7 +113,6 @@ async def test_revised_worker_node_success_writes_indexed_result_and_add_docs(
         return_value={
             "revised_content": "revised-A",
             "add_doc_list": [{"id": "doc-extra-1"}, {"id": "doc-extra-2"}],
-            "failures": [],
         }
     )
     monkeypatch.setattr(DeepResearchAgent, "_feedback_rag", fake_feedback_rag)
@@ -135,11 +134,7 @@ async def test_revised_worker_node_success_writes_indexed_result_and_add_docs(
         {"id": "doc-extra-1"},
         {"id": "doc-extra-2"},
     ]
-    # Worker forwards any per-add_query failures the inner
-    # ``_feedback_rag`` accumulated; the success path here returns
-    # an empty list rather than omitting the key, so the universal
-    # ``operator.add`` reducer always merges a list-typed delta.
-    assert result["failures"] == []
+    assert "failures" not in result
     assert fake_feedback_rag.await_count == 1
 
 
