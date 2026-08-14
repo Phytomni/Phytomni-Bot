@@ -13,7 +13,6 @@ itself is a thin wrapper that delegates to the compiled evolution
 subgraph via :func:`ainvoke_graph`.
 """
 
-import asyncio
 import importlib
 from collections.abc import Mapping
 from functools import lru_cache
@@ -149,8 +148,6 @@ async def find_spa_taxids(
             )
             response_taxid_data = response.json()
         return _parse_spa_taxids(response_taxid_data)
-    except asyncio.CancelledError:
-        raise
     except Exception:
         raise _evolution_lookup_unavailable() from None
 
