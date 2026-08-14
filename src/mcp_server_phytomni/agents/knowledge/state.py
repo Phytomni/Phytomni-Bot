@@ -5,8 +5,8 @@
 """Public IO schemas for the KnowledgeAgent subgraph.
 
 ``KnowledgeInput`` is the narrow request shape a parent graph
-supplies; ``KnowledgeOutput`` carries both answer paths
-(``final_response`` and ``retrieved_docs``); ``KnowledgeState`` is
+supplies; ``KnowledgeOutput`` carries both answer paths plus the
+retrieval outcome; ``KnowledgeState`` is
 the full working dict and stays binary-compatible with the legacy
 ``KnowledgeAgentState`` alias so internal node annotations remain
 valid.
@@ -49,7 +49,7 @@ class KnowledgeInput(TypedDict, total=False):
 class KnowledgeOutput(TypedDict):
     """Answer surface exposed to the parent graph after compile.
 
-    Both keys ship populated because the same compiled subgraph
+    All three keys ship populated because the same compiled subgraph
     serves the retrieve-only and the generate paths: callers pick
     one based on the originally requested ``is_generate`` flag,
     mirroring the existing ``KnowledgeAgent.arun`` bifurcation.
