@@ -248,10 +248,12 @@ class ReviewPlanningMixin:
         expected_indices = set(range(len(dimensions)))
         indexed_by_index: dict[int, list[dict[str, Any]]] = {}
         for entry in state["retrieve_indexed_results"]:
+            if not isinstance(entry, tuple) or len(entry) != 2:
+                raise RetrievalProtocolError(
+                    "Review retrieval index contract violated"
+                )
             if (
-                not isinstance(entry, tuple)
-                or len(entry) != 2
-                or not isinstance(entry[0], int)
+                not isinstance(entry[0], int)
                 or entry[0] not in expected_indices
                 or entry[0] in indexed_by_index
                 or not isinstance(entry[1], list)
@@ -261,9 +263,8 @@ class ReviewPlanningMixin:
                 )
             indexed_by_index[entry[0]] = entry[1]
 
-        failed_indices = state["retrieve_failed_indices"]
         failed_set: set[int] = set()
-        for index in failed_indices:
+        for index in state["retrieve_failed_indices"]:
             if (
                 not isinstance(index, int)
                 or index not in expected_indices
@@ -275,8 +276,7 @@ class ReviewPlanningMixin:
                 )
             failed_set.add(index)
 
-        observed_indices = set(indexed_by_index) | failed_set
-        if observed_indices != expected_indices:
+        if (set(indexed_by_index) | failed_set) != expected_indices:
             raise RetrievalProtocolError(
                 "Review retrieval index contract violated"
             )
@@ -296,7 +296,7 @@ class ReviewPlanningMixin:
             self.review_config.MAX_TOKENS - state["total_length"]
         ) / max(1, len(dimensions))
 
-        for index in range(len(dimensions)):
+        for index, dimension in enumerate(dimensions):
             result = indexed_by_index.get(index, [])
             fragments = self._dimension_fragments(
                 result,
@@ -305,7 +305,7 @@ class ReviewPlanningMixin:
             )
             dimension_params.append(
                 {
-                    "subtopic": dimensions[index],
+                    "subtopic": dimension,
                     "knowledge": "\n\n".join(fragments),
                 }
             )

@@ -167,7 +167,6 @@ class ReviewReportMixin:
         error is raised. Cancellation-class results propagate.
         """
         review_json = _extract_json_object(review_content)
-        has_gaps = bool(review_json.get("has_critical_gaps", False))
         add_queries = review_json.get("search_queries", [])
         if not isinstance(add_queries, list):
             add_queries = []
@@ -175,7 +174,7 @@ class ReviewReportMixin:
         add_doc_list: list[dict[str, Any]] = []
         content_to_check = draft_content
 
-        if has_gaps and add_queries:
+        if review_json.get("has_critical_gaps", False) and add_queries:
             add_query_results = await asyncio.gather(
                 *[
                     self.ka.arun(
