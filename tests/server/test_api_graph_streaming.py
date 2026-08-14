@@ -42,10 +42,15 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
     )
 
     def _fake_target(
-        _user_query: str, obs_file_list: Any = None, locale: Any = None
+        _user_query: str,
+        obs_file_list: Any = None,
+        locale: Any = None,
+        *,
+        conversation_messages: Any = (),
+        retrieval_query: Any = None,
     ) -> tuple[Any, dict[str, Any]]:
         """Return the fake app and a minimal initial state."""
-        del obs_file_list, locale
+        del obs_file_list, locale, conversation_messages, retrieval_query
         return fake_app, {"user_query": _user_query}
 
     monkeypatch.setattr(mcp_app, "knowledge_stream_target", _fake_target)
@@ -141,10 +146,15 @@ async def test_streamed_knowledge_run_reconcile_short_circuits(
     )
 
     def _fake_target(
-        _user_query: str, obs_file_list: Any = None, locale: Any = None
+        _user_query: str,
+        obs_file_list: Any = None,
+        locale: Any = None,
+        *,
+        conversation_messages: Any = (),
+        retrieval_query: Any = None,
     ) -> tuple[Any, dict[str, Any]]:
         """Return the fake app and a minimal initial state."""
-        del obs_file_list, locale
+        del obs_file_list, locale, conversation_messages, retrieval_query
         return fake_app, {"user_query": _user_query}
 
     monkeypatch.setattr(mcp_app, "knowledge_stream_target", _fake_target)
