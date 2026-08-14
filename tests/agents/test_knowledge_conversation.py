@@ -25,6 +25,10 @@ from mcp_server_phytomni.agents.knowledge.conversation import (
     _standalone_query,
     _topic_entity_removals,
 )
+from mcp_server_phytomni.agents.knowledge.retrieval import _retrieval_result
+from mcp_server_phytomni.agents.knowledge.retrieval_result import (
+    RetrievalResult,
+)
 from mcp_server_phytomni.agents.knowledge.state import KnowledgeState
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
@@ -162,6 +166,51 @@ async def test_retrieve_node_uses_retrieval_query_only(
     assert captured["user_query"] == "What evidence supports OsDREB1?"
     assert "Tell me about OsDREB1." not in captured["user_query"]
     assert "assistant" not in captured["user_query"].lower()
+
+
+@pytest.mark.asyncio
+async def test_retrieve_node_preserves_partial_evidence_without_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep partial reliable evidence without user-facing warnings."""
+    docs = [
+        {
+            "chunk_id": "paper-1",
+            "title": "Reliable paper",
+            "content": "Reliable evidence",
+        }
+    ]
+
+    async def fake_multi_retrieve(**_kwargs: Any) -> RetrievalResult:
+        return _retrieval_result(
+            docs,
+            [
+                {
+                    "source": "repository-1",
+                    "kind": "timeout",
+                    "retryable": True,
+                }
+            ],
+        )
+
+    monkeypatch.setattr(knowledge_agent, "multi_retrieve", fake_multi_retrieve)
+    agent = KnowledgeAgent(
+        knowledge_config=KnowledgeConfig(),
+        sensitive_config=_sensitive_config(),
+    )
+
+    result = await agent.retrieve_node(
+        cast(
+            KnowledgeState,
+            agent.initial_state("Find reliable evidence"),
+        )
+    )
+
+    assert result["retrieved_docs"] == docs
+    assert result["retrieval_outcome"] == "partial"
+    assert result["final_response"] == {}
+    assert "partial" not in result["retrieve_context"].lower()
+    assert "temporarily unavailable" not in result["retrieve_context"].lower()
 
 
 @pytest.mark.asyncio

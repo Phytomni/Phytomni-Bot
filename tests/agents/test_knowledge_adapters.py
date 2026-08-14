@@ -56,8 +56,8 @@ def test_input_factory_preserves_the_shared_retrieve_shape() -> None:
     assert analyst_payload.get("repo_id_dict") is not repo_id_dict
 
 
-def test_output_factory_requires_a_consistent_knowledge_output() -> None:
-    """Missing evidence metadata is unavailable retrieval, not no-match."""
+def test_output_factory_accepts_only_consistent_knowledge_outputs() -> None:
+    """Complete, partial, and no-match outputs retain distinct semantics."""
     extract_docs = make_knowledge_output_adapter("retrieved_docs")
     docs = [
         {
@@ -66,14 +66,16 @@ def test_output_factory_requires_a_consistent_knowledge_output() -> None:
             "content": "Evidence",
         }
     ]
-    complete = {
-        "retrieved_docs": docs,
-        "retrieval_outcome": "complete",
-        "final_response": {"content": "answer"},
-    }
-
-    assert extract_docs(complete) == docs
-    assert extract_docs(complete) is not docs
+    for outcome in ("complete", "partial"):
+        output = {
+            "retrieved_docs": docs,
+            "retrieval_outcome": outcome,
+            "final_response": {"content": "answer"},
+        }
+        detached = extract_docs(output)
+        assert detached == docs
+        assert detached is not docs
+        assert detached[0] is not docs[0]
 
     no_match = {
         "retrieved_docs": [],
@@ -82,15 +84,72 @@ def test_output_factory_requires_a_consistent_knowledge_output() -> None:
     }
     assert not extract_docs(no_match)
 
-    for invalid in (
-        {"retrieved_docs": docs},
-        {"retrieved_docs": None},
-        {},
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"retrieval_outcome": "no_match", "final_response": {}},
+        {"retrieved_docs": [], "final_response": {}},
+        {
+            "retrieved_docs": None,
+            "retrieval_outcome": "no_match",
+            "final_response": {},
+        },
+        {
+            "retrieved_docs": "not-a-list",
+            "retrieval_outcome": "complete",
+            "final_response": {},
+        },
+        {
+            "retrieved_docs": [],
+            "retrieval_outcome": "unknown",
+            "final_response": {},
+        },
+        {
+            "retrieved_docs": [],
+            "retrieval_outcome": "partial",
+            "final_response": {},
+        },
+        {
+            "retrieved_docs": [
+                {
+                    "chunk_id": "private-document",
+                    "title": "Private title",
+                    "content": "private document content",
+                    "url": "https://private.example/evidence",
+                    "credential": "secret-token",
+                }
+            ],
+            "retrieval_outcome": "no_match",
+            "final_response": {},
+            "query": "private user query",
+        },
+        {
+            "retrieved_docs": [],
+            "retrieval_outcome": "no_match",
+            "final_response": None,
+        },
+    ],
+)
+def test_output_factory_rejects_malformed_outputs_without_details(
+    invalid: Any,
+) -> None:
+    """Malformed child output raises only the fixed public retrieval error."""
+    extract_docs = make_knowledge_output_adapter("retrieved_docs")
+
+    with pytest.raises(
+        McpError, match="Knowledge retrieval temporarily unavailable"
+    ) as exc_info:
+        extract_docs(invalid)
+
+    visible_error = f"{exc_info.value} {exc_info.value.__cause__}"
+    for private_value in (
+        "private document content",
+        "private user query",
+        "https://private.example/evidence",
+        "secret-token",
     ):
-        with pytest.raises(
-            McpError, match="Knowledge retrieval temporarily unavailable"
-        ):
-            extract_docs(invalid)
+        assert private_value not in visible_error
 
 
 def test_domain_adapters_keep_named_boundaries_and_local_queries() -> None:

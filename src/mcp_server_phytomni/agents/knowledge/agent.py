@@ -289,7 +289,10 @@ class KnowledgeAgent:
         Returns:
             A dictionary containing:
                 - retrieved_docs: The raw list of retrieved documents.
+                - retrieval_outcome: Reliability of the retrieved documents.
                 - retrieve_context: The formatted context string for the LLM.
+                - final_response: The unused answer output for
+                  retrieve-only runs.
         """
         emit_progress("retrieving", 0, detail="querying knowledge base")
         retrieval_query = state.get("retrieval_query") or state["user_query"]
@@ -332,6 +335,7 @@ class KnowledgeAgent:
             "retrieved_docs": docs,
             "retrieval_outcome": retrieval_outcome,
             "retrieve_context": retrieve_context,
+            "final_response": {},
         }
 
     async def generate_prep_node(
