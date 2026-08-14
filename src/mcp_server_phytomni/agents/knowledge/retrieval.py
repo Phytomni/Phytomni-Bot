@@ -151,12 +151,7 @@ async def _retrieve_cached(
     if not ranked_docs:
         if raw_result["failures"]:
             raise retrieval_unavailable_error()
-        return {
-            "doc_list": [],
-            "total": 0,
-            "outcome": "no_match",
-            "failures": [],
-        }
+        return _retrieval_result([], [])
     return {
         "doc_list": ranked_docs,
         "total": len(ranked_docs),
@@ -349,8 +344,8 @@ async def multi_retrieve(
         results = await asyncio.gather(*tasks, return_exceptions=True)
         reliable_results: list[dict[str, Any]] = []
         failures: list[RetrievalFailure] = []
-        for (repo_id, _page_size), result in zip(repo_items, results):
-            source = f"repo:{repo_id}"
+        for repo_index, result in enumerate(results):
+            source = f"repo:{repo_index}"
             if isinstance(result, BaseException) and not isinstance(
                 result, Exception
             ):

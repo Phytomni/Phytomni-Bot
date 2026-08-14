@@ -200,6 +200,42 @@ async def test_public_error_does_not_expose_failure_details(
     assert not any(secret in public_message for secret in secrets)
 
 
+async def test_repository_failure_source_uses_sorted_ordinal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep repository identifiers out of failure metadata."""
+    secret_repo = (
+        "https://private.invalid/repository?token=secret-deployment-id"
+    )
+
+    async def fake_retrieve(
+        *, user_query: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        del user_query
+        if kwargs["repo_id"] == secret_repo:
+            raise TimeoutException("hidden upstream failure")
+        return {
+            "doc_list": [_doc("safe", score=0.9)],
+            "total": 1,
+            "outcome": "complete",
+            "failures": [],
+        }
+
+    monkeypatch.setattr(retrieval_mod, "retrieve", fake_retrieve)
+
+    result = await retrieval_mod.multi_retrieve(
+        "query",
+        repo_id_dict={"safe-repo": 1, secret_repo: 1},
+        top_n=2,
+    )
+
+    assert result["outcome"] == "partial"
+    assert result["failures"] == [
+        {"source": "repo:0", "kind": "timeout", "retryable": True}
+    ]
+    assert secret_repo not in str(result)
+
+
 async def test_rerank_failure_returns_stable_partial_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
