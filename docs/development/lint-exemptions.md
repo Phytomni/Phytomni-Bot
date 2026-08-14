@@ -10,13 +10,13 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `4`
+- Authorized records: `3`
 
 ## Informational counts
 
 | Tool and rule                   | Records |
 | ------------------------------- | ------: |
-| `pylint:R0801`                  |       2 |
+| `pylint:R0801`                  |       1 |
 | `pylint:too-few-public-methods` |       1 |
 | `pylint:too-many-ancestors`     |       1 |
 
@@ -85,37 +85,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 - Tests:
   - `tests/unit/config/test_defaults.py`
   - `tests/server/test_handler_support.py`
-
-### `SAE-STR-0007`
-
-- Tool:
-  `pylint`
-- Rule:
-  `R0801`
-- Classification:
-  `structural`
-- Mechanism:
-  `diagnostic`
-- Target:
-  `pair`
-- Path:
-  `src/mcp_server_phytomni/config/required_env.py`
-- Symbol:
-  `49:62`
-- Fingerprint:
-  `sha256:538e3fef2c779c4f6b238b89de68cf7dc15f41d8bc6fe90a39d776969dc2e0bc`
-- Owner:
-  `bot-maintainers`
-- Introduced:
-  `2026-08-11`
-- Review:
-  `2026-09-11`
-- Expiry:
-  `—`
-- Remediation:
-  `—`
-- Tests:
-  - `tests/unit/config/test_required_env.py`
 
 ### `SAE-STR-0008`
 
@@ -193,27 +162,6 @@ Risk:
 ```text
 Changing the inheritance contract can alter Pydantic field and validator
 resolution.
-```
-
-### `SAE-STR-0007`
-
-Rationale:
-
-```text
-The required outbound field inventory is intentionally mirrored by the
-required-env contract test.
-```
-
-Counterfactual:
-
-```text
-Generate the test assertion from the production inventory.
-```
-
-Risk:
-
-```text
-A production field change can require two updates without this diagnostic.
 ```
 
 ### `SAE-STR-0008`

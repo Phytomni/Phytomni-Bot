@@ -40,26 +40,6 @@ risk = "Changing the inheritance contract can alter Pydantic field and validator
 tests = ["tests/unit/config/test_defaults.py", "tests/server/test_handler_support.py"]
 
 [[exemptions]]
-id = "SAE-STR-0007"
-tool = "pylint"
-rule = "R0801"
-classification = "structural"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/config/required_env.py"
-symbol = "49:62"
-peer_path = "tests/unit/config/test_required_env.py"
-peer_symbol = "54:67"
-fingerprint = "sha256:538e3fef2c779c4f6b238b89de68cf7dc15f41d8bc6fe90a39d776969dc2e0bc"
-owner = "bot-maintainers"
-introduced_on = 2026-08-11
-review_on = 2026-09-11
-rationale = "The required outbound field inventory is intentionally mirrored by the required-env contract test."
-counterfactual = "Generate the test assertion from the production inventory."
-risk = "A production field change can require two updates without this diagnostic."
-tests = ["tests/unit/config/test_required_env.py"]
-
-[[exemptions]]
 id = "SAE-STR-0008"
 tool = "pylint"
 rule = "R0801"
