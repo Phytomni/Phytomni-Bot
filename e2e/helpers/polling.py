@@ -145,7 +145,7 @@ async def poll_http_run_to_terminal(
     run_id: str,
     *,
     headers: Mapping[str, str],
-    timeout_seconds: float = 1800.0,
+    timeout_seconds: float | None = None,
     poll_interval_seconds: float = 10.0,
 ) -> HttpRunTerminal:
     """Poll one long-lived HTTP run and return its terminal result.
@@ -159,7 +159,8 @@ async def poll_http_run_to_terminal(
         client: Authenticated HTTP client bound to the live API.
         run_id: Owner-scoped run id returned by a submit endpoint.
         headers: Authentication headers for the status route.
-        timeout_seconds: Monotonic local polling budget.
+        timeout_seconds: Monotonic local polling budget. Defaults to the
+            environment-aware :func:`resolve_timeout_seconds` value.
         poll_interval_seconds: Delay between non-terminal reads.
 
     Returns:
@@ -170,11 +171,21 @@ async def poll_http_run_to_terminal(
             report revision.
         TaskPollingTimeoutError: If the local deadline expires.
     """
-    deadline = time.monotonic() + timeout_seconds
+    effective_timeout = (
+        resolve_timeout_seconds()
+        if timeout_seconds is None
+        else timeout_seconds
+    )
+    deadline = time.monotonic() + effective_timeout
     revisions: list[int] = []
-    while time.monotonic() < deadline:
+    while True:
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            break
         response = await client.get(
-            f"/v1/runs/{run_id}", headers=dict(headers)
+            f"/v1/runs/{run_id}",
+            headers=dict(headers),
+            timeout=remaining_seconds,
         )
         assert (
             response.status_code == 200

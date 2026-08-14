@@ -6,12 +6,41 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from types import SimpleNamespace
 from typing import cast
 
 import httpx
 import pytest
 from e2e.helpers import polling
 from tests.unit.e2e.state_fakes import build_task_state
+
+
+class _TimeoutCapturingClient:
+    """Minimal polling client with observable per-request timeouts."""
+
+    def __init__(self, responses: tuple[dict[str, object], ...]) -> None:
+        """Prepare response bodies and an empty timeout capture."""
+        self._responses = iter(responses)
+        self._timeouts: list[float] = []
+
+    async def get(
+        self,
+        _path: str,
+        **request_options: object,
+    ) -> httpx.Response:
+        """Return the next response after capturing its read timeout."""
+        self._timeouts.append(cast(float, request_options["timeout"]))
+        return httpx.Response(200, json=next(self._responses))
+
+    @property
+    def timeout(self) -> float | None:
+        """Return the most recently captured timeout, if any."""
+        return self._timeouts[-1] if self._timeouts else None
+
+    @property
+    def timeouts(self) -> list[float]:
+        """Return captured request timeouts in call order."""
+        return list(self._timeouts)
 
 
 def test_task_state_carries_report_progress_and_artifact_contract() -> None:
@@ -125,11 +154,13 @@ async def test_http_poll_records_distinct_monotonic_revisions() -> None:
             )
 
         async def get(
-            self, _path: str, *, headers: dict[str, str]
+            self,
+            _path: str,
+            **request_options: object,
         ) -> Response:
             """Return the next prepared response."""
             self.paths.append(_path)
-            del headers
+            assert request_options["timeout"] is not None
             return next(self.responses)
 
         @property
@@ -151,3 +182,60 @@ async def test_http_poll_records_distinct_monotonic_revisions() -> None:
     assert terminal.result["final_report"] == "# final"
     assert client.request_count == 2
     assert client.paths == ["/v1/runs/run-1", "/v1/runs/run-1"]
+
+
+@pytest.mark.asyncio
+async def test_http_poll_uses_environment_resolved_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HTTP polling resolves its default budget from the E2E environment."""
+
+    monotonic_values = iter((100.0, 101.5))
+    monkeypatch.setenv("PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS", "7.5")
+    monkeypatch.setattr(
+        polling,
+        "time",
+        SimpleNamespace(monotonic=lambda: next(monotonic_values)),
+    )
+    client = _TimeoutCapturingClient(({"status": "succeeded", "result": {}},))
+
+    terminal = await polling.poll_http_run_to_terminal(
+        cast(httpx.AsyncClient, client),
+        "run-environment-timeout",
+        headers={"X-Service-Token": "test"},
+    )
+
+    assert terminal.status == "succeeded"
+    assert client.timeout == pytest.approx(6.0)
+
+
+@pytest.mark.asyncio
+async def test_http_poll_bounds_each_get_by_remaining_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each HTTP read uses only the polling budget still available."""
+
+    client = _TimeoutCapturingClient(
+        (
+            {"status": "running", "result": {}},
+            {"status": "succeeded", "result": {}},
+        )
+    )
+
+    monotonic_values = iter((10.0, 11.0, 14.0))
+    monkeypatch.setattr(
+        polling,
+        "time",
+        SimpleNamespace(monotonic=lambda: next(monotonic_values)),
+    )
+
+    terminal = await polling.poll_http_run_to_terminal(
+        cast(httpx.AsyncClient, client),
+        "run-bounded-reads",
+        headers={"X-Service-Token": "test"},
+        timeout_seconds=10.0,
+        poll_interval_seconds=0.0,
+    )
+
+    assert terminal.status == "succeeded"
+    assert client.timeouts == pytest.approx([9.0, 6.0])
