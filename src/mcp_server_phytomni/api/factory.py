@@ -29,9 +29,12 @@ from fastapi import (
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from google.protobuf import json_format
+from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ..agents.knowledge.retrieval_result import RETRIEVAL_UNAVAILABLE_MESSAGE
 from ..agents.research.input_contracts import ResearchCoordinatorRequest
 from ..config.defaults import ApiConfig, BriefGeneConfig
 from ..config.settings import SensitiveConfig
@@ -915,6 +918,27 @@ def _register_error_handlers(app: FastAPI) -> None:
                 retryable=safe_error.retryable,
             ),
         )
+
+    @app.exception_handler(McpError)
+    async def mcp_error_handler(
+        _request: Request,
+        exc: McpError,
+    ) -> JSONResponse:
+        """Project only fixed MCP failures into safe HTTP errors."""
+        if (
+            exc.error.code == INTERNAL_ERROR
+            and exc.error.message == RETRIEVAL_UNAVAILABLE_MESSAGE
+        ):
+            return _app_attr("_error_response")(
+                500,
+                RETRIEVAL_UNAVAILABLE_MESSAGE,
+                options=_ErrorResponseOptions(
+                    code="knowledge_retrieval_unavailable",
+                    stage="retrieval",
+                    retryable=True,
+                ),
+            )
+        return _app_attr("_error_response")(500, "internal server error")
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(
