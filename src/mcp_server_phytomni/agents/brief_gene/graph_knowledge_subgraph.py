@@ -15,7 +15,8 @@ mirrors the analyst-side mixin pattern in
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any, cast
 
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -26,7 +27,7 @@ from ...graphs.brief_gene_to_knowledge_adapters import (
     extract_brief_gene_knowledge_response,
 )
 from ...mcp.progress_events import emit_progress
-from ...runtime.langgraph_runner import ainvoke_graph
+from ...runtime.langgraph_runner import ainvoke_graph, ensure_thread_id
 from ..shared.parallel_dispatch import DegradedRecord, redact_failure_message
 from .pipeline import _dedupe, _format_docs
 
@@ -234,10 +235,24 @@ class BriefGeneKnowledgeSubgraphMixin:
             task_index = state.get("task_index", 0)
             knowledge_input = state.get("knowledge_input", {})
             try:
-                knowledge_output = await ainvoke_graph(
-                    knowledge_app,
-                    knowledge_input,
-                )
+                thread_id = ensure_thread_id()
+                try:
+                    knowledge_output = await ainvoke_graph(
+                        knowledge_app,
+                        knowledge_input,
+                        thread_id=thread_id,
+                    )
+                finally:
+                    checkpointer = getattr(knowledge_app, "checkpointer", None)
+                    if checkpointer is not None and checkpointer is not False:
+                        deleter = getattr(checkpointer, "adelete_thread", None)
+                        if not callable(deleter):
+                            raise RuntimeError(
+                                "knowledge checkpointer cannot delete threads"
+                            )
+                        await cast(Callable[[str], Awaitable[None]], deleter)(
+                            thread_id
+                        )
                 docs = extract_brief_gene_knowledge_response(knowledge_output)
                 return {
                     "retrieve_indexed_results": [(task_index, docs)],

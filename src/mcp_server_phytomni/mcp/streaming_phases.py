@@ -13,6 +13,42 @@ wire contract.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from typing import Any, TypedDict, cast
+
+from .schemas import PhytomniAgents
+
+GRAPH_PROGRESS_TOOLS = frozenset(
+    {
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        PhytomniAgents.REVIEW_AGENT.value,
+        PhytomniAgents.DATA_AGENT.value,
+        PhytomniAgents.BRIEF_GENE_AGENT.value,
+    }
+)
+
+
+class PrivateStreamKwargs(TypedDict, total=False):
+    """Private streaming inputs excluded from public MCP schemas."""
+
+    conversation_messages: Sequence[Mapping[str, str]]
+    private_agent_state: Mapping[str, Any] | None
+
+
+class StreamRunMeta(TypedDict):
+    """Run identity carried through graph-streaming calls."""
+
+    run_id: str
+    dialogue_id: str | None
+
+
+async def close_async_iterator(stream: Any) -> None:
+    """Propagate consumer shutdown through one nested async iterator."""
+    closer = getattr(stream, "aclose", None)
+    if callable(closer):
+        await cast(Callable[[], Awaitable[None]], closer)()
+
+
 _PHASE_MAP: dict[str, dict[str, str]] = {
     "KnowledgeAgent": {
         "retrieve_node": "retrieving",

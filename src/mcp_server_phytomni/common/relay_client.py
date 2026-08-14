@@ -14,7 +14,9 @@ never logged), and binds each attempt to its final service pool.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -451,9 +453,21 @@ class RelayClient:
         ) as response:
             if response.status_code >= 400:
                 raise McpError(ErrorData(code=INTERNAL_ERROR, message=message))
-            with destination.open("wb") as sink:
-                async for chunk in response.aiter_bytes():
-                    sink.write(chunk)
+            destination_opened = False
+            download_complete = False
+            try:
+                with destination.open("wb") as sink:
+                    destination_opened = True
+                    async for chunk in response.aiter_bytes():
+                        sink.write(chunk)
+                download_complete = True
+            finally:
+                if destination_opened and not download_complete:
+                    with suppress(OSError):
+                        await asyncio.to_thread(
+                            destination.unlink,
+                            missing_ok=True,
+                        )
 
     async def get_obs_list(
         self, obs_prefix: str, *, message: str

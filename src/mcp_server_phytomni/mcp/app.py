@@ -2,12 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""MCP server entrypoint for registering and dispatching Phytomni tools.
-
-The module wires schema definitions, MCP-compliant error mapping, and dispatch
-to the domain-specific tool handler layer while keeping public tool names
-stable for existing clients.
-"""
+"""Register and dispatch MCP schemas through domain tool handlers."""
 
 from collections.abc import (
     AsyncIterator,
@@ -20,7 +15,6 @@ from dataclasses import asdict
 from json import dumps
 from typing import (
     Any,
-    TypedDict,
     Unpack,
     cast,
 )
@@ -112,9 +106,20 @@ from .schemas import (
     ReviewAgent,
 )
 from .stream_lifecycle import StreamLifecycleState, project_stream_failures
+from .streaming_phases import (
+    GRAPH_PROGRESS_TOOLS as _GRAPH_PROGRESS_TOOLS,
+)
+from .streaming_phases import (
+    PrivateStreamKwargs as _PrivateStreamKwargs,
+)
+from .streaming_phases import StreamRunMeta as _StreamRunMeta
+from .streaming_phases import (
+    close_async_iterator as _close_async_iterator,
+)
 from .streaming_phases import phase_for
 
 ToolHandler = Callable[[Any], Awaitable[Any]]
+
 
 TOOL_ARGUMENT_MODELS: dict[str, type[BaseModel]] = {
     PhytomniAgents.CHAT_AGENT.value: ChatAgent,
@@ -356,8 +361,7 @@ def prepare_tool_stream(
     *,
     run_id: str,
     dialogue_id: str | None,
-    conversation_messages: Sequence[Mapping[str, str]] = (),
-    private_agent_state: Mapping[str, Any] | None = None,
+    **private: Unpack[_PrivateStreamKwargs],
 ) -> AsyncIterator[AguiEvent]:
     """Validate and prepare a raw AG-UI event iterator synchronously.
 
@@ -398,7 +402,7 @@ def prepare_tool_stream(
             cast(ChatAgent, args),
             run_id=run_id,
             dialogue_id=dialogue_id,
-            conversation_messages=conversation_messages,
+            conversation_messages=private.get("conversation_messages", ()),
         )
     if tool_name in {
         PhytomniAgents.KNOWLEDGE_AGENT.value,
@@ -408,8 +412,8 @@ def prepare_tool_stream(
         app, initial_state = _build_graph_stream_target(
             tool_name,
             args,
-            conversation_messages=conversation_messages,
-            private_agent_state=private_agent_state,
+            conversation_messages=private.get("conversation_messages", ()),
+            private_agent_state=private.get("private_agent_state"),
         )
         return _stream_graph_agent(
             app,
@@ -461,16 +465,20 @@ async def _stream_chat_events(
     yield run_started(run_id, dialogue_id)
     message_id = IdFactory().new_id("msg")
     started = False
-    async for chunk in _stream_chat_agent(
+    chunks = _stream_chat_agent(
         args, conversation_messages=conversation_messages
-    ):
-        delta = _chunk_content_delta(chunk)
-        if not delta:
-            continue
-        if not started:
-            yield text_message_start(message_id)
-            started = True
-        yield text_message_content(message_id, delta)
+    )
+    try:
+        async for chunk in chunks:
+            delta = _chunk_content_delta(chunk)
+            if not delta:
+                continue
+            if not started:
+                yield text_message_start(message_id)
+                started = True
+            yield text_message_content(message_id, delta)
+    finally:
+        await _close_async_iterator(chunks)
     if started:
         yield text_message_end(message_id)
     yield run_finished(run_id)
@@ -527,27 +535,6 @@ def _build_graph_stream_target(
         obs_file_list=review_args.obs_file_list,
         locale=review_args.locale,
     )
-
-
-class _StreamRunMeta(TypedDict):
-    """Run-identity keywords threaded through a graph streaming call.
-
-    Bundles ``run_id`` and ``dialogue_id`` — the same pair
-    :func:`run_started` takes positionally — behind one ``**run_meta:
-    Unpack[_StreamRunMeta]`` parameter so
-    :func:`_stream_graph_agent`'s declared parameter count stays under
-    the project's ``max-args`` limit. mypy/pyright still enforce both
-    keys by name at every call site exactly as keyword-only parameters
-    would; only the count pylint sees changes.
-
-    Fields:
-        run_id: Registry run id carried on ``RunStarted``/``RunFinished``.
-        dialogue_id: Optional chat-ai conversation id carried on
-            ``RunStarted``.
-    """
-
-    run_id: str
-    dialogue_id: str | None
 
 
 async def _terminal_graph_events(
@@ -615,42 +602,35 @@ async def _stream_graph_agent(
     :func:`_terminal_graph_events` before ``RunFinished`` closes the run.
     """
     run_id = run_meta["run_id"]
-    dialogue_id = run_meta["dialogue_id"]
-    yield run_started(run_id, dialogue_id)
+    yield run_started(run_id, run_meta["dialogue_id"])
     seen_phases: set[str] = set()
     final_state: Mapping[str, Any] | None = None
-    async for ns, mode, chunk in app.astream(
+    graph_events = app.astream(
         initial_state,
         stream_mode=["custom", "updates", "values"],
         subgraphs=True,
         config=build_runnable_config(run_id),
-    ):
-        if mode == "custom":
-            if isinstance(chunk, Mapping) and chunk.get("kind") == (
-                PROGRESS_KIND
-            ):
-                yield custom("phyto.progress", dict(chunk))
-        elif mode == "updates" and ns == ():
-            for node_name in chunk:
-                phase = phase_for(agent_name, node_name)
-                if phase and phase not in seen_phases:
-                    seen_phases.add(phase)
-                    yield step_started(phase)
-        elif mode == "values" and ns == ():
-            final_state = chunk
+    )
+    try:
+        async for ns, mode, chunk in graph_events:
+            if mode == "custom":
+                if isinstance(chunk, Mapping) and chunk.get("kind") == (
+                    PROGRESS_KIND
+                ):
+                    yield custom("phyto.progress", dict(chunk))
+            elif mode == "updates" and ns == ():
+                for node_name in chunk:
+                    phase = phase_for(agent_name, node_name)
+                    if phase and phase not in seen_phases:
+                        seen_phases.add(phase)
+                        yield step_started(phase)
+            elif mode == "values" and ns == ():
+                final_state = chunk
+    finally:
+        await _close_async_iterator(graph_events)
     async for event in _terminal_graph_events(tool_name, final_state):
         yield event
     yield run_finished(run_id)
-
-
-_GRAPH_PROGRESS_TOOLS = frozenset(
-    {
-        PhytomniAgents.KNOWLEDGE_AGENT.value,
-        PhytomniAgents.REVIEW_AGENT.value,
-        PhytomniAgents.DATA_AGENT.value,
-        PhytomniAgents.BRIEF_GENE_AGENT.value,
-    }
-)
 
 
 def _stdio_progress_context() -> tuple[str | int | None, Any, str]:
@@ -878,8 +858,12 @@ async def _stream_chat_agent(
         args, scratch_server_dir(chat_config, "chat"), chat_config, runtime
     )
     call_kwargs["conversation_messages"] = conversation_messages
-    async for chunk in stream_phyto_chat_chunks(**call_kwargs):
-        yield chunk
+    provider_chunks = stream_phyto_chat_chunks(**call_kwargs)
+    try:
+        async for chunk in provider_chunks:
+            yield chunk
+    finally:
+        await _close_async_iterator(provider_chunks)
 
 
 async def dispatch_tool(

@@ -12,8 +12,8 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from collections.abc import Callable, Mapping
+from typing import Any, Unpack
 
 from fastapi import (
     FastAPI,
@@ -103,7 +103,12 @@ from .routes.attachment_inputs import (
     prepare_selected_expert_arguments,
     restrict_expert_payload_for_research,
 )
-from .schemas import ChatCompletionRequest, ExpertQueryRequest, ResumeRequest
+from .schemas import (
+    ChatCompletionRequest,
+    ChatStreamCall,
+    ExpertQueryRequest,
+    ResumeRequest,
+)
 from .stream_answer import resolve_stream_answer_max_bytes
 
 
@@ -586,15 +591,11 @@ async def _review_chat_completion_response(
 
 
 async def _stream_chat_response(
-    *,
-    tool_name: str,
-    arguments: dict[str, object],
-    payload: ChatCompletionRequest,
-    user_query: str,
-    conversation_messages: Sequence[Mapping[str, str]] = (),
-    private_agent_state: Mapping[str, Any] | None = None,
+    **request: Unpack[ChatStreamCall],
 ) -> StreamingResponse:
     """Validate and build a streaming chat response."""
+    tool_name = request["tool_name"]
+    payload = request["payload"]
     if tool_name == "ReviewAgent":
         if not ApiConfig().A2UI_ENABLED:
             raise HTTPException(
@@ -605,9 +606,9 @@ async def _stream_chat_response(
                 ),
             )
         return await _stream_review_a2ui_pause(
-            arguments=dict(arguments),
+            arguments=dict(request["arguments"]),
             payload=payload,
-            user_query=user_query,
+            user_query=request["user_query"],
         )
     if not tool_accepts_stream(tool_name):
         raise HTTPException(
@@ -615,12 +616,7 @@ async def _stream_chat_response(
             detail=f"streaming is not supported for model {payload.model}",
         )
     return await _stream_chat_completion(
-        tool_name=tool_name,
-        arguments=arguments,
-        payload=payload,
-        user_query=user_query,
-        conversation_messages=conversation_messages,
-        private_agent_state=private_agent_state,
+        **request,
     )
 
 

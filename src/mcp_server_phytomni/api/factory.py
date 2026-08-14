@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from functools import cached_property, partial
 from importlib import import_module
-from typing import Any
+from typing import Any, Unpack
 
 from a2a.server.routes.jsonrpc_routes import create_jsonrpc_routes
 from fastapi import (
@@ -93,6 +93,7 @@ from .routes import runs as run_routes
 from .schemas import (
     A2uiActionRequest,
     ChatCompletionRequest,
+    ChatStreamCall,
     ExpertQueryRequest,
     MemoryAuditRecordResponse,
     MemoryResponse,
@@ -434,23 +435,10 @@ class _RouteAdapters:
 
     async def stream_chat_completion(
         self,
-        *,
-        tool_name: str,
-        arguments: dict[str, object],
-        payload: ChatCompletionRequest,
-        user_query: str,
-        conversation_messages: Sequence[Mapping[str, str]] = (),
-        private_agent_state: Mapping[str, Any] | None = None,
+        **request: Unpack[ChatStreamCall],
     ) -> Response:
         """Stream a chat completion through the app-level seam."""
-        return await _app_attr("_stream_chat_response")(
-            tool_name=tool_name,
-            arguments=arguments,
-            payload=payload,
-            user_query=user_query,
-            conversation_messages=conversation_messages,
-            private_agent_state=private_agent_state,
-        )
+        return await _app_attr("_stream_chat_response")(**request)
 
     async def review_chat_completion(
         self,

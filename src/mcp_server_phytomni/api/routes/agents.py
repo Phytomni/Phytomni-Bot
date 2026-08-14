@@ -61,6 +61,12 @@ from .attachment_inputs import (
     restrict_expert_payload_for_research,
 )
 from .context_helpers import (
+    clarification_agent_run as _clarification_agent_run,
+)
+from .context_helpers import (
+    context_execution_thread_id as _context_execution_thread_id,
+)
+from .context_helpers import (
     context_response as _context_response,
 )
 from .context_helpers import (
@@ -902,25 +908,6 @@ def _context_adapter(
     return None if key is None else private_agent_state.get(key)
 
 
-def _context_execution_thread_id(
-    selected_agent_id: str,
-    dispatch: ContextAgentInvocation,
-    adapter: Any,
-) -> str | None:
-    """Select the durable execution thread for a context invocation."""
-    thread_id = dispatch.agent_thread_id
-    if selected_agent_id == "ReviewAgent" and adapter is not None:
-        thread_id = getattr(adapter, "execution_thread_id", thread_id)
-    if selected_agent_id in {
-        "ChatAgent",
-        "KnowledgeAgent",
-        "DataAgent",
-        "ReviewAgent",
-    }:
-        return thread_id
-    return None
-
-
 async def _context_success_outcome(
     selected_agent_id: str,
     body: dict[str, Any],
@@ -1001,20 +988,6 @@ async def _invoke_context_agent(
     if status_code != 200 or body.get("status") != "succeeded":
         return AgentOutcome(result=body, status="running")
     return await _context_success_outcome(selected_agent_id, body, adapter)
-
-
-def _clarification_agent_run(agent: str, message: str) -> dict[str, Any]:
-    """Return a sync agent.run envelope for clarification-only turns."""
-    formatted: dict[str, Any] = {"answer": message}
-    formatted["follow_up_questions"], formatted["references"] = [], []
-    return {
-        "id": None,
-        "object": "agent.run",
-        "agent": agent,
-        "status": "succeeded",
-        "task_ids": [],
-        "result": {"formatted": formatted},
-    }
 
 
 def register_agent_routes(

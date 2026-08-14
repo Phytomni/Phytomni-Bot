@@ -12,9 +12,9 @@ at call time.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping
 from importlib import import_module
-from typing import Any
+from typing import Any, Unpack
 
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
@@ -27,7 +27,7 @@ from ..runtime.run_registry import RunRecord
 from ..storage.path_policy import IdFactory
 from . import a2ui_runtime, run_lifecycle, streaming
 from .relay.audit_filter import redact_body_text
-from .schemas import A2uiActionRequest, ChatCompletionRequest
+from .schemas import A2uiActionRequest, ChatCompletionRequest, ChatStreamCall
 
 
 def _app_module() -> Any:
@@ -342,23 +342,12 @@ async def _stream_review_a2ui_pause(
 
 
 async def _stream_chat_completion(
-    *,
-    tool_name: str,
-    arguments: dict[str, Any],
-    payload: ChatCompletionRequest,
-    user_query: str,
-    conversation_messages: Sequence[Mapping[str, str]] = (),
-    private_agent_state: Mapping[str, Any] | None = None,
+    **request: Unpack[ChatStreamCall],
 ) -> StreamingResponse:
     """Compatibility seam for the extracted HTTP streaming runtime."""
     return await streaming.stream_chat_completion(
-        tool_name=tool_name,
-        arguments=arguments,
-        payload=payload,
-        user_query=user_query,
         dependencies=_streaming_dependencies(),
-        conversation_messages=conversation_messages,
-        private_agent_state=private_agent_state,
+        **request,
     )
 
 

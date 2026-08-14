@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse, Response
 
+from ...runtime.conversation_context.adapters import ContextAgentInvocation
 from ...runtime.conversation_context.models import ConversationEnvelopeV1
 from ...runtime.conversation_context.service import (
     PreparedTurn,
@@ -24,11 +25,46 @@ from ..lifecycle_contract import SafeApiError
 from .agent_dependencies import AgentRouteDependencies
 
 __all__ = [
+    "clarification_agent_run",
+    "context_execution_thread_id",
     "context_response",
     "safe_native_request_json",
     "slug_for_tool",
     "stream_context_chat",
 ]
+
+
+def clarification_agent_run(agent: str, message: str) -> dict[str, Any]:
+    """Return a sync agent.run envelope for clarification-only turns."""
+    formatted: dict[str, Any] = {"answer": message}
+    formatted["follow_up_questions"], formatted["references"] = [], []
+    return {
+        "id": None,
+        "object": "agent.run",
+        "agent": agent,
+        "status": "succeeded",
+        "task_ids": [],
+        "result": {"formatted": formatted},
+    }
+
+
+def context_execution_thread_id(
+    selected_agent_id: str,
+    dispatch: ContextAgentInvocation,
+    adapter: Any,
+) -> str | None:
+    """Select the durable execution thread for a context invocation."""
+    thread_id = dispatch.agent_thread_id
+    if selected_agent_id == "ReviewAgent" and adapter is not None:
+        thread_id = getattr(adapter, "execution_thread_id", thread_id)
+    if selected_agent_id in {
+        "ChatAgent",
+        "KnowledgeAgent",
+        "DataAgent",
+        "ReviewAgent",
+    }:
+        return thread_id
+    return None
 
 
 def context_response(

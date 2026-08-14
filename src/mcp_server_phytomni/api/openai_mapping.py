@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """OpenAI-compatible chat mapping helpers.
 
-Defines model lookup, message flattening, completion envelope shaping,
+Defines model lookup, chat-turn splitting, completion envelope shaping,
 and SSE chunk shaping. The shapers keep OpenAI canonical fields in
 place while attaching Phytomni formatted and raw payloads where the API
 contract expects them.

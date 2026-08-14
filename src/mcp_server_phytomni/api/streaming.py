@@ -24,7 +24,7 @@ from collections.abc import (
 from contextlib import suppress
 from dataclasses import dataclass
 from importlib import import_module
-from typing import Any, cast
+from typing import Any, Unpack, cast
 
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
@@ -74,7 +74,7 @@ from ..runtime.task_manager import (
 from . import a2ui_runtime
 from .lifecycle_contract import empty_agent_result
 from .openai_mapping import to_chat_completion_chunks
-from .schemas import ChatCompletionRequest
+from .schemas import ChatCompletionRequest, ChatStreamCall
 from .stream_answer import StreamAnswerAccumulator
 
 
@@ -156,6 +156,14 @@ def _settle_stream_run_compat(
 
 
 @dataclass(frozen=True)
+class _PrivateStreamContext:
+    """Private history and agent state excluded from the public payload."""
+
+    conversation_messages: Sequence[Mapping[str, str]] = ()
+    agent_state: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True)
 class _StreamPreparationRequest:
     """Inputs needed to prepare and prime one ordinary stream."""
 
@@ -164,8 +172,7 @@ class _StreamPreparationRequest:
     payload: ChatCompletionRequest
     user_query: str
     dependencies: StreamingDependencies
-    conversation_messages: Sequence[Mapping[str, str]] = ()
-    private_agent_state: Mapping[str, Any] | None = None
+    private_context: _PrivateStreamContext = _PrivateStreamContext()
     raw_event_factory: Callable[[str], AsyncIterator[AguiEvent]] | None = None
 
 
@@ -315,13 +322,13 @@ async def _prepare_stream(
             raw_events = request.raw_event_factory(run_id)
         else:
             private_kwargs: dict[str, Any] = {}
-            if request.conversation_messages:
+            if request.private_context.conversation_messages:
                 private_kwargs["conversation_messages"] = (
-                    request.conversation_messages
+                    request.private_context.conversation_messages
                 )
-            if request.private_agent_state is not None:
+            if request.private_context.agent_state is not None:
                 private_kwargs["private_agent_state"] = (
-                    request.private_agent_state
+                    request.private_context.agent_state
                 )
             raw_events = request.dependencies.request.prepare_tool_stream(
                 request.tool_name,
@@ -668,15 +675,13 @@ def _tasks_db_path() -> str:
 
 async def stream_chat_completion(
     *,
-    tool_name: str,
-    arguments: dict[str, Any],
-    payload: ChatCompletionRequest,
-    user_query: str,
     dependencies: StreamingDependencies,
-    conversation_messages: Sequence[Mapping[str, str]] = (),
-    private_agent_state: Mapping[str, Any] | None = None,
+    **request: Unpack[ChatStreamCall],
 ) -> StreamingResponse:
     """Prepare and wrap one streamed tool response."""
+    tool_name = request["tool_name"]
+    payload = request["payload"]
+    user_query = request["user_query"]
     if (
         tool_name == "ChatAgent"
         and payload.conversation is None
@@ -684,7 +689,7 @@ async def stream_chat_completion(
         and dependencies.a2ui.select_widget(user_query) is not None
     ):
         return await stream_chat_a2ui_confirm(
-            arguments=arguments,
+            arguments=request["arguments"],
             payload=payload,
             user_query=user_query,
             dependencies=dependencies,
@@ -692,7 +697,7 @@ async def stream_chat_completion(
 
     context_stream, replay_prepared = await _prepare_context_stream(
         tool_name=tool_name,
-        _arguments=arguments,
+        _arguments=request["arguments"],
         payload=payload,
     )
     if replay_prepared is not None:
@@ -715,18 +720,22 @@ async def stream_chat_completion(
         prepared = await _prepare_stream(
             _StreamPreparationRequest(
                 tool_name=tool_name,
-                arguments=arguments,
+                arguments=request["arguments"],
                 payload=payload,
                 user_query=user_query,
                 dependencies=dependencies,
-                conversation_messages=conversation_messages,
-                private_agent_state=private_agent_state,
+                private_context=_PrivateStreamContext(
+                    conversation_messages=request.get(
+                        "conversation_messages", ()
+                    ),
+                    agent_state=request.get("private_agent_state"),
+                ),
                 raw_event_factory=(
                     (
                         lambda run_id: _prepare_contextual_raw_events(
                             dependencies=dependencies,
                             tool_name=tool_name,
-                            arguments=arguments,
+                            arguments=request["arguments"],
                             run_id=run_id,
                             _payload=payload,
                             context_stream=context_stream,

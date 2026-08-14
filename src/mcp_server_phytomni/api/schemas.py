@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, NotRequired, TypedDict
 from unicodedata import category, normalize
 from uuid import UUID
 
@@ -42,6 +43,7 @@ __all__ = [
     "AssetDescriptor",
     "AttachmentAsset",
     "ChatCompletionRequest",
+    "ChatStreamCall",
     "ChatMessage",
     "ContextMutationResponse",
     "ContextSettlementRequest",
@@ -64,6 +66,17 @@ __all__ = [
     "MemoryUpdateRequest",
     "ResumeRequest",
 ]
+
+
+class ChatStreamCall(TypedDict):
+    """Keyword contract shared by ordinary chat streaming adapters."""
+
+    tool_name: str
+    arguments: dict[str, Any]
+    payload: ChatCompletionRequest
+    user_query: str
+    conversation_messages: NotRequired[Sequence[Mapping[str, str]]]
+    private_agent_state: NotRequired[Mapping[str, Any] | None]
 
 
 class ApiErrorDetail(BaseModel):
