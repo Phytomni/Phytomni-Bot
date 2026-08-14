@@ -19,21 +19,40 @@ Provides three pillars used by every test under ``e2e/``:
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import pytest_asyncio
 
-from mcp_client_phytomni import PhytomniMcpClient
-from mcp_server_phytomni.storage.path_policy import IdFactory, RunIdentity
-
-from .helpers.citation_database import configured_e2e_citation_database
-from .helpers.client import make_client
-from .helpers.obs_publish import publish_demo_data
+if TYPE_CHECKING:
+    from mcp_client_phytomni import PhytomniMcpClient
+    from mcp_server_phytomni.storage.path_policy import RunIdentity
 
 DEMO_PLACEHOLDER_PREFIX = "/obs/phytomni/demo/"
+_OUTBOUND_POOLING_MODULE = "test_outbound_pooling_e2e.py"
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Skip the gated packet before any autouse live fixture can run."""
+    outbound_items = [
+        item for item in items if item.path.name == _OUTBOUND_POOLING_MODULE
+    ]
+    if not outbound_items:
+        return
+    outbound_helpers = import_module(
+        ".helpers.outbound_pooling", package=__package__
+    )
+
+    try:
+        outbound_helpers.require_live_gates(os.environ)
+    except outbound_helpers.MissingOutboundLiveGateError as error:
+        marker = pytest.mark.skip(reason=str(error))
+        for item in outbound_items:
+            item.add_marker(marker)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -41,8 +60,12 @@ def e2e_citation_database_fixture(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[Path | None]:
     """Configure one valid citation artifact for every server subprocess."""
+    citation_helpers = import_module(
+        ".helpers.citation_database", package=__package__
+    )
+
     root = tmp_path_factory.mktemp("citation-database")
-    with configured_e2e_citation_database(root) as database:
+    with citation_helpers.configured_e2e_citation_database(root) as database:
         yield database
 
 
@@ -63,9 +86,11 @@ def session_run_identity_fixture() -> RunIdentity:
     Returns:
         Session-stable RunIdentity instance.
     """
-    return RunIdentity.create(
+    path_policy = import_module("mcp_server_phytomni.storage.path_policy")
+
+    return path_policy.RunIdentity.create(
         user_id="phytomni-e2e",
-        id_factory=IdFactory(),
+        id_factory=path_policy.IdFactory(),
     )
 
 
@@ -85,7 +110,9 @@ def published_demo_data_fixture(
         Mapping from local relative path (``docs/sample.pdf``) to the
         published ``/obs/<bucket>/<key>`` URL.
     """
-    return publish_demo_data(demo_data_dir, session_run_identity)
+    obs_helpers = import_module(".helpers.obs_publish", package=__package__)
+
+    return obs_helpers.publish_demo_data(demo_data_dir, session_run_identity)
 
 
 @pytest_asyncio.fixture(name="mcp_client")
@@ -106,8 +133,10 @@ async def mcp_client_fixture() -> AsyncIterator[PhytomniMcpClient]:
         Connected client whose server subprocess is shut down on
         teardown (best effort).
     """
+    client_helpers = import_module(".helpers.client", package=__package__)
+
     try:
-        async with make_client() as client:
+        async with client_helpers.make_client() as client:
             yield client
     except RuntimeError as exc:
         if "different task" not in str(exc):

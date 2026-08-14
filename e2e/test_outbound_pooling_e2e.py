@@ -19,27 +19,24 @@ import pytest_asyncio
 
 from .helpers.outbound_pooling import (
     MissingOutboundLiveGateError,
+    live_server_environment,
     require_live_gates,
 )
 
-_SMALL_POOL_ENVIRONMENT = {
-    f"PHYTOMNI_OUTBOUND_{suffix}_CONCURRENCY": "1"
-    for suffix in (
-        "LLM",
-        "RETRIEVAL",
-        "RERANK",
-        "NL2SQL",
-        "ANALYSIS_CONTROL",
-        "ANALYSIS_STATUS",
-        "IAM",
-        "SPA_FAQ",
-        "BI",
-        "OBS",
-        "RELAY_CONTROL",
-        "INTEROP",
-    )
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.network,
+]
+
+LIVE_SCENARIO_TESTS: dict[str, str] = {
+    "llm_stream_and_completion": (
+        "test_chat_stream_and_completion_share_llm_pool"
+    ),
+    "retrieval_and_rerank": (
+        "test_knowledge_and_data_agents_use_platform_pools"
+    ),
+    "nl2sql": "test_knowledge_and_data_agents_use_platform_pools",
 }
-_SMALL_POOL_ENVIRONMENT["PHYTOMNI_OUTBOUND_POOL_WAIT_WARN_SECONDS"] = "0.5"
 
 
 def _chat_timeout_seconds() -> float:
@@ -80,8 +77,7 @@ def outbound_api_server_fixture(
         with api_server_helpers.boot_phytomni_api(
             tmp_path_factory,
             environment={
-                **_SMALL_POOL_ENVIRONMENT,
-                "PHYTOMNI_TESTING": "1",
+                **live_server_environment(),
                 "CITATION_DB_PATH": str(database),
             },
         ) as server:

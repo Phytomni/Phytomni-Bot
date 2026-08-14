@@ -976,6 +976,14 @@ global socket semaphore, or metric API is added by the logical pools.
   **Purpose:** Large but finite read timeout for the outbound-pooling Chat API
   probe; accepted range is `1` through `7200` seconds.
 
+The four safety gates authorize only the three currently executable live
+scenarios (`llm_stream_and_completion`, `retrieval_and_rerank`, and `nl2sql`).
+They do not imply that analysis, relay, OBS, or Interop targets are disposable
+or non-production. The runbook lists every unavailable scenario as
+`external-pending`; operators must supply the named authority before running
+it, and the missing gated harness must be implemented first. Never substitute
+a production service.
+
 - **Variable:** `PHYTOMNI_E2E_SUBMIT_TIMEOUT_SECONDS`
   **Default:** `1800`
   **Purpose:** Submit timeout for async tool calls.

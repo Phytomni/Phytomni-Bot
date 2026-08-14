@@ -1042,12 +1042,35 @@ PHYTOMNI_CONFIRM_NON_PRODUCTION=1 \
 ```
 
 Without all four gates the module skips before creating a service, task,
-OBS object, or socket. The probe uses synthetic Chat requests and the large
-but finite `PHYTOMNI_OUTBOUND_POOL_E2E_CHAT_TIMEOUT_SECONDS` setting. Run it
-only with disposable non-production credentials and record unavailable
-providers or configured Interop targets as `external-pending`; never redirect
-the probe to production. Production capacity selection, deployment, replica
-coordination, activation, and monitoring remain external operations.
+OBS object, or socket. The executable packet covers
+`llm_stream_and_completion`, `retrieval_and_rerank`, and `nl2sql` through the
+real HTTP service, using the large but finite
+`PHYTOMNI_OUTBOUND_POOL_E2E_CHAT_TIMEOUT_SECONDS` setting. Run it only with
+disposable non-production credentials; never redirect it to production.
+
+The following live scenarios remain explicitly `external-pending` until the
+named non-production authority or observation seam exists:
+
+- `analysis_lifecycle`: no confirmed disposable analysis provider with delete
+  authority;
+- `relay_paths`: the active child/operator role is not confirmed
+  non-production;
+- `obs_lifecycle`: there is no public delete route or confirmed disposable
+  cleanup authority;
+- `interop_targets`: there is no confirmed non-production MCP or A2A peer;
+- `cancellation` and `bounded_capacity`: pool state is intentionally not
+  exposed through a public endpoint;
+- `resource_reuse`: process-owned resource identity is intentionally private;
+  and
+- `clean_shutdown`: resource close counters are process-private.
+
+The offline acceptance matrix is authoritative for cancellation, capacity,
+reuse, privacy, and shutdown mechanics. An `external-pending` row is not a
+pass: after the missing authority becomes available, implement and run that
+named scenario's gated harness without weakening or conditionally skipping its
+contract.
+Production capacity selection, deployment, replica coordination, activation,
+and monitoring remain external operations.
 
 ### Bounded resource-limit checklist
 
