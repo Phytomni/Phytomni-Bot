@@ -2,14 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Unit tests for the knowledge retrieval pure helpers.
-
-Pins the small synchronous helpers that the retrieve / rerank async
-orchestration depends on: _collect_rank_results error handling and
-top_n trimming, _rerank_docs dedup + content fallback, _sorted_merged_docs
-score-descending merging, _list_or_empty coercion, and the multi-layer
-clear_retrieval_caches admin seam.
-"""
+"""Unit tests for the knowledge retrieval pure helpers."""
 
 from __future__ import annotations
 
@@ -26,7 +19,6 @@ from mcp_server_phytomni.agents.knowledge.retrieval import (
     RerankOptions,
     _collect_rank_results,
     _list_or_empty,
-    _multi_retrieve,
     _rerank_batch,
     _rerank_docs,
     _RerankBatchRequest,
@@ -40,6 +32,9 @@ from mcp_server_phytomni.agents.knowledge.retrieval_options import (
 )
 from mcp_server_phytomni.agents.knowledge.retrieval_options import (
     RetrieveOptions,
+)
+from mcp_server_phytomni.agents.knowledge.retrieval_result import (
+    RETRIEVAL_UNAVAILABLE_MESSAGE,
 )
 from mcp_server_phytomni.config.defaults import ServerConfig
 from mcp_server_phytomni.runtime.outbound import OutboundPoolName
@@ -194,7 +189,17 @@ def test_collect_rank_results_raises_when_any_batch_is_exception() -> None:
     with pytest.raises(McpError) as excinfo:
         _collect_rank_results(batches, top_n=10)
 
-    assert "Reranking failed" in excinfo.value.error.message
+    assert excinfo.value.error.message == RETRIEVAL_UNAVAILABLE_MESSAGE
+
+
+def test_collect_rank_results_re_raises_cancellation() -> None:
+    """Cancellation from one rerank batch retains task-control semantics."""
+    cancelled = asyncio.CancelledError("cancel")
+
+    with pytest.raises(asyncio.CancelledError) as excinfo:
+        _collect_rank_results([cancelled], top_n=10)
+
+    assert excinfo.value is cancelled
 
 
 def test_rerank_docs_dedupes_by_chunk_id_and_uses_big_content_fallback() -> (
@@ -218,10 +223,6 @@ def test_rerank_docs_dedupes_by_chunk_id_and_uses_big_content_fallback() -> (
             "title": "Paper A",
             "big_content": "ignored",
         },
-        {
-            "chunk_id": "c3",
-            "title": "Paper C",
-        },  # no content -> skipped
     ]
 
     docs, id_doc_dict = _rerank_docs(doc_list)
@@ -230,15 +231,28 @@ def test_rerank_docs_dedupes_by_chunk_id_and_uses_big_content_fallback() -> (
     assert docs[0]["content"] == "BIG"
     assert docs[1]["content"] == "fallback"
     assert "c1" in id_doc_dict
-    assert "c3" not in id_doc_dict
+
+
+def test_rerank_docs_rejects_missing_content() -> None:
+    """Malformed source documents fail instead of disappearing silently."""
+    with pytest.raises(ValueError, match="Invalid retrieval response"):
+        _rerank_docs([{"chunk_id": "c3", "title": "Paper C"}])
 
 
 def test_sorted_merged_docs_merges_and_trims_to_top_n() -> None:
     """``_sorted_merged_docs`` merges results then truncates to top_n."""
     results: list[Any] = [
-        {"doc_list": [{"score": 0.3}, {"score": 0.8}]},
-        {"doc_list": [{"score": 0.5}]},
-        {"not_doc_list": "ignored"},
+        {
+            "doc_list": [
+                {"chunk_id": "a", "title": "A", "content": "A", "score": 0.3},
+                {"chunk_id": "b", "title": "B", "content": "B", "score": 0.8},
+            ]
+        },
+        {
+            "doc_list": [
+                {"chunk_id": "c", "title": "C", "content": "C", "score": 0.5}
+            ]
+        },
     ]
 
     sorted_docs = _sorted_merged_docs(results, top_n=2)
@@ -249,7 +263,12 @@ def test_sorted_merged_docs_merges_and_trims_to_top_n() -> None:
 def test_sorted_merged_docs_returns_all_when_top_n_is_zero() -> None:
     """A top_n of 0 or None disables truncation."""
     results: list[Any] = [
-        {"doc_list": [{"score": 0.2}, {"score": 0.4}]},
+        {
+            "doc_list": [
+                {"chunk_id": "a", "title": "A", "content": "A", "score": 0.2},
+                {"chunk_id": "b", "title": "B", "content": "B", "score": 0.4},
+            ]
+        },
     ]
 
     assert len(_sorted_merged_docs(results, top_n=0)) == 2
@@ -274,19 +293,11 @@ async def test_retrieve_raw_docs_rejects_unknown_scope(
         await retrieve_raw_docs("query", options)
 
 
-def test_clear_retrieval_caches_invokes_each_layer(
+def test_clear_retrieval_caches_invokes_surviving_layers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``clear_retrieval_caches`` calls cache_clear on the three layers.
-
-    Pins the three cooperating layers (_multi_retrieve, _retrieve_cached,
-    _retrieve_scope_docs); a dropped clear in any layer would leave a
-    stale doc set surfacing on subsequent retrieve calls.
-    """
+    """Only the scoped and reranked caches remain clearable."""
     calls: list[str] = []
-    monkeypatch.setattr(
-        _multi_retrieve, "cache_clear", lambda: calls.append("multi")
-    )
     monkeypatch.setattr(
         _retrieve_cached, "cache_clear", lambda: calls.append("single")
     )
@@ -296,7 +307,7 @@ def test_clear_retrieval_caches_invokes_each_layer(
 
     clear_retrieval_caches()
 
-    assert calls == ["multi", "single", "scope"]
+    assert calls == ["single", "scope"]
 
 
 async def test_rerank_batch_has_no_legacy_concurrency_dependency(
@@ -328,6 +339,45 @@ async def test_rerank_batch_has_no_legacy_concurrency_dependency(
     )
 
     assert ranked == [{"id": "x", "score": 1.0}]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"rank_result": "not-a-list"},
+        {"rank_result": [{"id": "unknown", "score": 1.0}]},
+        {"rank_result": [{"id": "x", "score": float("inf")}]},
+        {"rank_result": [{"id": "x"}]},
+    ],
+)
+async def test_rerank_batch_rejects_malformed_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: Any,
+) -> None:
+    """Rerank provider responses must match the submitted batch contract."""
+
+    async def fake_post_json_with_retries(_client, _request, _retry):
+        return payload
+
+    monkeypatch.setattr(retrieval_mod, "relay_mode_enabled", lambda: False)
+    monkeypatch.setattr(
+        retrieval_mod, "post_json_with_retries", fake_post_json_with_retries
+    )
+
+    with pytest.raises(ValueError, match="Invalid rerank response"):
+        await _rerank_batch(
+            cast(Any, None),
+            _RerankBatchRequest(
+                user_query="q",
+                docs_batch=[{"id": "x", "title": "t", "content": "c"}],
+                rerank_url="http://rerank.invalid/rank",
+                top_n=1,
+                timeout=1.0,
+                max_retries=0,
+                retriable_codes=(),
+            ),
+        )
 
 
 async def test_public_retrieve_uses_retrieval_then_rerank_pools() -> None:

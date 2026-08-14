@@ -159,10 +159,23 @@ async def test_retrieve_scope_docs_routes_through_relay(monkeypatch):
     """Relay mode posts the retrieve body to /v1/relay/retrieve/search."""
     _retrieve_scope_docs.cache_clear()
     monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
-    relay = _patch_relay(monkeypatch, retrieval, {"doc_list": [{"id": "d1"}]})
+    relay = _patch_relay(
+        monkeypatch,
+        retrieval,
+        {
+            "doc_list": [
+                {
+                    "chunk_id": "d1",
+                    "title": "Title",
+                    "content": "Content",
+                }
+            ]
+        },
+    )
 
     docs = await _retrieve_scope_docs(
         _RetrieveScopeKey(
+            contract_version=2,
             user_query="leaf growth",
             repo_id="repo-1",
             scope="document",
@@ -180,7 +193,13 @@ async def test_retrieve_scope_docs_routes_through_relay(monkeypatch):
         ),
     )
 
-    assert docs == [{"id": "d1"}]
+    assert docs == [
+        {
+            "chunk_id": "d1",
+            "title": "Title",
+            "content": "Content",
+        }
+    ]
     assert relay.calls[0]["path"] == "retrieve/search"
     assert relay.calls[0]["pool"] is OutboundPoolName.RETRIEVAL
     assert relay.calls[0]["body"]["repo_id"] == "repo-1"
@@ -192,14 +211,14 @@ async def test_rerank_batch_routes_through_relay(monkeypatch):
     """Relay mode posts the rerank body to /v1/relay/rerank/rank."""
     monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
     relay = _patch_relay(
-        monkeypatch, retrieval, {"rank_result": [{"id": "r1"}]}
+        monkeypatch, retrieval, {"rank_result": [{"id": "d1", "score": 0.9}]}
     )
 
     ranked = await _rerank_batch(
         _UNUSED_CLIENT,
         _RerankBatchRequest(
             user_query="leaf growth",
-            docs_batch=[{"id": "d1"}],
+            docs_batch=[{"id": "d1", "title": "Title", "content": "Content"}],
             rerank_url="https://operator.invalid/rerank",
             top_n=3,
             timeout=1.0,
@@ -208,11 +227,13 @@ async def test_rerank_batch_routes_through_relay(monkeypatch):
         ),
     )
 
-    assert ranked == [{"id": "r1"}]
+    assert ranked == [{"id": "d1", "score": 0.9}]
     assert relay.calls[0]["path"] == "rerank/rank"
     assert relay.calls[0]["pool"] is OutboundPoolName.RERANK
     assert relay.calls[0]["body"]["query"] == "leaf growth"
-    assert relay.calls[0]["body"]["docs"] == [{"id": "d1"}]
+    assert relay.calls[0]["body"]["docs"] == [
+        {"id": "d1", "title": "Title", "content": "Content"}
+    ]
     assert relay.calls[0]["timeout"] == 1.0
 
 
