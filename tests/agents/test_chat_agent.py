@@ -20,8 +20,15 @@ from httpx import Request
 from openai import APIConnectionError
 
 from mcp_server_phytomni.agents.chat import service as chat_agents
+from mcp_server_phytomni.config.defaults import ServerConfig
+from mcp_server_phytomni.runtime.outbound import OutboundPoolName
 from tests.support.chat_fakes import misplaced_reasoning_message
-from tests.support.outbound_fakes import patch_openai_runtime
+from tests.support.outbound_fakes import (
+    assert_started_pool_attempts,
+    patch_openai_runtime,
+    recording_openai_resources,
+    recording_outbound_runtime,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -105,6 +112,42 @@ async def test_run_phyto_chat_retries_openai_connection_error(
     assert calls == 2
     assert len(retries) == 1
     assert isinstance(retries[0], APIConnectionError)
+
+
+async def test_public_chat_completion_records_only_one_llm_operation() -> None:
+    """The real public Chat graph changes only the shared LLM pool once."""
+    calls: list[dict[str, Any]] = []
+
+    async def create(**kwargs: Any) -> FakeChatCompletion:
+        """Record the outer provider call and return a valid completion."""
+        calls.append(dict(kwargs))
+        return FakeChatCompletion("pooled chat answer")
+
+    chat_agents.clear_chat_cache()
+    try:
+        async with recording_outbound_runtime(
+            config=ServerConfig(),
+            resources=recording_openai_resources(create),
+        ) as runtime:
+            result = await chat_agents.phyto_chat(
+                "Classify this Chat request.",
+                model="pytest-model",
+                response_format={"type": "text"},
+                timeout=1.0,
+                max_retries=0,
+            )
+
+            assert result["choices"][0]["message"]["content"] == (
+                "pooled chat answer"
+            )
+            assert len(calls) == 1
+            assert calls[0]["stream"] is False
+            assert_started_pool_attempts(runtime, {OutboundPoolName.LLM: 1})
+            llm = runtime.pools.snapshot(OutboundPoolName.LLM)
+            assert llm.completed == 1
+            assert llm.in_use == llm.waiting == 0
+    finally:
+        chat_agents.clear_chat_cache()
 
 
 async def test_phyto_chat_converts_uploads_and_builds_openai_request(

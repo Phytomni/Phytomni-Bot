@@ -55,6 +55,16 @@ from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
 
+_KNOWLEDGE_HISTORY = (
+    {"role": "user", "content": "first question"},
+    {"role": "assistant", "content": "first answer"},
+)
+_KNOWLEDGE_CHAT_MESSAGES = [
+    {"role": "system", "content": "untrusted instruction"},
+    *_KNOWLEDGE_HISTORY,
+    {"role": "user", "content": "follow up"},
+]
+
 
 def _conversation_envelope(*, turn_id: str = "1") -> dict[str, Any]:
     """Build one Instant V1 envelope for a chat completion test."""
@@ -175,22 +185,14 @@ async def test_knowledge_chat_completion_separates_query_from_history(
         api_client,
         issued_api_key,
         model="phyto-knowledge",
-        messages=[
-            {"role": "system", "content": "untrusted instruction"},
-            {"role": "user", "content": "first question"},
-            {"role": "assistant", "content": "first answer"},
-            {"role": "user", "content": "follow up"},
-        ],
+        messages=_KNOWLEDGE_CHAT_MESSAGES,
         debug=True,
     )
 
     assert response.status_code == 200
     assert captured["arguments"]["user_query"] == "follow up"
     assert captured["retrieval_query"] == "follow up"
-    assert captured["conversation_messages"] == (
-        {"role": "user", "content": "first question"},
-        {"role": "assistant", "content": "first answer"},
-    )
+    assert captured["conversation_messages"] == _KNOWLEDGE_HISTORY
 
 
 async def test_chat_completion_rejects_trailing_assistant_before_dispatch(
@@ -212,14 +214,15 @@ async def test_chat_completion_rejects_trailing_assistant_before_dispatch(
         server.PhytomniAgents.KNOWLEDGE_AGENT.value,
         forbidden,
     )
+    invalid_turn = [
+        {"role": "user", "content": "question"},
+        {"role": "assistant", "content": "answer"},
+    ]
     response = await chat_completion(
         api_client,
         issued_api_key,
         model="phyto-knowledge",
-        messages=[
-            {"role": "user", "content": "question"},
-            {"role": "assistant", "content": "answer"},
-        ],
+        messages=invalid_turn,
     )
 
     assert response.status_code == 400

@@ -2,14 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for ``POST /v1/chat/completions`` with ``stream=true``.
-
-Pins AG-UI SSE framing (``RunStarted`` / ``TextMessageContent`` /
-``RunFinished`` plus the trailing ``[DONE]``), per-model gating,
-``resolve_gene_id`` rejection, and the two-stage run write: a
-``running`` row is written before the first frame and settled to
-``succeeded`` before ``RunFinished`` or to ``failed`` during cleanup.
-"""
+"""Test chat SSE framing, model gating, and durable run settlement."""
 
 from __future__ import annotations
 
@@ -816,12 +809,12 @@ async def test_stream_run_fails_when_client_disconnects_before_finish(
     assert result["stream"] is True
 
 
-async def test_disconnect_before_finish_has_no_synthetic_frames(
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Closing before finish settles failed without writing another frame."""
-    captured: dict[str, str] = {}
+async def _close_partial_chat_stream(
+    monkeypatch: pytest.MonkeyPatch, *, query: str, request_id: str
+) -> tuple[list[str], str, bool]:
+    """Close a partial HTTP stream and report its run and upstream state."""
+    captured_run_id = ""
+    closed = False
 
     async def fake_streamed(
         _tool_name: Any,
@@ -830,24 +823,27 @@ async def test_disconnect_before_finish_has_no_synthetic_frames(
         run_id: str,
         dialogue_id: str | None,
     ) -> AsyncIterator[Any]:
-        """Yield a partial run whose remainder must be closed silently."""
-        captured["run_id"] = run_id
-        yield run_started(run_id, dialogue_id)
-        yield text_message_content("m-disconnect", "partial")
-        yield run_finished(run_id)
+        nonlocal captured_run_id, closed
+        captured_run_id = run_id
+        try:
+            yield run_started(run_id, dialogue_id)
+            yield text_message_content("m-disconnect", "partial")
+            yield run_finished(run_id)
+        finally:
+            closed = True
 
     monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
     payload = ChatCompletionRequest(
         model="phyto-chat",
-        messages=[ChatMessage(role="user", content="disconnect")],
+        messages=[ChatMessage(role="user", content=query)],
         stream=True,
     )
-    with request_context("u1", "req-disconnect-no-frame"):
+    with request_context("u1", request_id):
         response = await _stream_chat_completion(
             tool_name="ChatAgent",
-            arguments={"user_query": "disconnect", "obs_file_list": []},
+            arguments={"user_query": query, "obs_file_list": []},
             payload=payload,
-            user_query="disconnect",
+            user_query=query,
         )
         body = cast(AsyncGenerator[str, None], response.body_iterator)
         seen: list[str] = []
@@ -858,9 +854,22 @@ async def test_disconnect_before_finish_has_no_synthetic_frames(
                 break
         with pytest.raises(StopAsyncIteration):
             await anext(body)
+    return seen, captured_run_id, closed
+
+
+async def test_disconnect_before_finish_has_no_synthetic_frames(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Closing before finish settles failed without writing another frame."""
+    seen, run_id, _closed = await _close_partial_chat_stream(
+        monkeypatch,
+        query="disconnect",
+        request_id="req-disconnect-no-frame",
+    )
 
     assert "event: RunError\n" not in "".join(seen)
-    record = RunRegistry(tasks_db_path).get_run(captured["run_id"], owner="u1")
+    record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
     assert record is not None
     assert record.status == "failed"
 
@@ -870,43 +879,11 @@ async def test_disconnect_closes_upstream_without_normal_terminal_answer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Early body closure closes the raw stream without a success frame."""
-    closed = False
-
-    async def fake_streamed(
-        _tool_name: Any,
-        _arguments: dict[str, Any],
-        *,
-        run_id: str,
-        dialogue_id: str | None,
-    ) -> AsyncIterator[Any]:
-        nonlocal closed
-        try:
-            yield run_started(run_id, dialogue_id)
-            yield text_message_content("m-cancel", "partial")
-            yield run_finished(run_id)
-        finally:
-            closed = True
-
-    monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
-    payload = ChatCompletionRequest(
-        model="phyto-chat",
-        messages=[ChatMessage(role="user", content="cancel")],
-        stream=True,
+    seen, _run_id, closed = await _close_partial_chat_stream(
+        monkeypatch,
+        query="cancel",
+        request_id="req-cancel-upstream",
     )
-    with request_context("u1", "req-cancel-upstream"):
-        response = await _stream_chat_completion(
-            tool_name="ChatAgent",
-            arguments={"user_query": "cancel", "obs_file_list": []},
-            payload=payload,
-            user_query="cancel",
-        )
-        body = cast(AsyncGenerator[str, None], response.body_iterator)
-        seen: list[str] = []
-        async for line in body:
-            seen.append(line)
-            if "event: TextMessageContent\n" in line:
-                await body.aclose()
-                break
 
     assert closed is True
     assert "event: RunFinished\n" not in "".join(seen)

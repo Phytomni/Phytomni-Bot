@@ -13,9 +13,13 @@ dedicated KnowledgeAgent subgraph invocation.
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from types import SimpleNamespace
+from typing import Any, TypedDict, cast
 
 import pytest
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
@@ -27,6 +31,7 @@ from tests.support.brief_gene_states import (
     brief_gene_identity_fields,
     empty_brief_gene_annotation_fields,
 )
+from tests.support.logging_helpers import capture_non_propagating_logger
 from tests.support.subgraph_fakes import install_knowledge_app
 
 from ._subgraph_branch_fakes import failing_async_object
@@ -37,6 +42,13 @@ _CORE_MODULE = "mcp_server_phytomni.agents.brief_gene.core"
 _KNOWLEDGE_SUBGRAPH_MODULE = (
     "mcp_server_phytomni.agents.brief_gene.graph_knowledge_subgraph"
 )
+
+
+class _TransientKnowledgeState(TypedDict, total=False):
+    """Small real graph state for checkpoint lifecycle assertions."""
+
+    user_query: str
+    retrieved_docs: list[dict[str, Any]]
 
 
 def _install_fake_knowledge_app(
@@ -184,23 +196,41 @@ async def test_retrieve_worker_factory_success_path(
     ]
 
 
-async def test_retrieve_worker_uses_standard_graph_runner(
+async def test_retrieve_worker_reclaims_standard_graph_runner_checkpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Each mounted retrieval gets an isolated checkpoint configuration."""
-    fake_app = failing_async_object(
+    """Each mounted retrieval isolates and deletes its transient checkpoint."""
+    failing_app = failing_async_object(
         "ainvoke",
         AssertionError("worker bypassed the standard graph runner"),
     )
-    calls: list[tuple[object, object]] = []
+    deleted_threads: list[str] = []
 
-    async def invoke(app: object, payload: object) -> dict[str, object]:
-        calls.append((app, payload))
+    async def delete_thread(thread_id: str) -> None:
+        deleted_threads.append(thread_id)
+
+    fake_app = SimpleNamespace(
+        ainvoke=failing_app.ainvoke,
+        checkpointer=SimpleNamespace(adelete_thread=delete_thread),
+    )
+    calls: list[tuple[object, object, str | None]] = []
+
+    async def invoke(
+        app: object,
+        payload: object,
+        thread_id: str | None = None,
+    ) -> dict[str, object]:
+        calls.append((app, payload, thread_id))
         return {"retrieved_docs": [{"title": "isolated"}]}
 
     monkeypatch.setattr(
         f"{_KNOWLEDGE_SUBGRAPH_MODULE}.ainvoke_graph",
         invoke,
+    )
+    monkeypatch.setattr(
+        f"{_KNOWLEDGE_SUBGRAPH_MODULE}.ensure_thread_id",
+        lambda: "brief-gene-worker-3",
+        raising=False,
     )
     agent = _build_agent(monkeypatch=monkeypatch)
     worker = agent.make_retrieve_worker_node(
@@ -212,10 +242,96 @@ async def test_retrieve_worker_uses_standard_graph_runner(
 
     delta = await worker(state)
 
-    assert calls == [(fake_app, {"user_query": "q3"})]
+    assert calls == [(fake_app, {"user_query": "q3"}, "brief-gene-worker-3")]
+    assert deleted_threads == ["brief-gene-worker-3"]
     assert delta["retrieve_indexed_results"] == [
         (3, [{"title": "isolated"}]),
     ]
+
+
+async def test_retrieve_worker_reclaims_checkpoint_after_graph_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed transient retrieval still deletes its checkpoint thread."""
+    deleted_threads: list[str] = []
+
+    async def delete_thread(thread_id: str) -> None:
+        deleted_threads.append(thread_id)
+
+    fake_app = SimpleNamespace(
+        checkpointer=SimpleNamespace(adelete_thread=delete_thread),
+    )
+
+    async def invoke(
+        _app: object,
+        _payload: object,
+        thread_id: str | None = None,
+    ) -> dict[str, object]:
+        assert thread_id == "brief-gene-worker-failed"
+        raise RuntimeError("retrieval unavailable")
+
+    monkeypatch.setattr(
+        f"{_KNOWLEDGE_SUBGRAPH_MODULE}.ainvoke_graph",
+        invoke,
+    )
+    monkeypatch.setattr(
+        f"{_KNOWLEDGE_SUBGRAPH_MODULE}.ensure_thread_id",
+        lambda: "brief-gene-worker-failed",
+    )
+    agent = _build_agent(monkeypatch=monkeypatch)
+    worker = agent.make_retrieve_worker_node(
+        cast(CompiledStateGraph, fake_app)
+    )
+    state = _gene_found_state()
+    state["task_index"] = 4
+    state["task_label"] = "OsFAIL"
+    state["knowledge_input"] = {"user_query": "q4"}
+
+    delta = await worker(state)
+
+    assert deleted_threads == ["brief-gene-worker-failed"]
+    assert delta["retrieve_indexed_results"] == [(4, [])]
+    assert delta["literature_degraded"] == [
+        {"task_label": "OsFAIL", "message": "retrieval unavailable"}
+    ]
+
+
+async def test_retrieve_worker_removes_real_memory_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The real LangGraph saver retains no completed worker checkpoint."""
+
+    async def retrieve(
+        _state: _TransientKnowledgeState,
+    ) -> dict[str, Any]:
+        return {"retrieved_docs": [{"title": "persisted briefly"}]}
+
+    checkpointer = MemorySaver()
+    workflow = StateGraph(_TransientKnowledgeState)
+    workflow.add_node("retrieve", cast(Any, retrieve))
+    workflow.add_edge(START, "retrieve")
+    workflow.add_edge("retrieve", END)
+    knowledge_app = workflow.compile(checkpointer=checkpointer)
+    monkeypatch.setattr(
+        f"{_KNOWLEDGE_SUBGRAPH_MODULE}.ensure_thread_id",
+        lambda: "brief-gene-real-checkpoint",
+    )
+    agent = _build_agent(monkeypatch=monkeypatch)
+    worker = agent.make_retrieve_worker_node(knowledge_app)
+    state = _gene_found_state()
+    state["task_index"] = 5
+    state["knowledge_input"] = {"user_query": "q5"}
+
+    delta = await worker(state)
+
+    assert delta["retrieve_indexed_results"] == [
+        (5, [{"title": "persisted briefly"}]),
+    ]
+    config = cast(
+        RunnableConfig,
+        {"configurable": {"thread_id": "brief-gene-real-checkpoint"}},
+    )
+    assert await checkpointer.aget_tuple(config) is None
 
 
 async def test_retrieve_worker_factory_exception_writes_empty_sentinel(
@@ -239,7 +355,12 @@ async def test_retrieve_worker_factory_exception_writes_empty_sentinel(
     state["task_index"] = 7
     state["task_label"] = "OsTEST"
     state["knowledge_input"] = {"user_query": "ignored"}
-    with caplog.at_level(logging.ERROR):
+    with (
+        capture_non_propagating_logger(
+            _KNOWLEDGE_SUBGRAPH_MODULE, caplog.handler
+        ),
+        caplog.at_level(logging.ERROR, logger=_KNOWLEDGE_SUBGRAPH_MODULE),
+    ):
         delta = await worker(state)
 
     # Loud empty sentinel attributable to the specific failed task.

@@ -313,8 +313,8 @@ async def test_obs_list_allows_only_gene_markdown_root(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The exact curated Markdown root is listable."""
-    listing = Mock(return_value=[_GENE_MD])
-    monkeypatch.setattr(ops_module, "list_object_keys", listing)
+    listing = Mock(return_value=([_GENE_MD], None))
+    monkeypatch.setattr(ops_module, "list_object_keys_page", listing)
 
     response = await client.get(
         "/v1/relay/obs/list?prefix=gene-examples/md/",
@@ -376,8 +376,8 @@ async def test_obs_list_rejects_broad_gene_example_prefix(
     prefix: str,
 ) -> None:
     """Catalog enumeration is limited to the exact Markdown root."""
-    listing = Mock(return_value=[])
-    monkeypatch.setattr(ops_module, "list_object_keys", listing)
+    listing = Mock(return_value=([], None))
+    monkeypatch.setattr(ops_module, "list_object_keys_page", listing)
 
     response = await client.get(
         f"/v1/relay/obs/list?prefix={prefix}",
@@ -511,9 +511,12 @@ async def test_obs_list_returns_keys_under_output_root(
 ) -> None:
     """list returns keys for a prefix under the server-owned output root."""
     fake = Mock(
-        return_value=[f"{_OUTPUT_PREFIX}a.png", f"{_OUTPUT_PREFIX}b.md"]
+        return_value=(
+            [f"{_OUTPUT_PREFIX}a.png", f"{_OUTPUT_PREFIX}b.md"],
+            None,
+        )
     )
-    monkeypatch.setattr(ops_module, "list_object_keys", fake)
+    monkeypatch.setattr(ops_module, "list_object_keys_page", fake)
 
     response = await client.get(
         f"/v1/relay/obs/list?prefix={_OUTPUT_PREFIX}",
@@ -533,8 +536,8 @@ async def test_obs_list_rejects_prefix_outside_output_root(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A prefix not under the server output root is a 403 (no enumeration)."""
-    fake = Mock(return_value=[])
-    monkeypatch.setattr(ops_module, "list_object_keys", fake)
+    fake = Mock(return_value=([], None))
+    monkeypatch.setattr(ops_module, "list_object_keys_page", fake)
 
     response = await client.get(
         "/v1/relay/obs/list?prefix=agent_data/secrets/",
@@ -687,8 +690,8 @@ async def test_obs_list_rejects_foreign_tenant_prefix(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A list prefix under another tenant's output root is a 403."""
-    fake = Mock(return_value=[])
-    monkeypatch.setattr(ops_module, "list_object_keys", fake)
+    fake = Mock(return_value=([], None))
+    monkeypatch.setattr(ops_module, "list_object_keys_page", fake)
 
     response = await client.get(
         "/v1/relay/obs/list?prefix=agent_data/user_data/other-tenant/runs/",
@@ -741,12 +744,15 @@ async def test_obs_list_allows_shared_prefix(
     to discover which output files are available for download.
     """
     fake = Mock(
-        return_value=[
-            f"{_SHARED_PREFIX}result.md",
-            f"{_SHARED_PREFIX}plot.png",
-        ]
+        return_value=(
+            [
+                f"{_SHARED_PREFIX}result.md",
+                f"{_SHARED_PREFIX}plot.png",
+            ],
+            None,
+        )
     )
-    monkeypatch.setattr(ops_module, "list_object_keys", fake)
+    monkeypatch.setattr(ops_module, "list_object_keys_page", fake)
 
     response = await client.get(
         f"/v1/relay/obs/list?prefix={_SHARED_PREFIX}",
@@ -798,8 +804,8 @@ async def test_obs_list_rejects_bare_shared_root(
     any caller list every tenant's results, defeating the possession-of-
     fingerprint model. The guard requires a full 64-hex fingerprint.
     """
-    fake = Mock(return_value=[])
-    monkeypatch.setattr(ops_module, "list_object_keys", fake)
+    fake = Mock(return_value=([], None))
+    monkeypatch.setattr(ops_module, "list_object_keys_page", fake)
 
     response = await client.get(
         "/v1/relay/obs/list?prefix=agent_data/shared/",

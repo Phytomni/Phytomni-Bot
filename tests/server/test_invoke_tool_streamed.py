@@ -13,9 +13,10 @@ for registered tools that do not support streaming.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import Mock
 
 import pytest
@@ -245,6 +246,77 @@ def test_prepare_knowledge_stream_seeds_query_and_private_history(
         ),
         "private_agent_state": {"retrieval_query": "follow up"},
     }
+
+
+async def test_closing_chat_events_closes_nested_provider_stream(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Closing the raw Chat seam reaches the nested provider iterator."""
+    closed = False
+
+    async def provider_stream(**_kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        nonlocal closed
+        try:
+            yield {"choices": [{"delta": {"content": "partial"}}]}
+            yield {"choices": [{"delta": {"content": "unused"}}]}
+        finally:
+            closed = True
+
+    monkeypatch.setattr(mcp_app, "stream_phyto_chat_chunks", provider_stream)
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path))
+    events = mcp_app.prepare_tool_stream(
+        PhytomniAgents.CHAT_AGENT.value,
+        {"user_query": "cancel", "obs_file_list": []},
+        run_id="run-chat-close",
+        dialogue_id=None,
+    )
+
+    assert (await anext(events)).type == "RunStarted"
+    assert (await anext(events)).type == "TextMessageStart"
+    await cast(AsyncGenerator[AguiEvent, None], events).aclose()
+
+    assert closed is True
+
+
+async def test_closing_knowledge_events_closes_nested_graph_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Closing the raw Knowledge seam reaches the graph astream iterator."""
+    closed = False
+
+    async def tracked_astream(
+        _state: Any,
+        **_kwargs: Any,
+    ) -> AsyncIterator[tuple[tuple[str, ...], str, dict[str, Any]]]:
+        """Yield enough graph events to leave the iterator suspended."""
+        nonlocal closed
+        try:
+            yield (), "updates", {"retrieve_node": {}}
+            yield (), "values", {"final_response": {}}
+        finally:
+            closed = True
+
+    monkeypatch.setattr(
+        mcp_app,
+        "_build_graph_stream_target",
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(astream=tracked_astream),
+            {},
+        ),
+    )
+    events = mcp_app.prepare_tool_stream(
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        {"user_query": "cancel", "obs_file_list": []},
+        run_id="run-knowledge-close",
+        dialogue_id=None,
+    )
+
+    assert (await anext(events)).type == "RunStarted"
+    assert (await anext(events)).type == "StepStarted"
+    await cast(AsyncGenerator[AguiEvent, None], events).aclose()
+
+    assert closed is True
 
 
 async def test_invoke_tool_streamed_raises_mcperror_for_unknown_tool(

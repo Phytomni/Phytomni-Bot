@@ -61,7 +61,7 @@ def test_split_chat_messages_keeps_lone_user_verbatim() -> None:
     turn = split_chat_messages([_Message("user", "  Os01g0177400  ")])
 
     assert turn.current_query == "  Os01g0177400  "
-    assert turn.conversation_messages == ()
+    assert not turn.conversation_messages
 
 
 @pytest.mark.parametrize(

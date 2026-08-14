@@ -13,8 +13,11 @@ clear_retrieval_caches admin seam.
 
 from __future__ import annotations
 
+import asyncio
+import json
 from typing import Any, cast
 
+import httpx
 import pytest
 from mcp.shared.exceptions import McpError
 
@@ -38,8 +41,125 @@ from mcp_server_phytomni.agents.knowledge.retrieval_options import (
 from mcp_server_phytomni.agents.knowledge.retrieval_options import (
     RetrieveOptions,
 )
+from mcp_server_phytomni.config.defaults import ServerConfig
+from mcp_server_phytomni.runtime.outbound import OutboundPoolName
+from tests.support.outbound_fakes import (
+    RecordingResources,
+    assert_started_pool_attempts,
+    bounded_await,
+    bounded_wait_for_event,
+    managed_async_task,
+    recording_outbound_runtime,
+)
 
 pytestmark = pytest.mark.unit
+
+
+class _KnowledgeBoundaryTransport(httpx.AsyncBaseTransport):
+    """Script the real retrieve/rerank adapters at their HTTP boundary."""
+
+    def __init__(
+        self,
+        *,
+        blocked_service: str | None = None,
+        entered_target: int = 1,
+    ) -> None:
+        self.blocked_service = blocked_service
+        self.entered_target = entered_target
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.operations: list[str] = []
+        self.active = 0
+        self.max_active = 0
+
+    @staticmethod
+    def _service(request: httpx.Request) -> str:
+        """Classify the two fixed synthetic upstream URLs."""
+        return "rerank" if request.url.host == "rerank.test" else "retrieval"
+
+    @staticmethod
+    def _response_payload(
+        service: str, request: httpx.Request
+    ) -> dict[str, Any]:
+        """Build the smallest valid provider response for one request."""
+        body = json.loads(request.content)
+        if service == "retrieval":
+            suffix = f"{body['repo_id']}-{body['scope']}"
+            return {
+                "doc_list": [
+                    {
+                        "chunk_id": suffix,
+                        "title": f"title-{suffix}",
+                        "content": f"content-{suffix}",
+                    }
+                ]
+            }
+        return {
+            "rank_result": [
+                {"id": doc["id"], "score": 1.0} for doc in body["docs"]
+            ]
+        }
+
+    async def handle_async_request(
+        self, request: httpx.Request
+    ) -> httpx.Response:
+        """Record, optionally block, and answer one outer HTTP request."""
+        service = self._service(request)
+        self.operations.append(service)
+        if service == self.blocked_service:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            if self.active == self.entered_target:
+                self.entered.set()
+            try:
+                await self.release.wait()
+            finally:
+                self.active -= 1
+        payload = self._response_payload(service, request)
+        return httpx.Response(
+            200,
+            content=json.dumps(payload).encode("utf-8"),
+            request=request,
+        )
+
+
+async def _wait_for_pool_waiters(
+    runtime: Any,
+    pool: OutboundPoolName,
+    expected: int,
+    task: asyncio.Task[Any],
+) -> None:
+    """Wait boundedly for a real public adapter to reach pool capacity."""
+
+    async def wait() -> None:
+        while runtime.pools.snapshot(pool).waiting != expected:
+            if task.done():
+                await task
+                raise AssertionError(
+                    "adapter completed before pool saturation"
+                )
+            await asyncio.sleep(0)
+
+    await bounded_await(wait())
+
+
+def _knowledge_call_options() -> dict[str, Any]:
+    """Return deterministic direct-upstream options for public adapters."""
+    return {
+        "retrieve_url": "https://retrieve.test/search",
+        "rerank_url": "https://rerank.test/rank",
+        "timeout": 1.0,
+        "max_retries": 0,
+        "retriable_codes": [],
+        "score_threshold": 0.0,
+    }
+
+
+def _rerank_call_options() -> dict[str, Any]:
+    """Return the rerank-only subset accepted by the public boundary."""
+    options = _knowledge_call_options()
+    options.pop("retrieve_url")
+    return options
 
 
 def test_retrieval_facade_reexports_option_models() -> None:
@@ -208,3 +328,183 @@ async def test_rerank_batch_has_no_legacy_concurrency_dependency(
     )
 
     assert ranked == [{"id": "x", "score": 1.0}]
+
+
+async def test_public_retrieve_uses_retrieval_then_rerank_pools() -> None:
+    """A public direct retrieve owns one request in each business pool.
+
+    ``retrieve`` is intentionally a two-operation business path: retrieval
+    completes and releases before the returned documents enter reranking.
+    """
+    transport = _KnowledgeBoundaryTransport()
+    resources = RecordingResources(transport=transport)
+    clear_retrieval_caches()
+    try:
+        async with recording_outbound_runtime(
+            config=ServerConfig(), resources=resources
+        ) as runtime:
+            result = await retrieval_mod.retrieve(
+                "classification-retrieve",
+                repo_id="repo-one",
+                page_size=1,
+                scope="doc",
+                rerank_batch_size=10,
+                **_knowledge_call_options(),
+            )
+
+            assert result["doc_list"][0]["chunk_id"] == "repo-one-doc"
+            assert transport.operations == ["retrieval", "rerank"]
+            assert_started_pool_attempts(
+                runtime,
+                {
+                    OutboundPoolName.RETRIEVAL: 1,
+                    OutboundPoolName.RERANK: 1,
+                },
+            )
+            retrieval = runtime.pools.snapshot(OutboundPoolName.RETRIEVAL)
+            rerank = runtime.pools.snapshot(OutboundPoolName.RERANK)
+            assert retrieval.completed == 1
+            assert rerank.completed == 1
+            assert retrieval.in_use == rerank.in_use == 0
+    finally:
+        clear_retrieval_caches()
+
+
+async def test_public_rerank_records_only_one_rerank_operation() -> None:
+    """A one-batch public rerank changes only the typed rerank pool."""
+    transport = _KnowledgeBoundaryTransport()
+    resources = RecordingResources(transport=transport)
+    async with recording_outbound_runtime(
+        config=ServerConfig(), resources=resources
+    ) as runtime:
+        result = await retrieval_mod.rerank(
+            "classification-rerank",
+            [
+                {
+                    "chunk_id": "chunk-one",
+                    "title": "Title one",
+                    "content": "Content one",
+                }
+            ],
+            top_n=1,
+            rerank_batch_size=10,
+            **_rerank_call_options(),
+        )
+
+        assert result[0]["chunk_id"] == "chunk-one"
+        assert transport.operations == ["rerank"]
+        assert_started_pool_attempts(runtime, {OutboundPoolName.RERANK: 1})
+
+
+async def test_public_retrieve_scope_fan_out_respects_retrieval_capacity() -> (
+    None
+):
+    """Both direct retrieval scopes acquire independently.
+
+    The process capacity of one bounds the two-scope fan-out.
+    """
+    transport = _KnowledgeBoundaryTransport(blocked_service="retrieval")
+    resources = RecordingResources(transport=transport)
+    clear_retrieval_caches()
+    try:
+        config = ServerConfig().model_copy(
+            update={"OUTBOUND_RETRIEVAL_CONCURRENCY": 1}
+        )
+        async with recording_outbound_runtime(
+            config=config, resources=resources
+        ) as runtime:
+            async with managed_async_task(
+                retrieval_mod.retrieve(
+                    "bounded-retrieval-fan-out",
+                    repo_id="repo-fan-out",
+                    page_size=2,
+                    scope="both",
+                    rerank_batch_size=10,
+                    **_knowledge_call_options(),
+                ),
+                release_events=(transport.release,),
+            ) as task:
+                await bounded_wait_for_event(transport.entered, task=task)
+                await _wait_for_pool_waiters(
+                    runtime,
+                    OutboundPoolName.RETRIEVAL,
+                    1,
+                    task,
+                )
+                saturated = runtime.pools.snapshot(OutboundPoolName.RETRIEVAL)
+                assert saturated.in_use == 1
+                assert saturated.waiting == 1
+                assert saturated.max_in_use == 1
+
+                transport.release.set()
+                result = await bounded_await(task)
+
+            assert len(result["doc_list"]) == 2
+            retrieval = runtime.pools.snapshot(OutboundPoolName.RETRIEVAL)
+            assert retrieval.started == 2
+            assert retrieval.completed == 2
+            assert retrieval.max_in_use == 1
+            assert retrieval.in_use == retrieval.waiting == 0
+            assert transport.max_active == 1
+            assert transport.operations == [
+                "retrieval",
+                "retrieval",
+                "rerank",
+            ]
+    finally:
+        clear_retrieval_caches()
+
+
+async def test_public_rerank_batch_fan_out_respects_rerank_capacity() -> None:
+    """Three public rerank batches peak at the configured capacity of two."""
+    transport = _KnowledgeBoundaryTransport(
+        blocked_service="rerank", entered_target=2
+    )
+    resources = RecordingResources(transport=transport)
+    docs = [
+        {
+            "chunk_id": f"chunk-{index}",
+            "title": f"Title {index}",
+            "content": f"Content {index}",
+        }
+        for index in range(3)
+    ]
+    config = ServerConfig().model_copy(
+        update={"OUTBOUND_RERANK_CONCURRENCY": 2}
+    )
+    async with recording_outbound_runtime(
+        config=config, resources=resources
+    ) as runtime:
+        async with managed_async_task(
+            retrieval_mod.rerank(
+                "bounded-rerank-fan-out",
+                docs,
+                top_n=3,
+                rerank_batch_size=1,
+                **_rerank_call_options(),
+            ),
+            release_events=(transport.release,),
+        ) as task:
+            await bounded_wait_for_event(transport.entered, task=task)
+            await _wait_for_pool_waiters(
+                runtime,
+                OutboundPoolName.RERANK,
+                1,
+                task,
+            )
+            saturated = runtime.pools.snapshot(OutboundPoolName.RERANK)
+            assert saturated.in_use == 2
+            assert saturated.waiting == 1
+            assert saturated.max_in_use == 2
+
+            transport.release.set()
+            result = await bounded_await(task)
+
+        assert len(result) == 3
+        rerank = runtime.pools.snapshot(OutboundPoolName.RERANK)
+        assert rerank.started == 3
+        assert rerank.completed == 3
+        assert rerank.max_in_use == 2
+        assert rerank.in_use == rerank.waiting == 0
+        assert transport.max_active == 2
+        assert transport.operations == ["rerank", "rerank", "rerank"]

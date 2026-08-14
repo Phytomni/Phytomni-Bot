@@ -232,7 +232,11 @@ class ControlledByteStream(httpx.AsyncByteStream):
 class RecordingResources:
     """Construct two HTTP clients and record close order and kwargs."""
 
-    transport: httpx.AsyncBaseTransport | None = None
+    transport: (
+        httpx.AsyncBaseTransport
+        | Mapping[str, httpx.AsyncBaseTransport]
+        | None
+    ) = None
     fail_on: str | None = None
     openai_factory: Callable[..., AsyncOpenAI] | None = None
     obs_client_factory: Callable[..., Any] | None = None
@@ -247,7 +251,12 @@ class RecordingResources:
             if self.fail_on == name:
                 raise RuntimeError(name)
             self.constructed[name] = dict(kwargs)
-            client = httpx.AsyncClient(transport=self.transport, **kwargs)
+            transport = (
+                self.transport[name]
+                if isinstance(self.transport, Mapping)
+                else self.transport
+            )
+            client = httpx.AsyncClient(transport=transport, **kwargs)
             self.clients[name] = client
             original_close = client.aclose
 
@@ -282,6 +291,40 @@ class RecordingResources:
             openai=self.openai_factory or AsyncOpenAI,
             obs=build_obs,
         )
+
+
+def recording_openai_resources(
+    create: Callable[..., Awaitable[Any]],
+) -> RecordingResources:
+    """Build runtime resources with only the outer OpenAI call scripted."""
+
+    def factory(**kwargs: Any) -> Any:
+        http_client = kwargs["http_client"]
+        client = SimpleNamespace(
+            base_url="https://example.invalid/v1",
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=create),
+            ),
+        )
+
+        async def close() -> None:
+            """Close the runtime-owned SDK HTTP transport."""
+            await http_client.aclose()
+
+        client.close = close
+        return client
+
+    return RecordingResources(openai_factory=factory)
+
+
+def assert_started_pool_attempts(
+    runtime: Any,
+    expected: Mapping[OutboundPoolName, int],
+) -> None:
+    """Assert exact started-attempt counters and zero for omitted pools."""
+    assert {
+        name: runtime.pools.snapshot(name).started for name in OutboundPoolName
+    } == {name: expected.get(name, 0) for name in OutboundPoolName}
 
 
 class QueueTransport(httpx.AsyncBaseTransport):

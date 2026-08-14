@@ -30,8 +30,15 @@ from mcp_server_phytomni.agents.expert import (
     select_expert_tool,
 )
 from mcp_server_phytomni.agents.expert import router as expert_router
+from mcp_server_phytomni.config.defaults import ServerConfig
 from mcp_server_phytomni.mcp.schemas import agent_openai_tool_specs
+from mcp_server_phytomni.runtime.outbound import OutboundPoolName
 from tests.support.expert_router_fakes import patch_expert_router
+from tests.support.outbound_fakes import (
+    assert_started_pool_attempts,
+    recording_openai_resources,
+    recording_outbound_runtime,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -454,6 +461,38 @@ _REQUIRED_REJECTION = (
     'tool_choice must either be a named tool or "auto". '
     'tool_choice="required" is not supported'
 )
+
+
+async def test_public_expert_completion_records_only_one_llm_operation() -> (
+    None
+):
+    """The real Expert provider adapter changes only the shared LLM pool."""
+    calls: list[dict[str, Any]] = []
+
+    async def create(**kwargs: Any) -> SimpleNamespace:
+        """Record the outer provider call and return one tool selection."""
+        calls.append(dict(kwargs))
+        return _completion(
+            tool_calls=[_tool_call("ChatAgent", '{"user_query":"hello"}')]
+        )
+
+    async with recording_outbound_runtime(
+        config=ServerConfig(),
+        resources=recording_openai_resources(create),
+    ) as runtime:
+        result = await expert_router.complete_expert_routing(
+            messages=[{"role": "user", "content": "route this"}],
+            tools=agent_openai_tool_specs(),
+            tool_choice="auto",
+        )
+
+        assert result.choices
+        assert len(calls) == 1
+        assert calls[0]["tool_choice"] == "auto"
+        assert_started_pool_attempts(runtime, {OutboundPoolName.LLM: 1})
+        llm = runtime.pools.snapshot(OutboundPoolName.LLM)
+        assert llm.completed == 1
+        assert llm.in_use == llm.waiting == 0
 
 
 async def test_routing_falls_back_to_auto_on_required_rejection(
