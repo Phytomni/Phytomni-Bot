@@ -14,7 +14,6 @@ never logged), and binds each attempt to its final service pool.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
@@ -464,10 +463,7 @@ class RelayClient:
             finally:
                 if destination_opened and not download_complete:
                     with suppress(OSError):
-                        await asyncio.to_thread(
-                            destination.unlink,
-                            missing_ok=True,
-                        )
+                        destination.unlink(missing_ok=True)
 
     async def get_obs_list(
         self, obs_prefix: str, *, message: str
