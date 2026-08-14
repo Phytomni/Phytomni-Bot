@@ -56,9 +56,7 @@ from .pipeline import (
     _interpro_annotation_string,
     _mapman_annotation_string,
     _response_data,
-    _safe_rows,
     _split_symbols,
-    clear_gene_retrieve_cache,
     gene_retrieve,
     run_bi_api,
 )
@@ -86,11 +84,9 @@ __all__ = [
     "_interpro_annotation_string",
     "_mapman_annotation_string",
     "_response_data",
-    "_safe_rows",
     "_split_symbols",
     "brief_gene_function",
     "brief_gene_stream_seed",
-    "clear_gene_retrieve_cache",
     "gene_retrieve",
     "run_bi_api",
 ]

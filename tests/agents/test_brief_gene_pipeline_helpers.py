@@ -6,8 +6,8 @@
 
 Pins the pipeline-level helpers that the BriefGeneAgent nodes call:
 ``gene_retrieve`` early return on empty symbols, ``_gene_retrieve``
-semaphore + merge semantics, ``clear_gene_retrieve_cache`` delegation,
-and ``_generate_follow_up`` prompt construction. The pure sync helpers
+semaphore + merge semantics, and ``_generate_follow_up`` prompt
+construction. The pure sync helpers
 (_response_data, _format_docs, annotation formatters) are covered by
 ``test_brief_gene_helpers.py``.
 """
@@ -19,12 +19,12 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.brief_gene.pipeline import (
     GeneRetrieveRequest,
     _gene_retrieve,
     _generate_follow_up,
-    clear_gene_retrieve_cache,
     gene_retrieve,
 )
 
@@ -45,9 +45,9 @@ async def test_gene_retrieve_dedupes_symbols_before_fanning_out() -> None:
     """Duplicate symbols are collapsed into one retrieval call."""
     calls: list[str] = []
 
-    async def fake_arun(**kwargs: Any) -> dict[str, Any]:
+    async def fake_arun(**kwargs: Any) -> list[dict[str, Any]]:
         calls.append(kwargs["user_query"])
-        return {"doc_list": []}
+        return []
 
     mock_ka = AsyncMock()
     mock_ka.arun = fake_arun
@@ -73,9 +73,9 @@ async def test_gene_retrieve_passes_top_n_and_semaphore() -> None:
     )
     semaphore = asyncio.Semaphore(2)
 
-    async def fake_arun(**kwargs: Any) -> dict[str, Any]:
+    async def fake_arun(**kwargs: Any) -> list[dict[str, Any]]:
         del kwargs
-        return {"doc_list": [{"score": 0.9}, {"score": 0.8}]}
+        return [{"score": 0.9}, {"score": 0.8}]
 
     mock_ka = AsyncMock()
     mock_ka.arun = fake_arun
@@ -90,13 +90,81 @@ async def test_gene_retrieve_passes_top_n_and_semaphore() -> None:
     assert len(result["doc_list"]) <= 5
 
 
-def test_clear_gene_retrieve_cache_delegates_to_knowledge_layer() -> None:
-    """The shim calls clear_retrieval_caches from the knowledge package."""
-    with patch(
-        "mcp_server_phytomni.agents.brief_gene.pipeline.clear_retrieval_caches"
-    ) as mock_clear:
-        clear_gene_retrieve_cache()
-        mock_clear.assert_called_once()
+async def test_gene_retrieve_keeps_valid_empty_results_as_no_match() -> None:
+    """All valid empty child lists remain a successful no-match result."""
+
+    async def fake_arun(**kwargs: Any) -> list[dict[str, Any]]:
+        del kwargs
+        return []
+
+    mock_ka = AsyncMock()
+    mock_ka.arun = fake_arun
+
+    result = await _gene_retrieve(
+        GeneRetrieveRequest("Rice", ("LOC1",), 5),
+        mock_ka,
+    )
+
+    assert result == {"doc_list": [], "total": 10000}
+
+
+async def test_gene_retrieve_keeps_docs_when_one_child_fails() -> None:
+    """Reliable documents survive a partial child failure."""
+
+    async def fake_arun(**kwargs: Any) -> list[dict[str, Any]]:
+        symbol = kwargs["user_query"].splitlines()[-1]
+        if kwargs["user_query"] == "Rice\nLOC2":
+            raise RuntimeError("private upstream detail")
+        return [{"chunk_id": symbol, "title": symbol, "content": "doc"}]
+
+    mock_ka = AsyncMock()
+    mock_ka.arun = fake_arun
+
+    result = await _gene_retrieve(
+        GeneRetrieveRequest("Rice", ("LOC1", "LOC2"), 5),
+        mock_ka,
+    )
+
+    assert [doc["chunk_id"] for doc in result["doc_list"]] == [
+        "LOC1",
+        "LOC2",
+    ]
+
+
+async def test_gene_retrieve_raises_when_all_children_fail() -> None:
+    """A failed fan-out with no reliable documents is not a no-match."""
+
+    async def fake_arun(**kwargs: Any) -> list[dict[str, Any]]:
+        del kwargs
+        raise RuntimeError("private upstream detail")
+
+    mock_ka = AsyncMock()
+    mock_ka.arun = fake_arun
+
+    with pytest.raises(
+        McpError, match="Knowledge retrieval temporarily unavailable"
+    ):
+        await _gene_retrieve(
+            GeneRetrieveRequest("Rice", ("LOC1",), 5),
+            mock_ka,
+        )
+
+
+async def test_gene_retrieve_propagates_cancellation() -> None:
+    """Cancellation is never converted into a retrieval failure."""
+
+    async def fake_arun(**kwargs: Any) -> list[dict[str, Any]]:
+        del kwargs
+        raise asyncio.CancelledError
+
+    mock_ka = AsyncMock()
+    mock_ka.arun = fake_arun
+
+    with pytest.raises(asyncio.CancelledError):
+        await _gene_retrieve(
+            GeneRetrieveRequest("Rice", ("LOC1",), 5),
+            mock_ka,
+        )
 
 
 async def test_generate_follow_up_constructs_prompt_and_parses_questions() -> (

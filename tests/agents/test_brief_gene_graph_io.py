@@ -61,9 +61,10 @@ def test_brief_gene_output_exposes_minimal_subset() -> None:
     Parent graphs reading the subgraph result see the gene id,
     species code, the five annotation strings
     (``go_string`` / ``kegg_string`` / ``interpro_string`` /
-    ``description_string`` / ``gene_structure_string``), three
-    homology dicts, four section markdowns, the introduction report,
-    retrieved docs, final response, and follow-up questions.
+        ``description_string`` / ``gene_structure_string``), three
+        homology dicts, four section markdowns, the introduction report,
+        retrieved docs, internal literature degradation signal, final
+        response, and follow-up questions.
     Internal scratch (``gene_found``, coordinates, scratch lists)
     stays hidden.
     """

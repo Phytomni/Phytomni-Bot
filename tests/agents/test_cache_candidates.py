@@ -353,7 +353,7 @@ async def test_gene_retrieve_is_idempotent_without_composite_cache():
     Returns:
         None after idempotence assertions pass.
     """
-    brief_gene_agents.clear_gene_retrieve_cache()
+    knowledge_retrieval.clear_retrieval_caches()
     calls = {"arun": 0}
 
     class FakeKnowledgeAgent:
@@ -372,16 +372,14 @@ async def test_gene_retrieve_is_idempotent_without_composite_cache():
             """
             calls["arun"] += 1
             symbol = kwargs["user_query"].splitlines()[-1]
-            return {
-                "doc_list": [
-                    {
-                        "chunk_id": symbol,
-                        "title": symbol,
-                        "content": "gene content",
-                        "score": 0.7,
-                    }
-                ]
-            }
+            return [
+                {
+                    "chunk_id": symbol,
+                    "title": symbol,
+                    "content": "gene content",
+                    "score": 0.7,
+                }
+            ]
 
         def config_snapshot(self):
             """Return the fake knowledge configuration.

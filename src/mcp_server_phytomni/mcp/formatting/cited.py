@@ -20,10 +20,7 @@ from ...agents.shared.citation_metadata import (
     canonical_doi_urls,
     normalize_doi,
 )
-from ..universal_failures import (
-    project_degraded_metadata,
-    project_universal_failure_metadata,
-)
+from ..universal_failures import project_universal_failure_metadata
 from ._shared import (
     first_message,
     follow_up_questions,
@@ -102,7 +99,6 @@ def format_cited_message_result(
         if state.get("failures")
         else {}
     )
-    metadata.update(project_degraded_metadata(state))
     doc_list = tuple(mapping_sequence(message.get("doc_list")))
     if not doc_list:
         return FormattedToolResult(

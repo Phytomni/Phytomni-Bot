@@ -55,7 +55,7 @@ from .pipeline import (
     _attach_metadata,
     _dedupe,
     _first_row,
-    _safe_rows,
+    _partition_annotation_results,
     _split_symbols,
     run_bi_api,
 )
@@ -150,6 +150,8 @@ def initial_brief_gene_state(
             # workers concat per-worker ``(task_index, doc_list)``
             # tuples onto this list via ``operator.add``.
             "retrieve_indexed_results": [],
+            "retrieve_failed_indices": [],
+            "annotation_failed_indices": [],
             # Seed the status-independent degraded reducer channel so the
             # TypedDict contract holds at ``arun`` entry; retrieve workers
             # append ``DegradedRecord`` entries via ``operator.add``.
@@ -439,7 +441,10 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             return_exceptions=True,
         )
 
-        id_rows = _safe_rows(annotation_responses, 0)
+        annotation_rows, failed_indices = _partition_annotation_results(
+            annotation_responses
+        )
+        id_rows = annotation_rows[0]
         gene_symbols = _split_symbols(
             str(id_rows[0].get("symbol", "")) if id_rows else ""
         )
@@ -447,7 +452,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             [state["user_query"], state["gene_id"], *gene_symbols]
         )
 
-        structure_rows = _safe_rows(annotation_responses, 1)
+        structure_rows = annotation_rows[1]
         structure_row = structure_rows[0] if structure_rows else {}
 
         return {
@@ -457,7 +462,8 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "gene_start": str(structure_row.get("start", "")),
             "gene_end": str(structure_row.get("end", "")),
             "gene_strand": str(structure_row.get("strand", "")),
-            **_annotation_strings_delta(annotation_responses, structure_row),
+            **_annotation_strings_delta(annotation_rows, structure_row),
+            "annotation_failed_indices": failed_indices,
         }
 
     async def follow_up_prep_node(

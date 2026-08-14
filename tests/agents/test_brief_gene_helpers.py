@@ -14,6 +14,7 @@ or knowledge layer tests.
 
 from __future__ import annotations
 
+from asyncio import CancelledError
 from typing import Any
 
 import pytest
@@ -27,8 +28,8 @@ from mcp_server_phytomni.agents.brief_gene.pipeline import (
     _go_annotation_string,
     _interpro_annotation_string,
     _mapman_annotation_string,
+    _partition_annotation_results,
     _response_data,
-    _safe_rows,
     _split_symbols,
 )
 
@@ -133,15 +134,26 @@ def test_attach_metadata_omits_follow_up_when_none() -> None:
     assert "follow_up_questions" not in enriched["choices"][0]["message"]
 
 
-def test_safe_rows_returns_rows_for_index_or_empty_on_exception() -> None:
-    """``_safe_rows`` returns BI data rows or [] when the index is an error."""
-    results: list[Any] = [
-        {"message": "ok", "data": [{"a": 1}]},
-        RuntimeError("BI down"),
-    ]
+def test_partition_annotation_results_keeps_empty_distinct_from_failure() -> (
+    None
+):
+    """Valid empty BI tables are absence, not failed responses."""
+    rows, failed = _partition_annotation_results(
+        [
+            {"message": "ok", "data": []},
+            RuntimeError("BI down"),
+            {"message": "ok", "data": [{"a": 1}]},
+        ]
+    )
 
-    assert _safe_rows(results, 0) == [{"a": 1}]
-    assert _safe_rows(results, 1) == []
+    assert rows == [[], [], [{"a": 1}]]
+    assert failed == [1]
+
+
+def test_partition_annotation_results_propagates_cancellation() -> None:
+    """Cancellation never becomes a failed BI table."""
+    with pytest.raises(CancelledError):
+        _partition_annotation_results([CancelledError()])
 
 
 def test_go_annotation_string_prefers_core_rows_over_propagated() -> None:

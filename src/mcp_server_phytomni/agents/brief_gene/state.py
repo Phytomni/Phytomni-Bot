@@ -77,6 +77,7 @@ class BriefGeneOutput(TypedDict):
     section4_markdown: str
     introduction_report: str
     retrieved_docs: list[dict[str, Any]]
+    literature_degraded: list[DegradedRecord]
     final_response: dict[str, Any]
     follow_up_questions: list[str]
 
@@ -182,11 +183,12 @@ class BriefGeneState(TypedDict):
     retrieve_indexed_results: Annotated[
         list[tuple[int, list[dict[str, Any]]]], operator.add
     ]
-    # Status-independent degraded channel: a retrieve worker that recovers
-    # from a per-symbol retrieve fault appends a DegradedRecord here
-    # (operator.add merges concurrent legs). Never feeds the PARTIAL/FAILED
-    # status projection — only the render banner and the ``degraded``
-    # metadata key.
+    retrieve_failed_indices: Annotated[list[int], operator.add]
+    annotation_failed_indices: list[int]
+    # Internal status-independent channel: a retrieve worker that recovers
+    # from a per-symbol retrieve fault appends a bounded DegradedRecord here
+    # (operator.add merges concurrent legs). It never becomes report copy or
+    # public failure metadata.
     literature_degraded: Annotated[list[DegradedRecord], operator.add]
     # Private conversation metadata is additive and never part of the public
     # BriefGene input/output topology.  The context adapter owns its bounded

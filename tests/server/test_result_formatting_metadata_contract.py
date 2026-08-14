@@ -436,16 +436,8 @@ def test_cited_agents_metadata_degraded_exposes_failures() -> None:
     assert result.answer == "Evidence <sup>1</sup>."
 
 
-def test_brief_gene_metadata_literature_degraded_exposes_degraded_key() -> (
-    None
-):
-    """brief_gene literature degradation surfaces ``degraded`` only.
-
-    The ``literature_degraded`` channel must produce the ``degraded``
-    metadata key WITHOUT the universal status keys, because it never
-    feeds the ``failures`` channel — a literature-thin run with no remote
-    failure must not report PARTIAL/FAILED.
-    """
+def test_brief_gene_metadata_does_not_project_literature_degradation() -> None:
+    """Internal BriefGene literature degradation stays out of metadata."""
     degraded_state = {
         "final_response": {
             "choices": [
@@ -462,14 +454,7 @@ def test_brief_gene_metadata_literature_degraded_exposes_degraded_key() -> (
     }
     result = format_tool_result("BriefGeneAgent", payload)
     metadata = dict(result.metadata)
-    assert set(metadata.keys()) == {"degraded"}
-    assert metadata["degraded"] == {
-        "reason": "literature_retrieval",
-        "count": 1,
-        "labels": ["OsCAB1"],
-    }
-    assert "status" not in metadata
-    assert "failures" not in metadata
+    assert metadata == {}
 
 
 def test_terminal_payload_contract_analyst_class() -> None:

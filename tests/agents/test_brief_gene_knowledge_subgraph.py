@@ -22,9 +22,13 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
+from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.agents.brief_gene.state import BriefGeneAgentState
+from mcp_server_phytomni.agents.knowledge.retrieval_result import (
+    RetrievalProtocolError,
+)
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from tests.support.brief_gene_states import (
@@ -49,6 +53,8 @@ class _TransientKnowledgeState(TypedDict, total=False):
 
     user_query: str
     retrieved_docs: list[dict[str, Any]]
+    retrieval_outcome: str
+    final_response: dict[str, Any]
 
 
 def _install_fake_knowledge_app(
@@ -95,7 +101,17 @@ def _gene_found_state() -> BriefGeneAgentState:
             "retrieve_context": "",
             "follow_up_questions": [],
             "final_response": {},
+            "retrieve_tasks": [
+                {
+                    "knowledge_input": {"user_query": f"q{i}"},
+                    "task_label": f"task{i}",
+                }
+                for i in range(3)
+            ],
             "retrieve_indexed_results": [],
+            "retrieve_failed_indices": [],
+            "annotation_failed_indices": [],
+            "literature_degraded": [],
         },
     )
 
@@ -181,7 +197,10 @@ async def test_retrieve_worker_factory_success_path(
 ) -> None:
     """Worker on success writes ``(task_index, docs)`` tuple."""
     fake_app = _install_fake_knowledge_app(
-        monkeypatch, docs_by_query={"q0": [{"title": "doc0"}]}
+        monkeypatch,
+        docs_by_query={
+            "q0": [{"chunk_id": "0", "title": "doc0", "content": "text"}]
+        },
     )
     agent = _build_agent()
     worker = agent.make_retrieve_worker_node(fake_app)
@@ -192,7 +211,7 @@ async def test_retrieve_worker_factory_success_path(
     delta = await worker(state)
 
     assert delta["retrieve_indexed_results"] == [
-        (0, [{"title": "doc0"}]),
+        (0, [{"chunk_id": "0", "title": "doc0", "content": "text"}]),
     ]
 
 
@@ -221,7 +240,13 @@ async def test_retrieve_worker_reclaims_standard_graph_runner_checkpoint(
         thread_id: str | None = None,
     ) -> dict[str, object]:
         calls.append((app, payload, thread_id))
-        return {"retrieved_docs": [{"title": "isolated"}]}
+        return {
+            "retrieved_docs": [
+                {"chunk_id": "3", "title": "isolated", "content": "text"}
+            ],
+            "retrieval_outcome": "complete",
+            "final_response": {},
+        }
 
     monkeypatch.setattr(
         f"{_KNOWLEDGE_SUBGRAPH_MODULE}.ainvoke_graph",
@@ -245,7 +270,10 @@ async def test_retrieve_worker_reclaims_standard_graph_runner_checkpoint(
     assert calls == [(fake_app, {"user_query": "q3"}, "brief-gene-worker-3")]
     assert deleted_threads == ["brief-gene-worker-3"]
     assert delta["retrieve_indexed_results"] == [
-        (3, [{"title": "isolated"}]),
+        (
+            3,
+            [{"chunk_id": "3", "title": "isolated", "content": "text"}],
+        ),
     ]
 
 
@@ -290,9 +318,10 @@ async def test_retrieve_worker_reclaims_checkpoint_after_graph_failure(
     delta = await worker(state)
 
     assert deleted_threads == ["brief-gene-worker-failed"]
-    assert delta["retrieve_indexed_results"] == [(4, [])]
+    assert delta["retrieve_failed_indices"] == [4]
+    assert "retrieve_indexed_results" not in delta
     assert delta["literature_degraded"] == [
-        {"task_label": "OsFAIL", "message": "retrieval unavailable"}
+        {"task_label": "OsFAIL", "message": "retrieval_unavailable"}
     ]
 
 
@@ -304,7 +333,17 @@ async def test_retrieve_worker_removes_real_memory_checkpoint(
     async def retrieve(
         _state: _TransientKnowledgeState,
     ) -> dict[str, Any]:
-        return {"retrieved_docs": [{"title": "persisted briefly"}]}
+        return {
+            "retrieved_docs": [
+                {
+                    "chunk_id": "5",
+                    "title": "persisted briefly",
+                    "content": "text",
+                }
+            ],
+            "retrieval_outcome": "complete",
+            "final_response": {},
+        }
 
     checkpointer = MemorySaver()
     workflow = StateGraph(_TransientKnowledgeState)
@@ -325,7 +364,16 @@ async def test_retrieve_worker_removes_real_memory_checkpoint(
     delta = await worker(state)
 
     assert delta["retrieve_indexed_results"] == [
-        (5, [{"title": "persisted briefly"}]),
+        (
+            5,
+            [
+                {
+                    "chunk_id": "5",
+                    "title": "persisted briefly",
+                    "content": "text",
+                }
+            ],
+        ),
     ]
     config = cast(
         RunnableConfig,
@@ -334,11 +382,11 @@ async def test_retrieve_worker_removes_real_memory_checkpoint(
     assert await checkpointer.aget_tuple(config) is None
 
 
-async def test_retrieve_worker_factory_exception_writes_empty_sentinel(
+async def test_retrieve_worker_factory_exception_records_failed_index(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Worker on exception writes ``(task_index, [])`` AND logs loudly."""
+    """Worker records the failed index without manufacturing empty evidence."""
 
     broken_app = failing_async_object("ainvoke", RuntimeError("boom"))
 
@@ -359,19 +407,18 @@ async def test_retrieve_worker_factory_exception_writes_empty_sentinel(
         capture_non_propagating_logger(
             _KNOWLEDGE_SUBGRAPH_MODULE, caplog.handler
         ),
-        caplog.at_level(logging.ERROR, logger=_KNOWLEDGE_SUBGRAPH_MODULE),
+        caplog.at_level(logging.WARNING, logger=_KNOWLEDGE_SUBGRAPH_MODULE),
     ):
         delta = await worker(state)
 
-    # Loud empty sentinel attributable to the specific failed task.
-    assert delta["retrieve_indexed_results"] == [(7, [])]
-    # The caught failure is logged loudly, not silently swallowed.
+    assert delta["retrieve_failed_indices"] == [7]
+    assert "retrieve_indexed_results" not in delta
+    # The caught failure is logged without exposing exception text.
     assert "brief_gene retrieve worker failed: task_index=7" in caplog.text
-    assert any(r.levelno >= logging.ERROR for r in caplog.records)
-    # The recovered fault also records a status-independent degraded entry
-    # naming the failed leg's gene label, with a redacted message.
+    assert any(r.levelno >= logging.WARNING for r in caplog.records)
+    assert "boom" not in caplog.text
     assert delta["literature_degraded"] == [
-        {"task_label": "OsTEST", "message": "boom"}
+        {"task_label": "OsTEST", "message": "retrieval_unavailable"}
     ]
 
 
@@ -411,10 +458,41 @@ async def test_retrieve_reduce_node_handles_empty_indexed_results(
     """Reduce on an empty reducer channel returns empty docs."""
     agent = _build_agent(monkeypatch=monkeypatch)
     state = _gene_found_state()
-    state["retrieve_indexed_results"] = []
+    state["retrieve_indexed_results"] = [
+        (0, []),
+        (1, []),
+        (2, []),
+    ]
     delta = await agent.retrieve_reduce_node(state)
 
     assert delta["retrieved_docs"] == []
+
+
+async def test_retrieve_reduce_rejects_missing_result_or_failure_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every planned retrieve leg must be classified exactly once."""
+    agent = _build_agent(monkeypatch=monkeypatch)
+    state = _gene_found_state()
+    state["retrieve_indexed_results"] = [(0, [])]
+
+    with pytest.raises(RetrievalProtocolError):
+        await agent.retrieve_reduce_node(state)
+
+
+async def test_retrieve_reduce_fails_when_all_independent_evidence_is_lost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All literature and annotation failures produce one safe error."""
+    agent = _build_agent(monkeypatch=monkeypatch)
+    state = _gene_found_state()
+    state["retrieve_indexed_results"] = [(0, []), (1, []), (2, [])]
+    state["annotation_failed_indices"] = list(range(6))
+
+    with pytest.raises(
+        McpError, match="Knowledge retrieval temporarily unavailable"
+    ):
+        await agent.retrieve_reduce_node(state)
 
 
 # ---------------------------------------------------------------------------

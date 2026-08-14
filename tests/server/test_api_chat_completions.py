@@ -765,21 +765,18 @@ async def test_chat_completions_envelope_carries_formatted_and_raw(
     )
 
 
-async def test_chat_completions_brief_gene_surfaces_literature_degraded(
+async def test_chat_completions_brief_gene_hides_internal_literature_degraded(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A literature-degraded brief_gene run surfaces ``degraded`` on route.
+    """A literature-degraded brief_gene run keeps metadata empty.
 
     Drives the real ``/v1/chat/completions`` path for ``phyto-brief-gene``
     with a handler whose ``phytomni_state`` carries a
-    ``literature_degraded`` record, then asserts the **default-mode**
-    ``formatted.metadata.degraded`` block reaches the HTTP body. The
-    cited formatter's degraded projection is pinned at the unit level;
-    this is the one route-level proof that it survives the
-    chat-completions envelope to the API surface, status untouched.
+    ``literature_degraded`` record, then asserts it does not enter the
+    public formatted metadata.
     """
 
     async def fake(args: Any) -> dict[str, Any]:
@@ -811,11 +808,7 @@ async def test_chat_completions_brief_gene_surfaces_literature_degraded(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["formatted"]["metadata"]["degraded"] == {
-        "reason": "literature_retrieval",
-        "count": 1,
-        "labels": ["OsCAB1"],
-    }
+    assert body["formatted"]["metadata"] == {}
 
 
 async def test_chat_completions_exposes_run_id_matching_runs_listing(

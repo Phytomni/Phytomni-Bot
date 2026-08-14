@@ -14,6 +14,7 @@ resolution lives in resolve_query.py.
 """
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,7 +28,7 @@ from ...common.responses import (
 from ...config.defaults import BriefGeneConfig
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
-from ..knowledge.retrieval import clear_retrieval_caches
+from ..knowledge.retrieval_result import retrieval_unavailable_error
 from ..shared.sql import bi_query
 
 BRIEF_CONFIG = BriefGeneConfig()
@@ -120,12 +121,45 @@ def _attach_metadata(
     return attach_message_payload(phyto_response, payload)
 
 
-def _safe_rows(results: list[Any], index: int) -> list[dict[str, Any]]:
-    """Return BI response rows for one gather result index."""
-    result = results[index]
-    if isinstance(result, Exception):
-        return []
-    return _response_data(result)
+def _annotation_rows(response: Any) -> list[dict[str, Any]]:
+    """Validate one successful BI annotation response and detach its rows."""
+    if not isinstance(response, Mapping) or response.get("message") != "ok":
+        raise ValueError("invalid BI annotation response")
+    data = response.get("data")
+    if not isinstance(data, list):
+        raise ValueError("invalid BI annotation response")
+    if any(not isinstance(row, Mapping) for row in data):
+        raise ValueError("invalid BI annotation response")
+    return [dict(row) for row in data]
+
+
+def _partition_annotation_results(
+    results: list[Any],
+) -> tuple[list[list[dict[str, Any]]], list[int]]:
+    """Partition valid BI rows from bounded ordinary table failures.
+
+    A successful ``message=ok`` response with ``data=[]`` is preserved as a
+    valid absence. Exception text and response bodies never leave this helper;
+    only the failed table ordinal is returned for later evidence decisions.
+    Cancellation and other ``BaseException`` values are re-raised unchanged.
+    """
+    rows_by_index: list[list[dict[str, Any]]] = []
+    failed_indices: list[int] = []
+    for index, result in enumerate(results):
+        if isinstance(result, BaseException) and not isinstance(
+            result, Exception
+        ):
+            raise result
+        if isinstance(result, Exception):
+            rows_by_index.append([])
+            failed_indices.append(index)
+            continue
+        try:
+            rows_by_index.append(_annotation_rows(result))
+        except (TypeError, ValueError):
+            rows_by_index.append([])
+            failed_indices.append(index)
+    return rows_by_index, failed_indices
 
 
 def _go_annotation_string(go_rows: list[dict[str, Any]]) -> str:
@@ -192,7 +226,7 @@ def _interpro_annotation_string(interpro_rows: list[dict[str, Any]]) -> str:
 
 
 def _annotation_strings_delta(
-    annotation_responses: list[Any],
+    annotation_rows: list[list[dict[str, Any]]],
     structure_row: dict[str, Any],
 ) -> dict[str, str]:
     """Format the five annotation flat strings into a state-delta dict.
@@ -206,17 +240,11 @@ def _annotation_strings_delta(
         "gene_structure_string": _gene_structure_annotation_string(
             structure_row
         ),
-        "go_string": _go_annotation_string(
-            _safe_rows(annotation_responses, 2)
-        ),
-        "kegg_string": _mapman_annotation_string(
-            _safe_rows(annotation_responses, 3)
-        ),
-        "interpro_string": _interpro_annotation_string(
-            _safe_rows(annotation_responses, 4)
-        ),
+        "go_string": _go_annotation_string(annotation_rows[2]),
+        "kegg_string": _mapman_annotation_string(annotation_rows[3]),
+        "interpro_string": _interpro_annotation_string(annotation_rows[4]),
         "description_string": _description_annotation_string(
-            _safe_rows(annotation_responses, 5)
+            annotation_rows[5]
         ),
     }
 
@@ -393,9 +421,7 @@ async def _gene_retrieve(
     de-duplication of repeated retrieval roundtrips now happens inside
     the knowledge retrieval HTTP primitive caches, which are keyed on
     the actual semantic inputs rather than this layer's bundled
-    request object. Call ``clear_gene_retrieve_cache()`` (the shim) to
-    drop the underlying retrieval-primitive state when testing or
-    administering the cache.
+    request object.
     """
     combined_symbols = "\n".join(request.symbols)
     query_terms = _dedupe([*request.symbols, combined_symbols])
@@ -411,14 +437,23 @@ async def _gene_retrieve(
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         merged_docs: list[dict[str, Any]] = []
+        failed = False
         for result in results:
-            if isinstance(result, dict):
-                docs = result.get("doc_list", [])
-            elif isinstance(result, list):
-                docs = result
-            else:
+            if isinstance(result, BaseException) and not isinstance(
+                result, Exception
+            ):
+                raise result
+            if isinstance(result, Exception):
+                failed = True
                 continue
-            merged_docs.extend(doc for doc in docs if isinstance(doc, dict))
+            if not isinstance(result, list) or any(
+                not isinstance(doc, dict) for doc in result
+            ):
+                failed = True
+                continue
+            merged_docs.extend(result)
+        if failed and not merged_docs:
+            raise retrieval_unavailable_error()
         sorted_docs = sorted(
             merged_docs, key=lambda item: item.get("score", 0), reverse=True
         )
@@ -430,17 +465,6 @@ async def _gene_retrieve(
         async with semaphore:
             return await make_gene_retrieve()
     return await make_gene_retrieve()
-
-
-def clear_gene_retrieve_cache() -> None:
-    """Compatibility shim that drops the retrieval primitive caches.
-
-    Kept under the original name so existing importers and tests
-    continue to work. Internally it delegates to the knowledge-layer
-    ``clear_retrieval_caches`` since brief_gene no longer owns a
-    composite cache.
-    """
-    clear_retrieval_caches()
 
 
 async def _generate_follow_up(

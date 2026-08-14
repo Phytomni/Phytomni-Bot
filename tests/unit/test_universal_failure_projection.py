@@ -10,7 +10,6 @@ from mcp_server_phytomni.mcp.result_formatting import (
     project_universal_failure_metadata,
 )
 from mcp_server_phytomni.mcp.universal_failures import (
-    project_degraded_metadata,
     project_interop_metadata,
     redact_failure_message,
 )
@@ -153,44 +152,6 @@ def test_redact_failure_message_leaves_clean_text() -> None:
     """A message with no URL or secret is returned unchanged."""
     raw = "ValueError: gene id not found in species index"
     assert redact_failure_message(raw) == raw
-
-
-def test_project_degraded_metadata_empty_returns_empty() -> None:
-    """No degradation records -> empty metadata."""
-    assert not project_degraded_metadata({})
-    assert not project_degraded_metadata({"literature_degraded": []})
-
-
-def test_project_degraded_metadata_projects_degraded_key() -> None:
-    """Degradation records -> sorted-label degraded key."""
-    state = {
-        "literature_degraded": [
-            {"task_label": "OsB", "message": "boom"},
-            {"task_label": "OsA", "message": "boom"},
-        ]
-    }
-    assert project_degraded_metadata(state) == {
-        "degraded": {
-            "reason": "literature_retrieval",
-            "count": 2,
-            "labels": ["OsA", "OsB"],
-        }
-    }
-
-
-def test_project_degraded_metadata_ignores_failures_channel() -> None:
-    """Degradation is independent of the status-bearing failures channel."""
-    state = {
-        "failures": [
-            {
-                "task_label": "x",
-                "message": "y",
-                "kind": "execute",
-                "traceback_digest": None,
-            }
-        ]
-    }
-    assert not project_degraded_metadata(state)
 
 
 def test_project_interop_metadata_is_bounded_and_secret_free() -> None:

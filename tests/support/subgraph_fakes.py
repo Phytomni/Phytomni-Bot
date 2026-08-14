@@ -198,6 +198,7 @@ BRIEF_GENE_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
         "section4_markdown",
         "introduction_report",
         "retrieved_docs",
+        "literature_degraded",
         "final_response",
         "follow_up_questions",
     },

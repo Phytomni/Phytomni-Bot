@@ -51,8 +51,15 @@ _EMPTY_ROW = {"message": "ok", "data": []}
 _CHAT_STUB = {"choices": [{"message": {"content": "stub section/intro"}}]}
 _KNOWLEDGE_OUTPUT = {
     "retrieved_docs": [
-        {"score": 0.9, "content": "stub literature chunk", "doc_id": "1"},
+        {
+            "chunk_id": "1",
+            "score": 0.9,
+            "title": "stub literature",
+            "content": "stub literature chunk",
+        },
     ],
+    "retrieval_outcome": "complete",
+    "final_response": {},
 }
 
 
@@ -170,20 +177,16 @@ async def test_preamble_gene_found_fan_in_completes(
     assert "### Basic Genomic Information" in content
 
 
-async def test_preamble_knowledge_exception_renders_degraded_banner(
+async def test_preamble_knowledge_exception_keeps_report_copy_clean(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A raising knowledge subgraph degrades the run without failing it.
+    """A raising knowledge subgraph degrades the run without warning copy.
 
     Drives the FULL compiled graph with a knowledge mount whose
     ``ainvoke`` raises, so every per-symbol ``retrieve_worker_node``
-    hits its broad ``except``, keeps the empty sentinel, and appends a
-    ``literature_degraded`` record. The compiled graph must still reach
-    ``render_node`` (degraded != failed, no deadlock) and the rendered
-    ``message.content`` must carry the ``⚠️ Literature retrieval
-    degraded`` banner — the one compiled-graph proof that a mounted
-    subgraph exception reaches the banner, which the node-level render
-    and worker-delta unit tests assert only in isolation.
+    hits its broad ``except``, records the failed index, and appends an
+    internal ``literature_degraded`` record. The compiled graph must still
+    reach ``render_node`` without exposing a source warning in the report.
     """
     _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
     # Re-point the knowledge mount built in ``BriefGeneAgent.__init__``
@@ -201,7 +204,7 @@ async def test_preamble_knowledge_exception_renders_degraded_banner(
     content = await _run_preamble("Os01g0177400")
 
     assert content.startswith("# Brief Gene Analysis of")
-    assert "⚠️ **Literature retrieval degraded**" in content
+    assert "⚠️" not in content
     # Degraded is status-independent: the full preamble skeleton still
     # renders rather than collapsing to a failure note.
     assert "## Gene Profiles" in content

@@ -5,8 +5,8 @@
 """Brief gene agent package exports.
 
 Re-exports BriefGeneAgent, workflow state, the public brief_gene_function
-wrapper, and pipeline helpers (BI query, literature retrieval, cache
-clearing) used by MCP handlers and tests.
+wrapper, and pipeline helpers (BI query and literature retrieval)
+used by MCP handlers and tests.
 """
 
 from .agent import (
@@ -16,7 +16,6 @@ from .agent import (
 )
 from .pipeline import (
     GeneRetrieveRequest,
-    clear_gene_retrieve_cache,
     gene_retrieve,
     run_bi_api,
 )
@@ -26,7 +25,6 @@ __all__ = [
     "BriefGeneAgentState",
     "GeneRetrieveRequest",
     "brief_gene_function",
-    "clear_gene_retrieve_cache",
     "gene_retrieve",
     "run_bi_api",
 ]

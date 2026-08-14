@@ -28,7 +28,11 @@ from ...graphs.brief_gene_to_knowledge_adapters import (
 )
 from ...mcp.progress_events import emit_progress
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_thread_id
-from ..shared.parallel_dispatch import DegradedRecord, redact_failure_message
+from ..knowledge.retrieval_result import (
+    RetrievalProtocolError,
+    retrieval_unavailable_error,
+)
+from ..shared.parallel_dispatch import DegradedRecord
 from .pipeline import _dedupe, _format_docs
 
 if TYPE_CHECKING:
@@ -48,6 +52,76 @@ logger = logging.getLogger(__name__)
 _BRIEF_GENE_RETRIEVE_WORKER_CAUGHT: tuple[type[BaseException], ...] = (
     Exception,
 )
+_LITERATURE_RETRIEVAL_DEGRADED = "retrieval_unavailable"
+
+
+def _validated_retrieve_results(
+    state: BriefGeneAgentState,
+) -> tuple[dict[int, list[dict[str, Any]]], set[int]]:
+    """Validate one complete classification for every planned retrieve leg."""
+    planned_tasks = state.get("retrieve_tasks")
+    indexed = state.get("retrieve_indexed_results", []) or []
+    failed_indices = state.get("retrieve_failed_indices", []) or []
+    if not isinstance(planned_tasks, list):
+        raise RetrievalProtocolError("Invalid brief_gene retrieve plan")
+    if not isinstance(indexed, list) or not isinstance(failed_indices, list):
+        raise RetrievalProtocolError("Invalid brief_gene retrieve results")
+
+    result_by_index: dict[int, list[dict[str, Any]]] = {}
+    for entry in indexed:
+        if not isinstance(entry, (tuple, list)) or len(entry) != 2:
+            raise RetrievalProtocolError("Invalid brief_gene retrieve result")
+        task_index, docs = entry
+        if (
+            isinstance(task_index, bool)
+            or not isinstance(task_index, int)
+            or not isinstance(docs, list)
+            or any(not isinstance(doc, dict) for doc in docs)
+            or task_index in result_by_index
+        ):
+            raise RetrievalProtocolError("Invalid brief_gene retrieve result")
+        result_by_index[task_index] = list(docs)
+
+    failed_set: set[int] = set()
+    for task_index in failed_indices:
+        if (
+            isinstance(task_index, bool)
+            or not isinstance(task_index, int)
+            or task_index in failed_set
+        ):
+            raise RetrievalProtocolError("Invalid brief_gene retrieve failure")
+        failed_set.add(task_index)
+
+    result_indices = set(result_by_index)
+    planned = set(range(len(planned_tasks)))
+    classified = result_indices | failed_set
+    if (
+        not classified <= planned
+        or result_indices & failed_set
+        or classified != planned
+    ):
+        raise RetrievalProtocolError("Incomplete brief_gene retrieve results")
+    return result_by_index, failed_set
+
+
+def _validated_annotation_failures(state: BriefGeneAgentState) -> set[int]:
+    """Validate the bounded BI table-failure ordinals carried by state."""
+    failed_indices = state.get("annotation_failed_indices", []) or []
+    if not isinstance(failed_indices, list):
+        raise RetrievalProtocolError("Invalid brief_gene annotation failures")
+    failed_set: set[int] = set()
+    for index in failed_indices:
+        if (
+            isinstance(index, bool)
+            or not isinstance(index, int)
+            or index in failed_set
+            or index not in range(6)
+        ):
+            raise RetrievalProtocolError(
+                "Invalid brief_gene annotation failures"
+            )
+        failed_set.add(index)
+    return failed_set
 
 
 class BriefGeneKnowledgeSubgraphMixin:
@@ -215,10 +289,8 @@ class BriefGeneKnowledgeSubgraphMixin:
 
         On success writes a single ``(task_index, docs)`` tuple onto
         ``retrieve_indexed_results`` via the ``operator.add``
-        reducer. On exception writes ``(task_index, [])`` so the
-        reduce node's downstream merge sees a stable per-task entry
-        and the loud sentinel makes the empty result attributable to
-        a specific ``task_index`` rather than silently dropping it.
+        reducer. On ordinary exception it writes only the failed index;
+        cancellation remains outside the catch and propagates unchanged.
 
         Args:
             knowledge_app: Compiled KnowledgeAgent subgraph for this
@@ -258,16 +330,17 @@ class BriefGeneKnowledgeSubgraphMixin:
                     "retrieve_indexed_results": [(task_index, docs)],
                 }
             except _BRIEF_GENE_RETRIEVE_WORKER_CAUGHT as exc:
-                logger.exception(
+                del exc
+                logger.warning(
                     "brief_gene retrieve worker failed: task_index=%s",
                     task_index,
                 )
                 return {
-                    "retrieve_indexed_results": [(task_index, [])],
+                    "retrieve_failed_indices": [task_index],
                     "literature_degraded": [
                         DegradedRecord(
                             task_label=state.get("task_label", ""),
-                            message=redact_failure_message(str(exc)),
+                            message=_LITERATURE_RETRIEVAL_DEGRADED,
                         )
                     ],
                 }
@@ -303,13 +376,18 @@ class BriefGeneKnowledgeSubgraphMixin:
             len(state.get("retrieve_indexed_results", [])),
             detail="reducing literature results",
         )
-        indexed = sorted(
-            state.get("retrieve_indexed_results", []),
-            key=lambda entry: entry[0],
-        )
+        indexed, failed_indices = _validated_retrieve_results(state)
+        annotation_failed_indices = _validated_annotation_failures(state)
         merged_docs: list[dict[str, Any]] = []
-        for _, docs in indexed:
-            merged_docs.extend(doc for doc in docs if isinstance(doc, dict))
+        for task_index in sorted(indexed):
+            merged_docs.extend(indexed[task_index])
+        has_reliable_annotation = bool(state.get("gene_found")) and (
+            annotation_failed_indices != set(range(6))
+        )
+        if (
+            failed_indices and not merged_docs and not has_reliable_annotation
+        ) or (annotation_failed_indices == set(range(6)) and not merged_docs):
+            raise retrieval_unavailable_error()
         sorted_docs = sorted(
             merged_docs,
             key=lambda item: item.get("score", 0),

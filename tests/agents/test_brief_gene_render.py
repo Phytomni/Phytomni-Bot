@@ -78,18 +78,14 @@ def _degraded_state() -> dict[str, Any]:
     return state
 
 
-def test_render_preamble_literature_degraded_inserts_banner() -> None:
-    """literature_degraded non-empty: banner appears between H1 and intro."""
+def test_render_preamble_literature_degraded_stays_internal() -> None:
+    """Internal literature degradation never becomes report copy."""
     delta = _render_preamble_node(cast(Any, _degraded_state()))
 
     content = delta["final_response"]["choices"][0]["message"]["content"]
     assert content.startswith("# Brief Gene Analysis of Os01g0177400")
-    assert "⚠️ **Literature retrieval degraded**" in content
-    assert "OsCAB1, OsPHYA" in content
-    # Banner sits between the H1 and the introduction so the deep_genome
-    # H1-swap (first-line partition) still works and the banner rides
-    # verbatim into the report.
-    assert content.index("⚠️") < content.index("Intro paragraphs here.")
+    assert "⚠️" not in content
+    assert "Intro paragraphs here." in content
 
 
 def test_render_preamble_happy_path_omits_banner() -> None:
@@ -98,7 +94,6 @@ def test_render_preamble_happy_path_omits_banner() -> None:
 
     content = delta["final_response"]["choices"][0]["message"]["content"]
     assert "⚠️" not in content
-    assert "Literature retrieval degraded" not in content
 
 
 def test_render_preamble_happy_path_writes_full_markdown() -> None:

@@ -20,7 +20,6 @@ from .formatting import models as _formatting_models
 from .formatting import redaction as _formatting_redaction
 from .formatting import tasks as _formatting_tasks
 
-project_degraded_metadata = _universal_failures.project_degraded_metadata
 project_interop_metadata = _universal_failures.project_interop_metadata
 project_universal_failure_metadata = (
     _universal_failures.project_universal_failure_metadata
