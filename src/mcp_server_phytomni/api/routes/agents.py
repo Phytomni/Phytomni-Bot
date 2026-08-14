@@ -575,7 +575,7 @@ def _register_native_routes(
                         dependencies.catalog.legacy_aliases.get(tool, [])
                     ),
                     "capabilities": (
-                        dependencies.catalog.serialize_capability(slug, config)
+                        dependencies.catalog.serialize_capability(slug)
                     ),
                 }
                 for slug, tool in agent_map.items()

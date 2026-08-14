@@ -510,25 +510,24 @@ document descriptor is:
 
 The current attachment matrix is:
 
-| Agent slug    | Document context | Dataset input | Expert forwarding |
-| ------------- | ---------------- | ------------- | ----------------- |
-| `chat`        | `obs_file_list`  | no            | yes               |
-| `knowledge`   | `obs_file_list`  | no            | yes               |
-| `data`        | no               | no            | no                |
-| `review`      | `obs_file_list`  | no            | yes               |
-| `brief_gene`  | no               | no            | no                |
-| `analyst`     | `obs_file_list`  | `data_list`   | no                |
-| `deep_genome` | no               | no            | no                |
-| `research`    | `obs_file_list`  | `data_list`   | no                |
-| `design`      | `obs_file_list`  | no            | no                |
-| `network`     | `obs_file_list`  | no            | no                |
+| Agent slug    | Document context | Dataset channel | Expert forwarding |
+| ------------- | ---------------- | --------------- | ----------------- |
+| `chat`        | `obs_file_list`  | no              | yes               |
+| `knowledge`   | `obs_file_list`  | no              | yes               |
+| `data`        | no               | no              | no                |
+| `review`      | `obs_file_list`  | no              | yes               |
+| `brief_gene`  | no               | no              | no                |
+| `analyst`     | `obs_file_list`  | `data_list`     | no                |
+| `deep_genome` | no               | no              | no                |
+| `research`    | `obs_file_list`  | `data_list`     | no                |
+| `design`      | `obs_file_list`  | no              | no                |
+| `network`     | `obs_file_list`  | no              | no                |
 
 `agent_context` and `document` / legacy `chat_attachment` uploads are
 document-class managed assets; `dataset` uploads are dataset-class managed
 assets. Their selected Agent capability determines the final native channel.
 Managed channel descriptors describe only this class-to-argument mapping and
-the invocation limits. The Research dataset channel additionally publishes
-the canonical scientific `formats` allowlist; other channels do not advertise
+the invocation limits; they do not advertise general managed support for
 extensions, formats, encoding, delimiters, compression, or descriptions.
 Managed `data_list` projections use exact empty-string values. Legacy raw
 native path maps still retain their existing filename, CSV, purpose, and
@@ -537,7 +536,7 @@ The complete deterministic golden
 is
 [`docs/contracts/agents/capabilities.json`](../contracts/agents/capabilities.json)
 with SHA256
-`9eba660adb987f4133603f37a3acd04b1ec09b5a2698849494c1e099c935048b` for the
+`df66c45577cba256d210945a637fb8eb805feb8550e7e3841b663b2364527a27` for the
 current UTF-8 file including its final newline. Consumers must treat this
 object as the capability source of truth and fail closed for an unknown slug;
 it does not grant permission or change the canonical route name.

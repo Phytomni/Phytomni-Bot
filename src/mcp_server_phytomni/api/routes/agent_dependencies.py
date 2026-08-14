@@ -12,7 +12,6 @@ from typing import Any
 
 from fastapi.responses import Response
 
-from ...config.api_limits import ApiLimitsConfig
 from ...runtime.conversation_context.adapters import (
     ConversationContextExecutor,
 )
@@ -43,7 +42,7 @@ class AgentCatalogDependencies:
     agent_slug_to_tool: Mapping[str, str]
     remote_agent_slugs: frozenset[str]
     legacy_aliases: Mapping[str, list[str]]
-    serialize_capability: Callable[[str, ApiLimitsConfig], Any]
+    serialize_capability: Callable[[str], Any]
     conversation_context_enabled: Callable[[], bool]
 
 

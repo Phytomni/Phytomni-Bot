@@ -92,6 +92,7 @@ _PUBLIC_CHANNEL_KEYS = {
 }
 _OBSOLETE_PUBLIC_CHANNEL_FIELDS = {
     "extensions",
+    "formats",
     "encoding",
     "delimiter",
     "requires_description",
@@ -215,54 +216,35 @@ def test_attachment_matrix_is_exact() -> None:
                 assert descriptor is None
                 continue
             assert descriptor is not None
-            expected_keys = _PUBLIC_CHANNEL_KEYS | (
-                {"formats"}
-                if slug == "research" and channel == "datasets"
-                else set()
-            )
-            assert set(descriptor) == expected_keys
+            assert set(descriptor) == _PUBLIC_CHANNEL_KEYS
             assert descriptor["argument"] == argument
             assert not _OBSOLETE_PUBLIC_CHANNEL_FIELDS.intersection(descriptor)
 
 
-def test_research_capability_uses_effective_limits_and_formats() -> None:
-    """Only Research publishes configured counts and scientific formats."""
-    config = ApiLimitsConfig(
-        API_MAX_ATTACHMENTS_PER_REQUEST=7,
-        API_MAX_RESEARCH_DATASET_PATHS=3,
-        API_MAX_RESEARCH_INPUT_REFERENCES=8,
-    )
+def test_generic_research_capability_is_format_agnostic() -> None:
+    """Research runtime details stay in its gated protocol descriptor."""
+    research = serialize_agent_capability("research")["attachments"]
 
-    research = serialize_agent_capability("research", config)["attachments"]
-    analyst = serialize_agent_capability("analyst", config)["attachments"]
-
-    assert research["document_context"]["max_files"] == 7
-    assert research["datasets"]["max_files"] == 3
-    assert research["datasets"]["formats"] == list(
-        advertised_research_formats()
-    )
-    assert analyst["document_context"]["max_files"] == 10
-    assert analyst["datasets"]["max_files"] == 10
-    assert "formats" not in analyst["datasets"]
+    assert research["document_context"]["max_files"] == 10
+    assert research["datasets"]["max_files"] == 10
+    assert set(research["datasets"]) == _PUBLIC_CHANNEL_KEYS
 
 
 @pytest.mark.asyncio
-async def test_agent_catalog_reuses_route_config_for_capabilities(
+async def test_agent_catalog_keeps_generic_capabilities_config_independent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The catalog passes its ApiConfig instance into every serializer call."""
-    config = ApiLimitsConfig(
+    """Runtime config changes only the gated Research protocol descriptor."""
+    first_config = ApiLimitsConfig(
         API_MAX_ATTACHMENTS_PER_REQUEST=7,
         API_MAX_RESEARCH_DATASET_PATHS=3,
         API_MAX_RESEARCH_INPUT_REFERENCES=8,
     )
-    observed: list[tuple[str, ApiLimitsConfig]] = []
-
-    def serialize(slug: str, limits: ApiLimitsConfig) -> dict[str, object]:
-        observed.append((slug, limits))
-        return {"slug": slug}
-
-    monkeypatch.setattr(agent_routes, "ApiConfig", lambda: config)
+    second_config = ApiLimitsConfig(
+        API_MAX_ATTACHMENTS_PER_REQUEST=9,
+        API_MAX_RESEARCH_DATASET_PATHS=4,
+        API_MAX_RESEARCH_INPUT_REFERENCES=12,
+    )
     monkeypatch.setattr(
         agent_routes,
         "research_input_root_worker_ready",
@@ -282,7 +264,7 @@ async def test_agent_catalog_reuses_route_config_for_capabilities(
                 },
                 remote_agent_slugs=frozenset(),
                 legacy_aliases={},
-                serialize_capability=serialize,
+                serialize_capability=serialize_agent_capability,
                 conversation_context_enabled=lambda: False,
             ),
             upload=SimpleNamespace(
@@ -299,10 +281,13 @@ async def test_agent_catalog_reuses_route_config_for_capabilities(
         if isinstance(route, APIRoute) and route.path == "/v1/agents"
     )
 
-    response = await route.endpoint(principal=object())
+    monkeypatch.setattr(agent_routes, "ApiConfig", lambda: first_config)
+    first = await route.endpoint(principal=object())
+    monkeypatch.setattr(agent_routes, "ApiConfig", lambda: second_config)
+    second = await route.endpoint(principal=object())
 
-    assert response.status_code == 200
-    assert observed == [("analyst", config), ("research", config)]
+    assert first.status_code == second.status_code == 200
+    assert json.loads(first.body)["data"] == json.loads(second.body)["data"]
 
 
 @pytest.mark.parametrize(
@@ -447,7 +432,7 @@ def test_capability_golden_is_byte_stable() -> None:
     assert json.loads(golden) == actual
     assert golden == json.dumps(actual, ensure_ascii=False, indent=2) + "\n"
     assert hashlib.sha256(golden.encode("utf-8")).hexdigest() == (
-        "9eba660adb987f4133603f37a3acd04b1ec09b5a2698849494c1e099c935048b"
+        "df66c45577cba256d210945a637fb8eb805feb8550e7e3841b663b2364527a27"
     )
 
 

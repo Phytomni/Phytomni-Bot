@@ -177,17 +177,17 @@ def test_native_attachment_matrix(
         )
 
 
-def test_validator_limits_match_public_attachment_contract() -> None:
-    """The validator and public capability descriptor share exact limits."""
-    for slug, channel, max_files in (
-        ("chat", "document_context", 10),
-        ("analyst", "datasets", 10),
-        ("research", "document_context", 64),
-        ("research", "datasets", 64),
+def test_generic_attachment_channel_limits_are_stable() -> None:
+    """Generic channel descriptors retain their format-agnostic limits."""
+    for slug, channel in (
+        ("chat", "document_context"),
+        ("analyst", "datasets"),
+        ("research", "document_context"),
+        ("research", "datasets"),
     ):
         limits = serialize_agent_capability(slug)["attachments"][channel]
         assert limits["max_file_bytes"] == 26_214_400
-        assert limits["max_files"] == max_files
+        assert limits["max_files"] == 10
         assert limits["max_total_bytes"] == 52_428_800
 
 
