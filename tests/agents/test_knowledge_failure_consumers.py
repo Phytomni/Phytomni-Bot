@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -15,6 +15,7 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 
 import mcp_server_phytomni.agents.analyst.graph as analyst_graph
 from mcp_server_phytomni.agents.analyst.graph import AnalystGraphMixin
+from mcp_server_phytomni.agents.analyst.state import AnalystState
 from mcp_server_phytomni.config.defaults import AnalystConfig
 
 pytestmark = pytest.mark.agent
@@ -35,6 +36,11 @@ def _retrieval_error() -> McpError:
     )
 
 
+def _analyst_state() -> AnalystState:
+    """Return the node-local state slice used by these focused tests."""
+    return cast(AnalystState, {"extracted_tools": ["tool-a"]})
+
+
 @pytest.mark.asyncio
 async def test_tool_retrieval_failure_stops_before_submission(
     monkeypatch: pytest.MonkeyPatch,
@@ -48,7 +54,7 @@ async def test_tool_retrieval_failure_stops_before_submission(
         raise _retrieval_error()
 
     monkeypatch.setattr(analyst_graph, "retrieve", fail_retrieve)
-    state = {"extracted_tools": ["tool-a"]}
+    state = _analyst_state()
 
     async def run_pipeline() -> None:
         result = await AnalystGraphMixin.tool_retrieve_node(_host(), state)
@@ -81,7 +87,7 @@ async def test_tool_retrieval_no_match_keeps_submit_path_usable(
     monkeypatch.setattr(analyst_graph, "retrieve", no_match_retrieve)
 
     result = await AnalystGraphMixin.tool_retrieve_node(
-        _host(), {"extracted_tools": ["tool-a"]}
+        _host(), _analyst_state()
     )
 
     assert result == {
@@ -101,6 +107,4 @@ async def test_tool_retrieval_cancellation_propagates(
     monkeypatch.setattr(analyst_graph, "retrieve", cancel_retrieve)
 
     with pytest.raises(asyncio.CancelledError):
-        await AnalystGraphMixin.tool_retrieve_node(
-            _host(), {"extracted_tools": ["tool-a"]}
-        )
+        await AnalystGraphMixin.tool_retrieve_node(_host(), _analyst_state())
