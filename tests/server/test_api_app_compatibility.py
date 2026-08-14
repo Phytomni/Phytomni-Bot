@@ -62,7 +62,7 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # contract in 97867888. The ``_normalized_openapi`` helper removes only
 # unstable version/server fields.
 _OPENAPI_HASH = (
-    "0daecabef5685fba46b7f9d818c0f03d5791717bb5221e713f8e8247d949a71c"
+    "3cb004b2517d54a86de76db5cbd0ebd1cb2ab12184e5d1b0f5a59f2d8d89a7b5"
 )
 
 
