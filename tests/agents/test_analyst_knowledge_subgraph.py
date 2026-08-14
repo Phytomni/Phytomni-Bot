@@ -144,7 +144,15 @@ async def test_method_retrieve_post_node_parses_knowledge_response(
         {
             "obs_file_list": [],
             "knowledge_response": {
-                "retrieved_docs": [{"title": "Doc A", "content": "doc-A"}],
+                "retrieved_docs": [
+                    {
+                        "chunk_id": "doc-a",
+                        "title": "Doc A",
+                        "content": "doc-A",
+                    }
+                ],
+                "retrieval_outcome": "complete",
+                "final_response": {},
             },
         },
     )
@@ -155,10 +163,10 @@ async def test_method_retrieve_post_node_parses_knowledge_response(
     assert "doc-A" in method_context["retrieve_context"]
 
 
-async def test_method_retrieve_post_node_defaults_empty_docs(
+async def test_method_retrieve_post_node_accepts_explicit_no_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Post node tolerates a knowledge response without docs."""
+    """Post node accepts a validated no-match response without docs."""
     monkeypatch.setattr(
         "mcp_server_phytomni.agents.analyst.graph_knowledge_subgraph"
         ".download_upload_context",
@@ -169,7 +177,11 @@ async def test_method_retrieve_post_node_defaults_empty_docs(
         AnalystState,
         {
             "obs_file_list": [],
-            "knowledge_response": None,
+            "knowledge_response": {
+                "retrieved_docs": [],
+                "retrieval_outcome": "no_match",
+                "final_response": {},
+            },
         },
     )
     result = await agent.method_retrieve_post_node(state)

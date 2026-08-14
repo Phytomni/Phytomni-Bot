@@ -80,11 +80,16 @@ async def test_knowledge_arun_consumes_private_history_in_chat_subgraph_input(
         return {
             "doc_list": [
                 {
+                    "chunk_id": "doc-1",
+                    "content": "doc body",
                     "chunk_text": "doc body",
                     "file_id": "doc-1",
                     "title": "Paper One.pdf",
                 }
-            ]
+            ],
+            "total": 1,
+            "outcome": "complete",
+            "failures": [],
         }
 
     async def fake_chat_ainvoke(chat_input: dict[str, Any]) -> dict[str, Any]:

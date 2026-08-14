@@ -99,8 +99,14 @@ async def test_retrieve_post_node_parses_knowledge_response(
             "user_query": "list every transcript per sample",
             "knowledge_response": {
                 "retrieved_docs": [
-                    {"title": "Scenario A", "content": "scenario-A"},
+                    {
+                        "chunk_id": "scenario-a",
+                        "title": "Scenario A",
+                        "content": "scenario-A",
+                    },
                 ],
+                "retrieval_outcome": "complete",
+                "final_response": {},
             },
         },
     )
@@ -110,23 +116,25 @@ async def test_retrieve_post_node_parses_knowledge_response(
     assert "list every transcript per sample" in result["retrieve_prompt"]
 
 
-async def test_retrieve_post_node_defaults_empty_docs(
+async def test_retrieve_post_node_accepts_explicit_no_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Post node tolerates a knowledge response without docs.
+    """Post node accepts an explicit no-match response without docs.
 
-    Pins the no-docs edge case: an empty ``knowledge_response`` and a
-    missing key both default the doc list to ``[]`` so the fragment
-    loop simply produces no scenario context. The stitched prompt
-    still carries the ``user_query`` so the rewrite stage gets a
-    valid template.
+    Pins the no-docs edge case through the strict Knowledge output
+    contract. The fragment loop produces no scenario context while the
+    stitched prompt still carries ``user_query`` for the rewrite stage.
     """
     agent = _build_agent(monkeypatch)
     state = cast(
         DataAgentState,
         {
             "user_query": "list every transcript per sample",
-            "knowledge_response": None,
+            "knowledge_response": {
+                "retrieved_docs": [],
+                "retrieval_outcome": "no_match",
+                "final_response": {},
+            },
         },
     )
     result = await agent.retrieve_post_node(state)

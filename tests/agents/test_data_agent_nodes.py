@@ -177,7 +177,15 @@ async def test_retrieve_post_node_stops_at_token_budget(
             {
                 "user_query": "list every transcript per sample",
                 "knowledge_response": {
-                    "retrieved_docs": [{"title": "oversized"}],
+                    "retrieved_docs": [
+                        {
+                            "chunk_id": "oversized",
+                            "title": "oversized",
+                            "content": "oversized",
+                        }
+                    ],
+                    "retrieval_outcome": "complete",
+                    "final_response": {},
                 },
             },
         )
