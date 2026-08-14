@@ -11,6 +11,8 @@ returns no response and the wrapper short-circuits.
 
 from __future__ import annotations
 
+import asyncio
+import json
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
@@ -18,6 +20,8 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
 
 from mcp_server_phytomni.agents.evolution import agent as evolution_agent
 from mcp_server_phytomni.config.defaults import ServerConfig
@@ -168,7 +172,7 @@ async def test_find_spa_taxids_returns_empty_on_non_200(
     monkeypatch: pytest.MonkeyPatch,
     outbound_runtime: Any,
 ):
-    """Verify the lookup short-circuits to an empty list on non-200.
+    """Verify the lookup exposes a fixed error on non-200.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to swap the auth loader.
@@ -182,11 +186,137 @@ async def test_find_spa_taxids_returns_empty_on_non_200(
     monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
     outbound_runtime.transport.enqueue(status=502, content=b"bad gateway")
 
-    taxids = await evolution_agent.find_spa_taxids(
-        "oryza", request_timeout=1.0
+    with pytest.raises(
+        McpError, match="Evolution taxonomy lookup temporarily unavailable"
+    ):
+        await evolution_agent.find_spa_taxids("oryza", request_timeout=1.0)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"total": True, "records": []},
+        {"total": -1, "records": []},
+        {"total": 1, "records": {}},
+        {"total": 1, "records": []},
+        {"total": 0, "records": [{"answer": "9606. Homo sapiens"}]},
+        {"total": 1, "records": [{}]},
+        {"total": 1, "records": [{"answer": 9606}]},
+        {"total": 1, "records": [{"answer": "not-a-taxid"}]},
+    ],
+)
+async def test_find_spa_taxids_rejects_malformed_direct_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+    payload: dict[str, Any],
+) -> None:
+    """Malformed direct responses never become an empty taxonomy result."""
+
+    async def fake_get_token(**_kwargs: Any) -> str:
+        """Return a deterministic IAM token."""
+        return "fake-iam-token"
+
+    monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
+    outbound_runtime.transport.enqueue(
+        content=json.dumps(payload).encode("utf-8")
     )
 
-    assert taxids == []
+    with pytest.raises(
+        McpError, match="Evolution taxonomy lookup temporarily unavailable"
+    ) as exc_info:
+        await evolution_agent.find_spa_taxids(
+            "species-secret", request_timeout=1.0
+        )
+
+    assert "species-secret" not in str(exc_info.value)
+
+
+async def test_find_spa_taxids_rejects_direct_transport_error(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+) -> None:
+    """Direct transport failures use the fixed sanitized error contract."""
+
+    async def fake_get_token(**_kwargs: Any) -> str:
+        """Return a deterministic IAM token."""
+        return "fake-iam-token"
+
+    monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
+    outbound_runtime.transport.enqueue_error(
+        httpx.ConnectError("https://species-secret.example/?token=secret")
+    )
+
+    with pytest.raises(
+        McpError, match="Evolution taxonomy lookup temporarily unavailable"
+    ) as exc_info:
+        await evolution_agent.find_spa_taxids(
+            "species-secret", request_timeout=1.0
+        )
+
+    assert "species-secret" not in str(exc_info.value)
+    assert "secret" not in str(exc_info.value)
+
+
+async def test_find_spa_taxids_rejects_relay_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Relay failures use the same fixed sanitized error contract."""
+    monkeypatch.setattr(evolution_agent, "relay_mode_enabled", lambda: True)
+
+    async def fail_lookup(_path: str, **_kwargs: Any) -> Any:
+        """Raise a provider-shaped error containing sensitive test text."""
+        raise McpError(
+            ErrorData(
+                code=INTERNAL_ERROR,
+                message="species-secret provider token-secret",
+            )
+        )
+
+    relay = SimpleNamespace(get_json=fail_lookup)
+    monkeypatch.setattr(evolution_agent, "current_relay_client", lambda: relay)
+
+    with pytest.raises(
+        McpError, match="Evolution taxonomy lookup temporarily unavailable"
+    ) as exc_info:
+        await evolution_agent.find_spa_taxids(
+            "species-secret", request_timeout=1.0
+        )
+
+    assert "species-secret" not in str(exc_info.value)
+    assert "token-secret" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("relay", [False, True])
+async def test_find_spa_taxids_propagates_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+    relay: bool,
+) -> None:
+    """Cancellation is never projected as a taxonomy lookup failure."""
+    monkeypatch.setattr(evolution_agent, "relay_mode_enabled", lambda: relay)
+
+    async def cancel_lookup(_path: str, **_kwargs: Any) -> Any:
+        """Raise cancellation from the selected provider boundary."""
+        raise asyncio.CancelledError
+
+    if relay:
+        relay_client = SimpleNamespace(get_json=cancel_lookup)
+        monkeypatch.setattr(
+            evolution_agent, "current_relay_client", lambda: relay_client
+        )
+    else:
+
+        async def cancel_token(**_kwargs: Any) -> str:
+            """Raise cancellation while obtaining the direct token."""
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr(evolution_agent, "get_token", cancel_token)
+
+    with pytest.raises(asyncio.CancelledError):
+        await evolution_agent.find_spa_taxids(
+            "species-secret", request_timeout=1.0
+        )
 
 
 @pytest.mark.parametrize("legacy_keyword", ["timeout"])

@@ -13,13 +13,15 @@ itself is a thin wrapper that delegates to the compiled evolution
 subgraph via :func:`ainvoke_graph`.
 """
 
+import asyncio
 import importlib
+from collections.abc import Mapping
 from functools import lru_cache
 from json import loads
 from typing import Any
 
-from httpx import HTTPStatusError
 from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...auth.iam import get_token
 from ...common.prompts import get_prompt
@@ -46,6 +48,9 @@ from ..shared.options import (
 )
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
+_EVOLUTION_LOOKUP_UNAVAILABLE = (
+    "Evolution taxonomy lookup temporarily unavailable"
+)
 
 __all__ = [
     "DEEP_GENOME_CONFIG",
@@ -98,10 +103,9 @@ async def find_spa_taxids(
     timeout = request_timeout
     if timeout is None:
         timeout = DEEP_GENOME_CONFIG.TIMEOUT
-    if relay_mode_enabled():
-        # Relay mode injects the operator IAM token and bypasses the proxy.
-        # Failed lookups soft-fail to no taxids, mirroring direct handling.
-        try:
+    try:
+        if relay_mode_enabled():
+            # Relay mode injects the operator IAM token and bypasses the proxy.
             response_taxid_data = await current_relay_client().get_json(
                 f"spa-faq/{DEEP_GENOME_CONFIG.SPA_REPO_ID}",
                 pool=OutboundPoolName.SPA_FAQ,
@@ -115,30 +119,27 @@ async def find_spa_taxids(
                     "page_num": "1",
                 },
             )
-        except McpError:
-            return []
-    else:
-        url = DEEP_GENOME_CONFIG.SPA_FAQ_URL.format(
-            repo_id=DEEP_GENOME_CONFIG.SPA_REPO_ID
-        )
-        headers = {
-            "X-Auth-Token": await get_token(request_timeout=timeout),
-            "Content-Type": "application/json",
-        }
-        request_params: dict[str, str | int] = {
-            "question": spa_names,
-            "page_size": 10,
-            "page_num": 1,
-        }
-        # trust_env=False mirrors the previous proxies={'http': None,
-        # 'https': None} on the requests call: this endpoint sits on a
-        # bare-IP corporate URL, so inheriting HTTP(S)_PROXY from the host
-        # env would route it through a proxy that cannot reach it.
-        client = current_outbound_runtime().http.for_pool(
-            OutboundPoolName.SPA_FAQ,
-            profile=OutboundHttpProfile.DIRECT_UPSTREAM,
-        )
-        try:
+        else:
+            url = DEEP_GENOME_CONFIG.SPA_FAQ_URL.format(
+                repo_id=DEEP_GENOME_CONFIG.SPA_REPO_ID
+            )
+            headers = {
+                "X-Auth-Token": await get_token(request_timeout=timeout),
+                "Content-Type": "application/json",
+            }
+            request_params: dict[str, str | int] = {
+                "question": spa_names,
+                "page_size": 10,
+                "page_num": 1,
+            }
+            # trust_env=False mirrors the previous proxies={'http': None,
+            # 'https': None} on the requests call: this endpoint sits on a
+            # bare-IP corporate URL, so inheriting HTTP(S)_PROXY from the host
+            # env would route it through a proxy that cannot reach it.
+            client = current_outbound_runtime().http.for_pool(
+                OutboundPoolName.SPA_FAQ,
+                profile=OutboundHttpProfile.DIRECT_UPSTREAM,
+            )
             response = await client.request(
                 "GET",
                 url,
@@ -146,14 +147,56 @@ async def find_spa_taxids(
                 params=request_params,
                 timeout=timeout,
             )
-        except HTTPStatusError:
-            return []
-        response_taxid_data = response.json()
-    if response_taxid_data["total"] <= 0:
+            response_taxid_data = response.json()
+        return _parse_spa_taxids(response_taxid_data)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        raise _evolution_lookup_unavailable() from None
+
+
+def _evolution_lookup_unavailable() -> McpError:
+    """Build the fixed public error for a failed taxonomy lookup."""
+    return McpError(
+        ErrorData(
+            code=INTERNAL_ERROR,
+            message=_EVOLUTION_LOOKUP_UNAVAILABLE,
+        )
+    )
+
+
+def _parse_spa_taxids(payload: Any) -> list[str]:
+    """Validate one SPA-FAQ payload and return taxids in provider order."""
+    if not isinstance(payload, Mapping):
+        raise ValueError("invalid taxonomy response")
+    total = payload.get("total")
+    records = payload.get("records")
+    if (
+        not isinstance(total, int)
+        or isinstance(total, bool)
+        or total < 0
+        or not isinstance(records, list)
+    ):
+        raise ValueError("invalid taxonomy response")
+    if total == 0:
+        if records:
+            raise ValueError("invalid taxonomy response")
         return []
-    return [
-        faq["answer"].split(".")[0] for faq in response_taxid_data["records"]
-    ]
+    if not records:
+        raise ValueError("invalid taxonomy response")
+
+    taxids: list[str] = []
+    for record in records:
+        if not isinstance(record, Mapping):
+            raise ValueError("invalid taxonomy response")
+        answer = record.get("answer")
+        if not isinstance(answer, str):
+            raise ValueError("invalid taxonomy response")
+        taxid = answer.split(".", 1)[0].strip()
+        if not taxid.isdigit() or int(taxid) <= 0:
+            raise ValueError("invalid taxonomy response")
+        taxids.append(taxid)
+    return taxids
 
 
 async def target_taxids(query: str, kwargs: dict[str, Any]) -> str | None:
