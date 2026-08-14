@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any, Final
 
@@ -124,10 +124,11 @@ class _AttachmentLimits:
 
 @dataclass(frozen=True)
 class DatasetCapability:
-    """Limits and input shape for structured CSV dataset attachments."""
+    """Limits, formats, and input shape for dataset attachments."""
 
     argument: str = "data_list"
     _limits: _AttachmentLimits = _AttachmentLimits()
+    formats: tuple[str, ...] | None = None
 
     @property
     def max_file_bytes(self) -> int:
@@ -144,14 +145,24 @@ class DatasetCapability:
         """Return the per-request aggregate size limit."""
         return self._limits.max_total_bytes
 
+    def with_max_files(self, max_files: int) -> DatasetCapability:
+        """Return this descriptor with a different file-count limit."""
+        return replace(
+            self,
+            _limits=replace(self._limits, max_files=max_files),
+        )
+
     def to_public_dict(self) -> dict[str, Any]:
         """Serialize the immutable descriptor into JSON-compatible values."""
-        return {
+        descriptor: dict[str, Any] = {
             "argument": self.argument,
             "max_file_bytes": self.max_file_bytes,
             "max_files": self.max_files,
             "max_total_bytes": self.max_total_bytes,
         }
+        if self.formats is not None:
+            descriptor["formats"] = list(self.formats)
+        return descriptor
 
 
 @dataclass(frozen=True)
@@ -223,6 +234,7 @@ class ResearchInputResolutionDescriptor:
 
 _DOCUMENTS = DocumentContextCapability()
 _DATASETS = DatasetCapability()
+_RESEARCH_DATASETS = DatasetCapability(formats=advertised_research_formats())
 
 _CAPABILITIES: dict[str, AgentCapability] = {
     "chat": AgentCapability(
@@ -256,7 +268,11 @@ _CAPABILITIES: dict[str, AgentCapability] = {
         report_states=("final",),
         artifacts=True,
         degraded_outcomes=True,
-        attachments=AttachmentCapability(_DOCUMENTS, _DATASETS, False),
+        attachments=AttachmentCapability(
+            _DOCUMENTS,
+            _RESEARCH_DATASETS,
+            False,
+        ),
     ),
     "design": AgentCapability(
         report_states=("final",),
@@ -395,9 +411,33 @@ def filter_tools_for_attachment_channels(
     )
 
 
-def serialize_agent_capability(slug: str) -> dict[str, Any]:
+def serialize_agent_capability(
+    slug: str,
+    config: ApiLimitsConfig | None = None,
+) -> dict[str, Any]:
     """Return one JSON-compatible capability descriptor for ``slug``."""
-    return get_agent_capability(slug).to_public_dict()
+    capability = get_agent_capability(slug)
+    if slug != "research":
+        return capability.to_public_dict()
+
+    limits = ApiLimitsConfig() if config is None else config
+    effective_attachments = AttachmentCapability(
+        document_context=replace(
+            _DOCUMENTS,
+            max_files=limits.API_MAX_ATTACHMENTS_PER_REQUEST,
+        ),
+        datasets=_RESEARCH_DATASETS.with_max_files(
+            min(
+                limits.API_MAX_ATTACHMENTS_PER_REQUEST,
+                limits.API_MAX_RESEARCH_DATASET_PATHS,
+            )
+        ),
+        expert_forwarding=False,
+    )
+    return replace(
+        capability,
+        attachments=effective_attachments,
+    ).to_public_dict()
 
 
 def build_research_input_descriptor(

@@ -631,16 +631,17 @@ map. Treat unknown capability slugs as unsupported and keep authorization
 separate from this metadata.
 
 The attachment channels are exact: Chat, Knowledge, and Review accept
-document context; Analyst and Research accept document context plus CSV
-datasets; Design and Network accept document context only; Data, BriefGene,
-and DeepGenome accept neither. A non-null channel publishes only its native
-argument (`obs_file_list` or `data_list`) and the three inclusive invocation
-limits; it does not claim managed support for extensions, formats, encoding,
-delimiters, compression, or descriptions. The outer `expert_forwarding` flag
-remains compatibility metadata for the Expert forwarding path.
+document context; Analyst accepts document context plus CSV datasets; Research
+accepts document context plus the canonical scientific dataset formats; Design
+and Network accept document context only; Data, BriefGene, and DeepGenome
+accept neither. Every non-null channel publishes its native argument
+(`obs_file_list` or `data_list`) and the three inclusive invocation limits;
+only the Research dataset channel also publishes `formats`. The outer
+`expert_forwarding` flag remains compatibility metadata for the Expert
+forwarding path.
 The complete deterministic golden is
 `docs/contracts/agents/capabilities.json` (SHA256
-`df66c45577cba256d210945a637fb8eb805feb8550e7e3841b663b2364527a27`). The
+`9eba660adb987f4133603f37a3acd04b1ec09b5a2698849494c1e099c935048b`). The
 descriptor is a capability preflight, not an authorization grant.
 
 ### Native conversation-context V1 probes (non-production only)

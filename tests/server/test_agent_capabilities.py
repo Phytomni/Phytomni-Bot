@@ -8,8 +8,12 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
 from tests.support.attachment_fakes import EXPERT_ATTACHMENT_ALLOWED_TOOLS
 
 from mcp_server_phytomni.agents.research.scientific_formats import (
@@ -40,6 +44,11 @@ from mcp_server_phytomni.api.openai_mapping import (
     tool_accepts_obs,
     tool_accepts_stream,
 )
+from mcp_server_phytomni.api.routes import agents as agent_routes
+from mcp_server_phytomni.api.routes.agent_dependencies import (
+    AgentRouteDependencies,
+)
+from mcp_server_phytomni.api.routes.agents import _register_native_routes
 from mcp_server_phytomni.config.api_limits import ApiLimitsConfig
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 from mcp_server_phytomni.runtime.attachment_assets import (
@@ -83,7 +92,6 @@ _PUBLIC_CHANNEL_KEYS = {
 }
 _OBSOLETE_PUBLIC_CHANNEL_FIELDS = {
     "extensions",
-    "formats",
     "encoding",
     "delimiter",
     "requires_description",
@@ -207,9 +215,94 @@ def test_attachment_matrix_is_exact() -> None:
                 assert descriptor is None
                 continue
             assert descriptor is not None
-            assert set(descriptor) == _PUBLIC_CHANNEL_KEYS
+            expected_keys = _PUBLIC_CHANNEL_KEYS | (
+                {"formats"}
+                if slug == "research" and channel == "datasets"
+                else set()
+            )
+            assert set(descriptor) == expected_keys
             assert descriptor["argument"] == argument
             assert not _OBSOLETE_PUBLIC_CHANNEL_FIELDS.intersection(descriptor)
+
+
+def test_research_capability_uses_effective_limits_and_formats() -> None:
+    """Only Research publishes configured counts and scientific formats."""
+    config = ApiLimitsConfig(
+        API_MAX_ATTACHMENTS_PER_REQUEST=7,
+        API_MAX_RESEARCH_DATASET_PATHS=3,
+        API_MAX_RESEARCH_INPUT_REFERENCES=8,
+    )
+
+    research = serialize_agent_capability("research", config)["attachments"]
+    analyst = serialize_agent_capability("analyst", config)["attachments"]
+
+    assert research["document_context"]["max_files"] == 7
+    assert research["datasets"]["max_files"] == 3
+    assert research["datasets"]["formats"] == list(
+        advertised_research_formats()
+    )
+    assert analyst["document_context"]["max_files"] == 10
+    assert analyst["datasets"]["max_files"] == 10
+    assert "formats" not in analyst["datasets"]
+
+
+@pytest.mark.asyncio
+async def test_agent_catalog_reuses_route_config_for_capabilities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The catalog passes its ApiConfig instance into every serializer call."""
+    config = ApiLimitsConfig(
+        API_MAX_ATTACHMENTS_PER_REQUEST=7,
+        API_MAX_RESEARCH_DATASET_PATHS=3,
+        API_MAX_RESEARCH_INPUT_REFERENCES=8,
+    )
+    observed: list[tuple[str, ApiLimitsConfig]] = []
+
+    def serialize(slug: str, limits: ApiLimitsConfig) -> dict[str, object]:
+        observed.append((slug, limits))
+        return {"slug": slug}
+
+    monkeypatch.setattr(agent_routes, "ApiConfig", lambda: config)
+    monkeypatch.setattr(
+        agent_routes,
+        "research_input_root_worker_ready",
+        lambda: False,
+    )
+    dependencies = cast(
+        AgentRouteDependencies,
+        SimpleNamespace(
+            auth=SimpleNamespace(
+                require_agents=lambda: None,
+                schedule_run_gc=lambda: None,
+            ),
+            catalog=SimpleNamespace(
+                agent_slug_to_tool={
+                    "analyst": "AnalystAgent",
+                    "research": "InSilicoResearchAgent",
+                },
+                remote_agent_slugs=frozenset(),
+                legacy_aliases={},
+                serialize_capability=serialize,
+                conversation_context_enabled=lambda: False,
+            ),
+            upload=SimpleNamespace(
+                serialize_file_upload_capability=lambda: {},
+                schedule_cleanup=lambda: None,
+            ),
+        ),
+    )
+    app = FastAPI()
+    _register_native_routes(app, dependencies)
+    route = next(
+        route
+        for route in app.routes
+        if isinstance(route, APIRoute) and route.path == "/v1/agents"
+    )
+
+    response = await route.endpoint(principal=object())
+
+    assert response.status_code == 200
+    assert observed == [("analyst", config), ("research", config)]
 
 
 @pytest.mark.parametrize(
@@ -354,7 +447,7 @@ def test_capability_golden_is_byte_stable() -> None:
     assert json.loads(golden) == actual
     assert golden == json.dumps(actual, ensure_ascii=False, indent=2) + "\n"
     assert hashlib.sha256(golden.encode("utf-8")).hexdigest() == (
-        "df66c45577cba256d210945a637fb8eb805feb8550e7e3841b663b2364527a27"
+        "9eba660adb987f4133603f37a3acd04b1ec09b5a2698849494c1e099c935048b"
     )
 
 

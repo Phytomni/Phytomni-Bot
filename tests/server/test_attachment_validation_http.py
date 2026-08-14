@@ -179,14 +179,15 @@ def test_native_attachment_matrix(
 
 def test_validator_limits_match_public_attachment_contract() -> None:
     """The validator and public capability descriptor share exact limits."""
-    for slug, channel in (
-        ("chat", "document_context"),
-        ("analyst", "datasets"),
-        ("research", "datasets"),
+    for slug, channel, max_files in (
+        ("chat", "document_context", 10),
+        ("analyst", "datasets", 10),
+        ("research", "document_context", 64),
+        ("research", "datasets", 64),
     ):
         limits = serialize_agent_capability(slug)["attachments"][channel]
         assert limits["max_file_bytes"] == 26_214_400
-        assert limits["max_files"] == 10
+        assert limits["max_files"] == max_files
         assert limits["max_total_bytes"] == 52_428_800
 
 
@@ -714,6 +715,40 @@ def test_file_count_limit_is_inclusive(
         assert_attachment_error(
             registry,
             agent="chat",
+            arguments=arguments,
+            code=expected,
+        )
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [(64, None), (65, "attachment_limit_exceeded")],
+)
+def test_research_file_count_limit_is_inclusive(
+    tasks_db_path: str,
+    count: int,
+    expected: str | None,
+) -> None:
+    """Research accepts the configured 64th upload and rejects the 65th."""
+    registry = UploadRegistry(tasks_db_path)
+    paths = [
+        register_fixture_upload(
+            registry,
+            owner="u1",
+            purpose="agent_context",
+            filename=f"research-context-{index}.pdf",
+        )
+        for index in range(count)
+    ]
+    arguments = {"obs_file_list": paths}
+    if expected is None:
+        validate_agent_attachments(
+            "research", arguments, owner="u1", registry=registry
+        )
+    else:
+        assert_attachment_error(
+            registry,
+            agent="research",
             arguments=arguments,
             code=expected,
         )
