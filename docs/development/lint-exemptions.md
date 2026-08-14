@@ -101,9 +101,9 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 - Path:
   `src/mcp_server_phytomni/mcp/result_formatting.py`
 - Symbol:
-  `41:51`
+  `40:50`
 - Fingerprint:
-  `sha256:5c60b7b540adeb7af7facaf7f9ea44eddd885c2fb9ccd78b0851621a168d5c2c`
+  `sha256:f7599cf258bd5b405e374d9783d78728f5841b8e5cb70acc5ee3debf9cfe2be1`
 - Owner:
   `bot-maintainers`
 - Introduced:
