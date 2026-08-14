@@ -105,25 +105,22 @@ class AnalystGraphMixin:
         tool_usages = ""
         for tool in tools:
             tool_usages += f"[{tool} Usage START]\n"
-            try:
-                tool_usage_info = await retrieve(
-                    user_query=tool,
-                    retrieve_url=self.analyst_config.RETRIEVE_URL,
-                    repo_id=self.analyst_config.TOOL_REPO_ID,
-                    page_num=self.analyst_config.TOOL_PAGE_NUM,
-                    page_size=self.analyst_config.TOOL_PAGE_SIZE,
-                    filter_string=self.analyst_config.FILTER_STRING,
-                    scope=self.analyst_config.SCOPE,
-                    extra_repo_ids=self.analyst_config.EXTRA_REPO_IDS,
-                    rerank_url=self.analyst_config.RERANK_URL,
-                    rerank_batch_size=self.analyst_config.RERANK_BATCH_SIZE,
-                    score_threshold=self.analyst_config.SCORE_THRESHOLD,
-                    timeout=self.analyst_config.TIMEOUT,
-                    retriable_codes=self.analyst_config.RETRIABLE_CODES,
-                    max_retries=self.analyst_config.MAX_RETRIES,
-                )
-            except McpError:
-                tool_usage_info = {"doc_list": []}
+            tool_usage_info = await retrieve(
+                user_query=tool,
+                retrieve_url=self.analyst_config.RETRIEVE_URL,
+                repo_id=self.analyst_config.TOOL_REPO_ID,
+                page_num=self.analyst_config.TOOL_PAGE_NUM,
+                page_size=self.analyst_config.TOOL_PAGE_SIZE,
+                filter_string=self.analyst_config.FILTER_STRING,
+                scope=self.analyst_config.SCOPE,
+                extra_repo_ids=self.analyst_config.EXTRA_REPO_IDS,
+                rerank_url=self.analyst_config.RERANK_URL,
+                rerank_batch_size=self.analyst_config.RERANK_BATCH_SIZE,
+                score_threshold=self.analyst_config.SCORE_THRESHOLD,
+                timeout=self.analyst_config.TIMEOUT,
+                retriable_codes=self.analyst_config.RETRIABLE_CODES,
+                max_retries=self.analyst_config.MAX_RETRIES,
+            )
             for doc in tool_usage_info["doc_list"]:
                 tool_usages += f"{doc['content']}\n"
             tool_usages += f"[{tool} Usage END]\n\n\n"
