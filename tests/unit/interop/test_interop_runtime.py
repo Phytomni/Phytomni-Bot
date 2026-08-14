@@ -208,6 +208,34 @@ async def test_http_failure_evicts_exact_client_and_next_call_rebuilds() -> (
 
 
 @pytest.mark.asyncio
+async def test_http_rebuilds_before_use_when_cached_client_is_closed() -> None:
+    """A detectably closed HTTP client is replaced before the operation."""
+    clients: list[httpx.AsyncClient] = []
+
+    def factory(_target_id: str, **_: Any) -> httpx.AsyncClient:
+        client = httpx.AsyncClient()
+        clients.append(client)
+        return client
+
+    runtime = InteropResourceRuntime(
+        _registry(_a2a_target()),
+        _sensitive(),
+        _pools(),
+        factories=InteropResourceFactories(http=factory),
+    )
+
+    async def is_closed(client: httpx.AsyncClient) -> bool:
+        return client.is_closed
+
+    assert not await runtime.run_http("peer-a2a", is_closed)
+    await clients[0].aclose()
+
+    assert not await runtime.run_http("peer-a2a", is_closed)
+    assert len(clients) == 2
+    await runtime.aclose()
+
+
+@pytest.mark.asyncio
 async def test_target_validation_happens_before_interop_acquisition() -> None:
     """Unknown target ids cannot consume a logical slot."""
     pools = _pools(1)
@@ -712,6 +740,7 @@ async def test_mcp_session_reused_and_closed_after_transport_context() -> None:
     assert await runtime.run_mcp("peer-http", use) == 1
     assert stream_opened == session_opened == 1
     assert runtime.keys == {("peer-http", "streamable_http")}
+    await runtime.aclose()
     await runtime.aclose()
     assert stream_closed == session_closed == 1
     assert clients_closed == 1

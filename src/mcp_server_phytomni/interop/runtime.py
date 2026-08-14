@@ -9,15 +9,19 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, TypeVar
 
 import httpx
+from a2a.client.errors import A2AClientError as A2ASDKClientError
+from anyio import BrokenResourceError, ClosedResourceError, EndOfStream
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import McpError
+from mcp.types import CONNECTION_CLOSED
 
 from ..config.defaults import ApiConfig
 from ..config.settings import SensitiveConfig
@@ -48,13 +52,33 @@ type InteropA2aOperation[T] = Callable[[object], AsyncIterator[T]]
 type InteropA2aClose = Callable[[object], Awaitable[None]]
 
 _RESOURCE_FAILURES = (
+    BrokenResourceError,
+    ClosedResourceError,
     ConnectionError,
     EOFError,
+    EndOfStream,
     OSError,
     TimeoutError,
     httpx.TransportError,
     InteropHTTPError,
 )
+_A2A_RESOURCE_FAILURES = (*_RESOURCE_FAILURES, A2ASDKClientError)
+
+
+async def _finish_cleanup(awaitable: Awaitable[object]) -> None:
+    """Finish cleanup without masking failure or dropping cancellation."""
+    cleanup = asyncio.ensure_future(awaitable)
+    completion = asyncio.create_task(asyncio.wait({cleanup}))
+    cancelled = False
+    while not completion.done():
+        try:
+            await asyncio.shield(completion)
+        except asyncio.CancelledError:
+            cancelled = True
+    with suppress(Exception, asyncio.CancelledError):
+        cleanup.result()
+    if cancelled:
+        raise asyncio.CancelledError
 
 
 class InteropResourceRuntimeError(RuntimeError):
@@ -207,7 +231,9 @@ class InteropResourceRuntime:
             self._ensure_open()
             client = self._state.http_clients.get(target_id)
             if client is not None:
-                return client
+                if not client.is_closed:
+                    return client
+                self._state.http_clients.pop(target_id, None)
             client = self._factories.http(
                 target_id,
                 registry=self._registry,
@@ -230,7 +256,7 @@ class InteropResourceRuntime:
                 return
             self._state.http_clients.pop(target_id, None)
             if not client.is_closed:
-                await client.aclose()
+                await _finish_cleanup(client.aclose())
 
     async def run_http(
         self,
@@ -282,8 +308,10 @@ class InteropResourceRuntime:
                 if not resource.http_client.is_closed:
                     return resource
                 self._state.a2a_resources.pop(key, None)
-                await resource.close(resource.client)
-                await self._evict_http(target_id, resource.http_client)
+                try:
+                    await _finish_cleanup(resource.close(resource.client))
+                finally:
+                    await self._evict_http(target_id, resource.http_client)
             http_client = await self._get_http_client(target_id)
             resource = _A2AResource(
                 client=factory(http_client),
@@ -306,8 +334,10 @@ class InteropResourceRuntime:
             if self._state.a2a_resources.get(key) is not resource:
                 return
             self._state.a2a_resources.pop(key, None)
-            await resource.close(resource.client)
-            await self._evict_http(target_id, resource.http_client)
+            try:
+                await _finish_cleanup(resource.close(resource.client))
+            finally:
+                await self._evict_http(target_id, resource.http_client)
 
     async def stream_a2a(
         self,
@@ -324,7 +354,7 @@ class InteropResourceRuntime:
             async with self._pools.lease(OutboundPoolName.INTEROP):
                 async for item in operation(resource.client):
                     yield item
-        except Exception:
+        except _A2A_RESOURCE_FAILURES:
             await self._evict_a2a(target_id, resource)
             raise
 
@@ -372,7 +402,7 @@ class InteropResourceRuntime:
             await session.initialize()
             return _McpResource(session, stack, http_client)
         except BaseException:
-            await stack.aclose()
+            await _finish_cleanup(stack.aclose())
             raise
 
     async def _get_mcp_resource(self, target_id: str) -> _McpResource:
@@ -388,7 +418,16 @@ class InteropResourceRuntime:
             self._ensure_open()
             resource = self._state.mcp_resources.get(key)
             if resource is not None:
-                return resource
+                if (
+                    resource.http_client is None
+                    or not resource.http_client.is_closed
+                ):
+                    return resource
+                self._state.mcp_resources.pop(key, None)
+                try:
+                    await _finish_cleanup(resource.stack.aclose())
+                finally:
+                    await self._evict_http(target_id, resource.http_client)
             http_client: httpx.AsyncClient | None = None
             if isinstance(target, MCPStreamableHttpTarget):
                 # HTTP client construction is local preparation.  Open and
@@ -419,15 +458,17 @@ class InteropResourceRuntime:
             if self._state.mcp_resources.get(key) is not resource:
                 return
             self._state.mcp_resources.pop(key, None)
-            await resource.stack.aclose()
-            if (
-                isinstance(target, MCPStreamableHttpTarget)
-                and resource.http_client is not None
-            ):
-                # Keep the MCP creation/eviction lock while removing the
-                # shared HTTP client. A replacement session must not capture
-                # the client that this failed session is closing.
-                await self._evict_http(target_id, resource.http_client)
+            try:
+                await _finish_cleanup(resource.stack.aclose())
+            finally:
+                if (
+                    isinstance(target, MCPStreamableHttpTarget)
+                    and resource.http_client is not None
+                ):
+                    # Keep the MCP creation/eviction lock while removing the
+                    # shared HTTP client. A replacement session must not
+                    # capture the client that this failed session is closing.
+                    await self._evict_http(target_id, resource.http_client)
 
     async def run_mcp(
         self,
@@ -445,6 +486,10 @@ class InteropResourceRuntime:
         try:
             async with self._pools.lease(OutboundPoolName.INTEROP):
                 return await operation(resource.session)
+        except McpError as exc:
+            if exc.error.code == CONNECTION_CLOSED:
+                await self._evict_mcp(target_id, resource)
+            raise
         except _RESOURCE_FAILURES:
             await self._evict_mcp(target_id, resource)
             raise

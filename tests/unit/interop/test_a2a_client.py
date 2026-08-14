@@ -15,10 +15,12 @@ from typing import Any, cast
 
 import httpx
 import pytest
+from a2a.client.errors import A2AClientError as A2ASDKClientError
 from a2a.types import (
     Artifact,
     Message,
     Part,
+    StreamResponse,
     Task,
     TaskArtifactUpdateEvent,
     TaskState,
@@ -379,7 +381,7 @@ async def test_runtime_evicts_failed_a2a_client_before_rebuild() -> None:
 
         async def responses() -> AsyncIterator[Any]:
             if attempt == 1:
-                raise httpx.ConnectError("peer closed")
+                raise A2ASDKClientError("peer transport closed")
             yield to_stream_response(_terminal_task())
 
         return responses()
@@ -414,6 +416,86 @@ async def test_runtime_evicts_failed_a2a_client_before_rebuild() -> None:
     assert len(http_clients) == 2
     await runtime.aclose()
     assert [client.close_calls for client in created] == [1, 1]
+
+
+async def test_runtime_keeps_a2a_client_after_invalid_peer_event() -> None:
+    """A request-local mapping failure does not poison the shared client."""
+    target = _target()
+    registry = _registry(target)
+    http_clients: list[httpx.AsyncClient] = []
+    created: list[Any] = []
+    runtime, _pools = _runtime(registry, http_clients)
+
+    def stream_factory(call_number: int) -> AsyncIterator[Any]:
+        async def responses() -> AsyncIterator[Any]:
+            if call_number == 1:
+                yield StreamResponse()
+                return
+            yield to_stream_response(_terminal_task())
+
+        return responses()
+
+    sdk_factory = _recording_sdk_factory(created, stream_factory)
+    with pytest.raises(InteropA2AClientError) as caught:
+        await _collect(
+            target_id=target.id,
+            capability_id="annotate",
+            registry=registry,
+            text="invalid response",
+            _card_fetcher=_card_fetcher,
+            _sdk_factory=sdk_factory,
+            _interop_runtime=runtime,
+        )
+
+    assert caught.value.code == "empty_stream_response"
+    assert runtime.a2a_keys == {("peer", "a2a")}
+    assert created[0].close_calls == 0
+    assert not http_clients[0].is_closed
+
+    events = await _collect(
+        target_id=target.id,
+        capability_id="annotate",
+        registry=registry,
+        text="valid response",
+        _card_fetcher=_card_fetcher,
+        _sdk_factory=sdk_factory,
+        _interop_runtime=runtime,
+    )
+    assert events[-1].terminal is True
+    assert len(created) == 1
+    await runtime.aclose()
+
+
+async def test_sdk_construction_failure_closes_raw_http_client() -> None:
+    """A failed SDK factory cannot leak its not-yet-shared HTTP client."""
+    target = _target()
+    clients: list[httpx.AsyncClient] = []
+
+    def client_factory(_target_id: str, **_: Any) -> httpx.AsyncClient:
+        client = httpx.AsyncClient()
+        clients.append(client)
+        return client
+
+    def sdk_factory(_config: Any) -> SimpleNamespace:
+        def create(_card: Any) -> object:
+            raise ValueError("no compatible transport")
+
+        return SimpleNamespace(create=create)
+
+    with pytest.raises(InteropA2AClientError) as caught:
+        await _collect(
+            target_id=target.id,
+            capability_id="annotate",
+            registry=_registry(target),
+            text="build client",
+            _client_factory=client_factory,
+            _card_fetcher=_card_fetcher,
+            _sdk_factory=sdk_factory,
+        )
+
+    assert caught.value.code == "transport_error"
+    assert len(clients) == 1
+    assert clients[0].is_closed
 
 
 async def test_runtime_rebuilds_a2a_client_after_shared_http_closes() -> None:

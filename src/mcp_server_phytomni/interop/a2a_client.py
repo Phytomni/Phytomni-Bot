@@ -175,7 +175,9 @@ async def _close_iterator(iterator: object | None) -> None:
 
 async def _close_client(client: object | None) -> None:
     """Close an SDK client or raw HTTPX client, sync or async."""
-    close = getattr(client, "close", None)
+    close = getattr(client, "aclose", None)
+    if not callable(close):
+        close = getattr(client, "close", None)
     if not callable(close):
         return
     with suppress(Exception):
