@@ -199,8 +199,7 @@ async def test_auth_rejected_without_key(
 
     assert resp.status_code == 401
     error = resp.json()["error"]
-    assert error["type"] == "unauthorized"
-    assert error["code"] == 401
+    assert error["code"] == "unauthenticated"
     assert resp.headers.get("WWW-Authenticate") == "Bearer"
     assert resp.headers.get("X-Request-Id")
 
@@ -217,41 +216,43 @@ async def test_unknown_model_404(
     resp = await _chat(api_client, api_server, model="phyto-nope", query="hi")
 
     assert resp.status_code == 404
-    assert resp.json()["error"]["type"] == "not_found"
+    assert resp.json()["error"]["code"] == "not_found"
 
 
 @pytest.mark.parametrize(
-    "non_streaming_model",
-    ["phyto-knowledge", "phyto-review", "phyto-brief-gene"],
+    "graph_model",
+    ["phyto-knowledge", "phyto-brief-gene"],
 )
-async def test_stream_true_rejected_for_non_chat_models(
+async def test_stream_true_accepts_graph_models(
     api_client: httpx.AsyncClient,
     api_server: ApiServer,
-    non_streaming_model: str,
+    graph_model: str,
 ) -> None:
-    """``stream=true`` is refused with a 400 envelope on non-chat models.
+    """Graph-backed models accept an SSE handshake without buffering output.
 
-    Phase 5 wired SSE streaming behind ``_STREAM_CAPABLE_TOOLS =
-    {"ChatAgent"}``; the three non-chat OpenAI-mapped models still
-    return a 400 so this parametrized matrix pins the per-model policy
-    instead of asserting a blanket "all models reject" that no longer
-    matches HEAD.
+    Knowledge and BriefGene stream graph progress through the same HTTP
+    surface as Chat. The test deliberately closes after response headers so
+    it remains a cheap contract smoke and does not pay for a remote analysis.
+    Review has a separate A2UI flag-gated path and is covered by the server
+    streaming tests.
 
     Args:
         api_client: Bound async HTTP client.
         api_server: Running API details.
-        non_streaming_model: One of the non-chat model ids.
+        graph_model: One graph-backed model id.
     """
-    resp = await _chat(
-        api_client,
-        api_server,
-        model=non_streaming_model,
-        query="hi",
-        stream=True,
-    )
-
-    assert resp.status_code == 400, resp.text
-    assert resp.json()["error"]["type"] == "bad_request"
+    async with api_client.stream(
+        "POST",
+        "/v1/chat/completions",
+        json={
+            "model": graph_model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+        headers=_auth(api_server),
+    ) as resp:
+        assert resp.status_code == 200, resp.text
+        assert "text/event-stream" in resp.headers.get("Content-Type", "")
 
 
 async def test_chat_stream_sse_returns_data_lines_and_done(
@@ -332,7 +333,7 @@ async def test_brief_gene_rejects_obs_list(
     )
 
     assert resp.status_code == 400
-    assert resp.json()["error"]["type"] == "bad_request"
+    assert resp.json()["error"]["code"] == "invalid_argument"
 
 
 async def test_chat_completion(
