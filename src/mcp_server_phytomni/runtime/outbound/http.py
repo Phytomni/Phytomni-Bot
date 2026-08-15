@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from anyio import CancelScope
 
 from ...config.defaults import ServerConfig
 from .models import OutboundHttpProfile, OutboundPoolName
@@ -75,7 +76,8 @@ class BoundAsyncRequestClient:
                 response.raise_for_status()
                 return response
             finally:
-                await response.aclose()
+                with CancelScope(shield=True):
+                    await response.aclose()
 
 
 class OutboundHttpRuntime:

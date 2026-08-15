@@ -13,8 +13,18 @@ wire contract.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+import asyncio
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
+from contextlib import suppress
 from typing import Any, TypedDict, cast
+
+from anyio import CancelScope
 
 from .schemas import PhytomniAgents
 
@@ -46,7 +56,27 @@ async def close_async_iterator(stream: Any) -> None:
     """Propagate consumer shutdown through one nested async iterator."""
     closer = getattr(stream, "aclose", None)
     if callable(closer):
-        await cast(Callable[[], Awaitable[None]], closer)()
+        with CancelScope(shield=True):
+            await cast(Callable[[], Awaitable[None]], closer)()
+
+
+async def iterate_owned(
+    stream: AsyncIterator[Any],
+) -> AsyncIterator[Any]:
+    """Cancel and await an in-flight next call before consumer shutdown."""
+    while True:
+        next_item = asyncio.ensure_future(anext(stream))
+        try:
+            item = await asyncio.shield(next_item)
+        except StopAsyncIteration:
+            return
+        except asyncio.CancelledError:
+            with CancelScope(shield=True):
+                next_item.cancel()
+                with suppress(asyncio.CancelledError):
+                    await next_item
+            raise
+        yield item
 
 
 _PHASE_MAP: dict[str, dict[str, str]] = {

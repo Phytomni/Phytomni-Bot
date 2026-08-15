@@ -116,7 +116,7 @@ from .streaming_phases import StreamRunMeta as _StreamRunMeta
 from .streaming_phases import (
     close_async_iterator as _close_async_iterator,
 )
-from .streaming_phases import phase_for
+from .streaming_phases import iterate_owned, phase_for
 
 ToolHandler = Callable[[Any], Awaitable[Any]]
 
@@ -612,7 +612,7 @@ async def _stream_graph_agent(
         config=build_runnable_config(run_id),
     )
     try:
-        async for ns, mode, chunk in graph_events:
+        async for ns, mode, chunk in iterate_owned(graph_events):
             if mode == "custom":
                 if isinstance(chunk, Mapping) and chunk.get("kind") == (
                     PROGRESS_KIND
