@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -24,6 +26,11 @@ from tests.support.outbound_fakes import (
 from mcp_server_phytomni.config.defaults import ServerConfig
 from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp.result_formatting import AguiEvent
+from mcp_server_phytomni.mcp.streaming_phases import (
+    close_async_iterator,
+    iterate_owned,
+)
+from mcp_server_phytomni.runtime import cleanup as cleanup_runtime
 from mcp_server_phytomni.runtime.outbound import OutboundPoolName
 
 
@@ -31,6 +38,7 @@ class _GraphState(TypedDict, total=False):
     """Minimal state accepted by the real LangGraph test graph."""
 
     marker: str
+    final_response: dict[str, Any]
 
 
 @dataclass
@@ -71,6 +79,90 @@ class _CheckpointCloseStream(ControlledByteStream):
         return self.closed
 
 
+class _CleanupFailureIterator:
+    """Raise secret-bearing cleanup detail after an in-flight cancellation."""
+
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+
+    def __aiter__(self) -> _CleanupFailureIterator:
+        """Return this request-owned iterator."""
+        return self
+
+    async def __anext__(self) -> Any:
+        """Raise a cleanup failure after cancellation reaches the next call."""
+        self.started.set()
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError as exc:
+            raise RuntimeError("synthetic-provider-secret") from exc
+
+    async def aclose(self) -> None:
+        """Close without introducing another test failure."""
+        return None
+
+
+class _CancellationResistantIterator:
+    """Ignore cancellation until released to model a stuck graph iterator."""
+
+    def __init__(self, *, resistant_close: bool = False) -> None:
+        self.started = asyncio.Event()
+        self.release_next = asyncio.Event()
+        self.close_started = asyncio.Event()
+        self.release_close = asyncio.Event()
+        self.resistant_close = resistant_close
+
+    def __aiter__(self) -> _CancellationResistantIterator:
+        """Return this request-owned iterator."""
+        return self
+
+    async def __anext__(self) -> Any:
+        """Ignore cancellation until the test releases the next call."""
+        self.started.set()
+        while not self.release_next.is_set():
+            try:
+                await self.release_next.wait()
+            except asyncio.CancelledError:
+                continue
+        raise StopAsyncIteration
+
+    async def aclose(self) -> None:
+        """Optionally resist cancellation until the test releases close."""
+        self.close_started.set()
+        if not self.resistant_close:
+            return
+        while not self.release_close.is_set():
+            try:
+                await self.release_close.wait()
+            except asyncio.CancelledError:
+                continue
+
+
+@dataclass
+class _IsolatedStreamState:
+    """Track one graph stream independently from every sibling stream."""
+
+    started: asyncio.Event = field(default_factory=asyncio.Event)
+    release: asyncio.Event = field(default_factory=asyncio.Event)
+    active: int = 0
+    cancelled: int = 0
+    completed: int = 0
+
+    async def wait(self) -> None:
+        """Wait for this stream's release or record its own cancellation."""
+        self.active += 1
+        self.started.set()
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            self.cancelled += 1
+            raise
+        else:
+            self.completed += 1
+        finally:
+            self.active -= 1
+
+
 def _blocking_graph(upstream_state: _UpstreamState) -> Any:
     """Build one real graph node that owns two concurrent upstream tasks."""
 
@@ -88,9 +180,97 @@ def _blocking_graph(upstream_state: _UpstreamState) -> Any:
     return builder.compile()
 
 
+def _isolated_graph(stream_state: _IsolatedStreamState) -> Any:
+    """Build one graph whose lifecycle belongs to exactly one consumer."""
+
+    async def retrieve_node(state: _GraphState) -> _GraphState:
+        del state
+        await stream_state.wait()
+        return {
+            "final_response": {
+                "choices": [{"message": {"content": "answer", "doc_list": []}}]
+            }
+        }
+
+    builder = StateGraph(_GraphState)
+    builder.add_node("retrieve_node", retrieve_node)
+    builder.add_edge(START, "retrieve_node")
+    builder.add_edge("retrieve_node", END)
+    return builder.compile()
+
+
 async def _consume(events: AsyncIterator[AguiEvent]) -> None:
     async for _event in events:
         pass
+
+
+async def _consume_owned(stream: AsyncIterator[Any]) -> None:
+    """Exhaust one request-owned iterator."""
+    try:
+        async for _item in iterate_owned(stream):
+            pass
+    finally:
+        await close_async_iterator(stream)
+
+
+async def test_next_cleanup_failure_preserves_original_cancellation(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failed pending-next cleanup cannot become an ordinary stream error."""
+    stream = _CleanupFailureIterator()
+    task = asyncio.create_task(_consume_owned(stream))
+    await stream.started.wait()
+
+    caplog.set_level(logging.WARNING)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert "stream cleanup failed operation=iterator_next" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "synthetic-provider-secret" not in caplog.text
+
+
+async def test_pending_next_cleanup_has_a_finite_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cancellation-resistant pending next call cannot hang its consumer."""
+    stream = _CancellationResistantIterator()
+    task = asyncio.create_task(_consume_owned(stream))
+    await stream.started.wait()
+    monkeypatch.setattr(cleanup_runtime, "CLEANUP_TIMEOUT_SECONDS", 0.05)
+    asyncio.get_running_loop().call_later(0.2, stream.release_next.set)
+
+    started_at = time.monotonic()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert time.monotonic() - started_at < 0.15
+
+    await stream.release_next.wait()
+    await asyncio.sleep(0)
+
+
+async def test_graph_iterator_close_has_a_finite_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cancellation-resistant iterator close cannot hang graph shutdown."""
+    stream = _CancellationResistantIterator(resistant_close=True)
+    monkeypatch.setattr(cleanup_runtime, "CLEANUP_TIMEOUT_SECONDS", 0.05)
+    task = asyncio.create_task(_consume_owned(stream))
+    await stream.started.wait()
+    stream.release_next.set()
+    await stream.close_started.wait()
+    asyncio.get_running_loop().call_later(0.2, stream.release_close.set)
+
+    started_at = time.monotonic()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert time.monotonic() - started_at < 0.15
+
+    await stream.release_close.wait()
+    await asyncio.sleep(0)
 
 
 async def test_disconnect_cancels_all_inflight_graph_upstreams(
@@ -128,6 +308,71 @@ async def test_disconnect_cancels_all_inflight_graph_upstreams(
             await asyncio.gather(*state.tasks, return_exceptions=True)
         with suppress(RuntimeError):
             await cast(AsyncGenerator[AguiEvent, None], events).aclose()
+
+
+async def test_cancelling_one_of_two_simultaneous_streams_is_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cancelling stream A cannot cancel or settle simultaneous stream B."""
+    states = {
+        "stream-a": _IsolatedStreamState(),
+        "stream-b": _IsolatedStreamState(),
+    }
+
+    def build_target(_tool_name: str, args: Any, **_kwargs: Any) -> Any:
+        state = states[args.user_query]
+        return _isolated_graph(state), {}
+
+    monkeypatch.setattr(mcp_app, "_build_graph_stream_target", build_target)
+    stream_a = mcp_app.prepare_tool_stream(
+        "KnowledgeAgent",
+        {"user_query": "stream-a", "obs_file_list": []},
+        run_id="run-a",
+        dialogue_id=None,
+    )
+    stream_b = mcp_app.prepare_tool_stream(
+        "KnowledgeAgent",
+        {"user_query": "stream-b", "obs_file_list": []},
+        run_id="run-b",
+        dialogue_id=None,
+    )
+    task_a = asyncio.create_task(_consume(stream_a))
+    task_b = asyncio.create_task(_consume(stream_b))
+
+    try:
+        await asyncio.gather(
+            states["stream-a"].started.wait(),
+            states["stream-b"].started.wait(),
+        )
+        assert states["stream-a"].active == 1
+        assert states["stream-b"].active == 1
+
+        task_a.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task_a
+
+        assert states["stream-a"].active == 0
+        assert states["stream-a"].cancelled == 1
+        assert states["stream-b"].active == 1
+        assert states["stream-b"].cancelled == 0
+        assert states["stream-b"].completed == 0
+        assert task_b.done() is False
+
+        states["stream-b"].release.set()
+        await task_b
+        assert states["stream-b"].active == 0
+        assert states["stream-b"].cancelled == 0
+        assert states["stream-b"].completed == 1
+    finally:
+        states["stream-a"].release.set()
+        states["stream-b"].release.set()
+        for task in (task_a, task_b):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(task_a, task_b, return_exceptions=True)
+        for stream in (stream_a, stream_b):
+            with suppress(RuntimeError):
+                await cast(AsyncGenerator[AguiEvent, None], stream).aclose()
 
 
 async def test_cancel_scope_closes_buffered_upstream_response() -> None:

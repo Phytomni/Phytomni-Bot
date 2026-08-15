@@ -13,9 +13,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from anyio import CancelScope
 
 from ...config.defaults import ServerConfig
+from ..cleanup import run_bounded_cleanup
 from .models import OutboundHttpProfile, OutboundPoolName
 from .registry import OutboundPoolRegistry
 
@@ -76,8 +76,10 @@ class BoundAsyncRequestClient:
                 response.raise_for_status()
                 return response
             finally:
-                with CancelScope(shield=True):
-                    await response.aclose()
+                await run_bounded_cleanup(
+                    response.aclose(),
+                    operation="response_close",
+                )
 
 
 class OutboundHttpRuntime:

@@ -21,11 +21,9 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from contextlib import suppress
 from typing import Any, TypedDict, cast
 
-from anyio import CancelScope
-
+from ..runtime.cleanup import run_bounded_cleanup
 from .schemas import PhytomniAgents
 
 GRAPH_PROGRESS_TOOLS = frozenset(
@@ -56,8 +54,10 @@ async def close_async_iterator(stream: Any) -> None:
     """Propagate consumer shutdown through one nested async iterator."""
     closer = getattr(stream, "aclose", None)
     if callable(closer):
-        with CancelScope(shield=True):
-            await cast(Callable[[], Awaitable[None]], closer)()
+        await run_bounded_cleanup(
+            cast(Callable[[], Awaitable[None]], closer)(),
+            operation="iterator_close",
+        )
 
 
 async def iterate_owned(
@@ -71,10 +71,12 @@ async def iterate_owned(
         except StopAsyncIteration:
             return
         except asyncio.CancelledError:
-            with CancelScope(shield=True):
-                next_item.cancel()
-                with suppress(asyncio.CancelledError):
-                    await next_item
+            next_item.cancel()
+            await run_bounded_cleanup(
+                next_item,
+                operation="iterator_next",
+                cancelled_is_success=True,
+            )
             raise
         yield item
 
