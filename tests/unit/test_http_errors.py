@@ -14,12 +14,13 @@ None`.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import httpx
 import pytest
 from mcp.shared.exceptions import McpError
+from tests.support.logging_helpers import capture_non_propagating_logger
 
 from mcp_server_phytomni.common import http as common_http
 from mcp_server_phytomni.common.http import (
@@ -38,6 +39,17 @@ _SAFE_PREFIX = "upstream call failed"
 _NETWORK_PREFIX = "upstream connection failed"
 
 _ClientFactory = Callable[[list[Any], dict[str, int]], type]
+
+
+@pytest.fixture(autouse=True)
+def _attach_http_log_handler(
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[None]:
+    """Capture HTTP logs after package logging disables propagation."""
+    with capture_non_propagating_logger(
+        common_http.logger.name, caplog.handler
+    ):
+        yield
 
 
 async def test_http_status_error_message_excludes_response_body(

@@ -21,6 +21,7 @@ from ...config.defaults import ServerConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
 from ...storage.obs_client import ObsClient
+from ..cleanup import aclose_cleanup_runtime
 from .http import (
     BoundAsyncRequestClient,
     OutboundHttpFactories,
@@ -319,17 +320,19 @@ def current_outbound_http_client(
 async def aclose_outbound_runtime() -> None:
     """Close the current runtime once and clear its slot on completion."""
     runtime = _RUNTIME_STATE["runtime"]
-    if runtime is None:
-        return
-    close_task = runtime.begin_close()
+    try:
+        await aclose_cleanup_runtime()
+    finally:
+        if runtime is not None:
+            close_task = runtime.begin_close()
 
-    def clear_slot(_task: asyncio.Task[None]) -> None:
-        if _RUNTIME_STATE["runtime"] is runtime:
-            _RUNTIME_STATE["runtime"] = None
+            def clear_slot(_task: asyncio.Task[None]) -> None:
+                if _RUNTIME_STATE["runtime"] is runtime:
+                    _RUNTIME_STATE["runtime"] = None
 
-    close_task.add_done_callback(clear_slot)
-    await asyncio.shield(close_task)
-    clear_slot(close_task)
+            close_task.add_done_callback(clear_slot)
+            await asyncio.shield(close_task)
+            clear_slot(close_task)
 
 
 __all__ = [

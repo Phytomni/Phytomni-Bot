@@ -26,6 +26,9 @@ from mcp_server_phytomni.runtime.outbound import (
     current_outbound_runtime,
     init_outbound_runtime,
 )
+from mcp_server_phytomni.runtime.outbound import (
+    lifecycle as outbound_lifecycle,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -76,6 +79,32 @@ async def test_repeated_init_rejected_and_close_is_exactly_once() -> None:
     assert resources.closed == ["obs", "direct_upstream", "trusted"]
     with pytest.raises(OutboundRuntimeStateError):
         current_outbound_runtime()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_failure_still_closes_outbound_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lifecycle-owned cleanup failure cannot skip outbound closure."""
+    resources = RecordingResources()
+    await init_outbound_runtime(_config(), factories=resources.factories())
+
+    async def fail_cleanup() -> None:
+        raise RuntimeError("cleanup did not drain")
+
+    monkeypatch.setattr(
+        outbound_lifecycle,
+        "aclose_cleanup_runtime",
+        fail_cleanup,
+    )
+
+    with pytest.raises(RuntimeError, match="cleanup did not drain"):
+        await aclose_outbound_runtime()
+
+    assert resources.closed == ["obs", "direct_upstream", "trusted"]
+    with pytest.raises(OutboundRuntimeStateError):
+        current_outbound_runtime()
+    monkeypatch.undo()
 
 
 @pytest.mark.asyncio

@@ -683,7 +683,7 @@ async def test_no_match_is_a_success_without_fake_references(
 
 
 @dataclass
-class _LiveSseConnection:
+class LiveSseConnection:
     """Own one raw SSE socket until its deterministic TCP reset."""
 
     reader: asyncio.StreamReader
@@ -730,7 +730,7 @@ async def _open_live_sse_connection(
     server: ApiServer,
     *,
     query: str,
-) -> _LiveSseConnection:
+) -> LiveSseConnection:
     """Open one authenticated raw SSE socket with failure-safe ownership."""
     parsed = urlsplit(server.base_url)
     assert parsed.hostname == "127.0.0.1"
@@ -765,7 +765,7 @@ async def _open_live_sse_connection(
         first_frame = await asyncio.wait_for(
             reader.readuntil(b"\n\n"), timeout=5.0
         )
-        return _LiveSseConnection(
+        return LiveSseConnection(
             reader=reader,
             writer=writer,
             run_id=_run_id_from_first_frame(first_frame),
@@ -776,6 +776,32 @@ async def _open_live_sse_connection(
             with suppress(ConnectionError, OSError, TimeoutError):
                 await asyncio.wait_for(writer.wait_closed(), timeout=1.0)
         raise
+
+
+async def open_live_sse_connections(
+    server: ApiServer,
+    *,
+    queries: tuple[str, str],
+) -> tuple[LiveSseConnection, LiveSseConnection]:
+    """Open two streams while retaining and resetting partial success."""
+    connections: list[LiveSseConnection] = []
+
+    async def acquire(query: str) -> LiveSseConnection:
+        connection = await _open_live_sse_connection(server, query=query)
+        connections.append(connection)
+        return connection
+
+    try:
+        async with asyncio.TaskGroup() as group:
+            first = group.create_task(acquire(queries[0]))
+            second = group.create_task(acquire(queries[1]))
+    except BaseException:
+        await asyncio.gather(
+            *(connection.reset() for connection in connections),
+            return_exceptions=True,
+        )
+        raise
+    return first.result(), second.result()
 
 
 async def _reset_live_sse_connection(
@@ -852,14 +878,11 @@ async def test_cancelling_one_of_two_live_http_streams_is_isolated(
         server,
         cache_path,
     ):
-        stream_a, stream_b = await asyncio.gather(
-            _open_live_sse_connection(
-                server,
-                query=_CANCELLATION_QUERY,
-            ),
-            _open_live_sse_connection(
-                server,
-                query=_CONCURRENT_CANCELLATION_QUERY,
+        stream_a, stream_b = await open_live_sse_connections(
+            server,
+            queries=(
+                _CANCELLATION_QUERY,
+                _CONCURRENT_CANCELLATION_QUERY,
             ),
         )
         try:

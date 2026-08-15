@@ -8,11 +8,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
+from tests.support.logging_helpers import capture_non_propagating_logger
 from tests.support.outbound_fakes import (
     ControlledByteStream,
     QueueTransport,
@@ -33,6 +35,17 @@ from mcp_server_phytomni.runtime.outbound import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _attach_cleanup_log_handler(
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[None]:
+    """Capture cleanup logs after package logging disables propagation."""
+    with capture_non_propagating_logger(
+        cleanup_runtime.__name__, caplog.handler
+    ):
+        yield
 
 
 class _FailingCloseStream(  # pylint: disable=too-few-public-methods
@@ -228,7 +241,7 @@ async def test_response_close_failure_preserves_body_failure(
     )
     resources = RecordingResources(transport=transport)
 
-    caplog.set_level(logging.WARNING)
+    caplog.set_level(logging.WARNING, logger=cleanup_runtime.__name__)
     async with recording_outbound_runtime(
         config=_config(), resources=resources
     ) as runtime:

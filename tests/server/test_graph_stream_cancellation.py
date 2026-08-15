@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, TypedDict, cast
@@ -16,6 +16,7 @@ from typing import Any, TypedDict, cast
 import anyio
 import pytest
 from langgraph.graph import END, START, StateGraph
+from tests.support.logging_helpers import capture_non_propagating_logger
 from tests.support.outbound_fakes import (
     ControlledByteStream,
     QueueTransport,
@@ -32,6 +33,17 @@ from mcp_server_phytomni.mcp.streaming_phases import (
 )
 from mcp_server_phytomni.runtime import cleanup as cleanup_runtime
 from mcp_server_phytomni.runtime.outbound import OutboundPoolName
+
+
+@pytest.fixture(autouse=True)
+def _attach_cleanup_log_handler(
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[None]:
+    """Capture cleanup logs after package logging disables propagation."""
+    with capture_non_propagating_logger(
+        cleanup_runtime.__name__, caplog.handler
+    ):
+        yield
 
 
 class _GraphState(TypedDict, total=False):
@@ -221,7 +233,7 @@ async def test_next_cleanup_failure_preserves_original_cancellation(
     task = asyncio.create_task(_consume_owned(stream))
     await stream.started.wait()
 
-    caplog.set_level(logging.WARNING)
+    caplog.set_level(logging.WARNING, logger=cleanup_runtime.__name__)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -239,15 +251,29 @@ async def test_pending_next_cleanup_has_a_finite_deadline(
     task = asyncio.create_task(_consume_owned(stream))
     await stream.started.wait()
     monkeypatch.setattr(cleanup_runtime, "CLEANUP_TIMEOUT_SECONDS", 0.05)
-    asyncio.get_running_loop().call_later(0.2, stream.release_next.set)
-
     started_at = time.monotonic()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
     assert time.monotonic() - started_at < 0.15
 
-    await stream.release_next.wait()
+    await asyncio.sleep(0.2)
+    assert cleanup_runtime.pending_cleanup_count() == 1
+    monkeypatch.setattr(
+        cleanup_runtime,
+        "CLEANUP_SHUTDOWN_TIMEOUT_SECONDS",
+        0.05,
+    )
+    with pytest.raises(cleanup_runtime.CleanupLifecycleError):
+        await cleanup_runtime.aclose_cleanup_runtime()
+    assert cleanup_runtime.pending_cleanup_count() == 1
+
+    stream.release_next.set()
+    for _ in range(100):
+        if cleanup_runtime.pending_cleanup_count() == 0:
+            break
+        await asyncio.sleep(0)
+    assert cleanup_runtime.pending_cleanup_count() == 0
     await asyncio.sleep(0)
 
 
@@ -261,16 +287,21 @@ async def test_graph_iterator_close_has_a_finite_deadline(
     await stream.started.wait()
     stream.release_next.set()
     await stream.close_started.wait()
-    asyncio.get_running_loop().call_later(0.2, stream.release_close.set)
-
     started_at = time.monotonic()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
     assert time.monotonic() - started_at < 0.15
 
-    await stream.release_close.wait()
-    await asyncio.sleep(0)
+    await asyncio.sleep(0.2)
+    assert cleanup_runtime.pending_cleanup_count() == 1
+
+    stream.release_close.set()
+    for _ in range(100):
+        if cleanup_runtime.pending_cleanup_count() == 0:
+            break
+        await asyncio.sleep(0)
+    assert cleanup_runtime.pending_cleanup_count() == 0
 
 
 async def test_disconnect_cancels_all_inflight_graph_upstreams(
