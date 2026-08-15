@@ -267,6 +267,9 @@ async def test_find_spa_taxids_rejects_direct_invalid_json(
             "species-secret", request_timeout=1.0
         )
 
+    assert str(exc_info.value) == (
+        "Evolution taxonomy lookup temporarily unavailable"
+    )
     assert "species-secret" not in str(exc_info.value)
     assert "token-secret" not in str(exc_info.value)
 
