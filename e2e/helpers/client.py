@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from mcp_client_phytomni import (
@@ -36,8 +37,12 @@ def make_client() -> PhytomniMcpClient:
     Returns:
         Disconnected `PhytomniMcpClient` ready to be entered.
     """
+    source_root = Path(__file__).resolve().parents[2] / "src"
     return PhytomniMcpClient(
-        server_command_from_target(DEFAULT_SERVER_MODULE),
+        server_command_from_target(
+            DEFAULT_SERVER_MODULE,
+            env={"PYTHONPATH": str(source_root)},
+        ),
     )
 
 
