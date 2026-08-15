@@ -20,6 +20,7 @@ from langgraph.graph import END, START, StateGraph
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.analyst import core as analyst_core
+from mcp_server_phytomni.agents.analyst import graph as analyst_graph
 from mcp_server_phytomni.agents.analyst import (
     graph_knowledge_subgraph as analyst_knowledge,
 )
@@ -119,6 +120,8 @@ class AnalystProofHarness:
 def _install_deterministic_analyst_nodes(
     monkeypatch: pytest.MonkeyPatch,
     events: list[str],
+    *,
+    extracted_tools: list[str] | None = None,
 ) -> None:
     """Keep the real Analyst topology while replacing external chat IO."""
 
@@ -165,7 +168,7 @@ def _install_deterministic_analyst_nodes(
     async def tool_extract_post(
         _self: AnalystAgent, _state: Mapping[str, Any]
     ) -> dict[str, Any]:
-        return {"extracted_tools": []}
+        return {"extracted_tools": extracted_tools or []}
 
     original_submit = AnalystGraphMixin.submit_node
 
@@ -193,6 +196,8 @@ def build_analyst_proof_harness(
     tmp_path: Path,
     case: RetrievalCase,
     events: list[str],
+    *,
+    extracted_tools: list[str] | None = None,
 ) -> AnalystProofHarness:
     """Build one real Analyst graph with deterministic external seams."""
     knowledge = install_ordered_knowledge_boundary(
@@ -212,7 +217,11 @@ def build_analyst_proof_harness(
         "extract_analyst_knowledge_response",
         validate,
     )
-    _install_deterministic_analyst_nodes(monkeypatch, events)
+    _install_deterministic_analyst_nodes(
+        monkeypatch,
+        events,
+        extracted_tools=extracted_tools,
+    )
     install_chat_subgraph_mocks(
         monkeypatch,
         analyst_core.__name__,
@@ -234,9 +243,6 @@ def build_analyst_proof_harness(
     upload_submit_meta = AsyncMock(
         return_value=("obs://test/task.yaml", "obs://test/model.yaml")
     )
-    submit_headers = AsyncMock(
-        return_value={"Content-Type": "application/json"}
-    )
     submit_job_data = Mock(return_value=("proof-job", {"job": "proof"}))
     post_submit_job = AsyncMock(
         return_value={
@@ -248,7 +254,11 @@ def build_analyst_proof_harness(
     )
     monkeypatch.setattr(agent, "_submit_output_dir", submit_output_dir)
     monkeypatch.setattr(agent, "_upload_submit_meta", upload_submit_meta)
-    monkeypatch.setattr(agent, "_submit_headers", submit_headers)
+    monkeypatch.setattr(
+        agent,
+        "_submit_headers",
+        AsyncMock(return_value={"Content-Type": "application/json"}),
+    )
     monkeypatch.setattr(agent, "_submit_job_data", submit_job_data)
     monkeypatch.setattr(agent, "_post_submit_job", post_submit_job)
     return AnalystProofHarness(
@@ -275,6 +285,14 @@ def analyst_graph_input(output_dir: Path) -> AnalystInput:
         is_auto_select=False,
         is_preset_plan=False,
     )
+
+
+def analyst_preset_input(output_dir: Path) -> AnalystInput:
+    """Return an input that enters the direct tool-usage retrieval path."""
+    request = analyst_graph_input(output_dir)
+    request["preset_plan"] = "Use the bounded tool."
+    request["is_preset_plan"] = True
+    return request
 
 
 def assert_no_task_rows(db_path: Path) -> None:
@@ -469,4 +487,100 @@ async def test_analyst_graph_stops_at_unusable_knowledge_without_side_effects(
     assert not harness.output_dir.exists()
     if case == "failure":
         assert str(exc_info.value) == _SAFE_ERROR
+        assert "No Data" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("case", ["partial", "no_match"])
+async def test_analyst_direct_tool_retrieval_admits_valid_outcomes(
+    case: RetrievalCase,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct tool evidence reaches submit without mounted Knowledge."""
+    events: list[str] = []
+    harness = build_analyst_proof_harness(
+        monkeypatch,
+        tmp_path,
+        "failure",
+        events,
+        extracted_tools=["bounded-tool"],
+    )
+
+    async def retrieve_tool_usage(**_kwargs: Any) -> dict[str, Any]:
+        events.append("tool_retrieval")
+        docs = (
+            [{"content": "Use the bounded tool safely."}]
+            if case == "partial"
+            else []
+        )
+        return {"doc_list": docs, "outcome": case}
+
+    retrieve_spy = AsyncMock(side_effect=retrieve_tool_usage)
+    monkeypatch.setattr(analyst_graph, "retrieve", retrieve_spy)
+
+    result = await harness.agent.app.ainvoke(
+        analyst_preset_input(harness.output_dir),
+        config={"configurable": {"thread_id": f"analyst-tool-{case}"}},
+    )
+
+    assert events == ["tool_retrieval", "submit"]
+    assert harness.knowledge.calls == []
+    retrieve_spy.assert_awaited_once()
+    harness.upload_submit_meta.assert_awaited_once()
+    harness.post_submit_job.assert_awaited_once()
+    assert result["task_id"] == "accepted-proof-task"
+    assert "No Data" not in str(result)
+    assert_no_task_rows(tmp_path / "tasks.sqlite")
+    assert not harness.output_dir.exists()
+
+
+@pytest.mark.parametrize("case", ["failure", "cancelled"])
+async def test_analyst_direct_tool_retrieval_stops_before_submission(
+    case: RetrievalCase,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct tool failure cannot become empty accepted task context."""
+    events: list[str] = []
+    harness = build_analyst_proof_harness(
+        monkeypatch,
+        tmp_path,
+        "failure",
+        events,
+        extracted_tools=["bounded-tool"],
+    )
+
+    async def reject_tool_usage(**_kwargs: Any) -> dict[str, Any]:
+        events.append("tool_retrieval")
+        if case == "cancelled":
+            raise asyncio.CancelledError
+        raise retrieval_unavailable_error() from RuntimeError(
+            "private signed retrieval detail"
+        )
+
+    retrieve_spy = AsyncMock(side_effect=reject_tool_usage)
+    monkeypatch.setattr(analyst_graph, "retrieve", retrieve_spy)
+    accepted_results: list[dict[str, Any]] = []
+    expected_error = McpError if case == "failure" else asyncio.CancelledError
+
+    with pytest.raises(expected_error) as exc_info:
+        accepted_results.append(
+            await harness.agent.app.ainvoke(
+                analyst_preset_input(harness.output_dir),
+                config={"configurable": {"thread_id": f"analyst-tool-{case}"}},
+            )
+        )
+
+    assert events == ["tool_retrieval"]
+    assert harness.knowledge.calls == []
+    retrieve_spy.assert_awaited_once()
+    harness.submit_output_dir.assert_not_awaited()
+    harness.upload_submit_meta.assert_not_awaited()
+    harness.post_submit_job.assert_not_awaited()
+    assert not accepted_results
+    assert_no_task_rows(tmp_path / "tasks.sqlite")
+    assert not harness.output_dir.exists()
+    if case == "failure":
+        assert str(exc_info.value) == _SAFE_ERROR
+        assert "private signed retrieval detail" not in str(exc_info.value)
         assert "No Data" not in str(exc_info.value)
