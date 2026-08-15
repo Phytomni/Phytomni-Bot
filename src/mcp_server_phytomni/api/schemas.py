@@ -13,7 +13,6 @@ from unicodedata import category, normalize
 from uuid import UUID
 
 from pydantic import (
-    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -217,11 +216,7 @@ class UploadCreateRequest(BaseModel):
 
     owner_subject: str = Field(min_length=1, max_length=320)
     filename: str = Field(min_length=1, max_length=255)
-    content_type: str = Field(
-        default="",
-        max_length=256,
-        validation_alias=AliasChoices("content_type", "content_type_hint"),
-    )
+    content_type: str = Field(default="", max_length=256)
     last_modified_ms: int = Field(default=0, ge=0)
     size_bytes: int = Field(gt=0, le=10 * 1024**3)
     purpose: UploadAssetPurpose

@@ -1099,7 +1099,7 @@ provider upload id, or cloud credential is not accepted there.
 {
   "owner_subject": "alice",
   "filename": "report.pdf",
-  "content_type_hint": "application/pdf",
+  "content_type": "application/pdf",
   "size_bytes": 524288,
   "purpose": "document",
   "idempotency_key": "web-upload-123"
@@ -1187,7 +1187,7 @@ curl -s -X POST http://127.0.0.1:8080/v1/files \
   -H "Authorization: Bearer ${FILES_DELEGATE_TOKEN}" \
   -H 'Content-Type: application/json' \
   -d '{"owner_subject":"alice","filename":"report.pdf",'\
-      '"content_type_hint":"application/pdf","size_bytes":524288,'\
+      '"content_type":"application/pdf","size_bytes":524288,'\
       '"purpose":"document","idempotency_key":"web-upload-123"}'
 ```
 

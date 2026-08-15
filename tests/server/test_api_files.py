@@ -112,7 +112,7 @@ async def _create(
         "owner_subject": owner,
         "filename": "sample.fastq.gz",
         "size_bytes": 3,
-        "content_type_hint": "application/gzip",
+        "content_type": "application/gzip",
         "last_modified_ms": 1722470400000,
         "idempotency_key": idempotency_key,
     }

@@ -11,9 +11,43 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from mcp_server_phytomni.api.schemas import UploadCreateResponse
+from mcp_server_phytomni.api.schemas import (
+    UploadCreateRequest,
+    UploadCreateResponse,
+)
 
 pytestmark = pytest.mark.server
+
+
+def _request_payload() -> dict[str, object]:
+    """Build one valid upload-create request payload."""
+    return {
+        "owner_subject": "owner@example.com",
+        "filename": "sample.fastq.gz",
+        "content_type": "application/gzip",
+        "size_bytes": 3,
+        "purpose": "document",
+        "idempotency_key": "schema-test-1",
+    }
+
+
+def test_create_request_accepts_canonical_content_type() -> None:
+    """The Bot create-upload request serializes its canonical field."""
+    request = UploadCreateRequest.model_validate(_request_payload())
+
+    assert request.content_type == "application/gzip"
+    assert request.model_dump()["content_type"] == "application/gzip"
+    assert "content_type_hint" not in request.model_dump()
+
+
+def test_create_request_rejects_obsolete_content_type_hint() -> None:
+    """The obsolete Bot-boundary field is rejected as an extra field."""
+    payload = _request_payload()
+    del payload["content_type"]
+    payload["content_type_hint"] = "application/gzip"
+
+    with pytest.raises(ValidationError, match="content_type_hint"):
+        UploadCreateRequest.model_validate(payload)
 
 
 def _make() -> UploadCreateResponse:
