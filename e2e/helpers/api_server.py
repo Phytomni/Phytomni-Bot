@@ -27,7 +27,6 @@ import socket
 import subprocess
 import sys
 import time
-from collections import deque
 from collections.abc import AsyncGenerator, Generator, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from typing import NamedTuple
@@ -37,7 +36,11 @@ import pytest
 
 from mcp_server_phytomni.api.auth import ApiKeyStore
 
-from .loopback_process import LoopbackProcessConfig, boot_loopback_process
+from .loopback_process import (
+    BoundedLogTail,
+    LoopbackProcessConfig,
+    boot_loopback_process,
+)
 
 _STARTUP_DEADLINE_DEFAULT = 120.0
 _READ_TIMEOUT_DEFAULT = 1200.0
@@ -61,6 +64,7 @@ class ApiServer(NamedTuple):
             (``/v1/api-keys/*``) and delegated lookups
             (``GET /v1/runs?user_id=``) are exercisable from the same
             fixture without a second boot.
+        log_tail: Read-only bounded subprocess diagnostic lines.
     """
 
     base_url: str
@@ -68,6 +72,7 @@ class ApiServer(NamedTuple):
     user_id: str
     service_token: str
     upload_api_key: str
+    log_tail: BoundedLogTail
 
 
 def auth_header(server: ApiServer) -> dict[str, str]:
@@ -141,13 +146,13 @@ def _read_timeout_seconds() -> float:
     return float(raw) if raw else _READ_TIMEOUT_DEFAULT
 
 
-def _log_tail(logs: deque[str]) -> str:
+def _log_tail(logs: BoundedLogTail) -> str:
     """Return the captured subprocess log tail as one string."""
-    return "\n".join(logs)
+    return "\n".join(logs.snapshot())
 
 
 def _await_healthy(
-    proc: subprocess.Popen[str], base_url: str, logs: deque[str]
+    proc: subprocess.Popen[str], base_url: str, logs: BoundedLogTail
 ) -> None:
     """Block until ``/healthz`` is ok or the deadline elapses.
 
@@ -247,13 +252,16 @@ def boot_phytomni_api(
     env["PHYTOMNI_API_SERVICE_TOKEN"] = _E2E_SERVICE_TOKEN
 
     cmd = _api_command(app_module, port)
-    with boot_loopback_process(cmd, env, base_url, _await_healthy, _PROCESS):
+    with boot_loopback_process(
+        cmd, env, base_url, _await_healthy, _PROCESS
+    ) as log_tail:
         yield ApiServer(
             base_url,
             created.api_key,
             user_id,
             _E2E_SERVICE_TOKEN,
             upload_key.api_key,
+            log_tail,
         )
 
 

@@ -11,16 +11,19 @@ import socket
 import subprocess
 import sys
 import time
-from collections import deque
-from collections.abc import Generator
+from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, Literal, NamedTuple, cast
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
-from .loopback_process import LoopbackProcessConfig, boot_loopback_process
+from .loopback_process import (
+    BoundedLogTail,
+    LoopbackProcessConfig,
+    boot_loopback_process,
+)
 
 KnowledgeScenarioMode = Literal[
     "complete",
@@ -35,6 +38,7 @@ _VALID_MODES = frozenset(
 _SCENARIO_ENV = "PHYTOMNI_KNOWLEDGE_SCENARIO"
 _INTEGRATION_ENV = "PHYTOMNI_RUN_INTEGRATION"
 _CURRENT_QUERY = "synthetic protein design question"
+_CANCELLATION_QUERY = "synthetic cancellation question"
 _EARLIER_QUERY = "earlier question"
 _EARLIER_ANSWER = "earlier answer"
 _SECRET_MARKER = "synthetic-provider-secret"
@@ -54,6 +58,7 @@ class KnowledgeUpstream(NamedTuple):
     """Connection details for one isolated scripted upstream."""
 
     base_url: str
+    log_tail: BoundedLogTail
 
 
 class _ProviderObservations:
@@ -87,6 +92,9 @@ class _ScenarioState:
         self.lock = asyncio.Lock()
         self.retrieve_calls: dict[str, int] = {}
         self.retrieve_contents: list[str] = []
+        self.retrieve_stream_started = 0
+        self.retrieve_stream_active = 0
+        self.retrieve_stream_cancelled = 0
         self.rerank_calls = 0
         self.rerank_ids: list[list[str]] = []
         self.provider = _ProviderObservations()
@@ -105,6 +113,11 @@ class _ScenarioState:
             "retrieve": {
                 "calls": dict(sorted(self.retrieve_calls.items())),
                 "contents": list(self.retrieve_contents),
+                "streams": {
+                    "active": self.retrieve_stream_active,
+                    "cancelled": self.retrieve_stream_cancelled,
+                    "started": self.retrieve_stream_started,
+                },
             },
             "rerank": {
                 "calls": self.rerank_calls,
@@ -181,7 +194,9 @@ def create_app(mode: str | None = None) -> FastAPI:
             return state.snapshot()
 
     @application.post("/retrieve", response_model=None)
-    async def retrieve(request: Request) -> JSONResponse | dict[str, Any]:
+    async def retrieve(
+        request: Request,
+    ) -> JSONResponse | StreamingResponse | dict[str, Any]:
         """Serve deterministic per-repository retrieve outcomes."""
         payload = await request.json()
         repo_id = payload.get("repo_id")
@@ -196,6 +211,28 @@ def create_app(mode: str | None = None) -> FastAPI:
 
         async with state.lock:
             call_number = state.record_retrieve(repo_id, content)
+
+        if _CANCELLATION_QUERY in content:
+
+            async def cancellation_body() -> AsyncIterator[bytes]:
+                """Expose an active response body whose close is observable."""
+                async with state.lock:
+                    state.retrieve_stream_started += 1
+                    state.retrieve_stream_active += 1
+                try:
+                    yield b'{"doc_list": ['
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    async with state.lock:
+                        state.retrieve_stream_cancelled += 1
+                    raise
+                finally:
+                    async with state.lock:
+                        state.retrieve_stream_active -= 1
+
+            return StreamingResponse(
+                cancellation_body(), media_type="application/json"
+            )
 
         if (
             state.mode == "partial_then_complete"
@@ -310,7 +347,7 @@ def _free_port() -> int:
 
 
 def _await_healthy(
-    proc: subprocess.Popen[str], base_url: str, logs: deque[str]
+    proc: subprocess.Popen[str], base_url: str, logs: BoundedLogTail
 ) -> None:
     """Wait for loopback health or fail with bounded startup logs."""
     deadline = time.monotonic() + _STARTUP_DEADLINE
@@ -318,7 +355,7 @@ def _await_healthy(
         if proc.poll() is not None:
             raise RuntimeError(
                 f"Knowledge upstream exited with code {proc.returncode}; "
-                f"logs:\n{chr(10).join(logs)}"
+                f"logs:\n{chr(10).join(logs.snapshot())}"
             )
         try:
             response = httpx.get(f"{base_url}/healthz", timeout=2.0)
@@ -331,7 +368,7 @@ def _await_healthy(
         time.sleep(0.1)
     raise RuntimeError(
         "Knowledge upstream did not become healthy; logs:\n"
-        f"{chr(10).join(logs)}"
+        f"{chr(10).join(logs.snapshot())}"
     )
 
 
@@ -365,8 +402,10 @@ def boot_knowledge_resilience_upstream(
         "--log-level",
         "warning",
     ]
-    with boot_loopback_process(cmd, env, base_url, _await_healthy, _PROCESS):
-        yield KnowledgeUpstream(base_url)
+    with boot_loopback_process(
+        cmd, env, base_url, _await_healthy, _PROCESS
+    ) as log_tail:
+        yield KnowledgeUpstream(base_url, log_tail)
 
 
 __all__ = [
