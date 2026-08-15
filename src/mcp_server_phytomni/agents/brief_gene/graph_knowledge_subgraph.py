@@ -14,13 +14,14 @@ mirrors the analyst-side mixin pattern in
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, cast
 
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Send
+from langgraph.types import Overwrite, Send
 
 from ...graphs.brief_gene_to_knowledge_adapters import (
     build_brief_gene_knowledge_input,
@@ -57,14 +58,19 @@ _LITERATURE_RETRIEVAL_DEGRADED = "retrieval_unavailable"
 
 def _validated_retrieve_results(
     state: BriefGeneAgentState,
-) -> tuple[dict[int, list[dict[str, Any]]], set[int]]:
+) -> tuple[dict[int, list[dict[str, Any]]], set[int], set[int], int]:
     """Validate one complete classification for every planned retrieve leg."""
     planned_tasks = state.get("retrieve_tasks")
     indexed = state.get("retrieve_indexed_results", []) or []
     failed_indices = state.get("retrieve_failed_indices", []) or []
+    cancelled_indices = state.get("retrieve_cancelled_indices", []) or []
     if not isinstance(planned_tasks, list):
         raise RetrievalProtocolError("Invalid brief_gene retrieve plan")
-    if not isinstance(indexed, list) or not isinstance(failed_indices, list):
+    if (
+        not isinstance(indexed, list)
+        or not isinstance(failed_indices, list)
+        or not isinstance(cancelled_indices, list)
+    ):
         raise RetrievalProtocolError("Invalid brief_gene retrieve results")
 
     result_by_index: dict[int, list[dict[str, Any]]] = {}
@@ -92,16 +98,30 @@ def _validated_retrieve_results(
             raise RetrievalProtocolError("Invalid brief_gene retrieve failure")
         failed_set.add(task_index)
 
+    cancelled_set: set[int] = set()
+    for task_index in cancelled_indices:
+        if (
+            isinstance(task_index, bool)
+            or not isinstance(task_index, int)
+            or task_index in cancelled_set
+        ):
+            raise RetrievalProtocolError(
+                "Invalid brief_gene retrieve cancellation"
+            )
+        cancelled_set.add(task_index)
+
     result_indices = set(result_by_index)
     planned = set(range(len(planned_tasks)))
-    classified = result_indices | failed_set
+    classified = result_indices | failed_set | cancelled_set
     if (
         not classified <= planned
         or result_indices & failed_set
+        or result_indices & cancelled_set
+        or failed_set & cancelled_set
         or classified != planned
     ):
         raise RetrievalProtocolError("Incomplete brief_gene retrieve results")
-    return result_by_index, failed_set
+    return result_by_index, failed_set, cancelled_set, len(planned_tasks)
 
 
 def _validated_annotation_failures(state: BriefGeneAgentState) -> set[int]:
@@ -196,7 +216,8 @@ class BriefGeneKnowledgeSubgraphMixin:
 
         Returns:
             State delta with ``retrieve_tasks`` set to the per-task
-            payload list the routing function consumes.
+            payload list the routing function consumes, plus per-run
+            retrieval reducers overwritten to empty before fan-out.
         """
         if state["gene_found"]:
             symbols = list(_dedupe(state["gene_id_list"]))
@@ -223,7 +244,14 @@ class BriefGeneKnowledgeSubgraphMixin:
                     "task_label": state["user_query"],
                 }
             ]
-        return {"retrieve_tasks": tasks}
+        return {
+            "retrieve_tasks": tasks,
+            "gene_profile_completed_branches": Overwrite(value=0),
+            "retrieve_indexed_results": Overwrite(value=[]),
+            "retrieve_failed_indices": Overwrite(value=[]),
+            "retrieve_cancelled_indices": Overwrite(value=[]),
+            "literature_degraded": Overwrite(value=[]),
+        }
 
     def route_retrieve_tasks(
         self: Any, state: BriefGeneAgentState
@@ -289,8 +317,11 @@ class BriefGeneKnowledgeSubgraphMixin:
 
         On success writes a single ``(task_index, docs)`` tuple onto
         ``retrieve_indexed_results`` via the ``operator.add``
-        reducer. On ordinary exception it writes only the failed index;
-        cancellation remains outside the catch and propagates unchanged.
+        reducer. On ordinary exception it writes only the failed index.
+        A cancelled child writes only its private index because LangGraph
+        treats a cancelled Send future as completed; the reduce node validates
+        the complete classification and re-raises cancellation before progress
+        or report work can continue.
 
         Args:
             knowledge_app: Compiled KnowledgeAgent subgraph for this
@@ -308,27 +339,63 @@ class BriefGeneKnowledgeSubgraphMixin:
             knowledge_input = state.get("knowledge_input", {})
             try:
                 thread_id = ensure_thread_id()
+                cancelled = False
+                knowledge_output: Any = None
                 try:
-                    knowledge_output = await ainvoke_graph(
-                        knowledge_app,
-                        knowledge_input,
-                        thread_id=thread_id,
-                    )
-                finally:
-                    checkpointer = getattr(knowledge_app, "checkpointer", None)
-                    if checkpointer is not None and checkpointer is not False:
-                        deleter = getattr(checkpointer, "adelete_thread", None)
-                        if not callable(deleter):
-                            raise RuntimeError(
-                                "knowledge checkpointer cannot delete threads"
-                            )
-                        await cast(Callable[[str], Awaitable[None]], deleter)(
-                            thread_id
+                    try:
+                        knowledge_output = await ainvoke_graph(
+                            knowledge_app,
+                            knowledge_input,
+                            thread_id=thread_id,
                         )
-                docs = extract_brief_gene_knowledge_response(knowledge_output)
-                return {
+                    except asyncio.CancelledError:
+                        cancelled = True
+                finally:
+                    try:
+                        checkpointer = getattr(
+                            knowledge_app, "checkpointer", None
+                        )
+                        if (
+                            checkpointer is not None
+                            and checkpointer is not False
+                        ):
+                            deleter = getattr(
+                                checkpointer, "adelete_thread", None
+                            )
+                            if not callable(deleter):
+                                raise RuntimeError(
+                                    "knowledge checkpointer cannot "
+                                    "delete threads"
+                                )
+                            await cast(
+                                Callable[[str], Awaitable[None]], deleter
+                            )(thread_id)
+                    except _BRIEF_GENE_RETRIEVE_WORKER_CAUGHT:
+                        if not cancelled:
+                            raise
+                        logger.warning(
+                            "brief_gene retrieve cleanup failed after "
+                            "cancellation: task_index=%s",
+                            task_index,
+                        )
+                if cancelled:
+                    return {"retrieve_cancelled_indices": [task_index]}
+                docs, outcome = extract_brief_gene_knowledge_response(
+                    knowledge_output
+                )
+                result: dict[str, Any] = {
                     "retrieve_indexed_results": [(task_index, docs)],
                 }
+                if outcome == "partial":
+                    result["literature_degraded"] = [
+                        DegradedRecord(
+                            task_label=state.get("task_label", ""),
+                            message=_LITERATURE_RETRIEVAL_DEGRADED,
+                        )
+                    ]
+                return result
+            except asyncio.CancelledError:
+                return {"retrieve_cancelled_indices": [task_index]}
             except _BRIEF_GENE_RETRIEVE_WORKER_CAUGHT as exc:
                 del exc
                 logger.warning(
@@ -371,12 +438,17 @@ class BriefGeneKnowledgeSubgraphMixin:
             written to the legacy field names so the downstream nodes
             stay untouched.
         """
+        indexed, failed_indices, cancelled_indices, planned_count = (
+            _validated_retrieve_results(state)
+        )
+        if cancelled_indices:
+            raise asyncio.CancelledError
         emit_progress(
             "retrieving",
-            len(state.get("retrieve_indexed_results", [])),
+            len(indexed) + len(failed_indices),
+            planned_count,
             detail="reducing literature results",
         )
-        indexed, failed_indices = _validated_retrieve_results(state)
         annotation_failed_indices = _validated_annotation_failures(state)
         merged_docs: list[dict[str, Any]] = []
         for task_index in sorted(indexed):

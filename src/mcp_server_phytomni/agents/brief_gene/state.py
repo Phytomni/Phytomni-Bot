@@ -166,10 +166,13 @@ class BriefGeneState(TypedDict):
     # ``retrieve_worker_node`` ``ainvoke``s the shared knowledge
     # subgraph mount and writes the indexed result tuple onto the
     # ``retrieve_indexed_results`` reducer channel (concat via
-    # ``operator.add``); ``retrieve_reduce_node`` sorts the tuples by
-    # ``task_index``, merges the docs by score descending, applies the
-    # config ``TOP_N`` cap, and projects the final ``retrieved_docs``
-    # plus the ``retrieve_context`` formatted string. ``knowledge_payload``
+    # ``operator.add``). Ordinary failures and LangGraph-consumed child
+    # cancellations use separate private index reducers; the reduce node
+    # validates that every planned index is classified exactly once and
+    # re-raises cancellation before progress or report work. It then sorts
+    # successful tuples by ``task_index``, merges documents by score,
+    # applies the config ``TOP_N`` cap, and projects ``retrieved_docs`` plus
+    # ``retrieve_context``. ``knowledge_payload``
     # / ``pending_post_knowledge`` / ``knowledge_response`` carry the
     # per-Send legs through the shared ``knowledge`` node wrapper
     # registered via ``make_knowledge_node_wrapper``.
@@ -184,6 +187,7 @@ class BriefGeneState(TypedDict):
         list[tuple[int, list[dict[str, Any]]]], operator.add
     ]
     retrieve_failed_indices: Annotated[list[int], operator.add]
+    retrieve_cancelled_indices: Annotated[list[int], operator.add]
     annotation_failed_indices: list[int]
     # Internal status-independent channel: a retrieve worker that recovers
     # from a per-symbol retrieve fault appends a bounded DegradedRecord here

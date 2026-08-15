@@ -14,6 +14,8 @@ brief_gene cannot produce the mandatory profile.
 
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
 from typing import Any, TypedDict, cast
 from unittest.mock import AsyncMock
 
@@ -269,6 +271,19 @@ async def test_brief_gene_mount_raises_required_error_on_failure() -> None:
         await mount(cast(Any, state))
 
 
+async def test_brief_gene_mount_propagates_cancellation() -> None:
+    """Cancellation crosses the required BriefGene mount unchanged."""
+
+    async def cancel(*_args: object, **_kwargs: object) -> None:
+        raise asyncio.CancelledError
+
+    cancelled_app = SimpleNamespace(ainvoke=cancel)
+    mount = make_brief_gene_mount_node(cast(CompiledStateGraph, cancelled_app))
+
+    with pytest.raises(asyncio.CancelledError):
+        await mount(cast(Any, _deep_genome_state()))
+
+
 async def test_brief_gene_failure_does_not_invoke_downstream_submit() -> None:
     """A failed required mount prevents the downstream submit node."""
     submits = AsyncMock()
@@ -323,7 +338,21 @@ async def test_mount_success_rolls_up_literature_degraded() -> None:
     canned = {
         "gene_id": "AT1G01010",
         **empty_brief_gene_annotation_fields(),
-        "literature_degraded": [{"task_label": "OsCAB1", "message": "boom"}],
+        "final_response": {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            "# Brief Gene Analysis of AT1G01010\n\n"
+                            "## Gene Profiles\n\nEvidence-backed profile."
+                        )
+                    }
+                }
+            ]
+        },
+        "literature_degraded": [
+            {"task_label": "OsCAB1", "message": "retrieval_unavailable"}
+        ],
     }
     mount = make_brief_gene_mount_node(
         _build_fake_brief_gene_app(output=canned)
@@ -332,8 +361,11 @@ async def test_mount_success_rolls_up_literature_degraded() -> None:
     delta = await mount(cast(Any, _deep_genome_state()))
 
     assert delta["literature_degraded"] == [
-        {"task_label": "OsCAB1", "message": "boom"}
+        {"task_label": "OsCAB1", "message": "retrieval_unavailable"}
     ]
+    assert delta["preamble"].startswith("# Deep Genome Analysis of AT1G01010")
+    assert "Literature retrieval" not in delta["preamble"]
+    assert "⚠️" not in delta["preamble"]
 
 
 # ---------------------------------------------------------------------------

@@ -62,6 +62,18 @@ def _response_data(response: Any) -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+def _identity_response_rows(response: Any) -> list[dict[str, Any]]:
+    """Require a valid BI identity payload while preserving valid absence."""
+    if not isinstance(response, Mapping) or response.get("message") != "ok":
+        raise retrieval_unavailable_error()
+    data = response.get("data")
+    if not isinstance(data, list) or any(
+        not isinstance(row, Mapping) for row in data
+    ):
+        raise retrieval_unavailable_error()
+    return [dict(row) for row in data]
+
+
 def _first_row(response: Any) -> dict[str, Any] | None:
     """Return the first BI API row, if available."""
     data = _response_data(response)
@@ -396,7 +408,7 @@ async def gene_retrieve(
     semaphore = kwargs.get("semaphore")
     symbols = tuple(_dedupe(gene_symbol_list))
     if not symbols:
-        return {"doc_list": [], "total": 10000}
+        return {"doc_list": [], "total": 0}
 
     request = GeneRetrieveRequest(
         species=species,
@@ -459,7 +471,7 @@ async def _gene_retrieve(
         )
         if request.top_n is not None and request.top_n > 0:
             sorted_docs = sorted_docs[: request.top_n]
-        return {"doc_list": sorted_docs, "total": 10000}
+        return {"doc_list": sorted_docs, "total": len(sorted_docs)}
 
     if semaphore is not None:
         async with semaphore:

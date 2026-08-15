@@ -31,6 +31,7 @@ from ...runtime.langgraph_runner import (
 )
 from ...runtime.locale import SupportedLocale
 from ..knowledge.agent import KnowledgeAgent
+from ..knowledge.retrieval_result import retrieval_unavailable_error
 from ..shared.chat_subgraph import (
     make_chat_after_router,
     mount_chat_node,
@@ -54,7 +55,7 @@ from .pipeline import (
     _annotation_strings_delta,
     _attach_metadata,
     _dedupe,
-    _first_row,
+    _identity_response_rows,
     _partition_annotation_results,
     _split_symbols,
     run_bi_api,
@@ -75,6 +76,7 @@ __all__ = [
 ]
 
 BRIEF_CONFIG = BriefGeneConfig()
+_BRIEF_GENE_IDENTITY_CAUGHT: tuple[type[BaseException], ...] = (Exception,)
 
 
 async def _render_preamble_async_node(
@@ -88,7 +90,7 @@ def initial_brief_gene_state(
     user_query: str,
     locale: SupportedLocale | None = None,
 ) -> BriefGeneAgentState:
-    """Build the 40-key initial state dict for a BriefGene graph run.
+    """Build the fully seeded initial state for a BriefGene graph run.
 
     Shared by :meth:`BriefGeneAgent.arun` and the stdio progress seed
     builder so the two call sites stay byte-identical — a single source
@@ -151,6 +153,7 @@ def initial_brief_gene_state(
             # tuples onto this list via ``operator.add``.
             "retrieve_indexed_results": [],
             "retrieve_failed_indices": [],
+            "retrieve_cancelled_indices": [],
             "annotation_failed_indices": [],
             # Seed the status-independent degraded reducer channel so the
             # TypedDict contract holds at ``arun`` entry; retrieve workers
@@ -343,37 +346,49 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             or ``gene_found=False`` when BI has no match.
         """
         user_query = state["user_query"]
-        query_response = await run_bi_api(
-            "SELECT * FROM id2multispecies "
-            f"WHERE query_id = {sql_literal(user_query)}",
-            timeout=self.brief_config.TIMEOUT,
-            retriable_codes=self.brief_config.RETRIABLE_CODES,
-            max_retries=self.brief_config.MAX_RETRIES,
-        )
-        row = _first_row(query_response)
-        if row is None:
+        try:
+            query_rows = _identity_response_rows(
+                await run_bi_api(
+                    "SELECT * FROM id2multispecies "
+                    f"WHERE query_id = {sql_literal(user_query)}",
+                    timeout=self.brief_config.TIMEOUT,
+                    retriable_codes=self.brief_config.RETRIABLE_CODES,
+                    max_retries=self.brief_config.MAX_RETRIES,
+                )
+            )
+        except _BRIEF_GENE_IDENTITY_CAUGHT:
+            raise retrieval_unavailable_error() from None
+        if not query_rows:
             return {"gene_found": False}
 
-        gene_id = str(row.get("gene_id", ""))
-        species_code = str(row.get("species_code", ""))
-        gene_id_info_response, species_response = await asyncio.gather(
-            run_bi_api(
-                "SELECT * FROM id2multispecies "
-                f"WHERE query_id = {sql_literal(gene_id)}",
-                timeout=self.brief_config.TIMEOUT,
-                retriable_codes=self.brief_config.RETRIABLE_CODES,
-                max_retries=self.brief_config.MAX_RETRIES,
-            ),
-            run_bi_api(
-                "SELECT * FROM species "
-                f"WHERE species_code = {sql_literal(species_code)}",
-                timeout=self.brief_config.TIMEOUT,
-                retriable_codes=self.brief_config.RETRIABLE_CODES,
-                max_retries=self.brief_config.MAX_RETRIES,
-            ),
-        )
-        gene_id_row = _first_row(gene_id_info_response) or {}
-        species_row = _first_row(species_response) or {}
+        row = query_rows[0]
+        gene_id = str(row.get("gene_id", "")).strip()
+        species_code = str(row.get("species_code", "")).strip()
+        if not gene_id or not species_code:
+            raise retrieval_unavailable_error()
+        try:
+            identity_responses = await asyncio.gather(
+                run_bi_api(
+                    "SELECT * FROM id2multispecies "
+                    f"WHERE query_id = {sql_literal(gene_id)}",
+                    timeout=self.brief_config.TIMEOUT,
+                    retriable_codes=self.brief_config.RETRIABLE_CODES,
+                    max_retries=self.brief_config.MAX_RETRIES,
+                ),
+                run_bi_api(
+                    "SELECT * FROM species "
+                    f"WHERE species_code = {sql_literal(species_code)}",
+                    timeout=self.brief_config.TIMEOUT,
+                    retriable_codes=self.brief_config.RETRIABLE_CODES,
+                    max_retries=self.brief_config.MAX_RETRIES,
+                ),
+            )
+            gene_id_rows = _identity_response_rows(identity_responses[0])
+            species_rows = _identity_response_rows(identity_responses[1])
+        except _BRIEF_GENE_IDENTITY_CAUGHT:
+            raise retrieval_unavailable_error() from None
+        gene_id_row = gene_id_rows[0] if gene_id_rows else {}
+        species_row = species_rows[0] if species_rows else {}
         species_latin_name = str(
             species_row.get("species_scientific_name", "")
         )
@@ -390,7 +405,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "species_latin_name": species_latin_name,
             "species_english_name": species_english_name,
             "species_all_name": species_all_name,
-            **_alias_counts_delta(gene_id_info_response),
+            **_alias_counts_delta(identity_responses[0]),
         }
 
     async def fetch_annotation_node(self, state: BriefGeneAgentState):

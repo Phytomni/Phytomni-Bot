@@ -15,8 +15,9 @@ the gene_found=False ``KnowledgeAgent.arun`` call in
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
+from ..agents.knowledge.retrieval_result import RetrievalOutcome
 from ..agents.knowledge.state import KnowledgeInput
 from ..runtime.locale import SupportedLocale
 from .knowledge_adapters import (
@@ -55,6 +56,7 @@ def build_brief_gene_knowledge_input(
 
 def extract_brief_gene_knowledge_response(
     knowledge_output: Mapping[str, Any],
-) -> list[dict[str, Any]]:
-    """Return retrieved docs produced by one BriefGene worker."""
-    return extract_retrieved_docs(knowledge_output)
+) -> tuple[list[dict[str, Any]], RetrievalOutcome]:
+    """Return validated docs and outcome produced by one BriefGene worker."""
+    docs = extract_retrieved_docs(knowledge_output)
+    return docs, cast(RetrievalOutcome, knowledge_output["retrieval_outcome"])

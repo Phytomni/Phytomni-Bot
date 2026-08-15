@@ -809,6 +809,9 @@ async def test_chat_completions_brief_gene_hides_internal_literature_degraded(
     assert response.status_code == 200
     body = response.json()
     assert body["formatted"]["metadata"] == {}
+    assert "raw" not in body
+    assert "literature_degraded" not in response.text
+    assert "Literature retrieval" not in response.text
 
 
 async def test_chat_completions_exposes_run_id_matching_runs_listing(

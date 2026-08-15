@@ -156,6 +156,20 @@ def test_partition_annotation_results_propagates_cancellation() -> None:
         _partition_annotation_results([CancelledError()])
 
 
+def test_partition_annotation_results_rejects_malformed_payloads() -> None:
+    """Malformed BI bodies become bounded ordinals, never false-empty rows."""
+    rows, failed = _partition_annotation_results(
+        [
+            {"message": "error", "data": []},
+            {"message": "ok", "data": {}},
+            {"message": "ok", "data": ["private response body"]},
+        ]
+    )
+
+    assert rows == [[], [], []]
+    assert failed == [0, 1, 2]
+
+
 def test_go_annotation_string_prefers_core_rows_over_propagated() -> None:
     """Rows with is_propagated_from_child_term=0 are picked over =1.
 

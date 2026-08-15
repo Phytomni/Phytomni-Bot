@@ -85,6 +85,8 @@ def test_render_preamble_literature_degraded_stays_internal() -> None:
     content = delta["final_response"]["choices"][0]["message"]["content"]
     assert content.startswith("# Brief Gene Analysis of Os01g0177400")
     assert "⚠️" not in content
+    assert "Literature retrieval" not in content
+    assert "partial source" not in content.lower()
     assert "Intro paragraphs here." in content
 
 

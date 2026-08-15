@@ -17,12 +17,18 @@ import asyncio
 import faulthandler
 from collections.abc import Iterator
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
+from langchain_core.runnables import RunnableConfig
+from mcp.shared.exceptions import McpError
 
-from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
+from mcp_server_phytomni.agents.brief_gene.core import (
+    BriefGeneAgent,
+    initial_brief_gene_state,
+)
+from mcp_server_phytomni.agents.brief_gene.state import BriefGeneInput
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
@@ -61,6 +67,14 @@ _KNOWLEDGE_OUTPUT = {
     "retrieval_outcome": "complete",
     "final_response": {},
 }
+_ANNOTATION_TABLE_MARKERS = (
+    "FROM id_table ",
+    "FROM annotation_gene_structure_col ",
+    "FROM annotation_gene_ontology ",
+    "FROM annotation_gene_mapman ",
+    "FROM annotation_gene_interpro ",
+    "FROM annotation_gene_description ",
+)
 
 
 async def _stub_knowledge_ainvoke(
@@ -72,7 +86,7 @@ async def _stub_knowledge_ainvoke(
 
 def _install_mocks(
     monkeypatch: pytest.MonkeyPatch, *, bi_response: dict[str, Any]
-) -> None:
+) -> AsyncMock:
     """Patch every external call the preamble graph makes.
 
     Covers the BI annotation / homology lookups, the section + intro
@@ -103,6 +117,43 @@ def _install_mocks(
     monkeypatch.setattr(
         "mcp_server_phytomni.agents.brief_gene.introduction.phyto_chat",
         chat_mock,
+    )
+    return chat_mock
+
+
+def _install_annotation_outcomes(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    failed_indices: frozenset[int] = frozenset(),
+    empty_indices: frozenset[int] = frozenset(),
+) -> None:
+    """Keep identity reliable while controlling six annotation outcomes."""
+
+    async def run_bi_api(query_sql: str, **_kwargs: Any) -> dict[str, Any]:
+        for index, marker in enumerate(_ANNOTATION_TABLE_MARKERS):
+            if marker not in query_sql:
+                continue
+            if index in failed_indices:
+                raise RuntimeError("private annotation failure")
+            if index in empty_indices:
+                return _EMPTY_ROW
+            return _FOUND_ROW
+        return _FOUND_ROW
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.brief_gene.core.run_bi_api",
+        run_bi_api,
+    )
+
+
+def _install_knowledge_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+    responder: Any,
+) -> None:
+    """Install one bounded Knowledge subgraph responder before agent build."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.brief_gene.core.build_knowledge_app",
+        lambda *_args, **_kwargs: SimpleNamespace(ainvoke=responder),
     )
 
 
@@ -143,19 +194,40 @@ def _dump_stack_if_hung() -> Iterator[None]:
         faulthandler.cancel_dump_traceback_later()
 
 
-async def _run_preamble(user_query: str) -> str:
-    """Invoke the compiled graph (no follow-up) and return the content."""
+async def _invoke_agent_preamble(
+    agent: BriefGeneAgent,
+    user_query: str,
+    *,
+    thread_id: str,
+) -> dict[str, Any]:
+    """Invoke one fully seeded preamble run on a selected graph thread."""
+    initial_state = initial_brief_gene_state(user_query)
+    initial_state["is_follow_up"] = False
+    return await asyncio.wait_for(
+        agent.app.ainvoke(
+            cast(BriefGeneInput, initial_state),
+            config={"configurable": {"thread_id": thread_id}},
+        ),
+        timeout=20,
+    )
+
+
+async def _invoke_preamble(user_query: str) -> dict[str, Any]:
+    """Invoke the compiled graph with the follow-up tail disabled."""
     agent = BriefGeneAgent(
         brief_config=BriefGeneConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
-    final_state = await asyncio.wait_for(
-        agent.app.ainvoke(
-            {"user_query": user_query, "is_follow_up": False},
-            config={"configurable": {"thread_id": "preamble-test"}},
-        ),
-        timeout=20,
+    return await _invoke_agent_preamble(
+        agent,
+        user_query,
+        thread_id="preamble-test",
     )
+
+
+async def _run_preamble(user_query: str) -> str:
+    """Invoke the compiled graph (no follow-up) and return the content."""
+    final_state = await _invoke_preamble(user_query)
     return final_state["final_response"]["choices"][0]["message"]["content"]
 
 
@@ -209,6 +281,366 @@ async def test_preamble_knowledge_exception_keeps_report_copy_clean(
     # renders rather than collapsing to a failure note.
     assert "## Gene Profiles" in content
     assert "### Basic Genomic Information" in content
+
+
+async def test_preamble_valid_literature_no_match_uses_annotations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A valid empty literature result still renders annotation evidence."""
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    no_match = {
+        **_KNOWLEDGE_OUTPUT,
+        "retrieved_docs": [],
+        "retrieval_outcome": "no_match",
+    }
+    _install_knowledge_outcome(
+        monkeypatch,
+        AsyncMock(return_value=no_match),
+    )
+
+    final_state = await _invoke_preamble("Os01g0177400")
+    content = final_state["final_response"]["choices"][0]["message"]["content"]
+
+    assert final_state["retrieved_docs"] == []
+    assert "### Basic Genomic Information" in content
+    assert "Literature retrieval" not in content
+
+
+@pytest.mark.parametrize(
+    "identity_response",
+    [
+        {"message": "error", "data": []},
+        {"message": "ok"},
+        {"message": "ok", "data": {}},
+        {"message": "ok", "data": ["private identity body"]},
+        {"message": "ok", "data": [{}]},
+        {"message": "ok", "data": [{"gene_id": "Os01g0177400"}]},
+        {"message": "ok", "data": [{"species_code": "osa"}]},
+    ],
+)
+async def test_preamble_rejects_malformed_primary_identity_response(
+    monkeypatch: pytest.MonkeyPatch,
+    identity_response: dict[str, Any],
+) -> None:
+    """Identity protocol faults cannot masquerade as a valid no-match."""
+    _install_mocks(monkeypatch, bi_response=identity_response)
+    knowledge = AsyncMock(return_value=_KNOWLEDGE_OUTPUT)
+    _install_knowledge_outcome(monkeypatch, knowledge)
+
+    with pytest.raises(
+        McpError, match="^Knowledge retrieval temporarily unavailable"
+    ):
+        await _invoke_preamble("Os01g0177400")
+
+    knowledge.assert_not_awaited()
+
+
+async def test_preamble_sanitizes_identity_lookup_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An upstream identity exception becomes one fixed terminal error."""
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+
+    async def fail_identity(_query_sql: str, **_kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("private identity failure")
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.brief_gene.core.run_bi_api",
+        fail_identity,
+    )
+    knowledge = AsyncMock(return_value=_KNOWLEDGE_OUTPUT)
+    _install_knowledge_outcome(monkeypatch, knowledge)
+
+    with pytest.raises(
+        McpError, match="^Knowledge retrieval temporarily unavailable"
+    ) as exc_info:
+        await _invoke_preamble("Os01g0177400")
+
+    assert "private identity failure" not in str(exc_info.value)
+    knowledge.assert_not_awaited()
+
+
+async def test_preamble_propagates_identity_lookup_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Identity lookup cancellation crosses the graph boundary unchanged."""
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+
+    async def cancel_identity(
+        _query_sql: str, **_kwargs: Any
+    ) -> dict[str, Any]:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.brief_gene.core.run_bi_api",
+        cancel_identity,
+    )
+    knowledge = AsyncMock(return_value=_KNOWLEDGE_OUTPUT)
+    _install_knowledge_outcome(monkeypatch, knowledge)
+
+    with pytest.raises(asyncio.CancelledError):
+        await _invoke_preamble("Os01g0177400")
+
+    knowledge.assert_not_awaited()
+
+
+@pytest.mark.parametrize("malformed_lookup", ["aliases", "species"])
+async def test_preamble_rejects_malformed_secondary_identity_response(
+    monkeypatch: pytest.MonkeyPatch,
+    malformed_lookup: str,
+) -> None:
+    """Malformed canonical-id or species payloads stop before retrieval."""
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    id_lookup_count = 0
+
+    async def run_bi_api(query_sql: str, **_kwargs: Any) -> dict[str, Any]:
+        nonlocal id_lookup_count
+        if "FROM id2multispecies" in query_sql:
+            id_lookup_count += 1
+            if malformed_lookup == "aliases" and id_lookup_count == 2:
+                return {"message": "error", "data": []}
+            return _FOUND_ROW
+        if "FROM species" in query_sql and malformed_lookup == "species":
+            return {"message": "error", "data": []}
+        return _FOUND_ROW
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.brief_gene.core.run_bi_api",
+        run_bi_api,
+    )
+    knowledge = AsyncMock(return_value=_KNOWLEDGE_OUTPUT)
+    _install_knowledge_outcome(monkeypatch, knowledge)
+
+    with pytest.raises(
+        McpError, match="^Knowledge retrieval temporarily unavailable"
+    ):
+        await _invoke_preamble("Os01g0177400")
+
+    knowledge.assert_not_awaited()
+
+
+async def test_preamble_partial_literature_and_annotation_failures_continue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reliable docs and annotation tables survive independent failures."""
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    _install_annotation_outcomes(
+        monkeypatch,
+        failed_indices=frozenset({2, 4}),
+    )
+
+    async def partial_knowledge(
+        knowledge_input: dict[str, Any], *_args: Any, **_kwargs: Any
+    ) -> dict[str, Any]:
+        if str(knowledge_input.get("user_query", "")).endswith("OsCAB1"):
+            raise RuntimeError("private literature failure")
+        return _KNOWLEDGE_OUTPUT
+
+    _install_knowledge_outcome(monkeypatch, partial_knowledge)
+
+    final_state = await _invoke_preamble("Os01g0177400")
+    content = final_state["final_response"]["choices"][0]["message"]["content"]
+
+    assert final_state["retrieved_docs"]
+    assert final_state["literature_degraded"]
+    assert "Literature retrieval" not in content
+    assert "private" not in content
+
+
+async def test_preamble_partial_knowledge_output_marks_internal_degradation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Knowledge partial-with-docs renders normally with an internal marker."""
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    partial_output = {
+        **_KNOWLEDGE_OUTPUT,
+        "retrieval_outcome": "partial",
+    }
+    _install_knowledge_outcome(
+        monkeypatch,
+        AsyncMock(return_value=partial_output),
+    )
+
+    final_state = await _invoke_preamble("Os01g0177400")
+    content = final_state["final_response"]["choices"][0]["message"]["content"]
+
+    assert final_state["retrieved_docs"]
+    assert len(final_state["literature_degraded"]) == 3
+    assert "Literature retrieval" not in content
+    assert "partial source" not in content.lower()
+
+
+async def test_preamble_literature_failure_with_valid_empty_annotations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reliable gene identity permits a sparse profile from valid absences."""
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    _install_annotation_outcomes(
+        monkeypatch,
+        empty_indices=frozenset(range(6)),
+    )
+    _install_knowledge_outcome(
+        monkeypatch,
+        AsyncMock(side_effect=RuntimeError("private literature failure")),
+    )
+
+    final_state = await _invoke_preamble("Os01g0177400")
+    content = final_state["final_response"]["choices"][0]["message"]["content"]
+
+    assert final_state["retrieved_docs"] == []
+    assert final_state["literature_degraded"]
+    assert "### Basic Genomic Information" in content
+    assert "Literature retrieval" not in content
+
+
+async def test_preamble_all_annotation_failures_keep_literature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reliable literature is sufficient when every annotation table fails."""
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    _install_annotation_outcomes(
+        monkeypatch,
+        failed_indices=frozenset(range(6)),
+    )
+
+    final_state = await _invoke_preamble("Os01g0177400")
+    content = final_state["final_response"]["choices"][0]["message"]["content"]
+
+    assert final_state["retrieved_docs"]
+    assert "Literature retrieval" not in content
+
+
+async def test_preamble_fails_when_all_independent_evidence_calls_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Total literature and annotation failure stops before report drafting."""
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    _install_annotation_outcomes(
+        monkeypatch,
+        failed_indices=frozenset(range(6)),
+    )
+    _install_knowledge_outcome(
+        monkeypatch,
+        AsyncMock(side_effect=RuntimeError("private literature failure")),
+    )
+
+    with pytest.raises(
+        McpError, match="^Knowledge retrieval temporarily unavailable"
+    ):
+        await _invoke_preamble("Os01g0177400")
+
+
+async def test_preamble_propagates_literature_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cancellation exits the compiled graph without producing a report."""
+    chat_mock = _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    _install_knowledge_outcome(
+        monkeypatch,
+        AsyncMock(side_effect=asyncio.CancelledError()),
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await _invoke_preamble("Os01g0177400")
+    chat_mock.assert_not_awaited()
+
+
+async def test_preamble_same_thread_successful_refresh_resets_retrieve_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful refresh cannot inherit prior fan-out classifications."""
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    agent = BriefGeneAgent(
+        brief_config=BriefGeneConfig(),
+        sensitive_config=SensitiveConfig.load(),
+    )
+    thread_id = "same-thread-success-refresh"
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+
+    first = await _invoke_agent_preamble(
+        agent,
+        "Os01g0177400",
+        thread_id=thread_id,
+    )
+    first_snapshot = await agent.app.aget_state(config)
+    second = await _invoke_agent_preamble(
+        agent,
+        "Os01g0177400",
+        thread_id=thread_id,
+    )
+    second_snapshot = await agent.app.aget_state(config)
+
+    assert first["retrieved_docs"]
+    assert second["retrieved_docs"] == first["retrieved_docs"]
+    assert second["literature_degraded"] == []
+    assert first_snapshot.values["gene_profile_completed_branches"] == 4
+    assert second_snapshot.values["gene_profile_completed_branches"] == 4
+    assert sorted(
+        index
+        for index, _docs in second_snapshot.values["retrieve_indexed_results"]
+    ) == [0, 1, 2]
+    assert second_snapshot.values["retrieve_failed_indices"] == []
+    assert second_snapshot.values["retrieve_cancelled_indices"] == []
+    assert second_snapshot.values["literature_degraded"] == []
+    assert "retrieve_indexed_results" not in second
+    assert "retrieve_failed_indices" not in second
+    assert "retrieve_cancelled_indices" not in second
+
+
+async def test_preamble_same_thread_retry_after_cancellation_resets_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cancelled attempt leaves no private marker on its successful retry."""
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    calls = 0
+
+    async def cancel_once(
+        _knowledge_input: dict[str, Any],
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise asyncio.CancelledError
+        return _KNOWLEDGE_OUTPUT
+
+    _install_knowledge_outcome(monkeypatch, cancel_once)
+    agent = BriefGeneAgent(
+        brief_config=BriefGeneConfig(),
+        sensitive_config=SensitiveConfig.load(),
+    )
+    thread_id = "same-thread-cancel-retry"
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+
+    with pytest.raises(asyncio.CancelledError):
+        await _invoke_agent_preamble(
+            agent,
+            "Os01g0177400",
+            thread_id=thread_id,
+        )
+    recovered = await _invoke_agent_preamble(
+        agent,
+        "Os01g0177400",
+        thread_id=thread_id,
+    )
+    recovered_snapshot = await agent.app.aget_state(config)
+
+    assert recovered["retrieved_docs"]
+    assert recovered["literature_degraded"] == []
+    assert sorted(
+        index
+        for index, _docs in recovered_snapshot.values[
+            "retrieve_indexed_results"
+        ]
+    ) == [0, 1, 2]
+    assert recovered_snapshot.values["retrieve_failed_indices"] == []
+    assert recovered_snapshot.values["retrieve_cancelled_indices"] == []
+    assert recovered_snapshot.values["literature_degraded"] == []
+    assert recovered_snapshot.values["gene_profile_completed_branches"] == 4
+    assert "retrieve_indexed_results" not in recovered
+    assert "retrieve_failed_indices" not in recovered
+    assert "retrieve_cancelled_indices" not in recovered
 
 
 async def test_preamble_gene_not_found_fan_in_completes(

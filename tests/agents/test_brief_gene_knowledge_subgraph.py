@@ -12,6 +12,7 @@ dedicated KnowledgeAgent subgraph invocation.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from types import SimpleNamespace
 from typing import Any, TypedDict, cast
@@ -108,10 +109,16 @@ def _gene_found_state() -> BriefGeneAgentState:
                 }
                 for i in range(3)
             ],
-            "retrieve_indexed_results": [],
-            "retrieve_failed_indices": [],
-            "annotation_failed_indices": [],
-            "literature_degraded": [],
+            **{
+                key: []
+                for key in (
+                    "retrieve_indexed_results",
+                    "retrieve_failed_indices",
+                    "retrieve_cancelled_indices",
+                    "annotation_failed_indices",
+                    "literature_degraded",
+                )
+            },
         },
     )
 
@@ -422,6 +429,116 @@ async def test_retrieve_worker_factory_exception_records_failed_index(
     ]
 
 
+async def test_retrieve_worker_marks_partial_output_internal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A partial Knowledge result keeps docs and one safe internal marker."""
+    partial_output: dict[str, object] = {
+        "retrieved_docs": [
+            {"chunk_id": "partial-1", "title": "partial", "content": "doc"}
+        ],
+        "retrieval_outcome": "partial",
+        "final_response": {},
+    }
+    fake_app = SimpleNamespace()
+
+    async def invoke(
+        _app: object,
+        _payload: object,
+        thread_id: str | None = None,
+    ) -> dict[str, object]:
+        assert thread_id
+        return partial_output
+
+    monkeypatch.setattr(
+        f"{_KNOWLEDGE_SUBGRAPH_MODULE}.ainvoke_graph",
+        invoke,
+    )
+    agent = _build_agent(monkeypatch=monkeypatch)
+    worker = agent.make_retrieve_worker_node(
+        cast(CompiledStateGraph, fake_app)
+    )
+    state = _gene_found_state()
+    state["task_index"] = 1
+    state["task_label"] = "OsPARTIAL"
+
+    delta = await worker(state)
+
+    assert delta == {
+        "retrieve_indexed_results": [(1, partial_output["retrieved_docs"])],
+        "literature_degraded": [
+            {"task_label": "OsPARTIAL", "message": "retrieval_unavailable"}
+        ],
+    }
+
+
+async def test_retrieve_worker_factory_classifies_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cancelled leg writes only its private cancellation classification."""
+
+    async def cancel(*_args: object, **_kwargs: object) -> None:
+        raise asyncio.CancelledError
+
+    cancelled_app = SimpleNamespace(ainvoke=cancel)
+    monkeypatch.setattr(
+        f"{_CORE_MODULE}.build_knowledge_app",
+        lambda **_kwargs: cast(CompiledStateGraph, cancelled_app),
+    )
+    agent = _build_agent()
+    worker = agent.make_retrieve_worker_node(
+        cast(CompiledStateGraph, cancelled_app)
+    )
+    state = _gene_found_state()
+    state["task_index"] = 1
+    state["task_label"] = "OsCANCELLED"
+    state["knowledge_input"] = {"user_query": "ignored"}
+
+    delta = await worker(state)
+
+    assert delta == {"retrieve_cancelled_indices": [1]}
+
+
+async def test_retrieve_worker_cleanup_failure_cannot_mask_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Checkpoint cleanup failure cannot downgrade a cancelled retrieve leg."""
+
+    async def invoke(
+        _app: object,
+        _payload: object,
+        thread_id: str | None = None,
+    ) -> dict[str, object]:
+        assert thread_id == "brief-gene-worker-cancelled"
+        raise asyncio.CancelledError
+
+    async def delete_thread(_thread_id: str) -> None:
+        raise RuntimeError("private cleanup failure")
+
+    fake_app = SimpleNamespace(
+        checkpointer=SimpleNamespace(adelete_thread=delete_thread),
+    )
+    monkeypatch.setattr(
+        f"{_KNOWLEDGE_SUBGRAPH_MODULE}.ainvoke_graph",
+        invoke,
+    )
+    monkeypatch.setattr(
+        f"{_KNOWLEDGE_SUBGRAPH_MODULE}.ensure_thread_id",
+        lambda: "brief-gene-worker-cancelled",
+    )
+    agent = _build_agent(monkeypatch=monkeypatch)
+    worker = agent.make_retrieve_worker_node(
+        cast(CompiledStateGraph, fake_app)
+    )
+    state = _gene_found_state()
+    state["task_index"] = 1
+    state["task_label"] = "OsCANCELLED"
+
+    delta = await worker(state)
+
+    assert delta == {"retrieve_cancelled_indices": [1]}
+
+
 # ---------------------------------------------------------------------------
 # reduce_node: sort + merge by score + top_n cap.
 # ---------------------------------------------------------------------------
@@ -492,6 +609,165 @@ async def test_retrieve_reduce_fails_when_all_independent_evidence_is_lost(
     with pytest.raises(
         McpError, match="Knowledge retrieval temporarily unavailable"
     ):
+        await agent.retrieve_reduce_node(state)
+
+
+async def test_retrieve_reduce_propagates_any_classified_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One cancelled leg stops reduction even when sibling docs succeeded."""
+    agent = _build_agent(monkeypatch=monkeypatch)
+    state = _gene_found_state()
+    state["retrieve_indexed_results"] = [
+        (0, [{"title": "reliable sibling", "score": 0.9}]),
+        (1, []),
+    ]
+    state["retrieve_cancelled_indices"] = [2]
+
+    with pytest.raises(asyncio.CancelledError):
+        await agent.retrieve_reduce_node(state)
+
+
+async def test_retrieve_reduce_progress_counts_success_and_failure_legs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A partial retrieval tick counts every completed non-cancelled leg."""
+    events: list[tuple[str, int, int | None]] = []
+    monkeypatch.setattr(
+        f"{_KNOWLEDGE_SUBGRAPH_MODULE}.emit_progress",
+        lambda phase, current, total=None, **_kwargs: events.append(
+            (phase, current, total)
+        ),
+    )
+    agent = _build_agent(monkeypatch=monkeypatch)
+    state = _gene_found_state()
+    state["retrieve_indexed_results"] = [(0, []), (1, [])]
+    state["retrieve_failed_indices"] = [2]
+
+    await agent.retrieve_reduce_node(state)
+
+    assert events == [("retrieving", 3, 3)]
+
+
+async def test_retrieve_reduce_cancellation_emits_no_completion_tick(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cancelled retrieval never advertises a normally completed stage."""
+    events: list[tuple[str, int, int | None]] = []
+    monkeypatch.setattr(
+        f"{_KNOWLEDGE_SUBGRAPH_MODULE}.emit_progress",
+        lambda phase, current, total=None, **_kwargs: events.append(
+            (phase, current, total)
+        ),
+    )
+    agent = _build_agent(monkeypatch=monkeypatch)
+    state = _gene_found_state()
+    state["retrieve_indexed_results"] = [(0, []), (1, [])]
+    state["retrieve_cancelled_indices"] = [2]
+
+    with pytest.raises(asyncio.CancelledError):
+        await agent.retrieve_reduce_node(state)
+
+    assert not events
+
+
+@pytest.mark.parametrize(
+    ("indexed", "failed", "annotation_failed", "expected_titles"),
+    [
+        (
+            [(0, [{"title": "partial", "score": 0.8}]), (1, [])],
+            [2],
+            [],
+            ["partial"],
+        ),
+        ([], [0, 1, 2], [], []),
+        (
+            [
+                (0, [{"title": "annotation-backed", "score": 0.9}]),
+                (1, []),
+                (2, []),
+            ],
+            [],
+            [1, 4],
+            ["annotation-backed"],
+        ),
+        (
+            [
+                (0, [{"title": "literature-backed", "score": 0.7}]),
+                (1, []),
+                (2, []),
+            ],
+            [],
+            list(range(6)),
+            ["literature-backed"],
+        ),
+    ],
+)
+async def test_retrieve_reduce_preserves_remaining_independent_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    indexed: list[tuple[int, list[dict[str, Any]]]],
+    failed: list[int],
+    annotation_failed: list[int],
+    expected_titles: list[str],
+) -> None:
+    """Partial, sparse, and no-match evidence remain distinct from failure."""
+    agent = _build_agent(monkeypatch=monkeypatch)
+    state = _gene_found_state()
+    state["retrieve_indexed_results"] = indexed
+    state["retrieve_failed_indices"] = failed
+    state["annotation_failed_indices"] = annotation_failed
+
+    delta = await agent.retrieve_reduce_node(state)
+
+    assert [doc["title"] for doc in delta["retrieved_docs"]] == expected_titles
+
+
+@pytest.mark.parametrize(
+    ("indexed", "failed", "cancelled"),
+    [
+        ([(True, []), (1, []), (2, [])], [], []),
+        ([(0, []), (0, []), (1, []), (2, [])], [], []),
+        ([(0, []), (1, []), (3, [])], [], []),
+        ([(0, []), (1, [])], [True], []),
+        ([(0, []), (1, [])], [2, 2], []),
+        ([(0, []), (1, [])], [3], []),
+        ([(0, []), (1, []), (2, [])], [2], []),
+        ([(0, []), (1, [])], [], [True]),
+        ([(0, []), (1, [])], [], [2, 2]),
+        ([(0, []), (1, [])], [], [3]),
+        ([(0, []), (1, []), (2, [])], [], [2]),
+        ([(0, [])], [1], [1, 2]),
+    ],
+)
+async def test_retrieve_reduce_rejects_ambiguous_or_out_of_range_indices(
+    monkeypatch: pytest.MonkeyPatch,
+    indexed: list[tuple[int, list[dict[str, Any]]]],
+    failed: list[int],
+    cancelled: list[int],
+) -> None:
+    """Duplicate, overlapping, and out-of-range classifications are invalid."""
+    agent = _build_agent(monkeypatch=monkeypatch)
+    state = _gene_found_state()
+    state["retrieve_indexed_results"] = indexed
+    state["retrieve_failed_indices"] = failed
+    state["retrieve_cancelled_indices"] = cancelled
+
+    with pytest.raises(RetrievalProtocolError):
+        await agent.retrieve_reduce_node(state)
+
+
+@pytest.mark.parametrize("annotation_failed", [[0, 0], [-1], [6], [True]])
+async def test_retrieve_reduce_rejects_invalid_annotation_failure_ordinals(
+    monkeypatch: pytest.MonkeyPatch,
+    annotation_failed: list[int],
+) -> None:
+    """Annotation failures expose only unique bounded table ordinals."""
+    agent = _build_agent(monkeypatch=monkeypatch)
+    state = _gene_found_state()
+    state["retrieve_indexed_results"] = [(0, []), (1, []), (2, [])]
+    state["annotation_failed_indices"] = annotation_failed
+
+    with pytest.raises(RetrievalProtocolError):
         await agent.retrieve_reduce_node(state)
 
 

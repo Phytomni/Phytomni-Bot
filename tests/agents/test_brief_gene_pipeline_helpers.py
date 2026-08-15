@@ -32,13 +32,13 @@ pytestmark = pytest.mark.unit
 
 
 async def test_gene_retrieve_returns_empty_for_empty_symbol_list() -> None:
-    """Empty symbol list short-circuits to a sentinel payload."""
+    """Empty symbol list short-circuits to a truthful no-match payload."""
     result = await gene_retrieve(
         species="Rice",
         gene_symbol_list=[],
         knowledge_agent=AsyncMock(),
     )
-    assert result == {"doc_list": [], "total": 10000}
+    assert result == {"doc_list": [], "total": 0}
 
 
 async def test_gene_retrieve_dedupes_symbols_before_fanning_out() -> None:
@@ -88,6 +88,7 @@ async def test_gene_retrieve_passes_top_n_and_semaphore() -> None:
 
     assert result["doc_list"][0]["score"] == 0.9
     assert len(result["doc_list"]) <= 5
+    assert result["total"] == len(result["doc_list"])
 
 
 async def test_gene_retrieve_keeps_valid_empty_results_as_no_match() -> None:
@@ -105,7 +106,7 @@ async def test_gene_retrieve_keeps_valid_empty_results_as_no_match() -> None:
         mock_ka,
     )
 
-    assert result == {"doc_list": [], "total": 10000}
+    assert result == {"doc_list": [], "total": 0}
 
 
 async def test_gene_retrieve_keeps_docs_when_one_child_fails() -> None:
@@ -129,6 +130,7 @@ async def test_gene_retrieve_keeps_docs_when_one_child_fails() -> None:
         "LOC1",
         "LOC2",
     ]
+    assert result["total"] == len(result["doc_list"])
 
 
 async def test_gene_retrieve_raises_when_all_children_fail() -> None:
