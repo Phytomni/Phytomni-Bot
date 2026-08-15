@@ -197,22 +197,31 @@ def _calls_forward_relay_request(endpoint: Callable[..., Any]) -> bool:
     return False
 
 
-def test_operator_inventory_partitions_every_registered_route() -> None:
-    """Forwarded and server-terminated inventories cover the real router."""
-    router = relay_routes.create_relay_router()
+def _partition_registered_routes(
+    router: APIRouter,
+) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
+    """Partition every registered API route by relay ownership."""
     forwarded: set[tuple[str, str]] = set()
     terminated: set[tuple[str, str]] = set()
     for route in router.routes:
         if not isinstance(route, APIRoute):
             continue
-        if route.methods is None:
-            continue
+        assert (
+            route.methods is not None
+        ), f"registered route {route.path!r} has no HTTP methods"
         target = (
             forwarded
             if _calls_forward_relay_request(route.endpoint)
             else terminated
         )
         target.update((route.path, method) for method in route.methods)
+    return forwarded, terminated
+
+
+def test_operator_inventory_partitions_every_registered_route() -> None:
+    """Forwarded and server-terminated inventories cover the real router."""
+    router = relay_routes.create_relay_router()
+    forwarded, terminated = _partition_registered_routes(router)
 
     assert forwarded == {
         (case.path, case.method) for case in OPERATOR_FORWARD_ROUTES
@@ -220,6 +229,20 @@ def test_operator_inventory_partitions_every_registered_route() -> None:
     assert terminated == {
         (case.path, case.method) for case in OPERATOR_SERVER_TERMINATED_ROUTES
     }
+
+
+def test_operator_inventory_rejects_route_without_methods(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Route inventory fails closed when FastAPI omits method metadata."""
+    router = relay_routes.create_relay_router()
+    route = next(
+        route for route in router.routes if isinstance(route, APIRoute)
+    )
+    monkeypatch.setattr(route, "methods", None)
+
+    with pytest.raises(AssertionError, match="has no HTTP methods"):
+        _partition_registered_routes(router)
 
 
 def test_relay_client_wrapper_inventory_is_complete() -> None:
