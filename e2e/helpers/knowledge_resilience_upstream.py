@@ -11,7 +11,6 @@ import socket
 import subprocess
 import sys
 import time
-from collections import deque
 from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, Literal, NamedTuple, cast
@@ -20,7 +19,11 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from .loopback_process import LoopbackProcessConfig, boot_loopback_process
+from .loopback_process import (
+    BoundedLogTail,
+    LoopbackProcessConfig,
+    boot_loopback_process,
+)
 
 KnowledgeScenarioMode = Literal[
     "complete",
@@ -36,6 +39,7 @@ _SCENARIO_ENV = "PHYTOMNI_KNOWLEDGE_SCENARIO"
 _INTEGRATION_ENV = "PHYTOMNI_RUN_INTEGRATION"
 _CURRENT_QUERY = "synthetic protein design question"
 _CANCELLATION_QUERY = "synthetic cancellation question"
+_CONCURRENT_CANCELLATION_QUERY = "synthetic concurrent cancellation question"
 _NO_MATCH_QUERY = "synthetic no-match question"
 _EARLIER_QUERY = "earlier question"
 _EARLIER_ANSWER = "earlier answer"
@@ -56,6 +60,7 @@ class KnowledgeUpstream(NamedTuple):
     """Connection details for one isolated scripted upstream."""
 
     base_url: str
+    log_tail: BoundedLogTail
 
 
 class _ProviderObservations:
@@ -216,7 +221,7 @@ def _retrieve_response(
     call_number: int,
 ) -> JSONResponse | StreamingResponse | dict[str, Any]:
     """Resolve one deterministic retrieval response after validation."""
-    if content == _CANCELLATION_QUERY:
+    if content in {_CANCELLATION_QUERY, _CONCURRENT_CANCELLATION_QUERY}:
         response: JSONResponse | StreamingResponse | dict[str, Any] = (
             StreamingResponse(
                 state.cancellation_stream(), media_type="application/json"
@@ -392,7 +397,7 @@ def _free_port() -> int:
 
 
 def _await_healthy(
-    proc: subprocess.Popen[str], base_url: str, logs: deque[str]
+    proc: subprocess.Popen[str], base_url: str, logs: BoundedLogTail
 ) -> None:
     """Wait for loopback health or fail with bounded startup logs."""
     deadline = time.monotonic() + _STARTUP_DEADLINE
@@ -400,7 +405,7 @@ def _await_healthy(
         if proc.poll() is not None:
             raise RuntimeError(
                 f"Knowledge upstream exited with code {proc.returncode}; "
-                f"logs:\n{chr(10).join(logs)}"
+                f"captured_log_lines={len(logs.snapshot())}"
             )
         try:
             response = httpx.get(f"{base_url}/healthz", timeout=2.0)
@@ -412,8 +417,8 @@ def _await_healthy(
             pass
         time.sleep(0.1)
     raise RuntimeError(
-        "Knowledge upstream did not become healthy; logs:\n"
-        f"{chr(10).join(logs)}"
+        "Knowledge upstream did not become healthy; "
+        f"captured_log_lines={len(logs.snapshot())}"
     )
 
 
@@ -447,8 +452,10 @@ def boot_knowledge_resilience_upstream(
         "--log-level",
         "warning",
     ]
-    with boot_loopback_process(cmd, env, base_url, _await_healthy, _PROCESS):
-        yield KnowledgeUpstream(base_url)
+    with boot_loopback_process(
+        cmd, env, base_url, _await_healthy, _PROCESS
+    ) as log_tail:
+        yield KnowledgeUpstream(base_url, log_tail)
 
 
 __all__ = [

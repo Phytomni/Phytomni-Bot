@@ -11,7 +11,8 @@ import socket
 import sqlite3
 import struct
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -65,7 +66,16 @@ _PUBLIC_SURFACE_FORBIDDEN_MARKERS = {
     "traceback",
     "user_password",
 }
+_SUCCESS_SURFACE_FORBIDDEN_MARKERS = {"degraded", "partial", "unavailable"}
+_PROCESS_LOG_FORBIDDEN_MARKERS = (
+    _PUBLIC_SURFACE_FORBIDDEN_MARKERS - {"connecterror", "httpstatuserror"}
+) | {
+    "provider-secret",
+    "traceback",
+    "unavailable",
+}
 _CANCELLATION_QUERY = "synthetic cancellation question"
+_CONCURRENT_CANCELLATION_QUERY = "synthetic concurrent cancellation question"
 _NO_MATCH_QUERY = "synthetic no-match question"
 
 
@@ -230,6 +240,30 @@ def _assert_public_surface_safe(payload: Any) -> None:
     )
 
 
+def _assert_success_surface_safe(payload: Any) -> None:
+    """Reject every partial or unavailable marker from a normal answer."""
+    _assert_public_surface_safe(payload)
+    serialized = json.dumps(payload, sort_keys=True).lower()
+    assert all(
+        marker not in serialized
+        for marker in _SUCCESS_SURFACE_FORBIDDEN_MARKERS
+    )
+
+
+def _assert_process_logs_safe(
+    upstream: KnowledgeUpstream,
+    server: ApiServer,
+) -> None:
+    """Inspect bounded child tails without surfacing their raw contents."""
+    upstream_lines = upstream.log_tail.snapshot()
+    server_lines = server.log_tail.snapshot()
+    assert len(upstream_lines) <= 200
+    assert len(server_lines) <= 500
+    serialized = "\n".join((*upstream_lines, *server_lines)).lower()
+    for marker in _PROCESS_LOG_FORBIDDEN_MARKERS:
+        assert marker not in serialized
+
+
 def _assert_safe_error(response: httpx.Response) -> None:
     """Assert the fixed public failure contains no upstream detail."""
     assert response.status_code == 500, response.text
@@ -341,6 +375,37 @@ async def _wait_for_failed_run(
     raise AssertionError("unreachable")
 
 
+async def _wait_for_run_status(
+    client: httpx.AsyncClient,
+    server: ApiServer,
+    run_id: str,
+    *,
+    status: str,
+    budget_seconds: float = 5.0,
+) -> dict[str, Any]:
+    """Wait for one known run without making assumptions about sibling rows."""
+    latest: dict[str, Any] = {}
+    try:
+        async with asyncio.timeout(budget_seconds):
+            while True:
+                response = await client.get(
+                    f"/v1/runs/{run_id}",
+                    headers=auth_header(server),
+                )
+                assert response.status_code == 200, response.text
+                latest = response.json()
+                _assert_public_surface_safe(latest)
+                if latest.get("status") == status:
+                    return latest
+                await asyncio.sleep(0.05)
+    except TimeoutError:
+        pytest.fail(
+            "run status timed out: "
+            f"run_id={run_id} observed_status={latest.get('status')}"
+        )
+    raise AssertionError("unreachable")
+
+
 def _visible_completion(body: dict[str, Any]) -> dict[str, Any]:
     """Return only the answer and formatted metadata visible to a caller."""
     return {
@@ -370,10 +435,7 @@ async def test_partial_then_complete_retries_only_failed_repository(
                 "<sup>1</sup>"
                 in first_body["choices"][0]["message"]["content"]
             )
-            first_text = json.dumps(_visible_completion(first_body)).lower()
-            assert "partial" not in first_text
-            assert "degraded" not in first_text
-            _assert_public_surface_safe(_visible_completion(first_body))
+            _assert_success_surface_safe(_visible_completion(first_body))
             first_run = await _assert_terminal_run_surfaces(
                 client,
                 server,
@@ -420,6 +482,7 @@ async def test_partial_then_complete_retries_only_failed_repository(
         cache_counts = _cache_counts(cache_path)
         assert cache_counts
         assert not any("multi_retrieve" in func_id for func_id in cache_counts)
+    _assert_process_logs_safe(upstream, server)
 
 
 async def test_complete_control_preserves_citations_and_cache_policy(
@@ -452,6 +515,7 @@ async def test_complete_control_preserves_citations_and_cache_policy(
         cache_counts = _cache_counts(cache_path)
         assert cache_counts
         assert not any("multi_retrieve" in func_id for func_id in cache_counts)
+    _assert_process_logs_safe(upstream, server)
 
 
 @pytest.mark.parametrize(
@@ -485,6 +549,7 @@ async def test_failed_knowledge_evidence_is_not_projected_as_empty_success(
         snapshot = await _snapshot(upstream)
         assert snapshot["provider"]["calls"] == 0
         assert _cache_counts(cache_path) == {}
+    _assert_process_logs_safe(upstream, server)
 
 
 async def test_malformed_retrieve_payload_fails_safely(
@@ -513,6 +578,7 @@ async def test_malformed_retrieve_payload_fails_safely(
         snapshot = await _snapshot(upstream)
         assert snapshot["provider"]["calls"] == 0
         assert _cache_counts(cache_path) == {}
+    _assert_process_logs_safe(upstream, server)
 
 
 async def test_malformed_rerank_keeps_stable_fallback_out_of_merged_cache(
@@ -539,10 +605,7 @@ async def test_malformed_rerank_keeps_stable_fallback_out_of_merged_cache(
             assert response.status_code == 200, response.text
             body = response.json()
             assert body["choices"][0]["message"]["content"].strip()
-            visible = json.dumps(_visible_completion(body)).lower()
-            assert "degraded" not in visible
-            assert "partial" not in visible
-            _assert_public_surface_safe(_visible_completion(body))
+            _assert_success_surface_safe(_visible_completion(body))
             projected = await _assert_terminal_run_surfaces(
                 client, server, body["run_id"], status="succeeded"
             )
@@ -554,6 +617,7 @@ async def test_malformed_rerank_keeps_stable_fallback_out_of_merged_cache(
         assert not any(
             "_retrieve_cached" in func_id for func_id in cache_counts
         )
+    _assert_process_logs_safe(upstream, server)
 
 
 async def test_trailing_assistant_is_rejected_before_retrieval(
@@ -579,6 +643,7 @@ async def test_trailing_assistant_is_rejected_before_retrieval(
         snapshot = await _snapshot(upstream)
         assert snapshot["retrieve"]["calls"] == {}
         assert snapshot["provider"]["calls"] == 0
+    _assert_process_logs_safe(upstream, server)
 
 
 async def test_no_match_is_a_success_without_fake_references(
@@ -601,9 +666,10 @@ async def test_no_match_is_a_success_without_fake_references(
             body = response.json()
             assert body["choices"][0]["message"]["content"].strip()
             assert body.get("formatted", {}).get("references", []) == []
-            serialized = json.dumps(_visible_completion(body)).lower()
+            visible = _visible_completion(body)
+            serialized = json.dumps(visible).lower()
             assert "no_match" not in serialized
-            assert "partial" not in serialized
+            _assert_success_surface_safe(visible)
             projected = await _assert_terminal_run_surfaces(
                 client, server, body["run_id"], status="succeeded"
             )
@@ -613,65 +679,128 @@ async def test_no_match_is_a_success_without_fake_references(
         assert not any(
             "retrieve" in func_id for func_id in _cache_counts(cache_path)
         )
+    _assert_process_logs_safe(upstream, server)
+
+
+@dataclass
+class _LiveSseConnection:
+    """Own one raw SSE socket until its deterministic TCP reset."""
+
+    reader: asyncio.StreamReader
+    writer: asyncio.StreamWriter
+    run_id: str
+    closed: bool = False
+
+    async def reset(self) -> None:
+        """Issue one RST and await local writer closure."""
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            raw_socket = self.writer.get_extra_info("socket")
+            assert raw_socket is not None
+            raw_socket.setsockopt(
+                socket.SOL_SOCKET,
+                socket.SO_LINGER,
+                struct.pack("ii", 1, 0),
+            )
+        finally:
+            self.writer.transport.abort()
+            self.writer.close()
+            with suppress(ConnectionError, OSError, TimeoutError):
+                await asyncio.wait_for(self.writer.wait_closed(), timeout=1.0)
+
+
+def _run_id_from_first_frame(frame: bytes) -> str:
+    """Read only the synthetic RunStarted identity from one SSE frame."""
+    data_lines = [
+        line.removeprefix(b"data: ")
+        for line in frame.splitlines()
+        if line.startswith(b"data: ")
+    ]
+    assert len(data_lines) == 1
+    payload = json.loads(data_lines[0])
+    assert payload.get("type") == "RunStarted"
+    run_id = payload.get("run_id")
+    assert isinstance(run_id, str) and run_id
+    return run_id
+
+
+async def _open_live_sse_connection(
+    server: ApiServer,
+    *,
+    query: str,
+) -> _LiveSseConnection:
+    """Open one authenticated raw SSE socket with failure-safe ownership."""
+    parsed = urlsplit(server.base_url)
+    assert parsed.hostname == "127.0.0.1"
+    assert parsed.port is not None
+    writer: asyncio.StreamWriter | None = None
+    try:
+        reader, writer = await asyncio.open_connection(
+            parsed.hostname, parsed.port
+        )
+        request_body = json.dumps(
+            {
+                "model": "phyto-knowledge",
+                "messages": [{"role": "user", "content": query}],
+                "stream": True,
+            },
+            separators=(",", ":"),
+        ).encode()
+        request_head = (
+            "POST /v1/chat/completions HTTP/1.1\r\n"
+            f"Host: {parsed.hostname}:{parsed.port}\r\n"
+            f"Authorization: Bearer {server.api_key}\r\n"
+            "Content-Type: application/json\r\n"
+            f"Content-Length: {len(request_body)}\r\n"
+            "Connection: close\r\n\r\n"
+        ).encode()
+        writer.write(request_head + request_body)
+        await writer.drain()
+        response_head = await asyncio.wait_for(
+            reader.readuntil(b"\r\n\r\n"), timeout=5.0
+        )
+        assert response_head.startswith(b"HTTP/1.1 200")
+        first_frame = await asyncio.wait_for(
+            reader.readuntil(b"\n\n"), timeout=5.0
+        )
+        return _LiveSseConnection(
+            reader=reader,
+            writer=writer,
+            run_id=_run_id_from_first_frame(first_frame),
+        )
+    except BaseException:
+        if writer is not None:
+            writer.close()
+            with suppress(ConnectionError, OSError, TimeoutError):
+                await asyncio.wait_for(writer.wait_closed(), timeout=1.0)
+        raise
 
 
 async def _reset_live_sse_connection(
     server: ApiServer,
     upstream: KnowledgeUpstream,
-) -> None:
-    """Open one real SSE socket and reset it after retrieval starts."""
-    parsed = urlsplit(server.base_url)
-    assert parsed.hostname == "127.0.0.1"
-    assert parsed.port is not None
-    reader, writer = await asyncio.open_connection(
-        parsed.hostname, parsed.port
+) -> str:
+    """Open one real SSE socket and always reset it after retrieval starts."""
+    connection = await _open_live_sse_connection(
+        server,
+        query=_CANCELLATION_QUERY,
     )
-    request_body = json.dumps(
-        {
-            "model": "phyto-knowledge",
-            "messages": [{"role": "user", "content": _CANCELLATION_QUERY}],
-            "stream": True,
-        },
-        separators=(",", ":"),
-    ).encode()
-    request_head = (
-        "POST /v1/chat/completions HTTP/1.1\r\n"
-        f"Host: {parsed.hostname}:{parsed.port}\r\n"
-        f"Authorization: Bearer {server.api_key}\r\n"
-        "Content-Type: application/json\r\n"
-        f"Content-Length: {len(request_body)}\r\n"
-        "Connection: close\r\n\r\n"
-    ).encode()
-    writer.write(request_head + request_body)
-    await writer.drain()
-    response_head = await asyncio.wait_for(
-        reader.readuntil(b"\r\n\r\n"), timeout=5.0
-    )
-    assert response_head.startswith(b"HTTP/1.1 200")
-    first_frame = await asyncio.wait_for(
-        reader.readuntil(b"\n\n"), timeout=5.0
-    )
-    assert b"RunStarted" in first_frame
-
-    started = await _wait_for_snapshot(
-        upstream,
-        lambda value: value.get("cancellation", {}).get("active") == 2,
-    )
-    assert started["cancellation"] == {
-        "started": 2,
-        "active": 2,
-        "cancelled": 0,
-        "completed": 0,
-    }
-
-    raw_socket = writer.get_extra_info("socket")
-    assert raw_socket is not None
-    raw_socket.setsockopt(
-        socket.SOL_SOCKET,
-        socket.SO_LINGER,
-        struct.pack("ii", 1, 0),
-    )
-    writer.transport.abort()
+    try:
+        started = await _wait_for_snapshot(
+            upstream,
+            lambda value: value.get("cancellation", {}).get("active") == 2,
+        )
+        assert started["cancellation"] == {
+            "started": 2,
+            "active": 2,
+            "cancelled": 0,
+            "completed": 0,
+        }
+        return connection.run_id
+    finally:
+        await connection.reset()
 
 
 async def test_http_stream_cancellation_closes_retrieval_and_never_succeeds(
@@ -710,3 +839,96 @@ async def test_http_stream_cancellation_closes_retrieval_and_never_succeeds(
             "completed": 0,
         }
         assert _cache_counts(cache_path) == {}
+    _assert_process_logs_safe(upstream, server)
+
+
+async def test_cancelling_one_of_two_live_http_streams_is_isolated(
+    tmp_path: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """A TCP reset for stream A leaves simultaneous stream B running."""
+    with _boot_case("complete", tmp_path, tmp_path_factory) as (
+        upstream,
+        server,
+        cache_path,
+    ):
+        stream_a, stream_b = await asyncio.gather(
+            _open_live_sse_connection(
+                server,
+                query=_CANCELLATION_QUERY,
+            ),
+            _open_live_sse_connection(
+                server,
+                query=_CONCURRENT_CANCELLATION_QUERY,
+            ),
+        )
+        try:
+            started = await _wait_for_snapshot(
+                upstream,
+                lambda value: (
+                    value.get("cancellation", {}).get("active") == 4
+                ),
+            )
+            assert started["cancellation"] == {
+                "started": 4,
+                "active": 4,
+                "cancelled": 0,
+                "completed": 0,
+            }
+
+            await stream_a.reset()
+            isolated = await _wait_for_snapshot(
+                upstream,
+                lambda value: (
+                    value.get("cancellation", {}).get("active") == 2
+                    and value.get("cancellation", {}).get("cancelled") == 2
+                ),
+            )
+            assert isolated["cancellation"] == {
+                "started": 4,
+                "active": 2,
+                "cancelled": 2,
+                "completed": 0,
+            }
+
+            async with make_async_client(server) as client:
+                await _wait_for_run_status(
+                    client,
+                    server,
+                    stream_a.run_id,
+                    status="failed",
+                )
+                stream_b_detail = await client.get(
+                    f"/v1/runs/{stream_b.run_id}",
+                    headers=auth_header(server),
+                )
+                assert stream_b_detail.status_code == 200
+                stream_b_body = stream_b_detail.json()
+                _assert_public_surface_safe(stream_b_body)
+                assert stream_b_body["status"] == "running"
+                assert stream_b.writer.is_closing() is False
+        finally:
+            await asyncio.gather(stream_a.reset(), stream_b.reset())
+
+        cancelled = await _wait_for_snapshot(
+            upstream,
+            lambda value: (
+                value.get("cancellation", {}).get("active") == 0
+                and value.get("cancellation", {}).get("cancelled") == 4
+            ),
+        )
+        assert cancelled["cancellation"] == {
+            "started": 4,
+            "active": 0,
+            "cancelled": 4,
+            "completed": 0,
+        }
+        async with make_async_client(server) as client:
+            await _wait_for_run_status(
+                client,
+                server,
+                stream_b.run_id,
+                status="failed",
+            )
+        assert _cache_counts(cache_path) == {}
+    _assert_process_logs_safe(upstream, server)
