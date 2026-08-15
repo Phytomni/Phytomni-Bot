@@ -1,0 +1,112 @@
+{
+  "attachment": {
+    "fields": [
+      {
+        "name": "asset_id",
+        "required": true,
+        "type": "string"
+      }
+    ]
+  },
+  "create": {
+    "request": {
+      "fields": [
+        {
+          "name": "content_type",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "idempotency_key",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "last_modified_ms",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "name": "purpose",
+          "required": true,
+          "type": "literal"
+        },
+        {
+          "name": "size_bytes",
+          "required": true,
+          "type": "integer"
+        }
+      ]
+    },
+    "response": {
+      "fields": [
+        {
+          "name": "asset_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "max_parallel_parts",
+          "required": true,
+          "type": "integer"
+        },
+        {
+          "name": "part_count",
+          "required": true,
+          "type": "integer"
+        },
+        {
+          "name": "part_size_bytes",
+          "required": true,
+          "type": "integer"
+        },
+        {
+          "name": "protocol",
+          "required": true,
+          "type": "literal"
+        },
+        {
+          "name": "session_expires_at",
+          "required": true,
+          "type": "date-time"
+        },
+        {
+          "name": "status",
+          "required": true,
+          "type": "literal"
+        }
+      ]
+    }
+  },
+  "protocol": "obs-multipart-v2",
+  "protocol_version": 2,
+  "renew": {
+    "request": {
+      "fields": []
+    },
+    "response": {
+      "fields": [
+        {
+          "name": "asset_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "protocol",
+          "required": true,
+          "type": "literal"
+        },
+        {
+          "name": "session_expires_at",
+          "required": true,
+          "type": "date-time"
+        },
+        {
+          "name": "status",
+          "required": true,
+          "type": "literal"
+        }
+      ]
+    }
+  }
+}

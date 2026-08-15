@@ -1,6 +1,6 @@
 {
   "protocol": "obs-multipart-v2",
-  "fixture_version": "2026-08-05",
+  "fixture_version": "2026-08-15",
   "files": {
     "abort_response.json": "61af084446e79e0900f4ae1db9529af32ff47f2732690f6f73689d419692c962",
     "capability.json": "b8317dab6e3dafa3c35324e5f12e31c50823e6a8eed07011c4a0eb14e61a91cf",
@@ -12,6 +12,7 @@
     "head_response.json": "fe5d58e364a17b22885d5bb05c1ebb69431b95136bcbfa9eaa39d3a6a59c05a2",
     "part_response.json": "a4c0b1a4a30999cd68e629036de0f177c3d578597c4e2fa5b3bee122209a742e",
     "renew_request.json": "a28a4207b6222b1a6ca68aa5fbc0faa1046f78132a58caed912b2b9096a41975",
-    "renew_response.json": "1838e6e4e3037130b54730a5202c5cdb03d2d6244f192c9c35a7d8486c23ae49"
+    "renew_response.json": "1838e6e4e3037130b54730a5202c5cdb03d2d6244f192c9c35a7d8486c23ae49",
+    "resumable_upload_v2.json": "d950665464776761e15920c04f76c4afc56630d5fe94e4fd9216149d9165d979"
   }
 }
