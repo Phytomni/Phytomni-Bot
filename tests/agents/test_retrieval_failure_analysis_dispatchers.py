@@ -43,6 +43,13 @@ from mcp_server_phytomni.agents.research.agent import (
 from mcp_server_phytomni.agents.shared import remote_analysis
 from mcp_server_phytomni.config.defaults import AnalystConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from mcp_server_phytomni.mcp.formatting.dispatch import format_tool_result
+from mcp_server_phytomni.runtime.request_context import (
+    current_accepted_task_ids,
+    request_context,
+)
+from mcp_server_phytomni.runtime.run_registry import RunRegistry
+from mcp_server_phytomni.runtime.submit_recorder import records_submission
 from tests.agents._subgraph_branch_fakes import install_chat_subgraph_mocks
 from tests.agents.test_knowledge_failure_consumers import (
     assert_no_task_rows,
@@ -70,6 +77,8 @@ _SENSITIVE_DETAIL = "provider credential must remain private"
 _ANALYST_BUILDER = (
     "mcp_server_phytomni.agents.analyst.core.build_knowledge_app"
 )
+_ANALYST_RECORDER_AGENT = "analyst"
+_ANALYST_TOOL_NAME = "AnalystAgent"
 
 
 @dataclass
@@ -302,6 +311,36 @@ def _assert_no_dispatch_side_effects(db_path: Path, output_dir: str) -> None:
     assert not Path(output_dir).exists()
 
 
+async def _record_and_format_consumer(
+    invoke: Callable[[], Awaitable[dict[str, Any]]],
+    projection: Mock,
+) -> Any:
+    """Run one real consumer through the recorder then final formatter."""
+
+    async def adapter(_args: Any) -> dict[str, Any]:
+        """Adapt the focused consumer seam to a submit-handler shape."""
+        return await invoke()
+
+    raw = await records_submission(_ANALYST_RECORDER_AGENT)(adapter)(
+        SimpleNamespace()
+    )
+    return projection(_ANALYST_TOOL_NAME, raw)
+
+
+def _assert_no_recorded_terminal_projection(
+    db_path: Path,
+    projection: Mock,
+) -> None:
+    """Assert rejected work never reaches acceptance or terminal projection."""
+    assert current_accepted_task_ids() == ()
+    runs = RunRegistry(str(db_path)).list_runs(owner="anonymous")
+    for run in runs:
+        assert run.status not in {"running", "succeeded"}
+        assert not run.task_ids
+        assert run.result is None
+    projection.assert_not_called()
+
+
 @pytest.fixture(autouse=True)
 def _isolate_dispatch_storage(
     tmp_path: Path,
@@ -439,3 +478,95 @@ async def test_boundary_cancellation_propagates_without_side_effects(
         harness.tool_retrieve.assert_awaited_once()
         harness.upload_submit_meta.assert_awaited_once()
         harness.post_submit_job.assert_awaited_once()
+
+
+@pytest.mark.parametrize("consumer", _CONSUMERS)
+async def test_retrieval_rejection_skips_recorder_and_final_projection(
+    consumer: Consumer,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A retrieval failure cannot mint an accepted run or terminal output."""
+    harness = _build_preset_plan_harness(
+        monkeypatch,
+        failure_boundary="retrieval",
+    )
+    output_dir = str(tmp_path / consumer / "run" / "children" / "part-001")
+    invoke = _build_consumer(consumer, harness.agent, output_dir, monkeypatch)
+    projection = Mock(wraps=format_tool_result)
+
+    with request_context("anonymous", f"request-{consumer}-failure"):
+        with pytest.raises(McpError, match=_SAFE_ERRORS["retrieval"]):
+            await _record_and_format_consumer(invoke, projection)
+        _assert_no_recorded_terminal_projection(
+            tmp_path / "tasks.sqlite", projection
+        )
+
+    assert harness.events == ["tool_extract_chat", "tool_usage_retrieval"]
+    harness.upload_submit_meta.assert_not_awaited()
+    harness.post_submit_job.assert_not_awaited()
+    _assert_no_dispatch_side_effects(tmp_path / "tasks.sqlite", output_dir)
+
+
+@pytest.mark.parametrize("consumer", _CONSUMERS)
+async def test_retrieval_cancellation_skips_recorder_and_final_projection(
+    consumer: Consumer,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cancellation cannot mint an accepted run or terminal output."""
+    harness = _build_preset_plan_harness(
+        monkeypatch,
+        failure_boundary="retrieval",
+        cancellation=True,
+    )
+    output_dir = str(tmp_path / consumer / "run" / "children" / "part-001")
+    invoke = _build_consumer(consumer, harness.agent, output_dir, monkeypatch)
+    projection = Mock(wraps=format_tool_result)
+
+    with request_context("anonymous", f"request-{consumer}-cancel"):
+        with pytest.raises(asyncio.CancelledError):
+            await _record_and_format_consumer(invoke, projection)
+        _assert_no_recorded_terminal_projection(
+            tmp_path / "tasks.sqlite", projection
+        )
+
+    assert harness.events == ["tool_extract_chat", "tool_usage_retrieval"]
+    harness.upload_submit_meta.assert_not_awaited()
+    harness.post_submit_job.assert_not_awaited()
+    _assert_no_dispatch_side_effects(tmp_path / "tasks.sqlite", output_dir)
+
+
+@pytest.mark.parametrize("consumer", _CONSUMERS)
+async def test_partial_retrieval_records_once_before_final_projection(
+    consumer: Consumer,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Partial evidence records one accepted submission before formatting."""
+    harness = _build_preset_plan_harness(monkeypatch)
+    output_dir = str(tmp_path / consumer / "run" / "children" / "part-001")
+    invoke = _build_consumer(consumer, harness.agent, output_dir, monkeypatch)
+    projection = Mock(wraps=format_tool_result)
+
+    with request_context("anonymous", f"request-{consumer}-partial"):
+        formatted = await _record_and_format_consumer(invoke, projection)
+        accepted_task_ids = current_accepted_task_ids()
+
+    assert harness.events == [
+        "tool_extract_chat",
+        "tool_usage_retrieval",
+        "upload_boundary",
+        "remote_submit",
+    ]
+    harness.upload_submit_meta.assert_awaited_once()
+    harness.post_submit_job.assert_awaited_once()
+    assert accepted_task_ids == ("accepted-preset-task",)
+    projection.assert_called_once()
+    assert "No Data" not in formatted.answer
+    runs = RunRegistry(str(tmp_path / "tasks.sqlite")).list_runs(
+        owner="anonymous"
+    )
+    assert len(runs) == 1
+    assert runs[0].status == "running"
+    assert runs[0].task_ids == ("accepted-preset-task",)

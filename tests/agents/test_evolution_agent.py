@@ -200,6 +200,77 @@ async def test_find_spa_taxids_rejects_non_2xx_valid_payload(
     assert "9606" not in str(exc_info.value)
 
 
+async def test_find_spa_taxids_returns_empty_for_valid_direct_zero_result(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+) -> None:
+    """A valid direct zero-result payload is the sole empty-result path."""
+
+    async def fake_get_token(**_kwargs: Any) -> str:
+        """Return a deterministic IAM token."""
+        return "fake-iam-token"
+
+    monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
+    outbound_runtime.transport.enqueue(content=b'{"total":0,"records":[]}')
+
+    assert (
+        await evolution_agent.find_spa_taxids(
+            "Arabidopsis", request_timeout=1.0
+        )
+        == []
+    )
+
+
+async def test_find_spa_taxids_returns_empty_for_valid_relay_zero_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A valid relay zero-result payload preserves the no-match outcome."""
+    monkeypatch.setattr(evolution_agent, "relay_mode_enabled", lambda: True)
+
+    async def get_json(_path: str, **_kwargs: Any) -> dict[str, Any]:
+        """Return a structurally valid zero-result taxonomy response."""
+        return {"total": 0, "records": []}
+
+    monkeypatch.setattr(
+        evolution_agent,
+        "current_relay_client",
+        lambda: SimpleNamespace(get_json=get_json),
+    )
+
+    assert (
+        await evolution_agent.find_spa_taxids(
+            "Arabidopsis", request_timeout=1.0
+        )
+        == []
+    )
+
+
+async def test_find_spa_taxids_rejects_direct_invalid_json(
+    monkeypatch: pytest.MonkeyPatch,
+    outbound_runtime: Any,
+) -> None:
+    """Malformed direct JSON uses the fixed redacted failure contract."""
+
+    async def fake_get_token(**_kwargs: Any) -> str:
+        """Return a deterministic IAM token."""
+        return "fake-iam-token"
+
+    monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
+    outbound_runtime.transport.enqueue(
+        content=b"not-json species-secret token-secret"
+    )
+
+    with pytest.raises(
+        McpError, match="Evolution taxonomy lookup temporarily unavailable"
+    ) as exc_info:
+        await evolution_agent.find_spa_taxids(
+            "species-secret", request_timeout=1.0
+        )
+
+    assert "species-secret" not in str(exc_info.value)
+    assert "token-secret" not in str(exc_info.value)
+
+
 @pytest.mark.parametrize(
     "payload",
     [
