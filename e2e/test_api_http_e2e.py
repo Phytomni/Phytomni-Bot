@@ -416,7 +416,22 @@ async def test_review_completion(
     )
 
     assert resp.status_code == 200, resp.text
-    sections = section_count(_completion_text(resp.json()))
+    body = resp.json()
+    if "choices" in body:
+        completion_text = _completion_text(body)
+    else:
+        assert body.get("status") == "input_required", body
+        thread_id = body.get("run_id") or body["interrupt"]["thread_id"]
+        resumed = await api_client.post(
+            f"/v1/runs/{thread_id}/resume",
+            json={"approved": True, "edits": ""},
+            headers=_auth(api_server),
+        )
+        assert resumed.status_code == 200, resumed.text
+        result = resumed.json().get("result") or {}
+        formatted = result.get("formatted") or {}
+        completion_text = markdown_body(formatted.get("answer", ""))
+    sections = section_count(completion_text)
     assert sections >= MIN_REVIEW_SECTIONS, (
         f"phyto-review had only {sections} markdown sections "
         f"(expected >= {MIN_REVIEW_SECTIONS})"
