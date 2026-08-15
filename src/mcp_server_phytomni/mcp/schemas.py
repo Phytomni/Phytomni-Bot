@@ -711,12 +711,12 @@ class PhytomniAgents(StrEnum):
 
     CHAT_AGENT = "ChatAgent"
     CHAT_AGENT_DESCRIPTION = (
-        "Use for direct conversational responses, general explanations, "
-        "rewriting, translation, calculation, or plant-science questions "
-        "that the base model can answer without external evidence or "
-        "structured data. Return an immediate answer; do not choose this "
-        "for literature retrieval, broad review production, database "
-        "queries, gene-specific reports, or computational task submission."
+        "Choose ChatAgent for immediate self-contained assistance such as "
+        "calculations, unit or time conversion, rewriting, translation, or "
+        "general explanations. For these direct requests, always select "
+        "ChatAgent and pass the full request as user_query. Do not use it for "
+        "literature retrieval, exact database results, gene reports, broad "
+        "reviews, paper replication, or computational workflows."
     )
     KNOWLEDGE_AGENT = "KnowledgeAgent"
     KNOWLEDGE_AGENT_DESCRIPTION = (
@@ -739,21 +739,26 @@ class PhytomniAgents(StrEnum):
     )
     ANALYST_AGENT = "AnalystAgent"
     ANALYST_AGENT_DESCRIPTION = (
-        "Use when the user defines a bioinformatics or "
-        "computational-biology analysis goal to plan and submit, usually "
-        "with sequence, omics, phenotype, or other input datasets. Execute "
-        "the requested workflow; do not choose this for reproducing a "
-        "named paper's analysis, fixed gene or trait pipelines, literature "
-        "answers, or database lookup."
+        "Select AnalystAgent for any request to perform or run a "
+        "bioinformatics analysis. It accepts a research goal plus optional "
+        "datasets; when the "
+        "user says data are provided but no OBS path is present, still select "
+        "this tool and use data_list={} rather than answering directly. Use "
+        "it "
+        "for co-expression, differential expression, enrichment, sequencing, "
+        "phylogeny, variant, and peak analyses. Do not use it for paper "
+        "replication, literature, database facts, gene reports, design, or "
+        "trait networks."
     )
     REVIEW_AGENT = "ReviewAgent"
     REVIEW_AGENT_DESCRIPTION = (
-        "Use when the user requests a broad, multi-section literature "
-        "review or report that requires planning, retrieval, synthesis, "
-        "critique, and revision across a topic. Produce an extensive "
-        "review; do not choose this for a focused evidence-backed "
-        "question, direct database facts, paper-analysis reproduction, or "
-        "computational task submission."
+        "Choose ReviewAgent for a broad, comprehensive, multi-study "
+        "scientific review or report. This includes cross-process questions "
+        "about how multiple hormones, stresses, traits, technologies, or "
+        "mechanisms affect a topic and requests for comparison, synthesis, "
+        "critique, or future directions. Do not use it for one focused "
+        "evidence question, exact database data, a single-gene report, paper "
+        "replication, or workflow execution."
     )
     BRIEF_GENE_AGENT = "BriefGeneAgent"
     BRIEF_GENE_AGENT_DESCRIPTION = (
@@ -775,12 +780,13 @@ class PhytomniAgents(StrEnum):
     )
     IN_SILICO_RESEARCH_AGENT = "InSilicoResearchAgent"
     IN_SILICO_RESEARCH_AGENT_DESCRIPTION = (
-        "Use when the user asks to reproduce, replicate, or "
-        "computationally reanalyze a paper or study, or to decompose its "
-        "methods and results into executable research objectives. Submit "
-        "paper-driven analysis tasks whether or not datasets are already "
-        "supplied; do not choose this merely to explain, summarize, "
-        "retrieve, or broadly review the paper."
+        "Choose InSilicoResearchAgent whenever the user asks to replicate, "
+        "reproduce, or reanalyze the data analysis, methods, or results of a "
+        "named article or paper. Decompose the study into executable "
+        "computational research objectives and submit the paper-driven tasks, "
+        "with or without supplied datasets. Do not use it for a literature "
+        "summary, broad review, exact database facts, gene report, or "
+        "unrelated workflow."
     )
     DIGITAL_DESIGN_AGENT = "DigitalDesignAgent"
     DIGITAL_DESIGN_AGENT_DESCRIPTION = (
