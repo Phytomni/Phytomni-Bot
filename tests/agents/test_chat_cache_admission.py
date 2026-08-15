@@ -8,7 +8,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, cast
 
-import httpx
+import httpx2 as httpx
 import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR
