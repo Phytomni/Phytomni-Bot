@@ -62,9 +62,9 @@ class DeepResearchState(ParallelDispatchState):
     Inherits ParallelDispatchState so review participates in the
     universal ``failures`` channel (operator.add concat across N
     concurrent Send workers) alongside design / network / research.
-    Adds 12 review-specific fields organized into three groups:
-    7 Send-payload transient fields, 4 indexed_results accumulators,
-    and 1 final ordered output field written by reduce_node.
+    Four fan-out sites use indexed-result accumulators, while retrieval
+    has a separate private failed-index accumulator. Reduce nodes write
+    the corresponding ordered outputs after every worker is classified.
 
     Carries every key both ``DeepResearchInput`` and
     ``DeepResearchOutput`` expose plus internal scratch (raw doc

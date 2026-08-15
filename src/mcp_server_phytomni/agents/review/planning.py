@@ -234,16 +234,10 @@ class ReviewPlanningMixin:
 
         Mirrors the POST-gather logic in the legacy retrieve_node.
         Reads state["retrieve_indexed_results"] (accumulated
-        (task_index, docs) tuples), state["research_dimensions"],
-        and state["total_length"]; writes all_raw_doc_list,
-        dimension_params, and total_length.
+        (task_index, docs) tuples), state["retrieve_failed_indices"],
+        state["research_dimensions"], and state["total_length"];
+        writes all_raw_doc_list, dimension_params, and total_length.
         """
-        emit_progress(
-            "retrieving",
-            len(state.get("retrieve_indexed_results", [])),
-            total=len(state.get("research_dimensions", [])),
-            detail="reducing retrieved dimensions",
-        )
         dimensions = state["research_dimensions"]
         expected_indices = set(range(len(dimensions)))
         indexed_by_index: dict[int, list[dict[str, Any]]] = {}
@@ -282,6 +276,13 @@ class ReviewPlanningMixin:
             raise RetrievalProtocolError(
                 "Review retrieval index contract violated"
             )
+
+        emit_progress(
+            "retrieving",
+            len(indexed_by_index) + len(failed_set),
+            total=len(dimensions),
+            detail="reducing retrieved dimensions",
+        )
 
         reliable_doc_count = sum(
             len(docs) for docs in indexed_by_index.values()

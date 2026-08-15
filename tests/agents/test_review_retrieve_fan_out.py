@@ -23,6 +23,7 @@ from mcp.shared.exceptions import McpError
 from mcp_server_phytomni.agents.knowledge.retrieval_result import (
     RetrievalProtocolError,
 )
+from mcp_server_phytomni.agents.review import planning as review_planning
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.agents.review.state import DeepResearchState
 from mcp_server_phytomni.config.defaults import ReviewConfig
@@ -269,6 +270,39 @@ async def test_retrieve_reduce_node_partial_failure_still_produces_n_params(
     assert params[0]["subtopic"] == "d0"
     assert params[1]["subtopic"] == "d1"
     assert params[2]["subtopic"] == "d2"
+
+
+async def test_retrieve_reduce_progress_counts_every_classified_dimension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Progress counts successful and failed dimensions after validation."""
+    events: list[tuple[str, int, int | None, str | None]] = []
+
+    def capture_progress(
+        phase: str,
+        current: int,
+        total: int | None = None,
+        detail: str | None = None,
+    ) -> None:
+        events.append((phase, current, total, detail))
+
+    monkeypatch.setattr(review_planning, "emit_progress", capture_progress)
+    agent = _build_agent(monkeypatch)
+    state = cast(
+        DeepResearchState,
+        {
+            "research_dimensions": ["d0", "d1", "d2"],
+            "total_length": 0,
+            "retrieve_indexed_results": [
+                (1, [{"title": "D1", "content": "reliable"}])
+            ],
+            "retrieve_failed_indices": [0, 2],
+        },
+    )
+
+    await agent.retrieve_reduce_node(state)
+
+    assert events == [("retrieving", 3, 3, "reducing retrieved dimensions")]
 
 
 async def test_retrieve_reduce_rejects_missing_dimension(

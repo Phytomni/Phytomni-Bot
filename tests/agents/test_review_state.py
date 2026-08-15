@@ -54,7 +54,7 @@ def test_review_state_carries_send_transient_fields() -> None:
 
 
 def test_review_state_carries_indexed_accumulators() -> None:
-    """4 fan-out sites each have their indexed_results accumulator."""
+    """Four indexed-result streams plus retrieval failure state are typed."""
     hints = get_type_hints(DeepResearchState, include_extras=True)
     for key in [
         "retrieve_indexed_results",
