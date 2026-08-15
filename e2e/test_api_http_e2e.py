@@ -33,7 +33,7 @@ from .helpers.assertions import (
     GENE_ID,
     MIN_REVIEW_SECTIONS,
     PHOTOSYNTHESIS_KEYWORDS,
-    WHEAT_DROUGHT_KEYWORDS,
+    EPIGENETIC_DROUGHT_KEYWORDS,
     markdown_body,
     section_count,
 )
@@ -371,7 +371,7 @@ async def test_knowledge_completion(
     api_server: ApiServer,
     demo_data_dir: Path,
 ) -> None:
-    """``phyto-knowledge`` answers the wheat-drought query.
+    """``phyto-knowledge`` answers the epigenetic-drought query.
 
     Args:
         api_client: Bound async HTTP client.
@@ -388,10 +388,10 @@ async def test_knowledge_completion(
     text = _completion_text(resp.json())
     assert text.strip(), "phyto-knowledge returned empty content"
     lowered = text.lower()
-    matched = [k for k in WHEAT_DROUGHT_KEYWORDS if k in lowered]
+    matched = [k for k in EPIGENETIC_DROUGHT_KEYWORDS if k in lowered]
     assert matched, (
         f"phyto-knowledge missed every keyword "
-        f"{WHEAT_DROUGHT_KEYWORDS}; got: {lowered!r}"
+        f"{EPIGENETIC_DROUGHT_KEYWORDS}; got: {lowered!r}"
     )
 
 
@@ -400,7 +400,7 @@ async def test_review_completion(
     api_server: ApiServer,
     demo_data_dir: Path,
 ) -> None:
-    """``phyto-review`` produces a multi-section drought review.
+    """``phyto-review`` produces a multi-section scRNA-seq review.
 
     ~10 min: the synchronous endpoint blocks until ReviewAgent finishes.
 

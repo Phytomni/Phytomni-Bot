@@ -252,13 +252,13 @@ async def test_knowledge_and_data_agents_use_platform_pools(
 ) -> None:
     """Exercise retrieve/rerank and NL2SQL on the same API runtime."""
     knowledge_query = (
-        "Which gene families and signalling pathways are most strongly "
-        "implicated in drought tolerance in wheat? Mention two loci."
+        "How do epigenetic modifications, such as DNA methylation and "
+        "histone modifications, regulate adaptive responses to drought "
+        "stress in crops?"
     )
     data_payload = {
         "user_query": (
-            "What are the homologous genes of Os01g0177400 in wheat? "
-            "List up to ten orthologs with gene IDs and identity scores."
+            "Please list the transcript ID of Os01g0177400 in rice."
         )
     }
 

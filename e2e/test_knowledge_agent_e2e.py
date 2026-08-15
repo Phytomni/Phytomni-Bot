@@ -7,8 +7,8 @@ Covers two variants in one file:
 
 * ``test_knowledge_agent_e2e_returns_evidence_backed_answer`` -- runs
   the committed ``knowledge_agent.json`` payload as-is (no file
-  upload) and asserts the answer mentions at least one of the wheat
-  drought-tolerance keywords.
+  upload) and asserts the answer mentions at least one of the
+  epigenetic-drought keywords.
 * ``test_knowledge_agent_e2e_with_uploaded_brief`` -- injects the
   published brief PDF into ``obs_file_list`` and asserts the answer
   still ends up non-empty (the retrieval path with an uploaded doc is
@@ -47,7 +47,7 @@ async def test_knowledge_agent_e2e_returns_evidence_backed_answer(
     mcp_client: PhytomniMcpClient,
     load_payload: Callable[[str], dict[str, Any]],
 ) -> None:
-    """KnowledgeAgent answers the wheat drought query with cue words.
+    """KnowledgeAgent answers the epigenetic-drought query with cue words.
 
     Args:
         mcp_client: Session-scoped MCP client.

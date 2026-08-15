@@ -3,9 +3,10 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Live e2e test for ``ReviewAgent`` over the stdio MCP client.
 
-Submits the committed ``review_agent.json`` payload (a sorghum drought
-review request) and asserts the resulting answer contains at least
-three top-level markdown section headers, which is the report shape
+Submits the committed ``review_agent.json`` payload (an scRNA-seq
+stress-heterogeneity review request) and asserts the resulting
+answer contains at least three top-level markdown section headers,
+which is the report shape
 the agent's prompt template targets and the easiest signal that the
 multi-section drafting path ran end-to-end.
 """
@@ -29,7 +30,7 @@ async def test_review_agent_e2e_returns_multi_section_review(
     mcp_client: PhytomniMcpClient,
     load_payload: Callable[[str], dict[str, Any]],
 ) -> None:
-    """ReviewAgent produces a multi-section sorghum drought review.
+    """ReviewAgent produces a multi-section scRNA-seq stress review.
 
     Args:
         mcp_client: Session-scoped MCP client.

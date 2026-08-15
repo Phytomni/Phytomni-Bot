@@ -92,50 +92,42 @@ PAYLOADS: dict[str, dict[str, Any]] = {
     "knowledge_agent.json": {
         "obs_file_list": [],
         "user_query": (
-            "Which gene families and signalling pathways are most "
-            "strongly implicated in drought tolerance in wheat "
-            "(Triticum aestivum)? Mention at least two well-studied "
-            "loci and cite the canonical hormonal pathways."
+            "How do epigenetic modifications, such as DNA methylation "
+            "and histone modifications, regulate adaptive responses to "
+            "drought stress in crops?"
         ),
     },
     "data_agent.json": {
         "user_query": (
-            "What are the homologous genes of Os01g0177400 in wheat "
-            "(Triticum aestivum)? List up to ten orthologs with their "
-            "gene IDs and identity scores."
+            "Please list the transcript ID of Os01g0177400 in rice."
         ),
     },
     "analyst_agent.json": {
         "data_list": {
-            f"{DEMO_OBS_PREFIX}/sequences/sample_rep1.fastq.gz": (
-                "Illumina single-end ATAC-seq fastq, 50bp reads, rice "
-                "(Oryza sativa) leaf control replicate 1, for peak "
-                "calling."
+            "/obs/phytomni/agent_data/raw_data/04.benchmark_data/"
+            "07.testbenchmark/epigenetic/callpeak/NIP_genome_final.fa": (
+                "rice genome fasta file"
             ),
-            f"{DEMO_OBS_PREFIX}/sequences/sample_rep2.fastq.gz": (
-                "Illumina single-end ATAC-seq fastq, 50bp reads, rice "
-                "(Oryza sativa) leaf control replicate 2, for peak "
-                "calling."
+            "/obs/phytomni/agent_data/raw_data/04.benchmark_data/"
+            "07.testbenchmark/epigenetic/callpeak/data1_1.fq.gz": (
+                "pair-end 1 chip-seq data for rice"
+            ),
+            "/obs/phytomni/agent_data/raw_data/04.benchmark_data/"
+            "07.testbenchmark/epigenetic/callpeak/data1_2.fq.gz": (
+                "pair-end 2 chip-seq data for rice"
             ),
         },
         "goal_description": (
-            "Run an ATAC-seq peak-calling workflow on these two rice "
-            "leaf control replicates: align reads to the Oryza sativa "
-            "reference, mark duplicates, call peaks with MACS2 in "
-            "narrow-peak mode, and report peak counts plus the QC "
-            "summary."
+            "please help me to perform the callpeak analysis."
         ),
         "obs_file_list": [],
     },
     "review_agent.json": {
         "obs_file_list": [],
         "user_query": (
-            "Write a literature review on drought adaptation mechanisms "
-            "in sorghum (Sorghum bicolor). Cover stomatal regulation, "
-            "osmotic adjustment, root architecture, and "
-            "transcription-factor regulation, comparing field studies "
-            "from the last decade. Aim for around 1000 words, "
-            "structured into clear sections."
+            "How does single-cell RNA sequencing (scRNA-seq) reveal "
+            "the heterogeneous responses of different cell types "
+            "within plant organs to biotic/abiotic stresses?"
         ),
     },
     "brief_gene_agent.json": {
@@ -298,25 +290,25 @@ TOOL_INDEX: tuple[dict[str, str], ...] = (
         "name": "KnowledgeAgent",
         "payload": "payloads/knowledge_agent.json",
         "kind": "sync",
-        "summary": "Evidence-backed wheat drought-tolerance question.",
+        "summary": "Evidence-backed epigenetic drought-response question.",
     },
     {
         "name": "DataAgent",
         "payload": "payloads/data_agent.json",
         "kind": "sync",
-        "summary": "NL2SQL homology lookup for Os01g0177400 in wheat.",
+        "summary": "NL2SQL transcript-ID lookup for Os01g0177400 in rice.",
     },
     {
         "name": "AnalystAgent",
         "payload": "payloads/analyst_agent.json",
         "kind": "async",
-        "summary": "ATAC-seq peak-calling submission on rice replicates.",
+        "summary": "Rice ChIP-seq callpeak on paired FASTQs plus NIP genome.",
     },
     {
         "name": "ReviewAgent",
         "payload": "payloads/review_agent.json",
         "kind": "sync",
-        "summary": "Multi-section sorghum drought literature review.",
+        "summary": "Multi-section scRNA-seq plant-stress heterogeneity review.",
     },
     {
         "name": "BriefGeneAgent",

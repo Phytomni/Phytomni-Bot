@@ -29,13 +29,11 @@ from mcp_server_phytomni.storage.obs_relay_ops import (
 from .polling import TaskState
 
 PHOTOSYNTHESIS_KEYWORDS = ("photosynthesis", "c3", "calvin", "rubisco")
-WHEAT_DROUGHT_KEYWORDS = (
+EPIGENETIC_DROUGHT_KEYWORDS = (
+    "epigenetic",
+    "methylation",
+    "histone",
     "drought",
-    "wheat",
-    "triticum",
-    "aba",
-    "dreb",
-    "snrk",
 )
 GENE_ID = "Os01g0177400"
 ANNOTATION_CUES = (
@@ -120,7 +118,7 @@ def assert_chat_answer(answer: str) -> None:
 
 
 def assert_knowledge_answer(answer: str) -> None:
-    """Assert KnowledgeAgent answer cites wheat drought cue words.
+    """Assert KnowledgeAgent answer cites epigenetic-drought cue words.
 
     Args:
         answer: Raw answer / message-content string from KnowledgeAgent.
@@ -131,10 +129,10 @@ def assert_knowledge_answer(answer: str) -> None:
     assert answer, "KnowledgeAgent answer was empty"
     _assert_no_citation_residue_via_markdown_body(answer)
     lowered = answer.lower()
-    matched = [kw for kw in WHEAT_DROUGHT_KEYWORDS if kw in lowered]
+    matched = [kw for kw in EPIGENETIC_DROUGHT_KEYWORDS if kw in lowered]
     assert matched, (
         f"KnowledgeAgent answer missed every expected keyword "
-        f"({WHEAT_DROUGHT_KEYWORDS}); got: {answer!r}"
+        f"({EPIGENETIC_DROUGHT_KEYWORDS}); got: {answer!r}"
     )
 
 

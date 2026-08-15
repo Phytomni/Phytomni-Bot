@@ -13,10 +13,10 @@ working tree stays clean after a rerun.
 | Tool | Kind | Payload | Summary |
 | --- | --- | --- | --- |
 | ChatAgent | sync | [payloads/chat_agent.json](payloads/chat_agent.json) | General Q&A on C3 photosynthesis (no file upload). |
-| KnowledgeAgent | sync | [payloads/knowledge_agent.json](payloads/knowledge_agent.json) | Evidence-backed wheat drought-tolerance question. |
-| DataAgent | sync | [payloads/data_agent.json](payloads/data_agent.json) | NL2SQL homology lookup for Os01g0177400 in wheat. |
-| AnalystAgent | async | [payloads/analyst_agent.json](payloads/analyst_agent.json) | ATAC-seq peak-calling submission on rice replicates. |
-| ReviewAgent | sync | [payloads/review_agent.json](payloads/review_agent.json) | Multi-section sorghum drought literature review. |
+| KnowledgeAgent | sync | [payloads/knowledge_agent.json](payloads/knowledge_agent.json) | Evidence-backed epigenetic drought-response question. |
+| DataAgent | sync | [payloads/data_agent.json](payloads/data_agent.json) | NL2SQL transcript-ID lookup for Os01g0177400 in rice. |
+| AnalystAgent | async | [payloads/analyst_agent.json](payloads/analyst_agent.json) | Rice ChIP-seq callpeak on paired FASTQs plus NIP genome. |
+| ReviewAgent | sync | [payloads/review_agent.json](payloads/review_agent.json) | Multi-section scRNA-seq plant-stress heterogeneity review. |
 | BriefGeneAgent | sync | [payloads/brief_gene_agent.json](payloads/brief_gene_agent.json) | Gene profile preamble (introduction + Gene Profiles + four analytical sections) for Os01g0177400. |
 | DeepGenomeAgent | async | [payloads/deep_genome_agent.json](payloads/deep_genome_agent.json) | Deep gene-function analysis for Os01g0177400 in osa. |
 | InSilicoResearchAgent | async | [payloads/in_silico_research_agent.json](payloads/in_silico_research_agent.json) | Reproducibility tasks decomposed from the brief PDF. |

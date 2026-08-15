@@ -3,7 +3,8 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Live e2e test for ``AnalystAgent`` with full task polling.
 
-Submits an ATAC-seq peak-calling workflow on two rice replicates via
+Submits a rice ChIP-seq callpeak workflow on paired FASTQs plus the
+NIP genome via
 the stdio MCP client, polls ``server_tasks.db`` until the task reaches
 a terminal status, and asserts that the analyst output directory was
 published on OBS so the regression catches both queue-only completions

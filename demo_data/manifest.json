@@ -42,25 +42,25 @@
       "kind": "sync",
       "name": "KnowledgeAgent",
       "payload": "payloads/knowledge_agent.json",
-      "summary": "Evidence-backed wheat drought-tolerance question."
+      "summary": "Evidence-backed epigenetic drought-response question."
     },
     {
       "kind": "sync",
       "name": "DataAgent",
       "payload": "payloads/data_agent.json",
-      "summary": "NL2SQL homology lookup for Os01g0177400 in wheat."
+      "summary": "NL2SQL transcript-ID lookup for Os01g0177400 in rice."
     },
     {
       "kind": "async",
       "name": "AnalystAgent",
       "payload": "payloads/analyst_agent.json",
-      "summary": "ATAC-seq peak-calling submission on rice replicates."
+      "summary": "Rice ChIP-seq callpeak on paired FASTQs plus NIP genome."
     },
     {
       "kind": "sync",
       "name": "ReviewAgent",
       "payload": "payloads/review_agent.json",
-      "summary": "Multi-section sorghum drought literature review."
+      "summary": "Multi-section scRNA-seq plant-stress heterogeneity review."
     },
     {
       "kind": "sync",

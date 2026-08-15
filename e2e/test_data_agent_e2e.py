@@ -3,8 +3,8 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Live e2e test for ``DataAgent`` over the stdio MCP client.
 
-Submits the committed ``data_agent.json`` payload (an NL2SQL homology
-question about Os01g0177400 orthologs in wheat) and asserts the formatted
+Submits the committed ``data_agent.json`` payload (an NL2SQL request
+for the Os01g0177400 rice transcript ID) and asserts the formatted
 answer contains either a SQL-looking statement or a structured result
 fragment, so the regression catches both blank responses and
 free-text-only completions that bypass the SQL backend.
@@ -34,7 +34,7 @@ async def test_data_agent_e2e_returns_nl2sql_response(
     mcp_client: PhytomniMcpClient,
     load_payload: Callable[[str], dict[str, Any]],
 ) -> None:
-    """DataAgent answers the Os01g0177400 homology query.
+    """DataAgent answers the Os01g0177400 transcript-ID query.
 
     Args:
         mcp_client: Session-scoped MCP client.
