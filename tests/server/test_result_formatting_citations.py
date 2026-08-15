@@ -59,6 +59,24 @@ def test_normalize_citations_captures_multi_index_with_prefix() -> None:
     assert text == "Both findings agree <sup>1,2</sup>."
 
 
+def test_normalize_citations_captures_repeated_document_word_prefixes() -> (
+    None
+):
+    """BriefGene-style ``[document 3, document 4]`` must rewrite to superscripts."""
+
+    answer = (
+        "The locus is drought-linked "
+        "[document 3, document 4, document 6] [annotation]."
+    )
+    doc_list = [
+        {"file_id": f"id{i}", "title": f"Paper {i}"} for i in range(1, 7)
+    ]
+    text, refs = _normalize_citations(answer, doc_list)
+
+    assert [ref["file_id"] for ref in refs] == ["id3", "id4", "id6"]
+    assert text == "The locus is drought-linked <sup>1-3</sup>."
+
+
 def test_normalize_citations_dedups_distinct_indices_to_distinct_refs() -> (
     None
 ):

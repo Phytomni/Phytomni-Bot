@@ -29,11 +29,17 @@ from ._shared import (
 )
 from .models import FormattedToolResult
 
-_CITATION_TOKEN_PATTERN = r"\[(?:[A-Za-z]+[:\s]*)?\d+(?:,\s*\d+)*\]"
-_CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[:\s]*)?(\d+(?:,\s*\d+)*)\]")
+_CITATION_ITEM_PATTERN = r"(?:[A-Za-z]+[:\s]*)?\d+"
+_CITATION_TOKEN_PATTERN = (
+    rf"\[{_CITATION_ITEM_PATTERN}(?:,\s*{_CITATION_ITEM_PATTERN})*\]"
+)
+_CITATION_PATTERN = re.compile(
+    rf"\[({_CITATION_ITEM_PATTERN}(?:,\s*{_CITATION_ITEM_PATTERN})*)\]"
+)
 _CITATION_BLOCK_PATTERN = re.compile(
     rf"{_CITATION_TOKEN_PATTERN}" rf"(?:[ \t]*{_CITATION_TOKEN_PATTERN})*"
 )
+_ANNOTATION_MARKER_PATTERN = re.compile(r"[ \t]*\[annotation\]", re.IGNORECASE)
 _RETRIEVAL_FILE_SUFFIXES = (
     ".pdf",
     ".doc",
@@ -102,7 +108,7 @@ def format_cited_message_result(
     doc_list = tuple(mapping_sequence(message.get("doc_list")))
     if not doc_list:
         return FormattedToolResult(
-            answer=answer,
+            answer=_ANNOTATION_MARKER_PATTERN.sub("", answer),
             follow_up_questions=follow_up_questions(message),
             metadata=metadata,
         )
@@ -165,8 +171,9 @@ def _normalize_citations_detailed(
         compacted = compact_citation_numbers(new_numbers)
         return f"<sup>{compacted}</sup>" if compacted else ""
 
+    rewritten = _CITATION_BLOCK_PATTERN.sub(replace_citation_block, answer)
     return _CitationNormalization(
-        answer=_CITATION_BLOCK_PATTERN.sub(replace_citation_block, answer),
+        answer=_ANNOTATION_MARKER_PATTERN.sub("", rewritten),
         references=tuple(selected_docs),
         metadata_degraded=metadata_degraded,
     )
@@ -187,9 +194,9 @@ def citation_order_for(answer: str) -> tuple[int, ...]:
 def numbers_from_match(match: re.Match[str]) -> tuple[int, ...]:
     """Return numeric citation values from a regex match."""
     numbers: list[int] = []
-    for raw_number in match.group(1).split(","):
+    for raw_number in re.findall(r"\d+", match.group(1)):
         try:
-            numbers.append(int(raw_number.strip()))
+            numbers.append(int(raw_number))
         except ValueError:
             continue
     return tuple(numbers)
