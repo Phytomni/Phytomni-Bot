@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import httpx
+import httpx2
 import pytest
 from openai import APIConnectionError, BadRequestError, InternalServerError
 
@@ -427,21 +428,27 @@ def _reset_tool_choice_cache() -> Any:
 
 def _bad_request(message: str) -> BadRequestError:
     """Build an offline OpenAI 400 with a controllable message body."""
-    request = httpx.Request("POST", "https://example.invalid/chat/completions")
-    response = httpx.Response(400, request=request)
+    request = httpx2.Request(
+        "POST", "https://example.invalid/chat/completions"
+    )
+    response = httpx2.Response(400, request=request)
     return BadRequestError(message, response=response, body=None)
 
 
 def _connection_error() -> APIConnectionError:
     """Build an offline OpenAI transport failure."""
-    request = httpx.Request("POST", "https://example.invalid/chat/completions")
+    request = httpx2.Request(
+        "POST", "https://example.invalid/chat/completions"
+    )
     return APIConnectionError(request=request)
 
 
 def _server_error() -> InternalServerError:
     """Build an offline OpenAI 5xx response."""
-    request = httpx.Request("POST", "https://example.invalid/chat/completions")
-    response = httpx.Response(503, request=request)
+    request = httpx2.Request(
+        "POST", "https://example.invalid/chat/completions"
+    )
+    response = httpx2.Response(503, request=request)
     return InternalServerError(
         "upstream unavailable", response=response, body=None
     )

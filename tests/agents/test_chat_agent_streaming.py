@@ -18,7 +18,8 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from httpx import ConnectError, Request, TimeoutException
+from httpx import ConnectError, TimeoutException
+from httpx2 import Request
 from mcp.shared.exceptions import McpError
 from openai import APIConnectionError
 

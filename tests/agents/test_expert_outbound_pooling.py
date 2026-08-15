@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import httpx
+import httpx2
 import pytest
 from openai import BadRequestError
 
@@ -97,8 +98,10 @@ def _completion() -> SimpleNamespace:
 
 def _bad_request(message: str) -> BadRequestError:
     """Build an offline OpenAI 400 response."""
-    request = httpx.Request("POST", "https://example.invalid/chat/completions")
-    response = httpx.Response(400, request=request)
+    request = httpx2.Request(
+        "POST", "https://example.invalid/chat/completions"
+    )
+    response = httpx2.Response(400, request=request)
     return BadRequestError(message, response=response, body=None)
 
 

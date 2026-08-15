@@ -164,13 +164,14 @@ def _registered_endpoint(
     router: APIRouter, path: str, method: str
 ) -> Callable[..., Awaitable[Response]]:
     """Return one exact registered route endpoint."""
-    return next(
-        route.endpoint
-        for route in router.routes
-        if isinstance(route, APIRoute)
-        and route.path == path
-        and method in route.methods
-    )
+    for route in router.routes:
+        if not isinstance(route, APIRoute) or route.path != path:
+            continue
+        methods = route.methods
+        assert methods is not None
+        if method in methods:
+            return route.endpoint
+    raise LookupError(f"route not found: {method} {path}")
 
 
 def _calls_forward_relay_request(endpoint: Callable[..., Any]) -> bool:
@@ -204,12 +205,14 @@ def test_operator_inventory_partitions_every_registered_route() -> None:
     for route in router.routes:
         if not isinstance(route, APIRoute):
             continue
+        methods = route.methods
+        assert methods is not None
         target = (
             forwarded
             if _calls_forward_relay_request(route.endpoint)
             else terminated
         )
-        target.update((route.path, method) for method in route.methods)
+        target.update((route.path, method) for method in methods)
 
     assert forwarded == {
         (case.path, case.method) for case in OPERATOR_FORWARD_ROUTES
