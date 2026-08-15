@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterator, Mapping
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, get_origin
@@ -31,14 +31,16 @@ from mcp_server_phytomni.api.schemas import (
     UploadPartResponse,
     UploadStatusResponse,
 )
+from mcp_server_phytomni.runtime.resumable_uploads import (
+    UPLOAD_PROTOCOL,
+    UPLOAD_PROTOCOL_VERSION,
+)
 
 pytestmark = pytest.mark.server
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FIXTURE_ROOT = _REPO_ROOT / "docs" / "contracts" / "resumable-upload"
 _WEB_COMPATIBILITY_PATH = _FIXTURE_ROOT / "resumable_upload_v2.json"
-_PROTOCOL = "obs-multipart-v2"
-_PROTOCOL_VERSION = 2
 
 _EXPECTED_FILES = frozenset(
     {
@@ -101,27 +103,6 @@ _OMITTED_FIELDS: dict[str, frozenset[str]] = {
         {"capability", "capability_expires_at", "upload_url"}
     ),
 }
-_FORBIDDEN_KEY_FRAGMENTS = (
-    "bucket",
-    "capability",
-    "credential",
-    "filename",
-    "huawei",
-    "object_key",
-    "owner",
-    "path",
-    "provider",
-    "route",
-    "secret",
-    "token",
-    "upload_id",
-    "upload_url",
-    "user",
-)
-_FORBIDDEN_VALUE_FRAGMENTS = _FORBIDDEN_KEY_FRAGMENTS + (
-    "://",
-    "bearer ",
-)
 
 
 def _load(name: str) -> Any:
@@ -165,8 +146,8 @@ def _build_web_compatibility_fixture() -> dict[str, object]:
             "request": _project_shape("create_request"),
             "response": _project_shape("create_response"),
         },
-        "protocol": _PROTOCOL,
-        "protocol_version": _PROTOCOL_VERSION,
+        "protocol": UPLOAD_PROTOCOL,
+        "protocol_version": UPLOAD_PROTOCOL_VERSION,
         "renew": {
             "request": _project_shape("renew_request"),
             "response": _project_shape("renew_response"),
@@ -174,30 +155,18 @@ def _build_web_compatibility_fixture() -> dict[str, object]:
     }
 
 
-def _iter_json_entries(value: object) -> Iterator[tuple[str, str]]:
-    """Yield nested JSON keys and string values for sanitization checks."""
-    if isinstance(value, Mapping):
-        for key, child in value.items():
-            assert isinstance(key, str)
-            yield "key", key
-            yield from _iter_json_entries(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _iter_json_entries(child)
-    elif isinstance(value, str):
-        yield "value", value
-
-
 def _assert_strictly_sanitized(value: object) -> None:
-    """Reject forbidden structural keys and string material recursively."""
-    for entry_kind, entry in _iter_json_entries(value):
-        lowered = entry.casefold()
-        forbidden = (
-            _FORBIDDEN_KEY_FRAGMENTS
-            if entry_kind == "key"
-            else _FORBIDDEN_VALUE_FRAGMENTS
-        )
-        assert not any(fragment in lowered for fragment in forbidden)
+    """Require recursive equality with the positive fixture projection."""
+    assert value == _build_web_compatibility_fixture()
+
+
+def _create_request_shape(fixture: dict[str, object]) -> dict[str, Any]:
+    """Return the mutable create-request shape from a projected fixture."""
+    create = fixture["create"]
+    assert isinstance(create, dict)
+    request = create["request"]
+    assert isinstance(request, dict)
+    return request
 
 
 def test_manifest_pins_every_fixture_byte() -> None:
@@ -205,7 +174,7 @@ def test_manifest_pins_every_fixture_byte() -> None:
     manifest = _load("manifest.json")
     files = manifest["files"]
 
-    assert manifest["protocol"] == _PROTOCOL
+    assert manifest["protocol"] == UPLOAD_PROTOCOL
     assert set(files) == _EXPECTED_FILES
     for name, expected_digest in files.items():
         path = _FIXTURE_ROOT / name
@@ -229,20 +198,34 @@ def test_web_compatibility_fixture_matches_sanitized_projection() -> None:
     fixture = json.loads(_WEB_COMPATIBILITY_PATH.read_text(encoding="utf-8"))
 
     assert fixture == _build_web_compatibility_fixture()
-    assert fixture["protocol"] == _PROTOCOL
-    assert fixture["protocol_version"] == _PROTOCOL_VERSION
+
+
+def test_web_compatibility_protocol_matches_runtime_authority() -> None:
+    """Protocol identity and version come from the advertised runtime pair."""
+    fixture = json.loads(_WEB_COMPATIBILITY_PATH.read_text(encoding="utf-8"))
+
+    assert fixture["protocol"] == UPLOAD_PROTOCOL
+    assert fixture["protocol_version"] == UPLOAD_PROTOCOL_VERSION
 
 
 def test_web_compatibility_fixture_bytes_are_deterministic() -> None:
     """The vendorable fixture has canonical JSON and one trailing newline."""
     raw = _WEB_COMPATIBILITY_PATH.read_bytes()
-    fixture = json.loads(raw)
     canonical = (
-        json.dumps(fixture, ensure_ascii=True, indent=2, sort_keys=True) + "\n"
+        json.dumps(
+            _build_web_compatibility_fixture(),
+            ensure_ascii=True,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
     ).encode("ascii")
+    expected_digest = _load("manifest.json")["files"][
+        _WEB_COMPATIBILITY_PATH.name
+    ]
 
     assert raw == canonical
-    assert len(hashlib.sha256(raw).hexdigest()) == 64
+    assert hashlib.sha256(canonical).hexdigest() == expected_digest
 
 
 def test_web_compatibility_fixture_stays_strictly_sanitized() -> None:
@@ -253,21 +236,70 @@ def test_web_compatibility_fixture_stays_strictly_sanitized() -> None:
 
 
 @pytest.mark.parametrize(
-    "forbidden_projection",
+    "unapproved_name",
     (
-        {"nested": {"capability": "string"}},
-        {"nested": [{"name": "filename"}]},
-        {"nested": [{"name": "owner_subject"}]},
-        {"nested": [{"name": "upload_url"}]},
-        {"nested": ["https://"]},
+        "access_key_id",
+        "account_id",
+        "api_key",
+        "authorization",
+        "capability",
+        "credential",
+        "email",
+        "filename",
+        "owner_subject",
+        "password",
+        "payload",
+        "private_key",
+        "secret",
+        "token",
+        "upload_url",
     ),
 )
 def test_web_compatibility_sanitizer_rejects_nested_forbidden_material(
-    forbidden_projection: object,
+    unapproved_name: str,
 ) -> None:
-    """The recursive sanitizer rejects both forbidden keys and values."""
+    """The sanitizer rejects unapproved nested keys and field-name values."""
+    key_projection = deepcopy(_build_web_compatibility_fixture())
+    _create_request_shape(key_projection)[unapproved_name] = "string"
     with pytest.raises(AssertionError):
-        _assert_strictly_sanitized(forbidden_projection)
+        _assert_strictly_sanitized(key_projection)
+
+    value_projection = deepcopy(_build_web_compatibility_fixture())
+    fields = _create_request_shape(value_projection)["fields"]
+    assert isinstance(fields, list)
+    first_field = fields[0]
+    assert isinstance(first_field, dict)
+    first_field["name"] = unapproved_name
+    with pytest.raises(AssertionError):
+        _assert_strictly_sanitized(value_projection)
+
+
+def test_web_compatibility_rejects_unapproved_scalar_shapes() -> None:
+    """Type/literal drift and misplaced allowed keys fail closed."""
+    type_projection = deepcopy(_build_web_compatibility_fixture())
+    fields = _create_request_shape(type_projection)["fields"]
+    assert isinstance(fields, list)
+    first_field = fields[0]
+    assert isinstance(first_field, dict)
+    first_field["type"] = "payload"
+
+    protocol_projection = deepcopy(_build_web_compatibility_fixture())
+    protocol_projection["protocol"] = "authorization"
+
+    version_projection = deepcopy(_build_web_compatibility_fixture())
+    version_projection["protocol_version"] = UPLOAD_PROTOCOL_VERSION + 1
+
+    misplaced_projection = deepcopy(_build_web_compatibility_fixture())
+    _create_request_shape(misplaced_projection)["protocol"] = UPLOAD_PROTOCOL
+
+    for projection in (
+        type_projection,
+        protocol_projection,
+        version_projection,
+        misplaced_projection,
+    ):
+        with pytest.raises(AssertionError):
+            _assert_strictly_sanitized(projection)
 
 
 def test_capability_fixture_matches_bot_descriptor() -> None:
