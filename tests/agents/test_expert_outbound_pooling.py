@@ -99,7 +99,7 @@ def _bad_request(message: str) -> BadRequestError:
     """Build an offline OpenAI 400 response."""
     request = httpx.Request("POST", "https://example.invalid/chat/completions")
     response = httpx.Response(400, request=request)
-    return BadRequestError(message, response=response, body=None)
+    return BadRequestError(message, response=cast(Any, response), body=None)
 
 
 def _patch_expert_settings(monkeypatch: pytest.MonkeyPatch) -> None:

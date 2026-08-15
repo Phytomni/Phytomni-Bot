@@ -15,6 +15,11 @@ downloads/
 eggs/
 .eggs/
 lib/
+!typings/reportlab/lib/
+typings/reportlab/lib/*
+!typings/reportlab/lib/__init__.pyi
+!typings/reportlab/lib/pagesizes.pyi
+!typings/reportlab/lib/units.pyi
 lib64/
 parts/
 sdist/

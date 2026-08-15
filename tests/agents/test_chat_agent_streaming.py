@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from httpx import ConnectError, Request, TimeoutException
@@ -297,7 +297,7 @@ async def test_stream_phyto_chat_chunks_prepends_upload_context(
     [
         ConnectError("transient"),
         APIConnectionError(
-            request=Request("POST", "https://example.invalid/v1")
+            request=cast(Any, Request("POST", "https://example.invalid/v1"))
         ),
     ],
 )
