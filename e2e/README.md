@@ -197,8 +197,9 @@ The Web cutover smoke set covers, beyond the four chat completions:
   `GET /v1/runs?dialogue_id=`.
 - `test_runs_history_delegated_user_id_via_service_token` — service
   token can read another user's runs (ops-debug surface).
-- `test_files_upload_returns_obs_path` — `POST /v1/files` multipart
-  returns an `agent_data/uploads/…` OBS path.
+- `test_files_upload_returns_obs_path` — `POST /v1/files` creates a
+  resumable `obs-multipart-v2` upload session using an explicit
+  `files:delegate` key and verifies the safe capability/URL projection.
 
 The boot helper sets `PHYTOMNI_API_SERVICE_TOKEN` to a fixture-known
 value so admin routes are exercisable without a second uvicorn boot.

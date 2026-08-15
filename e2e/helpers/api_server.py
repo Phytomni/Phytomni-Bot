@@ -17,6 +17,7 @@ Public surface:
 * ``make_async_client(api_server)`` -- async context manager yielding
   an ``httpx.AsyncClient`` bound to the live base URL.
 * ``auth_header(api_server)`` -- Bearer header dict.
+* ``upload_auth_header(api_server)`` -- explicitly scoped upload key.
 """
 
 from __future__ import annotations
@@ -66,6 +67,7 @@ class ApiServer(NamedTuple):
     api_key: str
     user_id: str
     service_token: str
+    upload_api_key: str
 
 
 def auth_header(server: ApiServer) -> dict[str, str]:
@@ -96,6 +98,11 @@ def service_auth_header(server: ApiServer) -> dict[str, str]:
         Mapping with a single ``X-Service-Token`` entry.
     """
     return {"X-Service-Token": server.service_token}
+
+
+def upload_auth_header(server: ApiServer) -> dict[str, str]:
+    """Return the Bearer header for the explicit upload-control key."""
+    return {"Authorization": f"Bearer {server.upload_api_key}"}
 
 
 def _free_port() -> int:
@@ -216,6 +223,11 @@ def boot_phytomni_api(
     runs_db = str((store_dir / "api_runs.sqlite").resolve())
     user_id = "phytomni-api-e2e"
     created = ApiKeyStore(keys_db).create(user_id=user_id, name="api-http-e2e")
+    upload_key = ApiKeyStore(keys_db).create(
+        user_id=user_id,
+        name="api-http-e2e-upload",
+        scopes=("files:delegate",),
+    )
 
     port = _free_port()
     base_url = f"http://127.0.0.1:{port}"
@@ -236,7 +248,13 @@ def boot_phytomni_api(
 
     cmd = _api_command(app_module, port)
     with boot_loopback_process(cmd, env, base_url, _await_healthy, _PROCESS):
-        yield ApiServer(base_url, created.api_key, user_id, _E2E_SERVICE_TOKEN)
+        yield ApiServer(
+            base_url,
+            created.api_key,
+            user_id,
+            _E2E_SERVICE_TOKEN,
+            upload_key.api_key,
+        )
 
 
 @asynccontextmanager

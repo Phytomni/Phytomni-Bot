@@ -26,6 +26,7 @@ from .helpers.api_server import (
     boot_phytomni_api,
     make_async_client,
     service_auth_header,
+    upload_auth_header,
 )
 from .helpers.assertions import (
     ANNOTATION_CUES,
@@ -664,42 +665,37 @@ async def test_runs_history_delegated_user_id_via_service_token(
 async def test_files_upload_returns_obs_path(
     api_client: httpx.AsyncClient,
     api_server: ApiServer,
-    tmp_path: Path,
 ) -> None:
-    """POST ``/v1/files`` returns a 201 envelope with an OBS path.
+    """POST ``/v1/files`` returns the resumable upload contract.
 
-    Validates the Bot-owned ingestion contract: a small text upload
-    succeeds, the response carries the OBS path under
-    ``agent_data/uploads/``, and ``purpose`` round-trips one of the
-    OpenAI-compatible Literal values.
+    Validates the Bot-owned control-plane contract: a scoped service key
+    creates a resumable session, and the response exposes only the safe
+    protocol, capability, and upload URL fields.
 
     Args:
         api_client: Bound async HTTP client.
         api_server: Running API details.
-        tmp_path: Per-test tmpdir for the upload payload.
     """
-    upload_file = tmp_path / "hello.txt"
-    upload_file.write_text("hello e2e cutover\n", encoding="utf-8")
-
-    with upload_file.open("rb") as fh:
-        files = {"file": ("hello.txt", fh, "text/plain")}
-        data = {"purpose": "agent_context"}
-        resp = await api_client.post(
-            "/v1/files",
-            files=files,
-            data=data,
-            headers=_auth(api_server),
-        )
+    payload = {
+        "owner_subject": api_server.user_id,
+        "filename": "hello.txt",
+        "content_type": "text/plain",
+        "size_bytes": len("hello e2e cutover\n"),
+        "purpose": "document",
+        "idempotency_key": "e2e-http-upload",
+    }
+    resp = await api_client.post(
+        "/v1/files",
+        json=payload,
+        headers=upload_auth_header(api_server),
+    )
 
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["object"] == "file"
-    assert body["filename"] == "hello.txt"
-    assert body["purpose"] == "agent_context"
-    obs_path = body["obs_path"]
-    assert obs_path.startswith(
-        "/obs/"
-    ), f"obs_path should start with /obs/; got: {obs_path!r}"
-    assert (
-        "/agent_data/uploads/" in obs_path
-    ), f"obs_path should live under agent_data/uploads/; got: {obs_path!r}"
+    assert body["protocol"] == "obs-multipart-v2"
+    assert body["status"] == "uploading"
+    assert body["asset_id"]
+    assert body["upload_url"].endswith(f"/v1/files/{body['asset_id']}")
+    assert body["capability"]
+    assert body["part_size_bytes"] > 0
+    assert body["part_count"] >= 1
