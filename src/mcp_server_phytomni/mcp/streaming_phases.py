@@ -13,8 +13,18 @@ wire contract.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+import asyncio
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
+from contextlib import suppress
 from typing import Any, TypedDict, cast
+
+import anyio
 
 from .schemas import PhytomniAgents
 
@@ -44,9 +54,30 @@ class StreamRunMeta(TypedDict):
 
 async def close_async_iterator(stream: Any) -> None:
     """Propagate consumer shutdown through one nested async iterator."""
-    closer = getattr(stream, "aclose", None)
-    if callable(closer):
-        await cast(Callable[[], Awaitable[None]], closer)()
+    with anyio.CancelScope(shield=True):
+        closer = getattr(stream, "aclose", None)
+        if callable(closer):
+            await cast(Callable[[], Awaitable[None]], closer)()
+
+
+async def iterate_owned(stream: AsyncIterator[Any]) -> AsyncIterator[Any]:
+    """Yield graph events while explicitly owning each active ``anext``."""
+    iterator = aiter(stream)
+    try:
+        while True:
+            next_item = asyncio.ensure_future(anext(iterator))
+            try:
+                yield await asyncio.shield(next_item)
+            except StopAsyncIteration:
+                return
+            except asyncio.CancelledError:
+                next_item.cancel()
+                with anyio.CancelScope(shield=True):
+                    with suppress(asyncio.CancelledError):
+                        await asyncio.shield(next_item)
+                raise
+    finally:
+        await close_async_iterator(iterator)
 
 
 _PHASE_MAP: dict[str, dict[str, str]] = {
