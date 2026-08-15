@@ -39,7 +39,10 @@ _CITATION_PATTERN = re.compile(
 _CITATION_BLOCK_PATTERN = re.compile(
     rf"{_CITATION_TOKEN_PATTERN}" rf"(?:[ \t]*{_CITATION_TOKEN_PATTERN})*"
 )
-_ANNOTATION_MARKER_PATTERN = re.compile(r"[ \t]*\[annotation\]", re.IGNORECASE)
+_ANNOTATION_MARKER_PATTERN = re.compile(
+    r"[ \t]*\[annotation(?:\s+data)?(?::[^\]]*)?\]",
+    re.IGNORECASE,
+)
 _RETRIEVAL_FILE_SUFFIXES = (
     ".pdf",
     ".doc",

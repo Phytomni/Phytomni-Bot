@@ -66,7 +66,8 @@ def test_normalize_citations_captures_repeated_document_word_prefixes() -> (
 
     answer = (
         "The locus is drought-linked "
-        "[document 3, document 4, document 6] [annotation]."
+        "[document 3, document 4, document 6] [Annotation data] "
+        "[annotation: Homology context]."
     )
     doc_list = [
         {"file_id": f"id{i}", "title": f"Paper {i}"} for i in range(1, 7)
