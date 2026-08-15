@@ -53,15 +53,17 @@ from tests.agents.test_knowledge_failure_consumers import (
 pytestmark = pytest.mark.agent
 
 Consumer = Literal["research", "network", "design"]
-FailureBoundary = Literal["extraction", "submission"]
+FailureBoundary = Literal["extraction", "retrieval", "submission"]
 
 _CONSUMERS: tuple[Consumer, ...] = ("research", "network", "design")
 _FAILURE_BOUNDARIES: tuple[FailureBoundary, ...] = (
     "extraction",
+    "retrieval",
     "submission",
 )
 _SAFE_ERRORS = {
     "extraction": "Tool extraction failed",
+    "retrieval": "Knowledge retrieval temporarily unavailable",
     "submission": "Submission failed after retries",
 }
 _SENSITIVE_DETAIL = "provider credential must remain private"
@@ -132,7 +134,28 @@ def _build_preset_plan_harness(
 
     async def retrieve_tool_usage(**_kwargs: Any) -> dict[str, Any]:
         events.append("tool_usage_retrieval")
-        return {"doc_list": [{"content": "Use the bounded tool safely."}]}
+        if failure_boundary == "retrieval":
+            if cancellation:
+                raise asyncio.CancelledError
+            _raise_safe_boundary_error("retrieval")
+        return {
+            "doc_list": [
+                {
+                    "chunk_id": "bounded-tool-doc",
+                    "title": "Bounded tool documentation",
+                    "content": "Use the bounded tool safely.",
+                }
+            ],
+            "total": 1,
+            "outcome": "partial",
+            "failures": [
+                {
+                    "source": "secondary-tool-source",
+                    "kind": "timeout",
+                    "retryable": True,
+                }
+            ],
+        }
 
     tool_retrieve = AsyncMock(side_effect=retrieve_tool_usage)
     monkeypatch.setattr(analyst_graph, "retrieve", tool_retrieve)
@@ -326,7 +349,7 @@ async def test_safe_boundary_failure_cannot_become_scientific_success(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Sanitized extraction/submission failure never projects acceptance."""
+    """Sanitized evidence failure never projects acceptance."""
     harness = _build_preset_plan_harness(
         monkeypatch,
         failure_boundary=failure_boundary,
@@ -349,6 +372,14 @@ async def test_safe_boundary_failure_cannot_become_scientific_success(
         harness.tool_retrieve.assert_not_awaited()
         harness.upload_submit_meta.assert_not_awaited()
         harness.post_submit_job.assert_not_awaited()
+    elif failure_boundary == "retrieval":
+        assert harness.events == [
+            "tool_extract_chat",
+            "tool_usage_retrieval",
+        ]
+        harness.tool_retrieve.assert_awaited_once()
+        harness.upload_submit_meta.assert_not_awaited()
+        harness.post_submit_job.assert_not_awaited()
     else:
         assert harness.events == [
             "tool_extract_chat",
@@ -369,7 +400,7 @@ async def test_boundary_cancellation_propagates_without_side_effects(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Extraction and remote-submit cancellation propagate unchanged."""
+    """Evidence-boundary cancellation propagates unchanged."""
     harness = _build_preset_plan_harness(
         monkeypatch,
         failure_boundary=failure_boundary,
@@ -388,6 +419,14 @@ async def test_boundary_cancellation_propagates_without_side_effects(
     if failure_boundary == "extraction":
         assert harness.events == ["tool_extract_chat"]
         harness.tool_retrieve.assert_not_awaited()
+        harness.upload_submit_meta.assert_not_awaited()
+        harness.post_submit_job.assert_not_awaited()
+    elif failure_boundary == "retrieval":
+        assert harness.events == [
+            "tool_extract_chat",
+            "tool_usage_retrieval",
+        ]
+        harness.tool_retrieve.assert_awaited_once()
         harness.upload_submit_meta.assert_not_awaited()
         harness.post_submit_job.assert_not_awaited()
     else:

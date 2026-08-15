@@ -168,11 +168,11 @@ async def test_public_spa_lookup_orders_iam_before_direct_upstream_pool() -> (
         assert runtime.pools.snapshot(OutboundPoolName.SPA_FAQ).completed == 1
 
 
-async def test_find_spa_taxids_returns_empty_on_non_200(
+async def test_find_spa_taxids_rejects_non_2xx_valid_payload(
     monkeypatch: pytest.MonkeyPatch,
     outbound_runtime: Any,
 ):
-    """Verify the lookup exposes a fixed error on non-200.
+    """A non-2xx status cannot be treated as valid taxonomy evidence.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to swap the auth loader.
@@ -184,12 +184,20 @@ async def test_find_spa_taxids_returns_empty_on_non_200(
         return "fake-iam-token"
 
     monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
-    outbound_runtime.transport.enqueue(status=502, content=b"bad gateway")
+    outbound_runtime.transport.enqueue(
+        status=502,
+        content=b'{"total":1,"records":[{"answer":"9606. Homo sapiens"}]}',
+    )
 
     with pytest.raises(
         McpError, match="Evolution taxonomy lookup temporarily unavailable"
-    ):
-        await evolution_agent.find_spa_taxids("oryza", request_timeout=1.0)
+    ) as exc_info:
+        await evolution_agent.find_spa_taxids(
+            "species-secret", request_timeout=1.0
+        )
+
+    assert "species-secret" not in str(exc_info.value)
+    assert "9606" not in str(exc_info.value)
 
 
 @pytest.mark.parametrize(
