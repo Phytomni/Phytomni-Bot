@@ -165,10 +165,13 @@ async def retry_http_status_or_raise(
     ):
         await asyncio.sleep((2**attempt) + uniform(0, 1))
         return True
-    # Full exception (including upstream URL and any response body)
-    # stays in operator logs; the MCP error message exposes only the
-    # caller-provided prefix so clients cannot read backend payloads.
-    logger.exception("%s: upstream HTTP failure", message)
+    status_code = exc.response.status_code if exc.response is not None else 0
+    logger.error(
+        "upstream HTTP request failed exception=%s status_code=%d retries=%d",
+        type(exc).__name__,
+        status_code,
+        attempt,
+    )
     raise McpError(
         ErrorData(
             code=INTERNAL_ERROR,
@@ -205,8 +208,10 @@ async def retry_network_or_raise(
     if attempt < max_retries:
         await asyncio.sleep(1.5**attempt)
         return True
-    logger.exception(
-        "%s: transient upstream failure after %s retries", message, attempt
+    logger.error(
+        "upstream transport request failed exception=%s retries=%d",
+        type(exc).__name__,
+        attempt,
     )
     raise McpError(
         ErrorData(

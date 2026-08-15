@@ -21,11 +21,9 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from contextlib import suppress
 from typing import Any, TypedDict, cast
 
-import anyio
-
+from ..runtime.cleanup import run_bounded_cleanup
 from .schemas import PhytomniAgents
 
 GRAPH_PROGRESS_TOOLS = frozenset(
@@ -54,30 +52,33 @@ class StreamRunMeta(TypedDict):
 
 async def close_async_iterator(stream: Any) -> None:
     """Propagate consumer shutdown through one nested async iterator."""
-    with anyio.CancelScope(shield=True):
-        closer = getattr(stream, "aclose", None)
-        if callable(closer):
-            await cast(Callable[[], Awaitable[None]], closer)()
+    closer = getattr(stream, "aclose", None)
+    if callable(closer):
+        await run_bounded_cleanup(
+            cast(Callable[[], Awaitable[None]], closer)(),
+            operation="iterator_close",
+        )
 
 
-async def iterate_owned(stream: AsyncIterator[Any]) -> AsyncIterator[Any]:
-    """Yield graph events while explicitly owning each active ``anext``."""
-    iterator = aiter(stream)
-    try:
-        while True:
-            next_item = asyncio.ensure_future(anext(iterator))
-            try:
-                yield await asyncio.shield(next_item)
-            except StopAsyncIteration:
-                return
-            except asyncio.CancelledError:
-                next_item.cancel()
-                with anyio.CancelScope(shield=True):
-                    with suppress(asyncio.CancelledError):
-                        await asyncio.shield(next_item)
-                raise
-    finally:
-        await close_async_iterator(iterator)
+async def iterate_owned(
+    stream: AsyncIterator[Any],
+) -> AsyncIterator[Any]:
+    """Cancel and await an in-flight next call before consumer shutdown."""
+    while True:
+        next_item = asyncio.ensure_future(anext(stream))
+        try:
+            item = await asyncio.shield(next_item)
+        except StopAsyncIteration:
+            return
+        except asyncio.CancelledError:
+            next_item.cancel()
+            await run_bounded_cleanup(
+                next_item,
+                operation="iterator_next",
+                cancelled_is_success=True,
+            )
+            raise
+        yield item
 
 
 _PHASE_MAP: dict[str, dict[str, str]] = {

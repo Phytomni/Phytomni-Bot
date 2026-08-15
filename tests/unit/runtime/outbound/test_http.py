@@ -6,11 +6,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
+from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
+from tests.support.logging_helpers import capture_non_propagating_logger
 from tests.support.outbound_fakes import (
     ControlledByteStream,
     QueueTransport,
@@ -24,12 +28,61 @@ from mcp_server_phytomni.common.http import (
     post_json_with_retries,
 )
 from mcp_server_phytomni.config.defaults import ServerConfig
+from mcp_server_phytomni.runtime import cleanup as cleanup_runtime
 from mcp_server_phytomni.runtime.outbound import (
     OutboundHttpProfile,
     OutboundPoolName,
 )
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _attach_cleanup_log_handler(
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[None]:
+    """Capture cleanup logs after package logging disables propagation."""
+    with capture_non_propagating_logger(
+        cleanup_runtime.__name__, caplog.handler
+    ):
+        yield
+
+
+class _FailingCloseStream(  # pylint: disable=too-few-public-methods
+    ControlledByteStream
+):
+    """Fail close with a secret-bearing detail after a body failure."""
+
+    async def aclose(self) -> None:
+        raise RuntimeError("synthetic-provider-secret")
+
+
+# pylint: disable-next=too-few-public-methods
+class _CancellationResistantCloseStream(ControlledByteStream):
+    """Ignore cancellation until a test-controlled release arrives."""
+
+    def __init__(
+        self,
+        *chunks: bytes,
+        failure: Exception | None = None,
+    ) -> None:
+        super().__init__(*chunks, failure=failure)
+        self.close_started = asyncio.Event()
+        self.release_close = asyncio.Event()
+
+    async def aclose(self) -> None:
+        self.close_started.set()
+        while not self.release_close.is_set():
+            try:
+                await asyncio.wait_for(
+                    self.release_close.wait(),
+                    timeout=0.01,
+                )
+            except TimeoutError:
+                continue
+            except asyncio.CancelledError:
+                continue
+        await super().aclose()
 
 
 def _config(**overrides: Any) -> ServerConfig:
@@ -174,6 +227,66 @@ async def test_buffered_body_failure_holds_then_releases_lease() -> None:
         with pytest.raises(httpx.ReadError, match="broken body"):
             await task
         assert runtime.pools.snapshot(OutboundPoolName.RETRIEVAL).in_use == 0
+        assert stream.closed is True
+
+
+@pytest.mark.asyncio
+async def test_response_close_failure_preserves_body_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A response-close exception cannot replace the request body failure."""
+    transport = QueueTransport()
+    transport.enqueue(
+        stream=_FailingCloseStream(failure=httpx.ReadError("broken body"))
+    )
+    resources = RecordingResources(transport=transport)
+
+    caplog.set_level(logging.WARNING, logger=cleanup_runtime.__name__)
+    async with recording_outbound_runtime(
+        config=_config(), resources=resources
+    ) as runtime:
+        client = runtime.http.for_pool(OutboundPoolName.RETRIEVAL)
+        with pytest.raises(httpx.ReadError, match="broken body"):
+            await client.request("GET", "https://upstream.invalid/body")
+
+    assert "stream cleanup failed operation=response_close" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "synthetic-provider-secret" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_response_close_has_a_finite_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cancellation-resistant response close cannot hang request cleanup."""
+    stream = _CancellationResistantCloseStream(
+        failure=httpx.ReadError("broken body")
+    )
+    transport = QueueTransport()
+    transport.enqueue(stream=stream)
+    resources = RecordingResources(transport=transport)
+
+    monkeypatch.setattr(cleanup_runtime, "CLEANUP_TIMEOUT_SECONDS", 0.05)
+    async with recording_outbound_runtime(
+        config=_config(), resources=resources
+    ) as runtime:
+        client = runtime.http.for_pool(OutboundPoolName.RETRIEVAL)
+        task = asyncio.create_task(
+            client.request("GET", "https://upstream.invalid/body")
+        )
+        await stream.close_started.wait()
+        asyncio.get_running_loop().call_later(0.2, stream.release_close.set)
+
+        started_at = time.monotonic()
+        with pytest.raises(httpx.ReadError, match="broken body"):
+            await task
+        assert time.monotonic() - started_at < 0.15
+
+        await stream.release_close.wait()
+        for _ in range(100):
+            if stream.closed:
+                break
+            await asyncio.sleep(0)
         assert stream.closed is True
 
 

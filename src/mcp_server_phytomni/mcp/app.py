@@ -605,16 +605,14 @@ async def _stream_graph_agent(
     yield run_started(run_id, run_meta["dialogue_id"])
     seen_phases: set[str] = set()
     final_state: Mapping[str, Any] | None = None
-    graph_events = iterate_owned(
-        app.astream(
-            initial_state,
-            stream_mode=["custom", "updates", "values"],
-            subgraphs=True,
-            config=build_runnable_config(run_id),
-        )
+    graph_events = app.astream(
+        initial_state,
+        stream_mode=["custom", "updates", "values"],
+        subgraphs=True,
+        config=build_runnable_config(run_id),
     )
     try:
-        async for ns, mode, chunk in graph_events:
+        async for ns, mode, chunk in iterate_owned(graph_events):
             if mode == "custom":
                 if isinstance(chunk, Mapping) and chunk.get("kind") == (
                     PROGRESS_KIND

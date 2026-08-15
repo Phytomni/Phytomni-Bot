@@ -5,8 +5,8 @@
 """Tests for MCP error sanitization in common.http retry helpers.
 
 The retry helpers must never echo upstream URLs, response bodies, or
-raw transport exception text into the MCP-facing error message; that
-detail belongs in operator logs only. These tests pin both the
+raw transport exception text into the MCP-facing error message or logs.
+Operator logs retain only fixed event metadata. These tests pin both the
 non-retriable HTTP-status path and the network-exhaustion path, plus
 the defensive raise that replaces the loop's former silent `return
 None`.
@@ -14,12 +14,13 @@ None`.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import httpx
 import pytest
 from mcp.shared.exceptions import McpError
+from tests.support.logging_helpers import capture_non_propagating_logger
 
 from mcp_server_phytomni.common import http as common_http
 from mcp_server_phytomni.common.http import (
@@ -40,7 +41,20 @@ _NETWORK_PREFIX = "upstream connection failed"
 _ClientFactory = Callable[[list[Any], dict[str, int]], type]
 
 
-async def test_http_status_error_message_excludes_response_body() -> None:
+@pytest.fixture(autouse=True)
+def _attach_http_log_handler(
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[None]:
+    """Capture HTTP logs after package logging disables propagation."""
+    with capture_non_propagating_logger(
+        common_http.logger.name, caplog.handler
+    ):
+        yield
+
+
+async def test_http_status_error_message_excludes_response_body(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Non-retriable status raises McpError without leaking URL or body.
 
     The HTTPStatusError carries the sensitive request URL and a body
@@ -56,7 +70,10 @@ async def test_http_status_error_message_excludes_response_body() -> None:
         "internal", request=response.request, response=response
     )
 
-    with pytest.raises(McpError) as excinfo:
+    with (
+        caplog.at_level("ERROR", logger=common_http.logger.name),
+        pytest.raises(McpError) as excinfo,
+    ):
         await retry_http_status_or_raise(
             exc,
             attempt=0,
@@ -69,9 +86,16 @@ async def test_http_status_error_message_excludes_response_body() -> None:
     assert err_msg == _SAFE_PREFIX
     assert _URL_SECRET not in err_msg
     assert "INTERNAL_TOKEN_XYZ" not in err_msg
+    assert "exception=HTTPStatusError" in caplog.text
+    assert "status_code=500" in caplog.text
+    assert _URL_SECRET not in caplog.text
+    assert "INTERNAL_TOKEN_XYZ" not in caplog.text
+    assert "internal" not in caplog.text
 
 
-async def test_network_error_message_excludes_exception_text() -> None:
+async def test_network_error_message_excludes_exception_text(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Network exhaustion raises McpError without leaking transport text.
 
     The transport exception text references a sensitive URL; the
@@ -83,7 +107,10 @@ async def test_network_error_message_excludes_exception_text() -> None:
     )
     exc = httpx.ConnectError(sensitive_msg)
 
-    with pytest.raises(McpError) as excinfo:
+    with (
+        caplog.at_level("ERROR", logger=common_http.logger.name),
+        pytest.raises(McpError) as excinfo,
+    ):
         await retry_network_or_raise(
             exc,
             attempt=0,
@@ -95,6 +122,10 @@ async def test_network_error_message_excludes_exception_text() -> None:
     assert err_msg == _NETWORK_PREFIX
     assert _URL_SECRET not in err_msg
     assert "tcp connect" not in err_msg
+    assert "exception=ConnectError" in caplog.text
+    assert "retries=0" in caplog.text
+    assert _URL_SECRET not in caplog.text
+    assert "tcp connect" not in caplog.text
 
 
 @pytest.mark.usefixtures("instant_retry_sleep")

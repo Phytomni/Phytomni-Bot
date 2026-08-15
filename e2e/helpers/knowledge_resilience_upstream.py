@@ -39,6 +39,8 @@ _SCENARIO_ENV = "PHYTOMNI_KNOWLEDGE_SCENARIO"
 _INTEGRATION_ENV = "PHYTOMNI_RUN_INTEGRATION"
 _CURRENT_QUERY = "synthetic protein design question"
 _CANCELLATION_QUERY = "synthetic cancellation question"
+_CONCURRENT_CANCELLATION_QUERY = "synthetic concurrent cancellation question"
+_NO_MATCH_QUERY = "synthetic no-match question"
 _EARLIER_QUERY = "earlier question"
 _EARLIER_ANSWER = "earlier answer"
 _SECRET_MARKER = "synthetic-provider-secret"
@@ -84,47 +86,86 @@ class _ProviderObservations:
         }
 
 
+class _RetrieveObservations:
+    """Sanitized retrieval-call observations for one scenario."""
+
+    def __init__(self) -> None:
+        self.calls: dict[str, int] = {}
+        self.contents: list[str] = []
+
+    def record(self, repo_id: str, content: str) -> int:
+        """Record one retrieve call and return its per-repository count."""
+        call_number = self.calls.get(repo_id, 0) + 1
+        self.calls[repo_id] = call_number
+        self.contents.append(content)
+        return call_number
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return detached retrieval observations."""
+        return {
+            "calls": dict(sorted(self.calls.items())),
+            "contents": list(self.contents),
+        }
+
+
+class _RerankObservations:
+    """Sanitized rerank-call observations for one scenario."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.ids: list[list[str]] = []
+
+    def record(self, ids: list[str]) -> None:
+        """Record one rerank call without retaining document bodies."""
+        self.calls += 1
+        self.ids.append(ids)
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return detached rerank observations."""
+        return {
+            "calls": self.calls,
+            "ids": [list(ids) for ids in self.ids],
+        }
+
+
 class _ScenarioState:
     """In-memory counters and sanitized observations for one process."""
 
     def __init__(self, mode: KnowledgeScenarioMode) -> None:
         self.mode = mode
         self.lock = asyncio.Lock()
-        self.retrieve_calls: dict[str, int] = {}
-        self.retrieve_contents: list[str] = []
-        self.retrieve_stream_started = 0
-        self.retrieve_stream_active = 0
-        self.retrieve_stream_cancelled = 0
-        self.rerank_calls = 0
-        self.rerank_ids: list[list[str]] = []
+        self.retrieve = _RetrieveObservations()
+        self.rerank = _RerankObservations()
         self.provider = _ProviderObservations()
-
-    def record_retrieve(self, repo_id: str, content: str) -> int:
-        """Record one retrieve call and return its per-repository count."""
-        call_number = self.retrieve_calls.get(repo_id, 0) + 1
-        self.retrieve_calls[repo_id] = call_number
-        self.retrieve_contents.append(content)
-        return call_number
+        self.cancellation = {
+            "started": 0,
+            "active": 0,
+            "cancelled": 0,
+            "completed": 0,
+        }
 
     def snapshot(self) -> dict[str, Any]:
         """Return synthetic observations without headers or bodies."""
         return {
             "mode": self.mode,
-            "retrieve": {
-                "calls": dict(sorted(self.retrieve_calls.items())),
-                "contents": list(self.retrieve_contents),
-                "streams": {
-                    "active": self.retrieve_stream_active,
-                    "cancelled": self.retrieve_stream_cancelled,
-                    "started": self.retrieve_stream_started,
-                },
-            },
-            "rerank": {
-                "calls": self.rerank_calls,
-                "ids": [list(ids) for ids in self.rerank_ids],
-            },
+            "retrieve": self.retrieve.snapshot(),
+            "rerank": self.rerank.snapshot(),
             "provider": self.provider.snapshot(),
+            "cancellation": dict(self.cancellation),
         }
+
+    async def cancellation_stream(self) -> AsyncIterator[bytes]:
+        """Yield a partial response until the Bot closes this iterator."""
+        async with self.lock:
+            self.cancellation["started"] += 1
+            self.cancellation["active"] += 1
+        try:
+            yield b'{"doc_list":['
+            await asyncio.Future()
+        finally:
+            async with self.lock:
+                self.cancellation["active"] -= 1
+                self.cancellation["cancelled"] += 1
 
 
 def _validate_mode(mode: str) -> KnowledgeScenarioMode:
@@ -146,9 +187,10 @@ def _require_child_environment(mode: str) -> KnowledgeScenarioMode:
 
 def _valid_document(repo_id: str) -> dict[str, Any]:
     """Build one deterministic retrieval document."""
+    source_number = {"repo-a": 1, "repo-b": 2}.get(repo_id, 0)
     return {
-        "chunk_id": f"{repo_id}-synthetic-chunk",
-        "title": f"Synthetic evidence for {repo_id}",
+        "chunk_id": f"synthetic-chunk-{source_number}",
+        "title": f"Synthetic evidence {source_number}",
         "content": "Synthetic evidence supports the protein design answer.",
         "score": 0.91,
     }
@@ -161,6 +203,53 @@ def _is_follow_up_prompt(messages: list[dict[str, Any]]) -> bool:
         or "follow up" in str(message.get("content", "")).lower()
         for message in messages
     )
+
+
+def _contains_prompt_marker(
+    messages: list[dict[str, Any]], marker: str
+) -> bool:
+    """Return whether a synthetic marker appears in provider input."""
+    return any(
+        marker in str(message.get("content", "")) for message in messages
+    )
+
+
+def _retrieve_response(
+    state: _ScenarioState,
+    repo_id: str,
+    content: str,
+    call_number: int,
+) -> JSONResponse | StreamingResponse | dict[str, Any]:
+    """Resolve one deterministic retrieval response after validation."""
+    if content in {_CANCELLATION_QUERY, _CONCURRENT_CANCELLATION_QUERY}:
+        response: JSONResponse | StreamingResponse | dict[str, Any] = (
+            StreamingResponse(
+                state.cancellation_stream(), media_type="application/json"
+            )
+        )
+    elif content == _NO_MATCH_QUERY:
+        response = {"doc_list": []}
+    elif (
+        state.mode == "partial_then_complete"
+        and repo_id == "repo-b"
+        and call_number == 1
+    ):
+        response = JSONResponse({"error": _SECRET_MARKER}, status_code=503)
+    elif state.mode == "all_failed":
+        response = (
+            {"doc_list": []}
+            if "valid-empty" in content and repo_id == "repo-a"
+            else JSONResponse({"error": _SECRET_MARKER}, status_code=503)
+        )
+    elif state.mode == "malformed" and "malformed-retrieve" in content:
+        response = {
+            "doc_list": [
+                {"chunk_id": f"{repo_id}-malformed", "title": "broken"}
+            ]
+        }
+    else:
+        response = {"doc_list": [_valid_document(repo_id)]}
+    return response
 
 
 def create_app(mode: str | None = None) -> FastAPI:
@@ -210,47 +299,8 @@ def create_app(mode: str | None = None) -> FastAPI:
             return JSONResponse({"error": _SECRET_MARKER}, status_code=400)
 
         async with state.lock:
-            call_number = state.record_retrieve(repo_id, content)
-
-        if _CANCELLATION_QUERY in content:
-
-            async def cancellation_body() -> AsyncIterator[bytes]:
-                """Expose an active response body whose close is observable."""
-                async with state.lock:
-                    state.retrieve_stream_started += 1
-                    state.retrieve_stream_active += 1
-                try:
-                    yield b'{"doc_list": ['
-                    await asyncio.Event().wait()
-                except asyncio.CancelledError:
-                    async with state.lock:
-                        state.retrieve_stream_cancelled += 1
-                    raise
-                finally:
-                    async with state.lock:
-                        state.retrieve_stream_active -= 1
-
-            return StreamingResponse(
-                cancellation_body(), media_type="application/json"
-            )
-
-        if (
-            state.mode == "partial_then_complete"
-            and repo_id == "repo-b"
-            and call_number == 1
-        ):
-            return JSONResponse({"error": _SECRET_MARKER}, status_code=503)
-        if state.mode == "all_failed":
-            if "valid-empty" in content and repo_id == "repo-a":
-                return {"doc_list": []}
-            return JSONResponse({"error": _SECRET_MARKER}, status_code=503)
-        if state.mode == "malformed" and "malformed-retrieve" in content:
-            return {
-                "doc_list": [
-                    {"chunk_id": f"{repo_id}-malformed", "title": "broken"}
-                ]
-            }
-        return {"doc_list": [_valid_document(repo_id)]}
+            call_number = state.retrieve.record(repo_id, content)
+        return _retrieve_response(state, repo_id, content, call_number)
 
     @application.post("/rerank", response_model=None)
     async def rerank(request: Request) -> JSONResponse | dict[str, Any]:
@@ -268,8 +318,7 @@ def create_app(mode: str | None = None) -> FastAPI:
             if isinstance(identifier, str):
                 ids.append(identifier)
         async with state.lock:
-            state.rerank_calls += 1
-            state.rerank_ids.append(ids)
+            state.rerank.record(ids)
         if state.mode == "malformed" and "malformed-rerank" in query:
             return {
                 "rank_result": [{"id": "unknown-synthetic-id", "score": 0.91}],
@@ -313,11 +362,12 @@ def create_app(mode: str | None = None) -> FastAPI:
         }
         async with state.lock:
             state.provider.record(roles, markers)
-        content = (
-            "[]"
-            if _is_follow_up_prompt(normalized_messages)
-            else ("Synthetic protein design answer [1]")
-        )
+        if _is_follow_up_prompt(normalized_messages):
+            content = "[]"
+        elif _contains_prompt_marker(normalized_messages, _NO_MATCH_QUERY):
+            content = "No synthetic evidence was found."
+        else:
+            content = "Synthetic protein design answer [1]"
         return {
             "id": "chatcmpl-synthetic-knowledge",
             "object": "chat.completion",
@@ -355,7 +405,7 @@ def _await_healthy(
         if proc.poll() is not None:
             raise RuntimeError(
                 f"Knowledge upstream exited with code {proc.returncode}; "
-                f"logs:\n{chr(10).join(logs.snapshot())}"
+                f"captured_log_lines={len(logs.snapshot())}"
             )
         try:
             response = httpx.get(f"{base_url}/healthz", timeout=2.0)
@@ -367,8 +417,8 @@ def _await_healthy(
             pass
         time.sleep(0.1)
     raise RuntimeError(
-        "Knowledge upstream did not become healthy; logs:\n"
-        f"{chr(10).join(logs.snapshot())}"
+        "Knowledge upstream did not become healthy; "
+        f"captured_log_lines={len(logs.snapshot())}"
     )
 
 
