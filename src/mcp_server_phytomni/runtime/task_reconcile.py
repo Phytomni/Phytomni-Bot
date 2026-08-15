@@ -49,6 +49,11 @@ def _project_task_log_text(payload: dict[str, Any]) -> dict[str, Any]:
     return {**payload, "text": "".join(contents)}
 
 
+_SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
+_LIVE_SUCCESS = "SUCCEEDED"
+_LIVE_DEAD = frozenset({"FAILED", "CANCELLED"})
+
+
 def _project_deep_genome_snapshot(
     result: dict[str, Any], snapshot: Any
 ) -> dict[str, Any]:
@@ -57,6 +62,8 @@ def _project_deep_genome_snapshot(
     result.update(snapshot_to_public_dict(snapshot))
     if result["status"] in _NON_TERMINAL_STATUSES and result["final_report"]:
         result["status"] = "succeeded"
+    elif result["status"] in _SUCCESS_STATUSES and not result["final_report"]:
+        result["status"] = "failed"
     return result
 
 
@@ -113,6 +120,26 @@ def _reconcile_deep_genome_local(
     return _project_deep_genome_snapshot(result, snapshot)
 
 
+def _persist_live_terminal_row(
+    manager: TaskManager,
+    *,
+    task_id: str,
+    analysis_id: str,
+    output_dir: str,
+    remote_status: str,
+) -> None:
+    """Write a confirmed remote terminal verdict back onto the local row."""
+    if remote_status != _LIVE_SUCCESS and remote_status not in _LIVE_DEAD:
+        return
+    persisted = "succeeded" if remote_status == _LIVE_SUCCESS else "failed"
+    try:
+        manager.update_task(task_id, persisted, analysis_id, output_dir)
+    except (sqlite3.Error, OSError):
+        logger.warning(
+            "reconcile: failed to persist live status for %s", task_id
+        )
+
+
 async def reconcile_task(task_id: str) -> dict[str, Any]:
     """Return one task's locally recorded + live-bridged status.
 
@@ -143,7 +170,11 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
         merged from the local snapshot when the additive tables exist.
         A DeepGenome row still showing a non-terminal status but carrying
         a ``final_report`` (a lost terminal status write) is surfaced as
-        ``succeeded``. ``degraded`` /
+        ``succeeded``. A DeepGenome row marked succeeded without a
+        ``final_report`` is surfaced as ``failed``. A confirmed live
+        terminal (``SUCCEEDED`` / ``FAILED`` / ``CANCELLED``) is written
+        back onto the local row so a later probe failure cannot revive
+        ``submitted``. ``degraded`` /
         ``degraded_reason`` carry the persisted (already-redacted)
         degradation reason or ``None`` so both poll surfaces can flag a
         degraded report.
@@ -192,8 +223,20 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
         return result
     result["live_status"] = live
     live_status = live.get("status") if isinstance(live, dict) else None
-    if live_status:
-        result["status"] = live_status
+    if not isinstance(live_status, str) or not live_status.strip():
+        return result
+    cleaned = live_status.strip()
+    result["status"] = cleaned
+    live_output = live.get("output_dir") if isinstance(live, dict) else None
+    if isinstance(live_output, str) and live_output.strip():
+        result["output_dir"] = live_output.strip()
+    _persist_live_terminal_row(
+        manager,
+        task_id=task_id,
+        analysis_id=str(row["analysis_id"] or ""),
+        output_dir=str(result["output_dir"] or ""),
+        remote_status=cleaned.upper(),
+    )
     return result
 
 

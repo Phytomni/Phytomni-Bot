@@ -25,10 +25,12 @@ from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
 from mcp_server_phytomni.agents.deep_genome.coordinator import (
     DeepGenomeWorkflowError,
 )
+from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.live_tasks import (
     is_live_running,
     register_live_task,
 )
+from mcp_server_phytomni.runtime.task_manager import TaskManager
 
 pytestmark = pytest.mark.agent
 
@@ -140,6 +142,68 @@ def test_finalize_workflow_marks_no_usable_result_failed(
     )
 
     assert updates == [("dg-no-usable", "failed", "", "/obs/o")]
+
+
+def test_finalize_success_without_report_fails_umbrella(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A finished graph without a published report is not succeeded."""
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(agent_module, "resolve_tasks_db_path", lambda: db_path)
+    store = DeepGenomeStore(db_path)
+    store.reserve_run(
+        run_id="run-empty-success",
+        umbrella_task_id="dg-empty-success",
+        owner="alice",
+        output_dir="/obs/o",
+    )
+    agent = _FinalizeProbe(knowledge_agent=None, analyst_agent=None)
+
+    agent.run_finalize(
+        _succeeded_task(),
+        umbrella_id="dg-empty-success",
+        output_dir="/obs/o",
+    )
+
+    snapshot = store.get_snapshot("dg-empty-success")
+    assert snapshot is not None
+    assert snapshot.status == "failed"
+    assert snapshot.final_report is None
+    assert snapshot.report_stage == "waiting_for_brief_gene"
+    assert snapshot.report_revision == 0
+    row = TaskManager(db_path).get_task("dg-empty-success")
+    assert row is not None
+    assert row["status"] == "failed"
+
+
+def test_finalize_success_with_report_keeps_succeeded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A finished graph that already published a report stays succeeded."""
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(agent_module, "resolve_tasks_db_path", lambda: db_path)
+    store = DeepGenomeStore(db_path)
+    store.reserve_run(
+        run_id="run-with-report",
+        umbrella_task_id="dg-with-report",
+        owner="alice",
+        output_dir="/obs/o",
+    )
+    TaskManager(db_path).set_task_final_report(
+        "dg-with-report", "# Report\n\nbody\n"
+    )
+    agent = _FinalizeProbe(knowledge_agent=None, analyst_agent=None)
+
+    agent.run_finalize(
+        _succeeded_task(),
+        umbrella_id="dg-with-report",
+        output_dir="/obs/o",
+    )
+
+    snapshot = store.get_snapshot("dg-with-report")
+    assert snapshot is not None
+    assert snapshot.status == "succeeded"
+    assert snapshot.final_report == "# Report\n\nbody\n"
 
 
 async def test_arun_registers_umbrella_in_live_set(

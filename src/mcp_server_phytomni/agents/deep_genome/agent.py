@@ -770,7 +770,12 @@ class DeepGenomeAgents(
         still carries a ``final_report``, else ``failed`` once this
         umbrella is no longer live). Cancellation surfaces as
         ``asyncio.CancelledError`` on the task and is recorded as
-        ``"failed"`` so a polling client never hangs.
+        ``"failed"`` so a polling client never hangs. A reserved
+        umbrella that is still ``running`` with no published
+        ``final_report`` is settled ``failed`` even when the graph
+        returned: ``succeeded`` without a report is an illegal
+        terminal (``waiting_for_brief_gene`` / revision 0). A
+        non-reserved submit row still receives the graph outcome.
 
         Args:
             task: Completed LangGraph workflow task whose
@@ -809,14 +814,19 @@ class DeepGenomeAgents(
             }:
                 terminal_persisted = True
             if (
-                status == "failed"
-                and not terminal_persisted
+                not terminal_persisted
                 and snapshot is not None
                 and snapshot.status == "running"
+                and (status == "failed" or not snapshot.final_report)
             ):
+                settle_reason = (
+                    failure_reason
+                    if status == "failed"
+                    else "final report unavailable"
+                )
                 store.fail_umbrella(
                     umbrella_id,
-                    reason=failure_reason,
+                    reason=settle_reason or "final report unavailable",
                 )
                 terminal_persisted = True
         except (sqlite3.Error, OSError, RuntimeError) as exc:

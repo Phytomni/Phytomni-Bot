@@ -741,6 +741,64 @@ async def test_reconcile_report_beats_liveness_for_deep_genome(
     assert result["status"] == "succeeded"
 
 
+@pytest.mark.asyncio
+async def test_reconcile_does_not_treat_empty_deep_genome_as_succeeded(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A succeeded umbrella without a report is surfaced as failed."""
+    _install_local_only_reconcile(monkeypatch, mgr_path)
+    store, task_id = _reserve_deep_genome(
+        mgr_path,
+        run_id="run-empty-ok",
+        task_id="dg-empty-ok",
+    )
+    TaskManager(mgr_path).update_task(task_id, "succeeded", "", "/obs/run")
+
+    result = await reconcile_task(task_id)
+
+    assert store.get_snapshot(task_id) is not None
+    assert result["status"] == "failed"
+    assert result["final_report"] is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_persists_live_analyst_terminal_status(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A remote SUCCEEDED verdict is stored so later polls see a terminal row."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="an-live",
+            status="submitted",
+            output_dir="unupdated",
+            run_context=RunContext(agent="analyst"),
+        )
+    )
+
+    async def _succeeded(t_id: str, **_: Any) -> dict[str, str]:
+        assert t_id == "an-live"
+        return {"status": "SUCCEEDED", "output_dir": "/obs/done"}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _succeeded,
+    )
+
+    result = await reconcile_task("an-live")
+
+    assert result["status"] == "SUCCEEDED"
+    assert result["output_dir"] == "/obs/done"
+    row = mgr.get_task("an-live")
+    assert row is not None
+    assert row["status"] == "succeeded"
+    assert row["output_dir"] == "/obs/done"
+
+
 @pytest.mark.parametrize(
     "agent_tag",
     [None, "analyst", "design", "network", "research"],
