@@ -155,6 +155,7 @@ async def test_retrieve_worker_node_success_writes_indexed_result(
 
 async def test_retrieve_worker_node_exception_writes_failed_index(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Worker does not turn a retrieval failure into valid empty evidence."""
     fake_app = AsyncMock(
@@ -173,6 +174,7 @@ async def test_retrieve_worker_node_exception_writes_failed_index(
     result = await worker(state)
 
     assert result == {"retrieve_failed_indices": [1]}
+    assert "backend timeout" not in caplog.text
 
 
 async def test_retrieve_worker_reraises_cancellation(
@@ -229,7 +231,9 @@ async def test_retrieve_reduce_node_sorts_by_task_index(
     assert len(params) == 2
     # After sort, index-0 dimension appears first.
     assert params[0]["subtopic"] == "dim0"
+    assert "c0" in params[0]["knowledge"]
     assert params[1]["subtopic"] == "dim1"
+    assert "c1" in params[1]["knowledge"]
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +290,72 @@ async def test_retrieve_reduce_rejects_missing_dimension(
         await agent.retrieve_reduce_node(state)
 
 
+async def test_retrieve_reduce_accepts_valid_empty_successes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Complete empty successes remain genuine no-match classifications."""
+    agent = _build_agent(monkeypatch)
+    state = cast(
+        DeepResearchState,
+        {
+            "research_dimensions": ["d0", "d1"],
+            "total_length": 0,
+            "retrieve_indexed_results": [(1, []), (0, [])],
+            "retrieve_failed_indices": [],
+        },
+    )
+
+    result = await agent.retrieve_reduce_node(state)
+
+    assert result["all_raw_doc_list"] == []
+    assert result["dimension_params"] == [
+        {"subtopic": "d0", "knowledge": ""},
+        {"subtopic": "d1", "knowledge": ""},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("indexed", "failed"),
+    [
+        ([(0, []), (0, [])], [1]),
+        ([(0, [])], [1, 1]),
+        ([(0, []), (1, [])], [1]),
+        ([(0, []), (2, [])], []),
+        ([(0, [])], [2]),
+        ([(False, []), (1, [])], []),
+        ([(0, [])], [True]),
+    ],
+    ids=[
+        "duplicate-success",
+        "duplicate-failure",
+        "success-failure-overlap",
+        "success-out-of-range",
+        "failure-out-of-range",
+        "boolean-success-index",
+        "boolean-failure-index",
+    ],
+)
+async def test_retrieve_reduce_rejects_invalid_index_classifications(
+    monkeypatch: pytest.MonkeyPatch,
+    indexed: list[tuple[int, list[dict[str, object]]]],
+    failed: list[int],
+) -> None:
+    """Every planned dimension must have one bounded integer classification."""
+    agent = _build_agent(monkeypatch)
+    state = cast(
+        DeepResearchState,
+        {
+            "research_dimensions": ["d0", "d1"],
+            "total_length": 0,
+            "retrieve_indexed_results": indexed,
+            "retrieve_failed_indices": failed,
+        },
+    )
+
+    with pytest.raises(RetrievalProtocolError):
+        await agent.retrieve_reduce_node(state)
+
+
 async def test_retrieve_reduce_fails_when_no_reliable_evidence_remains(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -298,6 +368,27 @@ async def test_retrieve_reduce_fails_when_no_reliable_evidence_remains(
             "total_length": 0,
             "retrieve_indexed_results": [(1, [])],
             "retrieve_failed_indices": [0],
+        },
+    )
+
+    with pytest.raises(
+        McpError, match="Knowledge retrieval temporarily unavailable"
+    ):
+        await agent.retrieve_reduce_node(state)
+
+
+async def test_retrieve_reduce_fails_when_every_dimension_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An all-failed classification stops before Review drafting."""
+    agent = _build_agent(monkeypatch)
+    state = cast(
+        DeepResearchState,
+        {
+            "research_dimensions": ["d0", "d1"],
+            "total_length": 0,
+            "retrieve_indexed_results": [],
+            "retrieve_failed_indices": [1, 0],
         },
     )
 

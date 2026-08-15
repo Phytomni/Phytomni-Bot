@@ -253,7 +253,8 @@ class ReviewPlanningMixin:
                     "Review retrieval index contract violated"
                 )
             if (
-                not isinstance(entry[0], int)
+                isinstance(entry[0], bool)
+                or not isinstance(entry[0], int)
                 or entry[0] not in expected_indices
                 or entry[0] in indexed_by_index
                 or not isinstance(entry[1], list)
@@ -266,7 +267,8 @@ class ReviewPlanningMixin:
         failed_set: set[int] = set()
         for index in state["retrieve_failed_indices"]:
             if (
-                not isinstance(index, int)
+                isinstance(index, bool)
+                or not isinstance(index, int)
                 or index not in expected_indices
                 or index in failed_set
                 or index in indexed_by_index

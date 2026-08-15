@@ -45,10 +45,10 @@ else:
 
 # Mirror of the ``_REVISED_WORKER_CAUGHT`` pattern at agent.py:92
 # (``(Exception,)``). Records only ``Exception``-class add_query
-# results as failures; cancellation / shutdown signals
+# results as failed calls; cancellation / shutdown signals
 # (``CancelledError`` / ``KeyboardInterrupt`` — ``BaseException`` but
 # not ``Exception``) propagate instead, handled in
-# ``_collect_add_query_failures``.
+# ``_partition_add_query_results``.
 _ADD_QUERY_FAILURE_TYPES: tuple[type[Exception], ...] = (Exception,)
 
 

@@ -14,6 +14,7 @@ remains, and cancellation propagation.
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import pytest
@@ -144,6 +145,98 @@ async def test_feedback_rag_fails_when_all_evidence_is_lost(
             draft_content="draft-orig",
             review_content=review_content,
             raw_doc_list=[],
+        )
+
+
+async def test_feedback_rag_uses_mixed_supplementary_evidence_silently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A valid supplementary result supports silent partial continuation."""
+    monkeypatch.setattr(
+        ReviewReportMixin, "_audit_citations", _audit_passthrough
+    )
+
+    async def fake_arun(
+        self: Any,
+        *,
+        user_query: str,
+        is_generate: bool,
+        is_follow_up: bool,
+    ) -> list[dict[str, Any]]:
+        del self, is_generate, is_follow_up
+        if user_query == "private-failed-query":
+            raise RuntimeError("sensitive endpoint details")
+        return [
+            {
+                "chunk_id": "supplement-1",
+                "title": "Supported finding",
+                "content": "reliable supplementary evidence",
+            }
+        ]
+
+    async def fake_chat(self: Any, user_query: str) -> dict[str, Any]:
+        del self, user_query
+        return {
+            "choices": [{"message": {"content": "evidence-backed revision"}}]
+        }
+
+    monkeypatch.setattr(KnowledgeAgent, "arun", fake_arun)
+    monkeypatch.setattr(DeepResearchAgent, "_chat", fake_chat)
+
+    agent = _build_agent()
+    result = await getattr(agent, "_feedback_rag")(
+        subtopic_idx=1,
+        draft_content="draft-orig",
+        review_content=(
+            '{"has_critical_gaps": true, "search_queries": '
+            '["supported-query", "private-failed-query"]}'
+        ),
+        raw_doc_list=[],
+    )
+
+    assert result["revised_content"] == "evidence-backed revision"
+    assert [doc["chunk_id"] for doc in result["add_doc_list"]] == [
+        "supplement-1"
+    ]
+    public_state = json.dumps(result, ensure_ascii=False)
+    assert "failures" not in result
+    assert "unavailable" not in public_state
+    assert "private-failed-query" not in public_state
+    assert "sensitive endpoint details" not in public_state
+
+
+async def test_feedback_rag_propagates_gathered_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cancellation from a supplementary Knowledge call aborts revision."""
+    monkeypatch.setattr(
+        ReviewReportMixin, "_audit_citations", _audit_passthrough
+    )
+
+    async def fake_arun(
+        self: Any,
+        *,
+        user_query: str,
+        is_generate: bool,
+        is_follow_up: bool,
+    ) -> list[dict[str, Any]]:
+        del self, is_generate, is_follow_up
+        if user_query == "cancel-query":
+            raise asyncio.CancelledError()
+        return []
+
+    monkeypatch.setattr(KnowledgeAgent, "arun", fake_arun)
+
+    agent = _build_agent()
+    with pytest.raises(asyncio.CancelledError):
+        await getattr(agent, "_feedback_rag")(
+            subtopic_idx=0,
+            draft_content="draft-orig",
+            review_content=(
+                '{"has_critical_gaps": true, "search_queries": '
+                '["empty-query", "cancel-query"]}'
+            ),
+            raw_doc_list=[{"doc_id": "document 001", "content": "main"}],
         )
 
 
