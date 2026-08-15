@@ -29,6 +29,14 @@ the seven-day session lifetime. Protocol identity is advertised separately by
 the top-level `protocols` map in `GET /v1/agents`; it is not duplicated inside
 the capability descriptor.
 
+`resumable_upload_v2.json` is the stricter Bot-owned compatibility fixture for
+the Web gateway. It projects only field-name, type, and required metadata from
+the public create, renew, and attachment Pydantic models. Delegated or
+value-bearing fields named `capability`, `capability_expires_at`, `upload_url`,
+`owner_subject`, and `filename` are deliberately omitted. The test projection
+accounts for every current model field, so additions fail closed until they are
+classified as safe or omitted.
+
 ## Wire rules
 
 - `create_request.json` and `renew_request.json` are control-plane bodies.
@@ -66,6 +74,7 @@ feature flag stays disabled until those external checks are accepted.
 ## File index
 
 - `manifest.json`: fixture set, protocol version, and SHA-256 digests.
+- `resumable_upload_v2.json`: strictly sanitized Web compatibility projection.
 - `capability.json`: sanitized capability descriptor and route inventory.
 - `create_request.json` / `create_response.json`: create handshake.
 - `renew_request.json` / `renew_response.json`: capability renewal.
