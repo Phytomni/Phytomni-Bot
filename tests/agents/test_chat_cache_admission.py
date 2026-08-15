@@ -6,7 +6,7 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -111,7 +111,7 @@ def _install_real_sdk_transport(
     sdk_client = RealAsyncOpenAI(
         api_key="test-key",
         base_url="https://provider.invalid/v1",
-        http_client=http_client,
+        http_client=cast(Any, http_client),
         max_retries=0,
     )
     # OpenAI 2.37 resolves platform headers through blocking host discovery on

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -429,13 +429,13 @@ def _bad_request(message: str) -> BadRequestError:
     """Build an offline OpenAI 400 with a controllable message body."""
     request = httpx.Request("POST", "https://example.invalid/chat/completions")
     response = httpx.Response(400, request=request)
-    return BadRequestError(message, response=response, body=None)
+    return BadRequestError(message, response=cast(Any, response), body=None)
 
 
 def _connection_error() -> APIConnectionError:
     """Build an offline OpenAI transport failure."""
     request = httpx.Request("POST", "https://example.invalid/chat/completions")
-    return APIConnectionError(request=request)
+    return APIConnectionError(request=cast(Any, request))
 
 
 def _server_error() -> InternalServerError:
@@ -443,7 +443,7 @@ def _server_error() -> InternalServerError:
     request = httpx.Request("POST", "https://example.invalid/chat/completions")
     response = httpx.Response(503, request=request)
     return InternalServerError(
-        "upstream unavailable", response=response, body=None
+        "upstream unavailable", response=cast(Any, response), body=None
     )
 
 

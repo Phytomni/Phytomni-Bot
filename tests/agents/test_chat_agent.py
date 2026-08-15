@@ -83,7 +83,9 @@ async def test_run_phyto_chat_retries_openai_connection_error(
         calls += 1
         if calls == 1:
             raise APIConnectionError(
-                request=Request("POST", "https://example.invalid/v1")
+                request=cast(
+                    Any, Request("POST", "https://example.invalid/v1")
+                )
             )
         return expected
 

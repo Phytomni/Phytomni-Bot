@@ -169,6 +169,7 @@ def _registered_endpoint(
         for route in router.routes
         if isinstance(route, APIRoute)
         and route.path == path
+        and route.methods is not None
         and method in route.methods
     )
 
@@ -203,6 +204,8 @@ def test_operator_inventory_partitions_every_registered_route() -> None:
     terminated: set[tuple[str, str]] = set()
     for route in router.routes:
         if not isinstance(route, APIRoute):
+            continue
+        if route.methods is None:
             continue
         target = (
             forwarded
