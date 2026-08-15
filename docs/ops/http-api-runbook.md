@@ -1231,7 +1231,7 @@ Create an asset with JSON metadata:
 {
   "owner_subject": "alice",
   "filename": "report.pdf",
-  "content_type_hint": "application/pdf",
+  "content_type": "application/pdf",
   "size_bytes": 524288,
   "purpose": "document",
   "idempotency_key": "web-upload-123"
