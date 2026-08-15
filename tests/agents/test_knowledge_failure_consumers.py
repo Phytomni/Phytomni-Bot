@@ -45,7 +45,13 @@ from tests.agents._subgraph_branch_fakes import install_chat_subgraph_mocks
 
 pytestmark = pytest.mark.agent
 
-RetrievalCase = Literal["partial", "no_match", "failure", "cancelled"]
+RetrievalCase = Literal[
+    "partial",
+    "no_match",
+    "failure",
+    "cancelled",
+    "malformed",
+]
 
 _SAFE_ERROR = "Knowledge retrieval temporarily unavailable"
 _ANALYST_BUILDER = (
@@ -89,6 +95,8 @@ def install_ordered_knowledge_boundary(
             raise retrieval_unavailable_error()
         if case == "cancelled":
             raise asyncio.CancelledError
+        if case == "malformed":
+            return {"retrieved_docs": []}
         return _knowledge_result(case)
 
     workflow = StateGraph(
@@ -490,6 +498,42 @@ async def test_analyst_graph_stops_at_unusable_knowledge_without_side_effects(
         assert "No Data" not in str(exc_info.value)
 
 
+async def test_analyst_graph_validates_output_before_upload_context_download(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed Knowledge output stops before external upload reads."""
+    events: list[str] = []
+    harness = build_analyst_proof_harness(
+        monkeypatch,
+        tmp_path,
+        "malformed",
+        events,
+    )
+
+    async def download_upload_context(*_args: Any) -> tuple[str, int]:
+        events.append("upload_download")
+        return ("", 0)
+
+    harness.download_upload_context.side_effect = download_upload_context
+
+    with pytest.raises(McpError) as exc_info:
+        await harness.agent.app.ainvoke(
+            analyst_graph_input(harness.output_dir),
+            config={"configurable": {"thread_id": "analyst-malformed"}},
+        )
+
+    assert events == ["knowledge", "validation"]
+    harness.download_upload_context.assert_not_awaited()
+    harness.submit_output_dir.assert_not_awaited()
+    harness.upload_submit_meta.assert_not_awaited()
+    harness.post_submit_job.assert_not_awaited()
+    assert_no_task_rows(tmp_path / "tasks.sqlite")
+    assert not harness.output_dir.exists()
+    assert str(exc_info.value) == _SAFE_ERROR
+    assert "No Data" not in str(exc_info.value)
+
+
 @pytest.mark.parametrize("case", ["partial", "no_match"])
 async def test_analyst_direct_tool_retrieval_admits_valid_outcomes(
     case: RetrievalCase,
@@ -509,11 +553,27 @@ async def test_analyst_direct_tool_retrieval_admits_valid_outcomes(
     async def retrieve_tool_usage(**_kwargs: Any) -> dict[str, Any]:
         events.append("tool_retrieval")
         docs = (
-            [{"content": "Use the bounded tool safely."}]
+            [
+                {
+                    "chunk_id": "tool-doc",
+                    "title": "Bounded tool",
+                    "content": "Use the bounded tool safely.",
+                }
+            ]
             if case == "partial"
             else []
         )
-        return {"doc_list": docs, "outcome": case}
+        failures = (
+            [{"source": "source-2", "kind": "timeout", "retryable": True}]
+            if case == "partial"
+            else []
+        )
+        return {
+            "doc_list": docs,
+            "total": len(docs),
+            "outcome": case,
+            "failures": failures,
+        }
 
     retrieve_spy = AsyncMock(side_effect=retrieve_tool_usage)
     monkeypatch.setattr(analyst_graph, "retrieve", retrieve_spy)

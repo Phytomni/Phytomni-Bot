@@ -62,20 +62,21 @@ def build_analyst_knowledge_input(
 def extract_analyst_knowledge_response(
     knowledge_output: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    """Project ``KnowledgeOutput.retrieved_docs`` into the doc list.
+    """Validate ``KnowledgeOutput`` and return its detached documents.
 
     The analyst planning step reads the raw doc list; the knowledge
-    subgraph stores it under ``KnowledgeOutput.retrieved_docs``. This
-    helper unwraps the list and defaults to ``[]`` when the upstream
-    returned no docs so the downstream prompt builder still sees a
-    list rather than ``None``.
+    subgraph stores it under ``KnowledgeOutput.retrieved_docs``. The
+    shared strict adapter checks every required output key and the
+    outcome/document relationship before returning the document list.
+    A genuine ``no_match`` returns an empty list; missing or malformed
+    output raises the fixed retrieval-unavailable error.
 
     Args:
         knowledge_output: The knowledge subgraph's final state mapping
             (``KnowledgeOutput``-shaped).
 
     Returns:
-        The raw retrieved-doc list, or ``[]`` if the upstream returned
-        ``None`` or omitted the key.
+        A detached retrieved-doc list, which is empty only for a valid
+        ``no_match`` outcome.
     """
     return _extract_output(knowledge_output)

@@ -6,8 +6,7 @@
 
 Exports :class:`AnalystKnowledgeSubgraphMixin`, the prep + post halves
 surrounding the per-instance compiled KnowledgeAgent app that
-replaces the inline ``multi_retrieve`` call. The legacy node
-stays in ``graph.py``.
+replaces the retired inline ``multi_retrieve`` call.
 """
 
 from __future__ import annotations
@@ -93,12 +92,12 @@ class AnalystKnowledgeSubgraphMixin:
             ``upload_context`` and ``retrieve_context`` keys — the
             exact shape the downstream ``plan_node`` reads.
         """
+        docs = extract_analyst_knowledge_response(
+            state.get("knowledge_response") or {}
+        )
         upload_context, total_length = await download_upload_context(
             state["obs_file_list"],
             self.analyst_config,
-        )
-        docs = extract_analyst_knowledge_response(
-            state.get("knowledge_response") or {}
         )
         retrieve_context, _ = format_retrieved_doc_context(
             docs,
