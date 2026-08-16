@@ -572,9 +572,7 @@ class ConversationContextService:
         }
         if len(public_metadata) != len(_PUBLIC_STAGE_FIELDS):
             return None
-        return ContextStageMetadata(
-            **public_metadata,
-        )
+        return ContextStageMetadata.from_public(public_metadata)
 
     def update_review_settlement_metadata(
         self,

@@ -287,32 +287,24 @@ def stage_outcome(
     selection = request.selection
     route_source = request.route_source
     proposed = request.proposed
-    stage = ContextStageMetadata(
-        selected_agent_id=selection.selected_agent_id,
-        route_source=route_source,
-        route_reason_code=selection.reason_code,
-        base_business_context_version=(envelope.base_business_context_version),
-        proposed_business_context_version=(
-            envelope.base_business_context_version + 1
-        ),
-        last_applied_ledger_cursor=envelope.ledger_cursor,
-        context_truncated=request.context_truncated,
-        context_rebuilt=request.rebuilt,
-        context_degraded=request.degraded,
+    stage = ContextStageMetadata.from_public(
+        {
+            "selected_agent_id": selection.selected_agent_id,
+            "route_source": route_source,
+            "route_reason_code": selection.reason_code,
+            "base_business_context_version": (
+                envelope.base_business_context_version
+            ),
+            "proposed_business_context_version": (
+                envelope.base_business_context_version + 1
+            ),
+            "last_applied_ledger_cursor": envelope.ledger_cursor,
+            "context_truncated": request.context_truncated,
+            "context_rebuilt": request.rebuilt,
+            "context_degraded": request.degraded,
+        }
     )
-    stage_metadata: dict[str, Any] = {
-        "selected_agent_id": stage.selected_agent_id,
-        "route_source": stage.route_source,
-        "route_reason_code": stage.route_reason_code,
-        "base_business_context_version": stage.base_business_context_version,
-        "proposed_business_context_version": (
-            stage.proposed_business_context_version
-        ),
-        "last_applied_ledger_cursor": stage.last_applied_ledger_cursor,
-        "context_truncated": stage.context_truncated,
-        "context_rebuilt": stage.context_rebuilt,
-        "context_degraded": stage.context_degraded,
-    }
+    stage_metadata: dict[str, Any] = stage.as_public_dict()
     if request.review_metadata is not None:
         stage_metadata[_PRIVATE_REVIEW_STAGE_KEY] = request.review_metadata
     stored = service.store.stage_turn(

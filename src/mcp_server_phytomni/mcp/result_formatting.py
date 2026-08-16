@@ -9,8 +9,6 @@ historic imports, including the two private citation helpers used by the
 server test contract, object-identical during the migration.
 """
 
-from dataclasses import asdict
-
 from ..contracts.conversation_context import ContextStageMetadata
 from . import universal_failures as _universal_failures
 from .formatting import agui as _formatting_agui
@@ -39,7 +37,7 @@ def context_staged(*, turn_id: str, stage: ContextStageMetadata) -> AguiEvent:
         {
             "schema_version": 1,
             "turn_id": turn_id,
-            **asdict(stage),
+            **stage.as_public_dict(),
         },
     )
 

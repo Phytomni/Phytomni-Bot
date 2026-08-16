@@ -612,21 +612,7 @@ def _stage_context_stream_success(
     }
     custom_event = context_staged(
         turn_id=context_stream.envelope.turn_id,
-        stage=ContextStageMetadata(
-            selected_agent_id="ChatAgent",
-            route_source="instant_lock",
-            route_reason_code="INSTANT_LOCK",
-            base_business_context_version=(
-                context_stream.envelope.base_business_context_version
-            ),
-            proposed_business_context_version=(
-                context_stream.envelope.base_business_context_version + 1
-            ),
-            last_applied_ledger_cursor=context_stream.envelope.ledger_cursor,
-            context_truncated=snapshot.truncated,
-            context_rebuilt=context_stream.rebuilt,
-            context_degraded=degraded,
-        ),
+        stage=ContextStageMetadata.from_public(stage_metadata),
     )
     final_replay_events = [
         *replay_events,
