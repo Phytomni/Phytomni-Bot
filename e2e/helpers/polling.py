@@ -5,22 +5,12 @@
 
 Tools that submit work to the analysis platform (Analyst, DeepGenome,
 DigitalDesign, GeneNetwork, InSilicoResearch) return a task handle and
-defer execution to a separate backend. The MCP surface in
-``src/mcp_server_phytomni/mcp/schemas.py`` does not expose a public
-task-status tool; this helper drops one layer and combines two
-sources on every iteration so remote-submit agents (which never
-update the local row themselves) still reach terminal:
-
-- the local ``server_tasks.db`` row (managed by
-  ``mcp_server_phytomni/runtime/task_manager.py``), inspected
-  through :func:`_read_task_state`;
-- the live backend reconcile bridge
-  (``mcp_server_phytomni/runtime/task_reconcile.reconcile_task``)
-  which issues a single non-blocking ``task_status`` call and
-  prefers the live verdict when reachable.
-
-See ``e2e/README.md`` for the rationale behind not routing this
-through the MCP client.
+defer execution to a separate backend. Each poll prefers the public
+``GetTaskStatus`` MCP tool on the same client that submitted the task
+so the lookup runs inside the server process (where outbound runtime
+exists). In-process ``reconcile_task`` is only a fallback for offline
+helpers that have no MCP client; it cannot see live ``RUNNING`` from
+the pytest process.
 """
 
 from __future__ import annotations
@@ -36,7 +26,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from mcp.shared.exceptions import McpError
@@ -360,18 +350,63 @@ def _status_in(status: str, allowed: frozenset[str]) -> bool:
     return status.lower() in allowed
 
 
+async def _status_payload_from_mcp(
+    client: PhytomniMcpClient | object,
+    task_id: str,
+) -> Mapping[str, Any] | None:
+    """Return a GetTaskStatus payload from the server that submitted."""
+    response = await call_tool(
+        cast(PhytomniMcpClient, client),
+        "GetTaskStatus",
+        {"task_id": task_id},
+    )
+    if not isinstance(response, McpToolResponse):
+        raw = getattr(response, "raw_payload", None)
+        formatted = getattr(response, "formatted", None)
+    else:
+        raw = response.raw_payload
+        formatted = response.formatted
+    if isinstance(raw, Mapping) and raw.get("status"):
+        return raw
+    metadata = getattr(formatted, "metadata", None)
+    if isinstance(metadata, Mapping) and metadata.get("status"):
+        return metadata
+    return None
+
+
 async def _reconciled_task_state(
     task_id: str,
     resolved_db: Path,
+    *,
+    client: PhytomniMcpClient | object | None = None,
 ) -> TaskState | None:
-    """Return a fresh ``TaskState`` combining local DB + live backend.
+    """Return a fresh ``TaskState`` combining MCP status + local DB.
 
-    Calls :func:`reconcile_task` which itself issues one local
-    ``SELECT`` plus one live backend ``task_status`` lookup; falls
-    through to the local-only read if reconcile raises (network
-    down, backend 5xx, auth misconfigured). Returns ``None`` when
-    even the local row is missing so the caller keeps polling.
+    Prefer ``GetTaskStatus`` on the submitting MCP client so live
+    ``RUNNING`` is read inside the server outbound runtime. Fall back
+    to in-process ``reconcile_task`` only when no client is available.
     """
+    if client is not None:
+        try:
+            payload = await _status_payload_from_mcp(client, task_id)
+        except (
+            McpError,
+            OSError,
+            RuntimeError,
+            ValueError,
+            KeyError,
+            TypeError,
+        ) as exc:
+            _logger.debug(
+                "GetTaskStatus(%s) failed: %s; falling back",
+                task_id,
+                exc,
+            )
+            payload = None
+        if payload is not None:
+            status = payload.get("status", "unknown")
+            if status != "unknown":
+                return task_state_from_mapping(payload, task_id=task_id)
     try:
         reconciled = await reconcile_task(task_id)
     except (
@@ -538,6 +573,7 @@ async def poll_until_done(
     db_path: Path | None = None,
     timeout_seconds: float | None = None,
     poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
+    client: PhytomniMcpClient | object | None = None,
 ) -> TaskState:
     """Poll local DB + live backend until ``task_id`` reaches terminal.
 
@@ -572,6 +608,7 @@ async def poll_until_done(
         db_path=db_path,
         timeout_seconds=timeout_seconds,
         poll_interval_seconds=poll_interval_seconds,
+        client=client,
     )
 
 
@@ -581,6 +618,7 @@ async def poll_until_remote_running_or_done(
     db_path: Path | None = None,
     timeout_seconds: float | None = None,
     poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
+    client: PhytomniMcpClient | object | None = None,
 ) -> TaskState:
     """Poll until the task is remotely running or already terminal."""
     return await _poll_until(
@@ -589,6 +627,7 @@ async def poll_until_remote_running_or_done(
         db_path=db_path,
         timeout_seconds=timeout_seconds,
         poll_interval_seconds=poll_interval_seconds,
+        client=client,
     )
 
 
@@ -599,6 +638,7 @@ async def _poll_until(
     db_path: Path | None,
     timeout_seconds: float | None,
     poll_interval_seconds: float,
+    client: PhytomniMcpClient | object | None = None,
 ) -> TaskState:
     """Poll one task until its reconciled status matches ``stop_statuses``."""
     deadline = time.monotonic() + (
@@ -610,7 +650,9 @@ async def _poll_until(
     last_state: TaskState | None = None
 
     while time.monotonic() < deadline:
-        state = await _reconciled_task_state(task_id, resolved_db)
+        state = await _reconciled_task_state(
+            task_id, resolved_db, client=client
+        )
         if state is not None:
             last_state = state
             if _status_in(state.status, stop_statuses):
@@ -720,7 +762,7 @@ async def submit_and_poll_to_success(
         timeout_seconds=submit_timeout_seconds(),
     )
     task_id = extract_task_id(response)
-    state = await poll_until_done(task_id)
+    state = await poll_until_done(task_id, client=client)
     if not state.succeeded:
         raise AssertionError(
             f"{tool_name} task {task_id} ended with status "
@@ -762,7 +804,7 @@ async def submit_and_poll_to_remote_running(
         timeout_seconds=submit_timeout_seconds(),
     )
     task_id = extract_task_id(response)
-    state = await poll_until_remote_running_or_done(task_id)
+    state = await poll_until_remote_running_or_done(task_id, client=client)
     if state.succeeded or _status_in(state.status, RUNNING_STATUSES):
         if not state.succeeded:
             _logger.warning(

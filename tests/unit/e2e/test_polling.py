@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
@@ -460,3 +462,39 @@ async def test_explicit_timeout_wins_over_malformed_environment(
     assert terminal.status == "succeeded"
     assert client.timeout is not None
     assert 0.0 < client.timeout <= 2.0
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_task_status_survives_in_process_outbound_gap(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Live poll must use server-side GetTaskStatus, not pytest reconcile."""
+
+    async def fake_call_tool(
+        _client: object,
+        tool_name: str,
+        arguments: Mapping[str, object],
+        **_kwargs: object,
+    ) -> SimpleNamespace:
+        assert tool_name == "GetTaskStatus"
+        assert arguments == {"task_id": "T-live"}
+        return SimpleNamespace(
+            raw_payload={"task_id": "T-live", "status": "RUNNING"},
+            formatted=SimpleNamespace(metadata={"status": "RUNNING"}),
+        )
+
+    async def boom(_task_id: str) -> dict[str, object]:
+        raise RuntimeError("OutboundRuntimeStateError")
+
+    monkeypatch.setattr(polling, "call_tool", fake_call_tool)
+    monkeypatch.setattr(polling, "reconcile_task", boom)
+
+    state = await polling.poll_until_remote_running_or_done(
+        "T-live",
+        db_path=tmp_path / "missing.db",
+        timeout_seconds=2.0,
+        poll_interval_seconds=0.01,
+        client=object(),
+    )
+    assert state.status == "RUNNING"
