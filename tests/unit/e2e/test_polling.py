@@ -17,6 +17,8 @@ import pytest
 from e2e.helpers import polling
 from tests.unit.e2e.state_fakes import build_task_state
 
+from mcp_client_phytomni import McpToolResponse
+
 
 class _TimeoutCapturingClient:
     """Minimal polling client with observable per-request timeouts."""
@@ -498,3 +500,33 @@ async def test_mcp_get_task_status_survives_in_process_outbound_gap(
         client=object(),
     )
     assert state.status == "RUNNING"
+
+
+def test_extract_task_id_from_execution_envelope() -> None:
+    """Analyst submit wraps the accepted id under execution.tasks."""
+    response = SimpleNamespace(
+        raw_payload={
+            "formatted": {
+                "answer": "Task created successfully:20260816T142501Z-task-analyst-f0fb60f7",
+                "metadata": {},
+            },
+            "execution": {
+                "tasks": [
+                    {
+                        "id": "20260816T142501Z-task-analyst-f0fb60f7",
+                        "accepted": True,
+                    }
+                ]
+            },
+        },
+        formatted=SimpleNamespace(
+            answer=(
+                "Task created successfully:"
+                "20260816T142501Z-task-analyst-f0fb60f7"
+            )
+        ),
+    )
+    assert (
+        polling.extract_task_id(cast(McpToolResponse, response))
+        == "20260816T142501Z-task-analyst-f0fb60f7"
+    )

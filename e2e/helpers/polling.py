@@ -670,6 +670,10 @@ _TASK_ID_PATTERN = re.compile(
     r"\btask[_\- ]?id\s*[:=]\s*([0-9a-fA-F-]{8,})",
     re.IGNORECASE,
 )
+_CREATED_TASK_PATTERN = re.compile(
+    r"Task created successfully:(\S+)",
+    re.IGNORECASE,
+)
 _UUID_PATTERN = re.compile(
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
@@ -713,11 +717,25 @@ def _extract_from_mapping(payload: Any) -> str | None:
         value = payload.get(key)
         if isinstance(value, str) and value:
             return value
+    tasks = payload.get("tasks")
+    if isinstance(tasks, list):
+        for item in tasks:
+            candidate = _extract_from_mapping(item)
+            if candidate is not None:
+                return candidate
+    for nested_key in ("execution", "formatted", "raw"):
+        nested = payload.get(nested_key)
+        candidate = _extract_from_mapping(nested)
+        if candidate is not None:
+            return candidate
     return None
 
 
 def _extract_from_text(text: str) -> str | None:
     """Return a task_id parsed from formatted answer text if present."""
+    created = _CREATED_TASK_PATTERN.search(text)
+    if created:
+        return created.group(1)
     explicit = _TASK_ID_PATTERN.search(text)
     if explicit:
         return explicit.group(1)
