@@ -197,16 +197,63 @@ tests = ["tests/unit/test_example.py"]
     )
 
 
+def _exemption(
+    *,
+    exemption_id: str,
+    rule: str,
+    mechanism: Mechanism,
+) -> Exemption:
+    """Build one registry row for scope-filter tests."""
+    return Exemption(
+        id=exemption_id,
+        tool="pylint",
+        rule=rule,
+        classification=Classification.STRUCTURAL,
+        mechanism=mechanism,
+        target_kind=TargetKind.SYMBOL,
+        path="src/example.py",
+        symbol="Example",
+        peer_path=None,
+        peer_symbol=None,
+        fingerprint="sha256:" + "1" * 64,
+        owner="bot-maintainers",
+        introduced_on=date(2026, 7, 17),
+        review_on=date(2026, 8, 17),
+        rationale="scope filter fixture",
+        counterfactual="scope filter fixture",
+        risk="scope filter fixture",
+        tests=("tests/unit/test_example.py",),
+        expires_on=None,
+        remediation=None,
+    )
+
+
 def test_cross_file_scope_keeps_only_diagnostic_exemptions() -> None:
     """Partial cross-file checks ignore inline and marker exemptions."""
-    registry = cli.load_registry(
-        Path(__file__).resolve().parents[3]
-        / "static-analysis-exemptions.toml",
-        today=date(2026, 7, 17),
+    registry = Registry(
+        schema_version=1,
+        default="deny",
+        exemptions=(
+            _exemption(
+                exemption_id="SAE-STR-0001",
+                rule="R0903",
+                mechanism=Mechanism.INLINE,
+            ),
+            _exemption(
+                exemption_id="SAE-STR-0008",
+                rule="R0801",
+                mechanism=Mechanism.DIAGNOSTIC,
+            ),
+            _exemption(
+                exemption_id="SAE-STR-0009",
+                rule="R0901",
+                mechanism=Mechanism.MARKER,
+            ),
+        ),
     )
     scoped = getattr(cli, "_registry_for_scope")(registry, "cross-file")
 
-    assert scoped.exemptions
+    assert tuple(item.id for item in scoped.exemptions) == ("SAE-STR-0008",)
     assert all(
         item.mechanism.value == "diagnostic" for item in scoped.exemptions
     )

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import asdict
 from typing import Any
 
 from fastapi import HTTPException
@@ -99,7 +98,7 @@ def context_response(
         response["conversation_context"] = {
             "schema_version": 1,
             "turn_id": envelope.turn_id,
-            **asdict(prepared.stage),
+            **prepared.stage.as_public_dict(),
         }
     status_code = 202 if response.get("status") == "running" else 200
     return JSONResponse(response, status_code=status_code)
