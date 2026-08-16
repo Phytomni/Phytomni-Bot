@@ -749,7 +749,6 @@ async def test_review_a2ui_survives_client_and_registry_reload(
     tmp_path: Any,
 ) -> None:
     """A file-backed Review pause survives app/client reconstruction."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     checkpoint_path = str(tmp_path / "checkpoints.db")
     first = await _new_restart_review_app(checkpoint_path)
     try:

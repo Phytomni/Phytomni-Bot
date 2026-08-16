@@ -186,7 +186,6 @@ def test_admin_and_run_registration_preserve_public_contract() -> None:
                 strip_run_result=lambda record: record,
             ),
             pause=runs.RunPauseDependencies(
-                a2ui_enabled=lambda: False,
                 a2ui_max_response_bytes=lambda: 1024,
                 resume_a2ui=_empty_resume,
                 resume_review=_empty_resume,

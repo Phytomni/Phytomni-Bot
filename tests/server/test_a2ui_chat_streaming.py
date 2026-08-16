@@ -70,11 +70,9 @@ async def test_stream_a2ui_confirm_settles_input_required(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     chat_completion: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
     stream_test_tools: Any,
 ) -> None:
-    """Flag+confirm query emits phyto.a2ui and pauses the run."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    """Confirm query emits phyto.a2ui and pauses the run."""
     response = await chat_completion(
         api_client,
         issued_api_key,
@@ -119,7 +117,6 @@ async def test_stream_a2ui_settle_failure_suppresses_surface_and_finish(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An unpersisted Chat pause exposes one safe terminal error only."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     monkeypatch.setattr(
         "mcp_server_phytomni.api.app._settle_stream_run",
         lambda *_args, **_kwargs: False,
@@ -153,7 +150,6 @@ async def test_stream_a2ui_missing_interrupt_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A Chat A2UI graph without its expected interrupt cannot finish."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
 
     async def _finish_without_interrupt(
         _state: dict[str, Any],
@@ -191,7 +187,6 @@ async def test_stream_a2ui_runtime_failure_emits_error_and_fails_run(
     assert_failed_stream: Any,
 ) -> None:
     """A Chat A2UI fault emits one error and settles the run failed."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
 
     async def _fail_a2ui(
         _state: dict[str, Any],
@@ -225,11 +220,9 @@ async def test_stream_a2ui_form_settles_input_required(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     chat_completion: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
     extract_custom_a2ui: Callable[[str], dict[str, Any] | None],
 ) -> None:
     """Flag+form query emits phyto.a2ui with widget=form and pauses."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
 
     response = await chat_completion(
         api_client,
@@ -251,15 +244,13 @@ async def test_stream_a2ui_form_settles_input_required(
     assert a2ui["surface_id"]
 
 
-async def test_stream_with_flag_skips_a2ui_for_non_confirm_query(
+async def test_stream_skips_a2ui_for_non_confirm_query(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     chat_completion: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
     patch_chat_stream: Callable[[list[dict[str, Any]]], None],
 ) -> None:
     """Flag on but non-confirm query uses normal chat stream."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     patch_chat_stream(
         [
             {
@@ -283,47 +274,13 @@ async def test_stream_with_flag_skips_a2ui_for_non_confirm_query(
     assert "event: TextMessageContent\n" in body
 
 
-async def test_stream_without_flag_skips_a2ui(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    chat_completion: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
-    patch_chat_stream: Callable[[list[dict[str, Any]]], None],
-) -> None:
-    """Confirm-like query with flag off uses normal chat stream."""
-    monkeypatch.delenv("PHYTOMNI_A2UI_ENABLED", raising=False)
-    patch_chat_stream(
-        [
-            {
-                "choices": [
-                    {"delta": {"content": "OK"}, "finish_reason": "stop"}
-                ]
-            },
-        ],
-    )
-
-    response = await chat_completion(
-        api_client,
-        issued_api_key,
-        stream=True,
-        content="请确认是否继续",
-    )
-
-    assert response.status_code == 200
-    body = response.text
-    assert f'"name": "{A2UI_CUSTOM_NAME}"' not in body
-    assert "event: TextMessageContent\n" in body
-
-
 async def test_stream_a2ui_disconnect_after_a2ui_before_run_finished(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
     stream_test_tools: Any,
 ) -> None:
     """Disconnect after phyto.a2ui but before RunFinished stays paused."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
 
     payload = ChatCompletionRequest(
         model="phyto-chat",
@@ -370,11 +327,9 @@ async def test_stream_a2ui_disconnect_after_a2ui_before_run_finished(
 
 async def test_stream_a2ui_disconnect_after_run_finished_keeps_input_required(
     tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
     stream_test_tools: Any,
 ) -> None:
     """Disconnect after RunFinished must not downgrade the run to failed."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
 
     payload = ChatCompletionRequest(
         model="phyto-chat",

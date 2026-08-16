@@ -934,8 +934,8 @@ malformed resume bodies return FastAPI's normal `422`, and a missing
 checkpoint returns `409` with `code=checkpoint_not_available`, message
 `This input request is no longer available.`, and `stage=resume_checkpoint`.
 The checkpoint probe happens before the durable action claim, so this failure
-does not consume the input request. Classic `/resume` is independent of the
-`A2UI_ENABLED` flag, but it shares the same persistent first-uplink claim as
+does not consume the input request. Classic `/resume` shares the same
+persistent first-uplink claim as
 `/a2ui-actions`; a later transport receives `409` with
 `code=a2ui_action_conflict`, message
 `This input request has already been handled.`, and `stage=resume_claim`.
@@ -943,7 +943,7 @@ If the resumed graph
 pauses again, the response repeats
 `{"interrupt": {"thread_id", "draft"}, "status": "input_required"}`;
 otherwise it settles the run as `succeeded` and returns the normal
-`agent.run` result envelope. When `A2UI_ENABLED` is on, HTTP pause
+`agent.run` result envelope. HTTP pause
 projection nests an optional `a2ui` confirm surface beside the text
 draft (`interrupt.draft.draft` carries the human-readable summary;
 `interrupt.draft.a2ui` carries the downlink value). The LangGraph
@@ -951,8 +951,7 @@ checkpoint still stores only the text draft — projection is registry-only.
 
 `POST /v1/runs/{run_id}/a2ui-actions` accepts the Web action envelope
 for a ChatAgent or ReviewAgent run paused on an A2UI surface. Dispatch
-keys off `run.agent` (`chat` vs `review`). The route is gated behind
-`A2UI_ENABLED` / `PHYTOMNI_A2UI_ENABLED` (default off). Request body:
+keys off `run.agent` (`chat` vs `review`). Request body:
 
 ```json
 {
@@ -969,7 +968,7 @@ Confirm payloads carry `{"accepted": bool}`; form payloads carry
 `{"selected": string | string[]}`; form and choice cancel actions send
 `{"cancelled": true}`. Form and choice envelopes validate the same
 shapes Web already emits. Chat and Review may emit `confirm`, `form`,
-or `choice` behind the same `A2UI_ENABLED` flag (widget selection
+or `choice` (widget selection
 priority: confirm > form > choice via `select_chat_a2ui_widget`).
 Surface props are authored server-side (domain templates → optional
 LLM → thin fallback); Review HTTP projection uses the offline author
@@ -1014,7 +1013,6 @@ HTTP goldens do not close Web, Go, staging, or production acceptance.
 
 | Condition                    | HTTP  | Detail                             |
 | ---------------------------- | ----- | ---------------------------------- |
-| `A2UI_ENABLED` off           | `403` | `forbidden`, `a2ui disabled`       |
 | Unknown or foreign run       | `404` | `run not found: <run_id>`          |
 | Path/body `run_id` mismatch  | `400` | `run_id mismatch`                  |
 | Invalid widget payload       | `400` | e.g. missing `accepted` on confirm |
@@ -1620,10 +1618,7 @@ Streaming is wired on `phyto-chat`, `phyto-knowledge`, and
 KnowledgeAgent / BriefGeneAgent drive their compiled graphs through
 the `_stream_graph_agent` primitive (stage `StepStarted` frames then a
 terminal answer + citations). The ReviewAgent stream capability is
-interactive: `phyto-review` with `stream: true` returns
-`400` when `A2UI_ENABLED` is off because human-in-the-loop review
-pauses resume through the non-stream flow plus `/resume`. When
-`A2UI_ENABLED` is on, `phyto-review` with `stream: true` emits a
+interactive: `phyto-review` with `stream: true` emits a
 minimal pause stream: `RunStarted` → one `phyto.a2ui` confirm/form/choice
 frame →
 `RunFinished` → `data: [DONE]`, settling `input_required` with
@@ -1693,8 +1688,8 @@ from the wrapper
   write a synthetic frame to the disconnected client; cancellation after
   `RunFinished` preserves the succeeded settlement.
   The client cancellation contract is also enforced for A2UI pause streams.
-- **ChatAgent A2UI short-circuit** (`phyto-chat`, `A2UI_ENABLED` on,
-  heuristic match): when `select_chat_a2ui_widget(user_query)` returns
+- **ChatAgent A2UI short-circuit** (`phyto-chat`, heuristic match): when
+  `select_chat_a2ui_widget(user_query)` returns
   `confirm`, `form`, or `choice` (confirm: `请确认` / `是否确认` /
   `确认是否` / `confirm`; form: `请填写` / `请输入` / `fill in` /
   `please enter`; choice: `请选择` / `二选一` / `choose one` /
@@ -1711,15 +1706,14 @@ from the wrapper
   `input_required`, even though the SSE iterator has already emitted
   `RunFinished` and its `finally` block would normally clear session
   bindings; restore from `GET /v1/runs/{id}` when needed. Resume the
-  paused graph via `POST /v1/runs/{run_id}/a2ui-actions`. With
-  `A2UI_ENABLED` off, or when the heuristic does not match, behaviour
-  stays the normal token-stream path above.
-- **ReviewAgent A2UI pause stream** (`phyto-review`, `A2UI_ENABLED` on,
-  `stream: true`): bypasses stage/progress frames and emits
+  paused graph via `POST /v1/runs/{run_id}/a2ui-actions`. When the
+  heuristic does not match, behaviour stays the normal token-stream path
+  above.
+- **ReviewAgent A2UI pause stream** (`phyto-review`, `stream: true`):
+  bypasses stage/progress frames and emits
   `RunStarted` → `phyto.a2ui` confirm → `RunFinished` → `[DONE]`.
   The run settles `input_required` with `interrupt.draft.a2ui`; resume
   through `/resume` or `/a2ui-actions` (no second SSE after resume).
-  With `A2UI_ENABLED` off, `stream: true` on `phyto-review` stays `400`.
 - **KnowledgeAgent / BriefGeneAgent ordinary graph streams**: settle uses
   the same accumulated-answer shape as ChatAgent, including the UTF-8
   storage cap and `partial` flag. A graph terminal answer is one

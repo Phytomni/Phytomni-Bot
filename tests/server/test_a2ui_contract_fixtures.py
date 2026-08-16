@@ -38,7 +38,6 @@ _EXPECTED_HTTP_GOLDENS = frozenset(
         "review_terminal_succeeded.json",
         "review_round2_input_required.json",
         "error_400_run_widget_payload_mismatch.json",
-        "error_403_action_flag_off.json",
         "error_404_owner_safe_not_found.json",
         "error_409_already_handled.json",
         "error_422_capability_validation.json",
@@ -63,7 +62,6 @@ _FORBIDDEN_HTTP_GOLDEN_TEXT = (
 )
 
 _EXPECTED_ERRORS: dict[str, tuple[int, str]] = {
-    "flag_off_403.json": (403, "a2ui disabled"),
     "widget_mismatch_400.json": (400, "widget mismatch"),
     "surface_mismatch_409.json": (409, "surface_id mismatch"),
     "not_input_required_409.json": (409, "run is not awaiting input"),

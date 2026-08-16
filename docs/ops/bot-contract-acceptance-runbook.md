@@ -147,7 +147,7 @@ The current packet hashes these nine A2UI fixture files:
 - `docs/contracts/a2ui/chat_choice/success_cancel.json`
 - `docs/contracts/a2ui/multi_turn/round2_downlink.json`
 
-The HTTP body manifest covers these nineteen redacted goldens:
+The HTTP body manifest covers these eighteen redacted goldens:
 
 - `docs/contracts/http/a2ui_request_64k_exact.json`
 - `docs/contracts/http/a2ui_request_64k_plus_one.json`
@@ -158,7 +158,6 @@ The HTTP body manifest covers these nineteen redacted goldens:
 - `docs/contracts/http/review_terminal_succeeded.json`
 - `docs/contracts/http/review_round2_input_required.json`
 - `docs/contracts/http/error_400_run_widget_payload_mismatch.json`
-- `docs/contracts/http/error_403_action_flag_off.json`
 - `docs/contracts/http/error_404_owner_safe_not_found.json`
 - `docs/contracts/http/error_409_already_handled.json`
 - `docs/contracts/http/error_422_capability_validation.json`

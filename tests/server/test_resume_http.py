@@ -135,7 +135,6 @@ async def test_two_http_clients_only_one_resumes_a2ui_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """File-backed claim arbitration permits exactly one graph resume."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_run(
         tasks_db_path,
         run_id="run-http-a2ui-race",
@@ -179,7 +178,6 @@ async def test_classic_resume_missing_checkpoint_does_not_claim(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Classic resume probes the checkpoint before writing an audit row."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
     run_id = _seed_run(
         tasks_db_path,
         run_id="run-classic-no-checkpoint",
@@ -380,26 +378,3 @@ async def test_review_chat_completion_interrupt_body(
     assert body["status"] == "input_required"
     assert body["id"] == body["interrupt"]["thread_id"]
     assert body["run_id"] == body["interrupt"]["thread_id"]
-
-
-async def test_review_chat_completion_stream_returns_400(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    tasks_db_path: str,
-) -> None:
-    """Streaming review would bypass the human-in-the-loop resume path."""
-    _ = tasks_db_path
-
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "model": "phyto-review",
-            "stream": True,
-            "messages": [{"role": "user", "content": "Review this topic."}],
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == "invalid_argument"
-    assert response.json()["error"]["message"] == "invalid request"

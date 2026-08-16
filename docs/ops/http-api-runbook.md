@@ -865,11 +865,8 @@ delivers structured progress ticks (`phase`, `current`, `total`,
 Clients can render a progress bar from these ticks; the full AG-UI
 frame inventory is documented in
 [HTTP API — SSE Streaming](../reference/http-api.md#sse-streaming).
-With `A2UI_ENABLED` off, ReviewAgent human-in-the-loop runs reject
-`stream: true`; use non-stream review plus `/v1/runs/{id}/resume`.
-With `A2UI_ENABLED` on, `phyto-review` `stream: true` emits a minimal
-`phyto.a2ui` pause stream (settle `input_required`; resume via
-`/resume` or `/a2ui-actions`).
+`phyto-review` `stream: true` emits a minimal `phyto.a2ui` pause stream
+(settle `input_required`; resume via `/resume` or `/a2ui-actions`).
 
 ### Streaming failure smoke
 
@@ -901,17 +898,15 @@ Before flipping Web `bot.stream_enabled` + `VITE_STREAM_ENABLED` on:
 1. Smoke: start a streamed Instant chat → refresh history → overlay
    answer matches what the user saw during the stream. Repeat with
    `phyto-knowledge` and `phyto-brief-gene`; Review remains an interactive
-   A2UI pause when its stream flag is enabled.
+   A2UI pause.
 1. Optional: send a very long reply and confirm `truncated: true` on
    `GET /v1/runs/{id}` while the live UI still showed the full text.
 
-### A2UI cutover checklist (ChatAgent / Instant)
+### A2UI smoke checklist (ChatAgent / Instant)
 
-Enable `PHYTOMNI_A2UI_ENABLED=1` only after the streaming cutover
-above is green (P4-0): ordinary streamed-answer persistence must already
-be live so non-A2UI traffic is safe. Additional gates:
+Chat and Review A2UI surfaces are always on. Confirm ordinary streamed-answer
+persistence is live so non-A2UI traffic stays safe, then:
 
-1. Coordinate the flag with Web so both sides enable A2UI together.
 1. Confirm the Bot safety settings remain at or below the Web contract:
    `A2UI_MAX_BODY_BYTES=65536`, `A2UI_MAX_RESPONSE_BYTES=1048576`,
    `A2UI_MAX_IDENTIFIER_RUNES=256`, `A2UI_MAX_FORM_FIELDS=20`,
@@ -931,10 +926,7 @@ be live so non-A2UI traffic is safe. Additional gates:
    production key or external service. Delete the temporary body and revoke
    the key after the check.
 
-### A2UI cutover checklist (ReviewAgent)
-
-After the ChatAgent A2UI gates above are green, extend the same
-`PHYTOMNI_A2UI_ENABLED=1` flag to Review:
+### A2UI smoke checklist (ReviewAgent)
 
 1. Web should send **one** uplink per pause (`/resume` **or**
    `/a2ui-actions`, not both).
@@ -943,8 +935,6 @@ After the ChatAgent A2UI gates above are green, extend the same
    with `result.a2ui` `status: submitted`.
 1. Optional stream smoke: `phyto-review` `stream: true` → `phyto.a2ui`
    frame → `GET /v1/runs/{id}` `input_required` → resume as above.
-1. Rollback: disable `PHYTOMNI_A2UI_ENABLED`; `/resume` remains for
-   Review pauses and `phyto-review` `stream: true` returns `400`.
 
 ### A2A server cutover checklist
 
@@ -1166,8 +1156,8 @@ row carries `request_id` / `dialogue_id` / `query` / `tool_name` / `model` /
 
 `POST /v1/runs/{thread_id}/resume` is valid only for owner-scoped
 ReviewAgent rows in `input_required`. The body is
-`{"approved": bool, "edits": string | null}`. When `A2UI_ENABLED` is on,
-the interrupt draft may also carry `a2ui` beside the text summary.
+`{"approved": bool, "edits": string | null}`. The interrupt draft may
+also carry `a2ui` beside the text summary.
 Expect `404` for unknown or foreign runs, `409` for terminal / non-paused
 runs, FastAPI `422` for malformed bodies, and `409 no pause point for run` if
 the registry row
@@ -1178,8 +1168,7 @@ next `interrupt.thread_id` / `interrupt.draft`. Success may include
 
 `POST /v1/runs/{run_id}/a2ui-actions` resumes ChatAgent or ReviewAgent
 runs paused on an A2UI confirm surface. Dispatch keys off `run.agent`.
-Requires `A2UI_ENABLED` / `PHYTOMNI_A2UI_ENABLED`
-(`403 a2ui disabled` when off). Body mirrors the Web envelope
+Body mirrors the Web envelope
 (`surface_id`, `widget`, `action_id`, `run_id`, `payload`). Expect
 `404` for unknown runs, `400` for path/body `run_id` mismatch or invalid
 payload, `413` for a request/response over the configured A2UI byte caps,

@@ -4,9 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Cross-surface feature-flag compatibility matrix.
 
-The optional A2A, outbound interop, A2UI, and memory surfaces must compose
+The optional A2A, outbound interop, and memory surfaces must compose
 without changing the always-on MCP/native-HTTP contract.  These tests build
-all sixteen deployment flag combinations and keep every peer operation
+all eight deployment flag combinations and keep every peer operation
 offline.
 """
 
@@ -80,40 +80,36 @@ _MEMORY_PATHS = frozenset(
 class _SurfaceFlags:
     """One deployment row in the cross-surface feature matrix."""
 
-    a2ui_enabled: bool
     a2a_enabled: bool
     interop_enabled: bool
     memory_enabled: bool
 
 
 def _flag_cases() -> list[Any]:
-    """Return every A2UI/A2A/interop/memory flag combination."""
+    """Return every A2A/interop/memory flag combination."""
     cases: list[Any] = []
-    for a2ui_enabled in (False, True):
-        for a2a_enabled in (False, True):
-            for interop_enabled in (False, True):
-                for memory_enabled in (False, True):
-                    flags = _SurfaceFlags(
-                        a2ui_enabled=a2ui_enabled,
-                        a2a_enabled=a2a_enabled,
-                        interop_enabled=interop_enabled,
-                        memory_enabled=memory_enabled,
+    for a2a_enabled in (False, True):
+        for interop_enabled in (False, True):
+            for memory_enabled in (False, True):
+                flags = _SurfaceFlags(
+                    a2a_enabled=a2a_enabled,
+                    interop_enabled=interop_enabled,
+                    memory_enabled=memory_enabled,
+                )
+                bits = "".join(
+                    "1" if value else "0"
+                    for value in (
+                        a2a_enabled,
+                        interop_enabled,
+                        memory_enabled,
                     )
-                    bits = "".join(
-                        "1" if value else "0"
-                        for value in (
-                            a2ui_enabled,
-                            a2a_enabled,
-                            interop_enabled,
-                            memory_enabled,
-                        )
+                )
+                cases.append(
+                    pytest.param(
+                        flags,
+                        id=f"a2a-interop-memory={bits}",
                     )
-                    cases.append(
-                        pytest.param(
-                            flags,
-                            id=f"a2ui-a2a-interop-memory={bits}",
-                        )
-                    )
+                )
     return cases
 
 
@@ -155,7 +151,6 @@ def _configure_matrix_environment(
     flags: _SurfaceFlags,
 ) -> tuple[Path, Path]:
     """Configure one isolated flag-combination test environment."""
-    _set_flag(monkeypatch, "A2UI_ENABLED", flags.a2ui_enabled)
     _set_flag(monkeypatch, "A2A_ENABLED", flags.a2a_enabled)
     _set_flag(monkeypatch, "INTEROP_ENABLED", flags.interop_enabled)
     _set_flag(monkeypatch, "MEMORY_ENABLED", flags.memory_enabled)
@@ -287,7 +282,7 @@ async def _assert_http_surfaces(
                 "payload": {"accepted": True},
             },
         )
-        assert a2ui.status_code == (404 if flags.a2ui_enabled else 403)
+        assert a2ui.status_code == 404
 
 
 @pytest.mark.parametrize(
@@ -324,8 +319,6 @@ async def test_all_feature_flag_combinations_preserve_surface_boundaries(
         assert memory_path.exists()
     else:
         assert not memory_path.exists()
-    if not flags.a2ui_enabled:
-        assert not tasks_path.exists()
 
     _assert_always_on_catalogs()
 

@@ -63,7 +63,6 @@ class RunProjectionDependencies:
 class RunPauseDependencies:
     """A2UI and Review pause/resume seams."""
 
-    a2ui_enabled: Callable[[], bool]
     a2ui_max_response_bytes: Callable[[], int]
     resume_a2ui: Callable[..., Awaitable[tuple[dict[str, Any], int]]]
     resume_review: Callable[..., Awaitable[tuple[dict[str, Any], int]]]
@@ -271,8 +270,6 @@ def _register_pause_routes(
     ) -> JSONResponse:
         """Resume a paused Chat A2UI run from a Web action envelope."""
         del principal
-        if not dependencies.pause.a2ui_enabled():
-            raise HTTPException(status_code=403, detail="a2ui disabled")
         try:
             body = await read_a2ui_action_request(request)
         except A2uiPayloadTooLargeError as exc:

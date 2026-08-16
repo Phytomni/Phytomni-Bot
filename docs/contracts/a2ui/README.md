@@ -208,7 +208,6 @@ these files do not claim that cross-repository integration is complete.
 
 | File                          | HTTP status | Detail message                |
 | ----------------------------- | ----------- | ----------------------------- |
-| `flag_off_403.json`           | 403         | a2ui disabled                 |
 | `widget_mismatch_400.json`    | 400         | widget mismatch               |
 | `surface_mismatch_409.json`   | 409         | surface_id mismatch           |
 | `not_input_required_409.json` | 409         | run is not awaiting input     |

@@ -99,8 +99,8 @@ phytomni-api-key create --user-id alice --name laptop
 See [CLI Reference](docs/reference/cli.md) for the installed commands and
 [HTTP API](docs/reference/http-api.md) for authentication, endpoint contracts,
 run polling, retention, OpenAI-compatible chat, human-in-the-loop review
-resume, and flag-gated A2UI confirm/form/choice widgets
-(`PHYTOMNI_A2UI_ENABLED`; Surface Author + Chat/Review N=2). Copyable
+resume, and A2UI confirm/form/choice widgets
+(Surface Author + Chat/Review N=2). Copyable
 A2UI goldens for Web/Go consumers (`chat_confirm`, `review_confirm`,
 `chat_form`, `chat_choice`, `review_form`, `review_choice`,
 `multi_turn`) live under
@@ -201,8 +201,8 @@ complete on the `0.1.3` release branch: six gate rules, four reliability
 improvements, three dormant-asset connections, and MCP stdio progress are
 shipped. Graph progress is available on HTTP SSE and, for Knowledge / Review /
 Data / BriefGene, through MCP `progressToken`. Review interrupt/resume uses a
-persistent local SQLite checkpointer. A2UI Chat/Review widgets are shipped
-behind `PHYTOMNI_A2UI_ENABLED`, which remains off by default. Web/Go
+persistent local SQLite checkpointer. A2UI Chat/Review widgets are always
+on. Web/Go
 integration, DBA/Ops evidence, live backend acceptance, and production rollout
 remain separately owned checks and are not closed by this Bot-local statement.
 

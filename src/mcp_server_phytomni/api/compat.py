@@ -272,11 +272,6 @@ def _settle_a2ui_stream_failure(
     )
 
 
-def _stream_a2ui_enabled() -> bool:
-    """Read the current A2UI flag for the streaming runtime."""
-    return ApiConfig().A2UI_ENABLED
-
-
 def _new_stream_run_id(prefix: str, kind: str) -> str:
     """Mint a registry id without exposing the storage factory to streaming."""
     return IdFactory().new_id(prefix, kind)
@@ -299,7 +294,6 @@ def _streaming_dependencies() -> streaming.StreamingDependencies:
             agent_slug=_stream_agent_slug,
         ),
         a2ui=streaming.StreamingA2UIDependencies(
-            enabled=_stream_a2ui_enabled,
             select_widget=select_chat_a2ui_widget,
             runtime=_a2ui_runtime_dependencies,
         ),
@@ -374,7 +368,6 @@ __all__ = [
     "_run_record_to_dict",
     "_schedule_run_gc",
     "_settle_a2ui_stream_failure",
-    "_stream_a2ui_enabled",
     "_stream_agent_slug",
     "_stream_chat_a2ui_confirm",
     "_stream_chat_completion",

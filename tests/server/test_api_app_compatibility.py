@@ -627,7 +627,6 @@ def test_optional_application_contract_is_literal(
         "PHYTOMNI_MEMORY_ENABLED",
         "PHYTOMNI_INTEROP_ENABLED",
         "PHYTOMNI_A2A_ENABLED",
-        "PHYTOMNI_A2UI_ENABLED",
         "PHYTOMNI_RELAY_ENABLED",
     ):
         monkeypatch.setenv(name, "1")
@@ -691,7 +690,6 @@ async def test_auth_owner_and_disabled_scope_boundaries(
     assert relay.json()["error"]["message"] == "request is not permitted"
     assert relay.json()["error"]["retryable"] is False
 
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "1")
     malformed_a2ui = await api_client.post(
         "/v1/runs/missing/a2ui-actions",
         headers={"Authorization": f"Bearer {issued_api_key}"},

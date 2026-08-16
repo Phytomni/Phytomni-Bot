@@ -19,7 +19,6 @@ from ..agents.shared.a2ui import (
     review_action_to_resume,
     validate_a2ui_surface,
 )
-from ..config.defaults import ApiConfig
 from ..mcp.result_formatting import strip_agent_result
 from ..runtime.error_types import LOCAL_DURABLE_ERRORS
 from ..runtime.execution_defaults import empty_execution_projection
@@ -500,8 +499,6 @@ async def resume_a2ui_run(
     dependencies: A2UIRuntimeDependencies,
 ) -> tuple[dict[str, Any], int]:
     """Resume a Chat or Review A2UI action and settle its owner-scoped row."""
-    if not ApiConfig().A2UI_ENABLED:
-        raise HTTPException(status_code=403, detail="a2ui disabled")
     if run_id != body.run_id:
         raise HTTPException(status_code=400, detail="run_id mismatch")
 

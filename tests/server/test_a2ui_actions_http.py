@@ -134,7 +134,6 @@ async def test_a2ui_action_accept_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Accepted confirm resumes through the kernel and settles success."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_run(
         tasks_db_path,
         run_id="run-a2ui-accept",
@@ -186,7 +185,6 @@ async def test_a2ui_action_reject_cancels_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Rejected confirm settles the short cancel message."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_run(
         tasks_db_path,
         run_id="run-a2ui-reject",
@@ -222,41 +220,11 @@ async def test_a2ui_action_reject_cancels_without_llm(
     assert body["result"]["a2ui"]["props"]["accepted"] is False
 
 
-async def test_a2ui_action_flag_off_returns_403(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The route is gated behind the A2UI feature flag."""
-    monkeypatch.delenv("PHYTOMNI_A2UI_ENABLED", raising=False)
-    run_id = _seed_a2ui_run(
-        tasks_db_path,
-        run_id="run-a2ui-flag-off",
-        surface_id="sfc-flag-off",
-    )
-
-    response = await api_client.post(
-        f"/v1/runs/{run_id}/a2ui-actions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json=_action_body(
-            run_id=run_id,
-            surface_id="sfc-flag-off",
-            accepted=True,
-        ),
-    )
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "forbidden"
-
-
 async def test_a2ui_action_oversized_body_returns_413(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Direct A2UI callers cannot send a body above the Web-compatible cap."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     response = await api_client.post(
         "/v1/runs/run-a2ui-oversized/a2ui-actions",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -284,7 +252,6 @@ async def test_a2ui_action_oversized_response_returns_413(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A2UI resume responses are capped before they reach the wire."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_run(
         tasks_db_path,
         run_id="run-a2ui-large-response",
@@ -313,10 +280,8 @@ async def test_a2ui_action_wrong_widget_returns_400(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Body widget must match the open interrupt draft surface."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_run(
         tasks_db_path,
         run_id="run-a2ui-wrong-widget",
@@ -344,10 +309,8 @@ async def test_a2ui_action_wrong_surface_returns_409(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Body surface_id must match the open interrupt draft."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_run(
         tasks_db_path,
         run_id="run-a2ui-wrong-surface",
@@ -372,10 +335,8 @@ async def test_a2ui_action_not_input_required_returns_409(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Only paused runs accept A2UI actions."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = "run-a2ui-terminal"
     RunRegistry(tasks_db_path).create_run(
         local_run_spec(run_id, "u1", "chat"),
@@ -402,10 +363,8 @@ async def test_a2ui_action_other_owner_returns_404(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Runs owned by another user are invisible."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_run(
         tasks_db_path,
         run_id="run-a2ui-foreign",
@@ -433,7 +392,6 @@ async def test_a2ui_action_kernel_spy_calls_aresume_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The HTTP adapter must resume via the shared kernel helper."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_run(
         tasks_db_path,
         run_id="run-a2ui-spy",
@@ -472,7 +430,6 @@ async def test_a2ui_action_duplicate_after_success_returns_409(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A second identical POST after success is rejected."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_run(
         tasks_db_path,
         run_id="run-a2ui-duplicate",
@@ -515,10 +472,8 @@ async def test_a2ui_action_path_body_run_id_mismatch_returns_400(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Path run_id must match the body run_id echo."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_run(
         tasks_db_path,
         run_id="run-a2ui-mismatch",
@@ -544,10 +499,8 @@ async def test_a2ui_action_invalid_confirm_payload_returns_400(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Confirm actions require an accepted boolean in the payload."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_run(
         tasks_db_path,
         run_id="run-a2ui-bad-payload",
@@ -578,7 +531,6 @@ async def test_a2ui_action_no_checkpoint_returns_409(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Missing LangGraph checkpoint surfaces as a 409 conflict."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_run(
         tasks_db_path,
         run_id="run-a2ui-no-checkpoint",
@@ -687,7 +639,6 @@ async def test_a2ui_action_form_submit_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Form submit resumes and returns submitted fields on result.a2ui."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_form_run(
         tasks_db_path,
         run_id="run-a2ui-form-submit",
@@ -735,7 +686,6 @@ async def test_a2ui_action_form_cancel_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Form cancel returns cancelled submitted snapshot + cancel answer."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_a2ui_form_run(
         tasks_db_path,
         run_id="run-a2ui-form-cancel",
@@ -777,10 +727,8 @@ async def test_a2ui_action_missing_draft_surface_returns_409(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Runs paused without an a2ui draft cannot accept actions."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = "run-a2ui-no-draft"
     RunRegistry(tasks_db_path).create_run(
         RunSpec(
@@ -862,7 +810,6 @@ async def test_a2ui_action_review_form_submit_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Review form submit resumes and echoes fields on result.a2ui."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_review_a2ui_form_run(
         tasks_db_path,
         run_id="run-a2ui-review-form-submit",
@@ -932,7 +879,6 @@ async def test_a2ui_action_review_form_cancel_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Review form cancel resumes and echoes cancelled on result.a2ui."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = _seed_review_a2ui_form_run(
         tasks_db_path,
         run_id="run-a2ui-review-form-cancel",

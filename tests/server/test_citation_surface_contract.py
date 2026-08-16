@@ -292,7 +292,6 @@ async def _complete_blocking_projection(
     _install_bounded_lookup(context.monkeypatch, context.citation_db_path)
     _forbid_non_sqlite_calls(context.monkeypatch)
     _install_handler(context.monkeypatch, case.tool_name)
-    context.monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "0")
     envelope = await mcp_app.invoke_tool_enveloped(
         case.tool_name, _ARGUMENTS[case.slug]
     )

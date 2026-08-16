@@ -328,10 +328,6 @@ class _RouteAdapters:
         )
         return canonicalize_agent_run_body(response_body), status_code
 
-    def _a2ui_enabled(self) -> bool:
-        """Read the current A2UI feature flag."""
-        return _api_config().A2UI_ENABLED
-
     def _conversation_context_enabled(self) -> bool:
         """Read the current conversation-context protocol flag."""
         return _api_config().CONVERSATION_CONTEXT_V1_ENABLED
@@ -735,7 +731,6 @@ def _register_run_routes(
                 strip_run_result=adapters.strip_run_result,
             ),
             pause=run_routes.RunPauseDependencies(
-                a2ui_enabled=getattr(adapters, "_a2ui_enabled"),
                 a2ui_max_response_bytes=adapters.a2ui_max_response_bytes,
                 resume_a2ui=adapters.resume_a2ui,
                 resume_review=adapters.resume_review,

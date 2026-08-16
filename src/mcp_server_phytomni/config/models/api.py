@@ -206,10 +206,6 @@ class ApiConfig(ApiLimitsConfig):
             "PHYTOMNI_CONVERSATION_CONTEXT_BRIEF_GENE_TOKEN_BUDGET",
         ),
     )
-    A2UI_ENABLED: bool = Field(
-        default=False,
-        validation_alias=AliasChoices("A2UI_ENABLED", "PHYTOMNI_A2UI_ENABLED"),
-    )
     A2UI_TOOL_CALL: bool = Field(
         default=False,
         validation_alias=AliasChoices(

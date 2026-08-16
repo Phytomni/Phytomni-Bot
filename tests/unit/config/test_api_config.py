@@ -114,7 +114,6 @@ def test_api_config_defaults() -> None:
     assert config.CONVERSATION_CONTEXT_DATA_TOKEN_BUDGET == 3_000
     assert config.CONVERSATION_CONTEXT_REVIEW_TOKEN_BUDGET == 6_000
     assert config.CONVERSATION_CONTEXT_BRIEF_GENE_TOKEN_BUDGET == 4_000
-    assert config.A2UI_ENABLED is False
     assert config.A2UI_TOOL_CALL is False
     assert config.A2A_ENABLED is False
     assert config.A2A_PUBLIC_BASE_URL is None
@@ -348,11 +347,9 @@ def test_memory_retrieval_limit_cannot_exceed_item_limit(
 def test_a2ui_flags_env_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PHYTOMNI_A2UI_* env vars flip the A2UI feature flags."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    """PHYTOMNI_A2UI_TOOL_CALL env var flips the reserved tool-call flag."""
     monkeypatch.setenv("PHYTOMNI_A2UI_TOOL_CALL", "1")
     config = ApiConfig()
-    assert config.A2UI_ENABLED is True
     assert config.A2UI_TOOL_CALL is True
 
 

@@ -1,8 +1,0 @@
-{
-  "status": 403,
-  "error": {
-    "type": "forbidden",
-    "code": 403,
-    "message": "a2ui disabled"
-  }
-}

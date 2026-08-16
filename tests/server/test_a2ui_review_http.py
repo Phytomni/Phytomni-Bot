@@ -71,33 +71,6 @@ def _assert_review_persistence_failure(body: str) -> None:
     assert body.rstrip().endswith("data: [DONE]")
 
 
-async def test_review_pause_flag_off_still_projects_a2ui(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-    review_app_factory: Any,
-) -> None:
-    """Review pauses keep a valid surface even when A2UI actions are off."""
-    _ = tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
-    _patch_review_app(monkeypatch, review_app_factory())
-    response = await api_client.post(
-        "/v1/agents/review/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "user_query": "Review photosynthesis.",
-                "obs_file_list": [],
-            }
-        },
-    )
-    assert response.status_code == 200
-    draft = response.json()["interrupt"]["draft"]
-    assert draft["summary"] == "draft review"
-    assert draft["a2ui"]["widget"] == "confirm"
-
-
 async def test_review_pause_flag_on_projects_a2ui(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -105,9 +78,8 @@ async def test_review_pause_flag_on_projects_a2ui(
     monkeypatch: pytest.MonkeyPatch,
     review_app_factory: Any,
 ) -> None:
-    """With A2UI enabled, Review pauses attach a confirm surface."""
+    """Review pauses attach a confirm surface."""
     _ = tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     _patch_review_app(monkeypatch, review_app_factory())
     response = await api_client.post(
         "/v1/agents/review/runs",
@@ -142,7 +114,6 @@ async def test_review_stream_runtime_failure_emits_error_and_fails_run(
     assert_failed_stream: Any,
 ) -> None:
     """A Review A2UI fault after RunStarted emits one error and fails."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
 
     async def _fail_review(
         _state: dict[str, Any],
@@ -173,7 +144,6 @@ async def test_review_stream_pause_settle_failure_suppresses_a2ui_and_finish(
     review_app_factory: Any,
 ) -> None:
     """An unpersisted Review pause exposes one safe terminal error only."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     monkeypatch.setattr(
         api_app_module,
         "_settle_stream_run",
@@ -200,7 +170,6 @@ async def test_review_stream_success_settle_failure_suppresses_finish(
     review_app_factory: Any,
 ) -> None:
     """An unpersisted terminal Review result cannot expose success."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     monkeypatch.setattr(
         api_app_module,
         "_settle_stream_run",
@@ -242,7 +211,6 @@ async def test_review_chat_completion_pause_projects_a2ui(
 ) -> None:
     """Chat-completions Review pauses also project a2ui when enabled."""
     _ = tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     _patch_review_app(monkeypatch, review_app_factory())
     response = await _post_review_chat_completion(
         api_client,
@@ -263,7 +231,6 @@ async def test_review_projection_failure_persists_failed_run(
 ) -> None:
     """A failed surface projection is persisted before the 500 response."""
     _ = tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
     _patch_review_app(monkeypatch, review_app_factory())
 
     def fail_projection(_interrupt: Any) -> NoReturn:
@@ -307,7 +274,6 @@ async def test_review_stream_projection_failure_is_safe_and_terminal(
     review_app_factory: Any,
 ) -> None:
     """A stream projection failure emits no surface or contradictory finish."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     _patch_review_app(monkeypatch, review_app_factory())
 
     def fail_projection(_interrupt: Any) -> NoReturn:
@@ -332,11 +298,8 @@ async def test_review_stream_projection_failure_is_safe_and_terminal(
     assert "event: RunFinished\n" not in response.text
 
 
-async def test_review_stream_validation_fails_before_sse(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_review_stream_validation_fails_before_sse() -> None:
     """Invalid Review stream arguments remain a pre-header 400."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     payload = ChatCompletionRequest(
         model="phyto-review",
         messages=[ChatMessage(role="user", content="Review this.")],
@@ -364,7 +327,6 @@ async def test_review_a2ui_action_approve_matches_resume_kernel(
 ) -> None:
     """A2UI accept resumes Review through the shared kernel."""
     _ = tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     review_app = review_app_factory()
     _patch_review_app(monkeypatch, review_app)
     paused = await api_client.post(
@@ -428,7 +390,6 @@ async def test_review_resume_includes_result_a2ui_when_projected(
 ) -> None:
     """Classic /resume also returns submitted a2ui when surface was open."""
     _ = tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
     _patch_review_app(monkeypatch, review_app_factory())
     paused = await api_client.post(
         "/v1/agents/review/runs",
@@ -466,7 +427,6 @@ async def test_review_classic_first_blocks_late_a2ui_action(
 ) -> None:
     """Classic Review resume claims the surface before a Web uplink."""
     _ = tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     _patch_review_app(monkeypatch, review_app_factory())
     paused = await api_client.post(
         "/v1/agents/review/runs",
@@ -513,7 +473,6 @@ async def test_review_a2ui_then_resume_second_returns_409(
 ) -> None:
     """Dual-transport: first winner settles; second path 409."""
     _ = tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     _patch_review_app(monkeypatch, review_app_factory())
     paused = await api_client.post(
         "/v1/agents/review/runs",
@@ -561,7 +520,6 @@ async def test_review_reject_a2ui_mints_new_surface_on_reinterrupt(
 ) -> None:
     """Reject resume that re-interrupts projects a new surface_id."""
     _ = tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     _patch_review_app(monkeypatch, review_app_factory(reinterrupt=True))
     paused = await api_client.post(
         "/v1/agents/review/runs",
@@ -596,26 +554,6 @@ async def test_review_reject_a2ui_mints_new_surface_on_reinterrupt(
     assert out["interrupt"]["draft"]["summary"] == "revised draft"
 
 
-async def test_review_stream_flag_off_still_400(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """With A2UI disabled, Review streaming stays rejected."""
-    _ = tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
-    response = await _post_review_chat_completion(
-        api_client,
-        issued_api_key,
-        stream=True,
-        content="Review this topic.",
-    )
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == "invalid_argument"
-    assert response.json()["error"]["message"] == "invalid request"
-
-
 async def test_review_stream_flag_on_emits_phyto_a2ui(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -624,7 +562,6 @@ async def test_review_stream_flag_on_emits_phyto_a2ui(
     review_app_factory: Any,
 ) -> None:
     """With A2UI enabled, Review streaming pauses with phyto.a2ui."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     _patch_review_app(monkeypatch, review_app_factory())
     response = await _post_review_chat_completion(
         api_client,

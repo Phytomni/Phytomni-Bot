@@ -290,7 +290,6 @@ async def test_a2ui_action_inherits_or_backfills_locale(
 ) -> None:
     """A2UI action ignores headers and backfills legacy null locale rows."""
     stored_locale, query, expected_locale = case
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = f"run-locale-{expected_locale}-{stored_locale or 'legacy'}"
     _seed_a2ui_run(
         tasks_db_path,

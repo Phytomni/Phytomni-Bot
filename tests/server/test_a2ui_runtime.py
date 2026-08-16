@@ -222,10 +222,8 @@ def test_surface_validation_rejects_wrong_or_closed(tmp_path: Any) -> None:
 
 async def test_checkpoint_and_failure_settlement(
     tmp_path: Any,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Checkpoint gaps remain resumable while graph errors fail safely."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     db_path = str(tmp_path / "runs.db")
     _seed(db_path, "run-checkpoint")
     _seed(db_path, "run-failure")
@@ -286,11 +284,8 @@ async def test_checkpoint_and_failure_settlement(
     )
 
 
-async def test_first_uplink_wins(
-    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_first_uplink_wins(tmp_path: Any) -> None:
     """Concurrent uplinks have one graph winner and one immediate 409."""
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     db_path = str(tmp_path / "runs.db")
     _seed(db_path, "run-race")
     started = asyncio.Event()

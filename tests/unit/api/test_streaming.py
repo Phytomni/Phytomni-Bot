@@ -38,11 +38,6 @@ from mcp_server_phytomni.runtime.conversation_context.store import (
 pytestmark = pytest.mark.unit
 
 
-def _disabled() -> bool:
-    """Keep the direct ordinary-stream contract off the A2UI branch."""
-    return False
-
-
 def _no_widget(_query: str) -> str | None:
     """Return no A2UI widget for an ordinary stream."""
     return None
@@ -161,7 +156,6 @@ def _dependencies(settlements: list[tuple[str, str, str, dict[str, Any]]]):
             agent_slug=_chat_slug,
         ),
         a2ui=streaming.StreamingA2UIDependencies(
-            enabled=_disabled,
             select_widget=_no_widget,
             runtime=_unused_runtime,
         ),

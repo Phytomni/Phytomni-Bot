@@ -216,7 +216,6 @@ _COMPATIBILITY_REEXPORTS = frozenset(
         "_replay_primed_stream",
         "_run_record_to_dict",
         "_settle_a2ui_stream_failure",
-        "_stream_a2ui_enabled",
         "_stream_agent_slug",
         "_stream_chat_a2ui_confirm",
         "_stream_setup_error",
@@ -597,14 +596,6 @@ async def _stream_chat_response(
     tool_name = request["tool_name"]
     payload = request["payload"]
     if tool_name == "ReviewAgent":
-        if not ApiConfig().A2UI_ENABLED:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "streaming is not supported for human-in-the-loop "
-                    "review; use stream=false and POST /v1/runs/{id}/resume"
-                ),
-            )
         return await _stream_review_a2ui_pause(
             arguments=dict(request["arguments"]),
             payload=payload,

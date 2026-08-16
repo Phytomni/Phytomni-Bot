@@ -404,14 +404,6 @@ single env var carries the full map.
   is never
   truncated. Accepts `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`.
 
-- **Variable:** `A2UI_ENABLED`
-  **Default:** `false`
-  **Sensitive?:** no
-  **Purpose:** When true, ChatAgent streamed chat may emit A2UI confirm surfaces
-  and accept actions on `POST /v1/runs/{run_id}/a2ui-actions`.
-  Accepts
-  `PHYTOMNI_A2UI_ENABLED`.
-
 - **Variable:** `A2UI_TOOL_CALL`
   **Default:** `false`
   **Sensitive?:** no
@@ -587,13 +579,6 @@ update the environment, restart the API process, run the relevant smoke test,
 and only then expose the route or request option to clients. Disabling a flag
 removes the new surface but does not delete its local SQLite data or in-memory
 run rows.
-
-- **Surface:** A2UI Chat/Review
-  **Enable:** `A2UI_ENABLED=1`
-  **Disable / rollback:** Set `A2UI_ENABLED=0`, restart, and stop sending new
-  A2UI actions.
-  **State retained while disabled:** `server_tasks.db` and `checkpoints.db`;
-  inspect paused runs before rollback.
 
 - **Surface:** A2A server
   **Enable:** `A2A_ENABLED=1` plus `A2A_PUBLIC_BASE_URL`

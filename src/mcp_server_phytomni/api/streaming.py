@@ -91,9 +91,8 @@ class StreamingRequestDependencies:
 
 @dataclass(frozen=True)
 class StreamingA2UIDependencies:
-    """A2UI feature-flag and domain-runtime seams."""
+    """A2UI widget-selection and domain-runtime seams."""
 
-    enabled: Callable[[], bool]
     select_widget: Callable[[str], str | None]
     runtime: Callable[[], a2ui_runtime.A2UIRuntimeDependencies]
 
@@ -671,7 +670,6 @@ async def stream_chat_completion(
     if (
         tool_name == "ChatAgent"
         and payload.conversation is None
-        and dependencies.a2ui.enabled()
         and dependencies.a2ui.select_widget(user_query) is not None
     ):
         return await stream_chat_a2ui_confirm(
