@@ -210,8 +210,8 @@ async def test_select_expert_tool_decline_raises_declined(
     An empty-choice or tool-call-free completion is the model answering
     directly rather than a contract fault, so the strict seam raises the
     narrower ``ExpertRoutingDeclinedError`` (a ``ToolSelectionError``
-    subclass that the strict HTTP layer maps to a contract violation) rather
-    than a bare ``ToolSelectionError``.
+    subclass). The HTTP layer may degrade that decline to ChatAgent when
+    the caller allowed it; genuine violations stay a contract error.
     """
 
     async def fake_completion(**_kwargs: Any) -> object:

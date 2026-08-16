@@ -27,6 +27,8 @@ from ..agents.expert import (
     ExpertProviderError,
     ExpertProviderTimeoutError,
     ExpertRoutingContractError,
+    ExpertRoutingDeclinedError,
+    ToolSelection,
     select_agent_tool,
 )
 from ..common import logging_config as _logging_config
@@ -333,6 +335,22 @@ async def _route_expert_query(
             payload.history,
             allowed_tools=payload.allowed_tools,
             forced_tool=payload.forced_tool,
+        )
+    except ExpertRoutingDeclinedError as exc:
+        # An unforced decline is plain chat. Forced pins and callers that
+        # scoped ChatAgent out keep the sanitized contract failure.
+        if payload.forced_tool is not None or "ChatAgent" not in (
+            payload.allowed_tools
+        ):
+            _LOGGER.warning(
+                "Expert routing declined without a chat fallback (%s)",
+                exc.__class__.__name__,
+            )
+            raise _routing_contract_error() from exc
+        _LOGGER.warning("Expert routing declined; falling back to ChatAgent")
+        selection = ToolSelection(
+            tool_name="ChatAgent",
+            arguments={"user_query": payload.user_query},
         )
     except ExpertRoutingContractError as exc:
         _LOGGER.warning(

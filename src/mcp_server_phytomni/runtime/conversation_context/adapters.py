@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
@@ -16,7 +17,11 @@ from uuid import UUID
 
 from ...agents.brief_gene.conversation import BriefGeneConversationAdapter
 from ...agents.data.conversation import DataConversationAdapter
-from ...agents.expert import ToolSelection, ToolSelectionError
+from ...agents.expert import (
+    ExpertRoutingDeclinedError,
+    ToolSelection,
+    ToolSelectionError,
+)
 from ...agents.knowledge.conversation import (
     KnowledgeClarificationError,
     KnowledgeConversationAdapter,
@@ -50,6 +55,8 @@ from .store import (
     ReviewSettlementClaim,
     StoredTurn,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -760,12 +767,21 @@ class ConversationContextExecutor:
         allowed_agent_ids: Sequence[str],
         context: BusinessContext,
     ) -> AgentSelection:
-        selection = await self._select_agent(
-            user_query,
-            native_history_from_context(context),
-            allowed_tools=allowed_agent_ids,
-            forced_tool=None,
-        )
+        try:
+            selection = await self._select_agent(
+                user_query,
+                native_history_from_context(context),
+                allowed_tools=allowed_agent_ids,
+                forced_tool=None,
+            )
+        except ExpertRoutingDeclinedError:
+            if "ChatAgent" not in allowed_agent_ids:
+                raise
+            _LOGGER.warning(
+                "Expert routing declined; falling back to ChatAgent"
+            )
+            self._bindings.selected_arguments.set({"user_query": user_query})
+            return AgentSelection("ChatAgent", "CHAT_FALLBACK")
         if selection is None:
             raise ToolSelectionError("strict routing returned no selection")
         self._bindings.selected_arguments.set(dict(selection.arguments))

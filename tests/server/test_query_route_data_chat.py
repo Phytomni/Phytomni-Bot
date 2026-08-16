@@ -31,6 +31,7 @@ from tests.support.handler_fakes import (
 )
 
 from mcp_server_phytomni.agents.chat import service as chat_service
+from mcp_server_phytomni.agents.expert import ExpertRoutingDeclinedError
 from mcp_server_phytomni.runtime.conversation_context.projection import (
     agent_thread_id as context_agent_thread_id,
 )
@@ -387,3 +388,92 @@ async def test_context_expert_router_keeps_full_allowlist_and_async_202(
         {"role": "assistant", "content": "A2"},
         {"role": "user", "content": "U3"},
     )
+
+
+async def test_context_expert_decline_falls_back_to_chat(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An unforced Expert decline stages ChatAgent with CHAT_FALLBACK."""
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
+    captured: list[dict[str, Any]] = []
+
+    async def declining_select(
+        _query: str, _history: Any, *, allowed_tools: Any, forced_tool: Any
+    ) -> None:
+        assert forced_tool is None
+        assert "ChatAgent" in allowed_tools
+        raise ExpertRoutingDeclinedError("routing model returned no tool call")
+
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
+        captured.append(dict(kwargs))
+        return {"choices": [{"message": {"content": "fallback chat answer"}}]}
+
+    monkeypatch.setattr(api_app, "select_agent_tool", declining_select)
+    patch_context_chat_runtime(monkeypatch, include_obs_file_list=True)
+    patch_chat_completion_service(monkeypatch, fake_phyto_chat)
+    envelope = _conversation_envelope(
+        allowed_agent_ids=["ChatAgent", "DataAgent", "KnowledgeAgent"]
+    )
+    envelope["current_message"]["content"] = "what is photosynthesis"
+    envelope["history_delta"] = [
+        {
+            "turn_id": "1",
+            "role": "user",
+            "content": "what is photosynthesis",
+        }
+    ]
+
+    response = await _post_query_route(
+        api_client,
+        issued_api_key,
+        {
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["ChatAgent", "DataAgent", "KnowledgeAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conversation_context"]["selected_agent_id"] == "ChatAgent"
+    assert body["conversation_context"]["route_source"] == "router"
+    assert body["conversation_context"]["route_reason_code"] == (
+        "CHAT_FALLBACK"
+    )
+    assert captured[0]["user_query"] == "what is photosynthesis"
+
+
+async def test_context_expert_decline_without_chat_returns_502(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A context decline stays 502 when ChatAgent is not allowed."""
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
+
+    async def declining_select(
+        _query: str, _history: Any, *, allowed_tools: Any, forced_tool: Any
+    ) -> None:
+        raise ExpertRoutingDeclinedError("routing model returned no tool call")
+
+    monkeypatch.setattr(api_app, "select_agent_tool", declining_select)
+    envelope = _conversation_envelope(
+        allowed_agent_ids=["DataAgent", "KnowledgeAgent"]
+    )
+
+    response = await _post_query_route(
+        api_client,
+        issued_api_key,
+        {
+            "user_query": "what is photosynthesis",
+            "allowed_tools": ["DataAgent", "KnowledgeAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "upstream_failed"

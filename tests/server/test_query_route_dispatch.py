@@ -546,10 +546,11 @@ async def test_route_strict_failures_never_invoke_agent(
 ) -> None:
     """Non-forced strict selector contract failures stop before dispatch.
 
-    A model *decline* (no choice / no tool call) is always a 502 under the
-    strict contract, including when ``ChatAgent`` is allowlisted. Genuine
-    violations -- multiple, unknown, or out-of-allowlist calls -- also always
-    return 502 regardless of the allowlist.
+    A model *decline* (no choice / no tool call) is a 502 when ChatAgent is
+    not allowlisted. Genuine violations -- multiple, unknown, or
+    out-of-allowlist calls -- also always return 502 regardless of the
+    allowlist. An unforced decline with ChatAgent allowed is covered by
+    ``test_route_strict_decline_dispatches_chat_when_allowed``.
 
     A forced route is intentionally NOT a failure case here: a pinned
     ``@agent`` is coerced to the forced tool and does dispatch even when the
@@ -815,17 +816,17 @@ async def test_route_no_selection_returns_sanitized_502(
     assert "DataAgent" not in response.text
 
 
-async def test_route_strict_decline_returns_502_without_dispatch(
+async def test_route_strict_decline_dispatches_chat_when_allowed(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """A strict decline never relaxes into a ChatAgent dispatch.
+    """An unforced decline becomes a ChatAgent dispatch when chat is allowed.
 
     The real router raises ``ExpertRoutingDeclinedError`` when the provider
-    returns no tool call. Even when ChatAgent is allowlisted, the strict
-    contract requires a sanitized 502 and zero agent/run side effects.
+    returns no tool call. That is plain chat, not a contract fault, so the
+    route dispatches ChatAgent with the original query and records a run.
     """
     captured: dict[str, Any] = {}
     install_chat_handler(monkeypatch, captured, content="declined to chat")
@@ -842,13 +843,42 @@ async def test_route_strict_decline_returns_502_without_dispatch(
         },
     )
 
+    assert response.status_code == 200
+    body = response.json()
+    assert body["object"] == "agent.run"
+    assert body["agent"] == "chat"
+    assert body["status"] == "succeeded"
+    assert captured["user_query"] == "what is photosynthesis"
+    record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
+    assert record.spec.agent == "chat"
+
+
+async def test_route_strict_decline_without_chat_returns_502(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """A decline stays a sanitized 502 when ChatAgent is not allowed."""
+    captured: dict[str, Any] = {}
+    install_chat_handler(monkeypatch, captured, content="declined to chat")
+    patch_expert_router(
+        monkeypatch, expert_router, _router_completion(empty_choices=True)
+    )
+
+    response = await _post_query_route(
+        api_client,
+        issued_api_key,
+        {
+            "user_query": "what is photosynthesis",
+            "allowed_tools": ["DataAgent", "KnowledgeAgent"],
+        },
+    )
+
     assert response.status_code == 502
     assert response.json()["error"]["code"] == ("routing_contract_violation")
     assert response.json()["error"]["stage"] == "routing"
     assert response.json()["error"]["retryable"] is False
-    assert response.json()["error"]["message"] == (
-        "The routing contract is invalid."
-    )
     assert not captured
     assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
 

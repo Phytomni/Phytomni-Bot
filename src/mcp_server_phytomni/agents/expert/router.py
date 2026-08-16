@@ -102,10 +102,10 @@ class ExpertRoutingDeclinedError(ToolSelectionError):
     A distinct, non-fault outcome of the strict path: the model returned no
     tool call (a content-only or empty-choice completion), which on the real
     endpoint follows the ``required`` -> ``auto`` downgrade and simply means
-    "this turn is plain chat". It subclasses ``ToolSelectionError`` so every
-    existing broad handler still treats a decline as a contract error; the
-    strict HTTP Expert boundary maps it to the same sanitized contract
-    violation as every other invalid selection. Genuine violations
+    "this turn is plain chat". It subclasses ``ToolSelectionError`` so
+    callers that do not opt into a chat fallback still treat a decline as a
+    contract error. The HTTP Expert boundary degrades an unforced decline to
+    ChatAgent when the caller allowed that tool. Genuine violations
     (multiple, malformed, or out-of-allowlist tool calls) keep raising
     ``ToolSelectionError``.
     """
