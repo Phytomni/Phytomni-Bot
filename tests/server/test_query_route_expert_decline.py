@@ -40,21 +40,19 @@ async def test_route_strict_decline_dispatches_chat_when_allowed(
         monkeypatch, expert_router, _router_completion(empty_choices=True)
     )
 
+    query = "what is photosynthesis"
     response = await _post_query_route(
         api_client,
         issued_api_key,
-        {
-            "user_query": "what is photosynthesis",
-            "allowed_tools": ["ChatAgent", "DataAgent"],
-        },
+        {"user_query": query, "allowed_tools": ["ChatAgent", "DataAgent"]},
     )
 
+    assert captured["user_query"] == query
     assert response.status_code == 200
     body = response.json()
-    assert body["object"] == "agent.run"
-    assert body["agent"] == "chat"
     assert body["status"] == "succeeded"
-    assert captured["user_query"] == "what is photosynthesis"
+    assert body["agent"] == "chat"
+    assert body["object"] == "agent.run"
     record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
     assert record.spec.agent == "chat"
 
@@ -76,8 +74,8 @@ async def test_route_strict_decline_without_chat_returns_502(
         api_client,
         issued_api_key,
         {
-            "user_query": "what is photosynthesis",
-            "allowed_tools": ["DataAgent", "KnowledgeAgent"],
+            "allowed_tools": ["KnowledgeAgent", "DataAgent"],
+            "user_query": "explain chlorophyll",
         },
     )
 
