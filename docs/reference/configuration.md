@@ -404,13 +404,6 @@ single env var carries the full map.
   is never
   truncated. Accepts `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`.
 
-- **Variable:** `A2UI_TOOL_CALL`
-  **Default:** `false`
-  **Sensitive?:** no
-  **Purpose:** Reserved for future A2UI tool-call emit on the chat path; unused
-  in the default P4-1 confirm slice. Accepts
-  `PHYTOMNI_A2UI_TOOL_CALL`.
-
 - **Variable:** `A2A_ENABLED`
   **Default:** `false`
   **Sensitive?:** no
