@@ -48,16 +48,14 @@ def _attach_cleanup_log_handler(
         yield
 
 
-class _FailingCloseStream(  # pylint: disable=too-few-public-methods
-    ControlledByteStream
-):
-    """Fail close with a secret-bearing detail after a body failure."""
-
-    async def aclose(self) -> None:
-        raise RuntimeError("synthetic-provider-secret")
+_CLOSE_FAILURE_DETAIL = "synthetic-provider-secret"
 
 
-# pylint: disable-next=too-few-public-methods
+def _raise_secret_on_close() -> None:
+    """Raise the redacted close-path secret for the cleanup warning test."""
+    raise RuntimeError(_CLOSE_FAILURE_DETAIL)
+
+
 class _CancellationResistantCloseStream(ControlledByteStream):
     """Ignore cancellation until a test-controlled release arrives."""
 
@@ -67,15 +65,27 @@ class _CancellationResistantCloseStream(ControlledByteStream):
         failure: Exception | None = None,
     ) -> None:
         super().__init__(*chunks, failure=failure)
-        self.close_started = asyncio.Event()
-        self.release_close = asyncio.Event()
+        self._close_started = asyncio.Event()
+        self._release_close = asyncio.Event()
+
+    async def wait_until_close_started(self) -> None:
+        """Block until response close has entered the cancellation loop."""
+        await self._close_started.wait()
+
+    def release_close(self) -> None:
+        """Allow the pending close handshake to finish."""
+        self._release_close.set()
+
+    async def wait_until_close_released(self) -> None:
+        """Block until the test has released the close handshake."""
+        await self._release_close.wait()
 
     async def aclose(self) -> None:
-        self.close_started.set()
-        while not self.release_close.is_set():
+        self._close_started.set()
+        while not self._release_close.is_set():
             try:
                 await asyncio.wait_for(
-                    self.release_close.wait(),
+                    self._release_close.wait(),
                     timeout=0.01,
                 )
             except TimeoutError:
@@ -237,7 +247,10 @@ async def test_response_close_failure_preserves_body_failure(
     """A response-close exception cannot replace the request body failure."""
     transport = QueueTransport()
     transport.enqueue(
-        stream=_FailingCloseStream(failure=httpx.ReadError("broken body"))
+        stream=ControlledByteStream(
+            failure=httpx.ReadError("broken body"),
+            on_close=_raise_secret_on_close,
+        )
     )
     resources = RecordingResources(transport=transport)
 
@@ -251,7 +264,7 @@ async def test_response_close_failure_preserves_body_failure(
 
     assert "stream cleanup failed operation=response_close" in caplog.text
     assert "RuntimeError" in caplog.text
-    assert "synthetic-provider-secret" not in caplog.text
+    assert _CLOSE_FAILURE_DETAIL not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -274,15 +287,15 @@ async def test_response_close_has_a_finite_deadline(
         task = asyncio.create_task(
             client.request("GET", "https://upstream.invalid/body")
         )
-        await stream.close_started.wait()
-        asyncio.get_running_loop().call_later(0.2, stream.release_close.set)
+        await stream.wait_until_close_started()
+        asyncio.get_running_loop().call_later(0.2, stream.release_close)
 
         started_at = time.monotonic()
         with pytest.raises(httpx.ReadError, match="broken body"):
             await task
         assert time.monotonic() - started_at < 0.15
 
-        await stream.release_close.wait()
+        await stream.wait_until_close_released()
         for _ in range(100):
             if stream.closed:
                 break

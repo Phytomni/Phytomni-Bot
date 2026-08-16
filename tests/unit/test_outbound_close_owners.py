@@ -268,7 +268,7 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
             "OutboundRuntime.begin_close": 1,
             "_build_openai_client": 1,
             "_close_openai_resource": 2,
-            "aclose_outbound_runtime": 1,
+            "aclose_outbound_runtime": 2,
             "close_openai": 1,
             "init_outbound_runtime": 2,
         }
