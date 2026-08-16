@@ -295,9 +295,7 @@ async def test_required_design_never_pseudo_succeeds_without_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Required mode rejects an empty external-evidence result."""
-    agent = _build_agent(
-        DesignInteropDependencies(registry=InteropRegistry())
-    )
+    agent = _build_agent(DesignInteropDependencies(registry=InteropRegistry()))
     monkeypatch.setattr(
         design_agent_module,
         "collect_design_evidence",

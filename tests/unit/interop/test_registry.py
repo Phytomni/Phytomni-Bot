@@ -33,9 +33,7 @@ def _target(target_id: str = "mcp-http") -> dict[str, object]:
     }
 
 
-def _api_config(
-    *, targets: str, max_targets: int | None = None
-) -> ApiConfig:
+def _api_config(*, targets: str, max_targets: int | None = None) -> ApiConfig:
     """Build an ApiConfig isolated from the developer dotenv file."""
     config_cls = cast(Any, ApiConfig)
     values: dict[str, object] = {

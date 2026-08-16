@@ -108,9 +108,7 @@ def test_initial_state_filters_caller_supplied_endpoint_shaped_targets() -> (
 
 def test_unknown_registry_fallback_does_not_echo_untrusted_target_id() -> None:
     """A failed lookup records ``unknown`` instead of the caller's URL."""
-    dependencies = SimpleNamespace(
-        registry=InteropRegistry(_targets={})
-    )
+    dependencies = SimpleNamespace(registry=InteropRegistry(_targets={}))
 
     target_id, capability = interop_target_descriptor(
         dependencies,
