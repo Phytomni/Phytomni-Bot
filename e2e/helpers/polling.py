@@ -350,6 +350,100 @@ def _status_in(status: str, allowed: frozenset[str]) -> bool:
     return status.lower() in allowed
 
 
+_STATUS_LINE = re.compile(r"^Task [^:]+:\s*(\S+)\s*$")
+
+
+def _mapping(value: object) -> Mapping[str, Any] | None:
+    """Return ``value`` when it is a mapping."""
+    return value if isinstance(value, Mapping) else None
+
+
+def _nonblank_payload_text(value: object) -> str | None:
+    """Return a stripped string or ``None``."""
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _status_from_execution(raw: object) -> str | None:
+    """Return the first execution-task status from the public envelope."""
+    raw_map = _mapping(raw)
+    if raw_map is None:
+        return None
+    execution = _mapping(raw_map.get("execution"))
+    if execution is None:
+        return None
+    tasks = execution.get("tasks")
+    if not isinstance(tasks, (list, tuple)):
+        return None
+    for item in tasks:
+        if not isinstance(item, Mapping):
+            continue
+        status = _nonblank_payload_text(item.get("status"))
+        if status is not None:
+            return status
+    return None
+
+
+def _status_from_answer(answer: object) -> str | None:
+    """Return the status token from a ``Task <id>: <status>`` answer."""
+    text = _nonblank_payload_text(answer)
+    if text is None:
+        return None
+    matched = _STATUS_LINE.match(text)
+    return matched.group(1) if matched else None
+
+
+def _payload_from_envelope(
+    raw: object, formatted: object
+) -> dict[str, Any] | None:
+    """Project the public GetTaskStatus envelope into poller fields.
+
+    Compatibility projection strips ``status`` from formatted metadata and
+    keeps it on ``execution.tasks``. The report stays in ``formatted.answer``
+    and, after the current formatter, also in ``metadata.final_report``.
+    """
+    raw_map = _mapping(raw)
+    nested = (
+        _mapping(raw_map.get("formatted")) if raw_map is not None else None
+    )
+    metadata = _mapping(getattr(formatted, "metadata", None))
+    answer = getattr(formatted, "answer", None)
+    if metadata is None and nested is not None:
+        metadata = _mapping(nested.get("metadata"))
+    if not isinstance(answer, str) and nested is not None:
+        answer = nested.get("answer")
+    payload: dict[str, Any] = dict(metadata) if metadata is not None else {}
+    status = (
+        _nonblank_payload_text(payload.get("status"))
+        or _status_from_execution(raw)
+        or _status_from_answer(answer)
+    )
+    if status is None and raw_map is not None:
+        status = _nonblank_payload_text(raw_map.get("status"))
+        if status is not None:
+            payload.update(raw_map)
+    if status is None:
+        return None
+    payload["status"] = status
+    report = _nonblank_payload_text(answer)
+    stage = str(payload.get("report_stage") or "")
+    if (
+        _nonblank_payload_text(payload.get("final_report")) is None
+        and stage == "final"
+        and report is not None
+    ):
+        payload["final_report"] = report
+    if (
+        _nonblank_payload_text(payload.get("intermediate_report")) is None
+        and stage == "intermediate"
+        and report is not None
+    ):
+        payload["intermediate_report"] = report
+    return payload
+
+
 async def _status_payload_from_mcp(
     client: PhytomniMcpClient | object,
     task_id: str,
@@ -366,12 +460,7 @@ async def _status_payload_from_mcp(
     else:
         raw = response.raw_payload
         formatted = response.formatted
-    if isinstance(raw, Mapping) and raw.get("status"):
-        return raw
-    metadata = getattr(formatted, "metadata", None)
-    if isinstance(metadata, Mapping) and metadata.get("status"):
-        return metadata
-    return None
+    return _payload_from_envelope(raw, formatted)
 
 
 async def _reconciled_task_state(

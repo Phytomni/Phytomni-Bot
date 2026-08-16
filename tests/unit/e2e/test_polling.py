@@ -502,6 +502,150 @@ async def test_mcp_get_task_status_survives_in_process_outbound_gap(
     assert state.status == "RUNNING"
 
 
+@pytest.mark.asyncio
+async def test_mcp_get_task_status_reads_report_from_formatted_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The public stdio envelope keeps status on execution.tasks."""
+
+    async def fake_call_tool(
+        _client: object,
+        tool_name: str,
+        arguments: Mapping[str, object],
+        **_kwargs: object,
+    ) -> SimpleNamespace:
+        assert tool_name == "GetTaskStatus"
+        assert arguments == {"task_id": "T-net"}
+        return SimpleNamespace(
+            raw_payload={
+                "formatted": {
+                    "answer": "The analysis reached a terminal outcome.",
+                    "metadata": {
+                        "report_stage": "final",
+                        "final_report": (
+                            "The analysis reached a terminal outcome."
+                        ),
+                    },
+                },
+                "execution": {
+                    "tasks": [
+                        {
+                            "id": "T-net",
+                            "accepted": True,
+                            "status": "SUCCEEDED",
+                        }
+                    ]
+                },
+            },
+            formatted=SimpleNamespace(
+                answer="The analysis reached a terminal outcome.",
+                metadata={
+                    "report_stage": "final",
+                    "final_report": (
+                        "The analysis reached a terminal outcome."
+                    ),
+                },
+            ),
+        )
+
+    monkeypatch.setattr(polling, "call_tool", fake_call_tool)
+
+    state = await polling.poll_until_done(
+        "T-net",
+        db_path=tmp_path / "missing.db",
+        timeout_seconds=2.0,
+        poll_interval_seconds=0.01,
+        client=object(),
+    )
+    assert state.status == "SUCCEEDED"
+    assert state.report_stage == "final"
+    assert state.final_report == "The analysis reached a terminal outcome."
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_task_status_lifts_answer_when_metadata_omits_report(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Older formatted metadata carried status but not final_report."""
+
+    async def fake_call_tool(
+        _client: object,
+        tool_name: str,
+        arguments: Mapping[str, object],
+        **_kwargs: object,
+    ) -> SimpleNamespace:
+        del tool_name, arguments
+        return SimpleNamespace(
+            raw_payload={"formatted": {}, "execution": {}},
+            formatted=SimpleNamespace(
+                answer="Assembled fallback report text.",
+                metadata={"status": "succeeded", "report_stage": "final"},
+            ),
+        )
+
+    monkeypatch.setattr(polling, "call_tool", fake_call_tool)
+
+    state = await polling.poll_until_done(
+        "T-lift",
+        db_path=tmp_path / "missing.db",
+        timeout_seconds=2.0,
+        poll_interval_seconds=0.01,
+        client=object(),
+    )
+    assert state.status == "succeeded"
+    assert state.final_report == "Assembled fallback report text."
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_task_status_reads_running_from_execution_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A still-running Design job is accepted from execution.tasks."""
+
+    async def fake_call_tool(
+        _client: object,
+        tool_name: str,
+        arguments: Mapping[str, object],
+        **_kwargs: object,
+    ) -> SimpleNamespace:
+        del tool_name, arguments
+        return SimpleNamespace(
+            raw_payload={
+                "formatted": {
+                    "answer": "Task T-design: RUNNING",
+                    "metadata": {},
+                },
+                "execution": {
+                    "tasks": [
+                        {
+                            "id": "T-design",
+                            "accepted": True,
+                            "status": "RUNNING",
+                        }
+                    ]
+                },
+            },
+            formatted=SimpleNamespace(
+                answer="Task T-design: RUNNING",
+                metadata={},
+            ),
+        )
+
+    monkeypatch.setattr(polling, "call_tool", fake_call_tool)
+
+    state = await polling.poll_until_remote_running_or_done(
+        "T-design",
+        db_path=tmp_path / "missing.db",
+        timeout_seconds=2.0,
+        poll_interval_seconds=0.01,
+        client=object(),
+    )
+    assert state.status == "RUNNING"
+
+
 def test_extract_task_id_from_execution_envelope() -> None:
     """Analyst submit wraps the accepted id under execution.tasks."""
     response = SimpleNamespace(

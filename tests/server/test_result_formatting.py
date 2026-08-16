@@ -177,6 +177,8 @@ def test_get_task_status_surfaces_final_report_as_answer() -> None:
 
     assert result.answer == report_md
     assert result.metadata["status"] == "succeeded"
+    assert result.metadata["final_report"] == report_md
+    assert result.metadata["report_stage"] == "final"
     assert result.metadata["artifacts"] == [
         {"task_id": "dg-1", "output_dir": "/obs/run/output", "paths": []},
     ]
@@ -204,6 +206,7 @@ def test_failed_task_can_surface_intermediate_report() -> None:
     result = format_tool_result("GetTaskStatus", raw)
     assert result.answer == "# profile"
     assert result.metadata["status"] == "failed"
+    assert result.metadata["intermediate_report"] == "# profile"
     assert result.metadata["report_stage"] == "intermediate"
     assert result.metadata["degraded_reason"] == raw["degraded_reason"]
 

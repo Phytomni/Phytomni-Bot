@@ -366,6 +366,8 @@ def format_task_status_result(
             "analysis_id": string_or_none(content.get("analysis_id")),
             "live_status": content.get("live_status"),
             "artifacts": artifacts,
+            "final_report": final_report,
+            "intermediate_report": intermediate_report,
             "report_stage": report_stage,
             "report_completeness": report_completeness,
             "report_revision": sanitize_nonnegative_int(
