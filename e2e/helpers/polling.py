@@ -148,6 +148,17 @@ class _HttpPollSpec:
     poll_interval_seconds: float = 10.0
 
 
+@dataclass(frozen=True)
+class _McpPollSpec:
+    """Stop set, budgets, and client for one MCP task poll."""
+
+    stop_statuses: frozenset[str]
+    db_path: Path | None = None
+    timeout_seconds: float | None = None
+    poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS
+    client: PhytomniMcpClient | object | None = None
+
+
 async def poll_http_run_to_terminal(
     client: httpx.AsyncClient,
     run_id: str,
@@ -693,11 +704,13 @@ async def poll_until_done(
     """
     return await _poll_until(
         task_id,
-        TERMINAL_STATUSES,
-        db_path=db_path,
-        timeout_seconds=timeout_seconds,
-        poll_interval_seconds=poll_interval_seconds,
-        client=client,
+        _McpPollSpec(
+            stop_statuses=TERMINAL_STATUSES,
+            db_path=db_path,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+            client=client,
+        ),
     )
 
 
@@ -712,41 +725,35 @@ async def poll_until_remote_running_or_done(
     """Poll until the task is remotely running or already terminal."""
     return await _poll_until(
         task_id,
-        TERMINAL_STATUSES | RUNNING_STATUSES,
-        db_path=db_path,
-        timeout_seconds=timeout_seconds,
-        poll_interval_seconds=poll_interval_seconds,
-        client=client,
+        _McpPollSpec(
+            stop_statuses=TERMINAL_STATUSES | RUNNING_STATUSES,
+            db_path=db_path,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+            client=client,
+        ),
     )
 
 
-async def _poll_until(
-    task_id: str,
-    stop_statuses: frozenset[str],
-    *,
-    db_path: Path | None,
-    timeout_seconds: float | None,
-    poll_interval_seconds: float,
-    client: PhytomniMcpClient | object | None = None,
-) -> TaskState:
-    """Poll one task until its reconciled status matches ``stop_statuses``."""
+async def _poll_until(task_id: str, spec: _McpPollSpec) -> TaskState:
+    """Poll one task until its reconciled status matches the spec."""
     deadline = time.monotonic() + (
-        timeout_seconds
-        if timeout_seconds is not None
+        spec.timeout_seconds
+        if spec.timeout_seconds is not None
         else resolve_timeout_seconds()
     )
-    resolved_db = db_path or resolve_db_path()
+    resolved_db = spec.db_path or resolve_db_path()
     last_state: TaskState | None = None
 
     while time.monotonic() < deadline:
         state = await _reconciled_task_state(
-            task_id, resolved_db, client=client
+            task_id, resolved_db, client=spec.client
         )
         if state is not None:
             last_state = state
-            if _status_in(state.status, stop_statuses):
+            if _status_in(state.status, spec.stop_statuses):
                 return state
-        await asyncio.sleep(poll_interval_seconds)
+        await asyncio.sleep(spec.poll_interval_seconds)
 
     raise TaskPollingTimeoutError(
         f"Task {task_id} did not reach a terminal status before the "
