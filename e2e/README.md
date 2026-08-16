@@ -144,11 +144,14 @@ PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
 
 Tools that return task handles (`AnalystAgent`, `DeepGenomeAgent`,
 `InSilicoResearchAgent`, `DigitalDesignAgent`, `GeneNetworkAgent`)
-poll to terminal state via `helpers/polling.py`. Override the default
-ten-minute per-task timeout with:
+poll via `helpers/polling.py`. Analyst, DeepGenome, DigitalDesign,
+GeneNetwork, and InSilico currently accept a live remote `RUNNING`
+verdict as `ACCEPTED_WITH_GAPS` because those jobs take 1h-48h; a
+success terminal still requires the full report/artifact contract.
+Default poll budget is one hour. Override with:
 
 ```bash
-PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS=1200 \
+PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS=7200 \
     uv run pytest e2e/test_analyst_agent_e2e.py -v
 ```
 
@@ -216,7 +219,7 @@ PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
 
 Tunables: `PHYTOMNI_E2E_API_STARTUP_SECONDS` (health-gate budget,
 default 120) and `PHYTOMNI_E2E_API_READ_TIMEOUT_SECONDS` (per-request
-read timeout, default 1200).
+read timeout, default 3600).
 
 ### Result archive delivery e2e
 

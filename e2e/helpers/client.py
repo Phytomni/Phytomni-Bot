@@ -25,7 +25,7 @@ from mcp_client_phytomni import (
 
 DEFAULT_SERVER_MODULE = "mcp_server_phytomni.server"
 DEFAULT_TOOL_TIMEOUT_SECONDS = 600
-DEFAULT_LONG_TIMEOUT_SECONDS = 1800
+DEFAULT_LONG_TIMEOUT_SECONDS = 7200
 
 
 def make_client() -> PhytomniMcpClient:

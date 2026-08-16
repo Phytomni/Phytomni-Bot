@@ -55,13 +55,15 @@ from .client import call_tool, submit_timeout_seconds
 _logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = "server_tasks.db"
-DEFAULT_TIMEOUT_SECONDS = 600.0
+DEFAULT_TIMEOUT_SECONDS = 3600.0
 DEFAULT_POLL_INTERVAL_SECONDS = 10.0
 TERMINAL_STATUSES = frozenset(
     {"succeeded", "success", "completed", "done", "failed", "error"}
 )
 SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
+RUNNING_STATUSES = frozenset({"running"})
 HTTP_TERMINAL_STATUSES = frozenset({"input_required", "succeeded", "failed"})
+HTTP_RUNNING_OR_TERMINAL_STATUSES = HTTP_TERMINAL_STATUSES | RUNNING_STATUSES
 _HTTP_RUN_DEADLINE_MESSAGE = (
     "HTTP run did not reach a terminal status before the deadline"
 )
@@ -154,6 +156,7 @@ async def poll_http_run_to_terminal(
     headers: Mapping[str, str],
     timeout_seconds: float | None = None,
     poll_interval_seconds: float = 10.0,
+    stop_statuses: frozenset[str] | None = None,
 ) -> HttpRunTerminal:
     """Poll one long-lived HTTP run and return its terminal result.
 
@@ -170,6 +173,10 @@ async def poll_http_run_to_terminal(
             Defaults to the environment-aware
             :func:`resolve_timeout_seconds` value.
         poll_interval_seconds: Delay between non-terminal reads.
+        stop_statuses: Statuses that end the poll. Defaults to
+            :data:`HTTP_TERMINAL_STATUSES`. Pass
+            :data:`HTTP_RUNNING_OR_TERMINAL_STATUSES` for the temporary
+            long-job ``ACCEPTED_WITH_GAPS`` gate.
 
     Returns:
         Terminal status, result mapping, and distinct report revisions.
@@ -180,6 +187,7 @@ async def poll_http_run_to_terminal(
         TaskPollingTimeoutError: If the local deadline expires.
         ValueError: If the polling budget is not finite and positive.
     """
+    stop_statuses = stop_statuses or HTTP_TERMINAL_STATUSES
     effective_timeout = (
         resolve_timeout_seconds()
         if timeout_seconds is None
@@ -218,7 +226,7 @@ async def poll_http_run_to_terminal(
         remaining_seconds = deadline - time.monotonic()
         if remaining_seconds <= 0:
             break
-        if status in HTTP_TERMINAL_STATUSES:
+        if status in stop_statuses:
             _logger.info(
                 "live run terminal status=%s revisions=%s artifacts=%s",
                 status,
@@ -284,15 +292,9 @@ def resolve_db_path() -> Path:
     return Path.cwd() / DEFAULT_DB_PATH
 
 
-def _state_is_terminal(state: TaskState) -> bool:
-    """Return True if ``state.status`` falls in :data:`TERMINAL_STATUSES`.
-
-    Backend ``task_status`` calls historically return upper-cased
-    verdicts (``'FAILED'`` / ``'SUCCEEDED'``); the local DB rows are
-    lower-cased. The comparison normalises so case drift from either
-    side cannot mask a terminal state.
-    """
-    return state.status.lower() in TERMINAL_STATUSES
+def _status_in(status: str, allowed: frozenset[str]) -> bool:
+    """Return True when ``status`` matches one allowed value, ignoring case."""
+    return status.lower() in allowed
 
 
 async def _reconciled_task_state(
@@ -473,6 +475,7 @@ async def poll_until_done(
     db_path: Path | None = None,
     timeout_seconds: float | None = None,
     poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
+    extra_stop_statuses: frozenset[str] | None = None,
 ) -> TaskState:
     """Poll local DB + live backend until ``task_id`` reaches terminal.
 
@@ -493,6 +496,8 @@ async def poll_until_done(
         timeout_seconds: Total poll budget. Defaults to
             ``resolve_timeout_seconds()``.
         poll_interval_seconds: Delay between iterations.
+        extra_stop_statuses: Additional case-insensitive statuses that
+            end the poll besides :data:`TERMINAL_STATUSES`.
 
     Returns:
         Final ``TaskState`` once the task reaches a terminal status.
@@ -501,6 +506,9 @@ async def poll_until_done(
         TaskPollingTimeoutError: If the deadline elapses before the
             task reaches a terminal state.
     """
+    stop_statuses = TERMINAL_STATUSES | {
+        status.lower() for status in (extra_stop_statuses or frozenset())
+    }
     deadline = time.monotonic() + (
         timeout_seconds
         if timeout_seconds is not None
@@ -513,7 +521,7 @@ async def poll_until_done(
         state = await _reconciled_task_state(task_id, resolved_db)
         if state is not None:
             last_state = state
-            if _state_is_terminal(state):
+            if _status_in(state.status, stop_statuses):
                 return state
         await asyncio.sleep(poll_interval_seconds)
 
@@ -627,6 +635,57 @@ async def submit_and_poll_to_success(
             f"{state.status!r}; expected a success terminal state."
         )
     return state
+
+
+async def submit_and_poll_to_remote_running(
+    client: PhytomniMcpClient,
+    tool_name: str,
+    payload: Any,
+) -> TaskState:
+    """Submit an async tool and accept remote ``RUNNING`` as with-gaps.
+
+    Temporary gate for 1h-48h analysis-platform jobs. A live
+    ``RUNNING`` verdict is enough; a success terminal still wins. A
+    failed/error terminal fails the test. Local ``submitted`` without
+    a live running verdict is not accepted.
+
+    Args:
+        client: Session-scoped MCP client.
+        tool_name: Public MCP tool name (e.g. ``"AnalystAgent"``).
+        payload: JSON-schema-compatible payload for ``tool_name``.
+
+    Returns:
+        ``TaskState`` once the reconciled status is running or a
+        success terminal.
+
+    Raises:
+        AssertionError: If the task ends in a failed/error terminal.
+        TaskPollingTimeoutError: If the polling deadline elapses.
+        RuntimeError: If no task identifier could be extracted.
+    """
+    response = await call_tool(
+        client,
+        tool_name,
+        payload,
+        timeout_seconds=submit_timeout_seconds(),
+    )
+    task_id = extract_task_id(response)
+    state = await poll_until_done(
+        task_id, extra_stop_statuses=RUNNING_STATUSES
+    )
+    if state.succeeded or _status_in(state.status, RUNNING_STATUSES):
+        if not state.succeeded:
+            _logger.warning(
+                "ACCEPTED_WITH_GAPS: %s task %s is remote RUNNING; "
+                "terminal report and artifacts are deferred",
+                tool_name,
+                task_id,
+            )
+        return state
+    raise AssertionError(
+        f"{tool_name} task {task_id} ended with status "
+        f"{state.status!r}; expected remote RUNNING or success."
+    )
 
 
 def _read_task_state(

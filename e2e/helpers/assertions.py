@@ -398,6 +398,31 @@ def assert_deep_genome_terminal(state: TaskState) -> None:
     assert state.report_completeness == "partial", state
 
 
+def assert_remote_running_or_success(
+    state: TaskState, *, needs_artifacts: bool
+) -> None:
+    """Accept remote ``RUNNING`` as a temporary with-gaps pass.
+
+    Long analysis-platform jobs (1h-48h) cannot finish inside the live
+    suite. A reconciled ``running`` status means the remote accepted
+    the work. A success terminal still requires the full report and,
+    when asked, artifact paths. Failed or submitted-only states fail.
+
+    Args:
+        state: Sanitized task snapshot from a live poll.
+        needs_artifacts: Whether a success terminal must publish paths.
+
+    Raises:
+        AssertionError: When the task is neither remote running nor a
+            successful terminal with the required evidence.
+    """
+    if state.status.lower() == "running":
+        return
+    assert_terminal_report_and_artifacts(
+        state, needs_artifacts=needs_artifacts
+    )
+
+
 def assert_terminal_report_and_artifacts(
     state: TaskState, *, needs_artifacts: bool
 ) -> None:

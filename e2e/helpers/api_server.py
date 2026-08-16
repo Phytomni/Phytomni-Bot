@@ -43,7 +43,7 @@ from .loopback_process import (
 )
 
 _STARTUP_DEADLINE_DEFAULT = 120.0
-_READ_TIMEOUT_DEFAULT = 1200.0
+_READ_TIMEOUT_DEFAULT = 3600.0
 _E2E_SERVICE_TOKEN = "e2e-service-token"
 _DEFAULT_APP_MODULE = "mcp_server_phytomni.api.server"
 _PROCESS = LoopbackProcessConfig(
@@ -139,8 +139,8 @@ def _read_timeout_seconds() -> float:
     Returns:
         Read timeout in seconds. Overrideable via
         ``PHYTOMNI_E2E_API_READ_TIMEOUT_SECONDS``. Review/BriefGene
-        block the synchronous endpoint up to ~10 min, so the default
-        is 20 min.
+        block the synchronous endpoint up to ~10 min, and long
+        analysis jobs need a wider window, so the default is 60 min.
     """
     raw = os.environ.get("PHYTOMNI_E2E_API_READ_TIMEOUT_SECONDS")
     return float(raw) if raw else _READ_TIMEOUT_DEFAULT

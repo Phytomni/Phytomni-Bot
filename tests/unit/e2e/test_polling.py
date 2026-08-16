@@ -186,6 +186,24 @@ async def test_http_poll_records_distinct_monotonic_revisions() -> None:
 
 
 @pytest.mark.asyncio
+async def test_http_poll_can_stop_on_running_with_gaps() -> None:
+    """The long-job gate may accept HTTP running without a terminal."""
+    client = _TimeoutCapturingClient(({"status": "RUNNING", "result": {}},))
+
+    terminal = await polling.poll_http_run_to_terminal(
+        cast(httpx.AsyncClient, client),
+        "run-running",
+        headers={"X-Service-Token": "test"},
+        timeout_seconds=1.0,
+        poll_interval_seconds=0.0,
+        stop_statuses=polling.HTTP_RUNNING_OR_TERMINAL_STATUSES,
+    )
+
+    assert terminal.status == "running"
+    assert client.timeouts
+
+
+@pytest.mark.asyncio
 async def test_http_poll_uses_environment_resolved_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

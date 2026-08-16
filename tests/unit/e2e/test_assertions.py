@@ -12,6 +12,7 @@ import pytest
 from e2e.helpers import assertions
 from e2e.helpers.assertions import (
     assert_deep_genome_terminal,
+    assert_remote_running_or_success,
     assert_terminal_report_and_artifacts,
     fetch_authenticated_result_archive,
 )
@@ -78,6 +79,36 @@ def test_artifact_requirement_rejects_directoryless_success() -> None:
 
     with pytest.raises(AssertionError):
         assert_terminal_report_and_artifacts(state, needs_artifacts=True)
+
+
+def test_remote_running_is_accepted_with_gaps() -> None:
+    """A live RUNNING snapshot is enough for the temporary long-job gate."""
+    state = replace(build_task_state(), status="RUNNING", final_report=None)
+
+    assert_remote_running_or_success(state, needs_artifacts=True)
+
+
+def test_remote_running_gate_rejects_local_submitted() -> None:
+    """Local submitted without a live running verdict is not a pass."""
+    state = replace(build_task_state(), status="submitted")
+
+    with pytest.raises(AssertionError):
+        assert_remote_running_or_success(state, needs_artifacts=False)
+
+
+def test_remote_running_gate_still_requires_success_evidence() -> None:
+    """Success terminals still need the full report and artifact contract."""
+    state = replace(
+        build_task_state(),
+        status="succeeded",
+        final_report="# final",
+        report_stage="final",
+        report_completeness="complete",
+        report_revision=3,
+    )
+
+    with pytest.raises(AssertionError):
+        assert_remote_running_or_success(state, needs_artifacts=True)
 
 
 def test_result_archive_fetch_uses_public_run_root(

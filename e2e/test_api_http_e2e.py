@@ -30,10 +30,10 @@ from .helpers.api_server import (
 )
 from .helpers.assertions import (
     ANNOTATION_CUES,
+    EPIGENETIC_DROUGHT_KEYWORDS,
     GENE_ID,
     MIN_REVIEW_SECTIONS,
     PHOTOSYNTHESIS_KEYWORDS,
-    EPIGENETIC_DROUGHT_KEYWORDS,
     markdown_body,
     section_count,
 )
