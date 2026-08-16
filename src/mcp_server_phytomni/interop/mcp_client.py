@@ -85,8 +85,6 @@ def _resolve_target(
     target_id: str, registry: InteropRegistry
 ) -> InteropTarget:
     """Resolve one target without echoing untrusted registry details."""
-    if not registry.enabled:
-        raise _target_error("disabled", target_id)
     try:
         return registry.require_target(target_id)
     except InteropRegistryError:
@@ -346,8 +344,6 @@ async def load_external_mcp_tools(
     named server.  This avoids the official client's all-target concurrent
     discovery path, where an unavailable peer can fail unrelated targets.
     """
-    if not registry.enabled:
-        return ()
     target = _resolve_target(target_id, registry)
     if isinstance(target, A2ATarget):
         raise _target_error("unsupported_transport", target.id)

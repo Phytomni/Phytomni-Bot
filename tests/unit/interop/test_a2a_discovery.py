@@ -62,7 +62,7 @@ def _target(**overrides: object) -> A2ATarget:
 
 def _registry(target: A2ATarget) -> InteropRegistry:
     """Return an enabled registry containing one A2A target."""
-    return InteropRegistry(enabled=True, _targets={target.id: target})
+    return InteropRegistry(_targets={target.id: target})
 
 
 def _card() -> AgentCard:
@@ -329,8 +329,7 @@ async def test_discovery_cache_retains_only_successful_skill_dtos() -> None:
 @pytest.mark.parametrize(
     ("registry", "code", "kind"),
     [
-        (InteropRegistry.disabled(), "disabled", "a2a"),
-        (InteropRegistry(enabled=True, _targets={}), "unknown_target", "a2a"),
+        (InteropRegistry(_targets={}), "unknown_target", "a2a"),
     ],
 )
 async def test_registry_failures_are_target_level_only(
@@ -362,7 +361,6 @@ async def test_wrong_target_kind_is_not_used_as_an_a2a_peer() -> None:
         }
     )
     registry = InteropRegistry(
-        enabled=True,
         _targets={target.id: target},
     )
     result = await discover_external_a2a_capabilities(

@@ -101,7 +101,7 @@ def _a2a_target() -> A2ATarget:
 
 def _a2a_registry(target: A2ATarget) -> InteropRegistry:
     """Put one fake A2A target behind the normal registry seam."""
-    return InteropRegistry(enabled=True, _targets={target.id: target})
+    return InteropRegistry(_targets={target.id: target})
 
 
 async def _resolve_fake_host(_hostname: str, _port: int) -> Sequence[str]:
@@ -398,7 +398,7 @@ def _mcp_tool(
 
 def _mcp_registry(target: MCPStreamableHttpTarget) -> InteropRegistry:
     """Put one fake MCP target behind the normal registry seam."""
-    return InteropRegistry(enabled=True, _targets={target.id: target})
+    return InteropRegistry(_targets={target.id: target})
 
 
 @pytest.fixture(autouse=True)

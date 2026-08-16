@@ -2,7 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Feature-gated loading for operator-owned interop target configuration.
+"""Loading for operator-owned interop target configuration.
 
 Classes: InteropRegistry, InteropRegistryError.
 Functions: load_interop_registry.
@@ -33,16 +33,13 @@ class InteropRegistryError(ValueError):
 class InteropRegistry:
     """Immutable, secret-free lookup of validated interop targets."""
 
-    enabled: bool
-    _targets: Mapping[str, InteropTarget] = field(repr=False)
+    _targets: Mapping[str, InteropTarget] = field(
+        default_factory=dict, repr=False
+    )
 
     def __post_init__(self) -> None:
         """Copy/freeze lookup state and enforce construction invariants."""
         copied_targets = dict(self._targets)
-        if not self.enabled and copied_targets:
-            raise InteropRegistryError(
-                "disabled interop registry cannot contain targets"
-            )
         for mapping_key, target in copied_targets.items():
             if mapping_key != target.id:
                 raise InteropRegistryError(
@@ -53,11 +50,6 @@ class InteropRegistry:
             "_targets",
             MappingProxyType(copied_targets),
         )
-
-    @classmethod
-    def disabled(cls) -> InteropRegistry:
-        """Return an inert registry without parsing configuration."""
-        return cls(enabled=False, _targets=MappingProxyType({}))
 
     def target_ids(self) -> tuple[str, ...]:
         """Return configured target ids in deterministic order."""
@@ -118,20 +110,16 @@ def _build_registry(
                 "missing credential reference: " f"{target.credential_ref}"
             )
         by_id[target.id] = target
-    return InteropRegistry(
-        enabled=True,
-        _targets=MappingProxyType(by_id),
-    )
+    return InteropRegistry(_targets=MappingProxyType(by_id))
 
 
 def load_interop_registry(
     api_config: ApiConfig | None = None,
     sensitive_config: SensitiveConfig | None = None,
 ) -> InteropRegistry:
-    """Load the interop registry only when its feature flag is enabled.
+    """Load and validate the operator interop target registry.
 
-    Disabled mode returns before target JSON or sensitive settings are read.
-    Enabled mode validates local configuration only; it never resolves DNS,
+    The loader validates local configuration only; it never resolves DNS,
     connects to a peer, or checks whether a stdio command exists.
 
     Args:
@@ -140,14 +128,13 @@ def load_interop_registry(
             callers that already own the process-cached instance.
 
     Returns:
-        An inert disabled registry or an enabled validated target registry.
+        A validated target registry. An empty ``INTEROP_TARGETS`` list yields
+        an empty registry.
 
     Raises:
-        InteropRegistryError: If enabled target or credential JSON is invalid.
+        InteropRegistryError: If target or credential JSON is invalid.
     """
     resolved_api_config = api_config or ApiConfig()
-    if not resolved_api_config.INTEROP_ENABLED:
-        return InteropRegistry.disabled()
     resolved_sensitive_config = sensitive_config or SensitiveConfig.load()
     targets = _parse_targets(
         resolved_api_config.INTEROP_TARGETS,

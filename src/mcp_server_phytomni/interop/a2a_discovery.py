@@ -63,8 +63,6 @@ class InteropA2AError(RuntimeError):
 
 def _discovery_kind(registry: InteropRegistry, target_id: str) -> str:
     """Return a target kind without exposing registry or peer details."""
-    if not registry.enabled:
-        return "a2a"
     try:
         return registry.require_target(target_id).kind
     except InteropRegistryError:
@@ -74,9 +72,7 @@ def _discovery_kind(registry: InteropRegistry, target_id: str) -> str:
 def _resolve_a2a_target(
     target_id: str, registry: InteropRegistry
 ) -> A2ATarget:
-    """Resolve one enabled A2A target from the immutable operator registry."""
-    if not registry.enabled:
-        raise InteropA2AError("disabled", target_id)
+    """Resolve one A2A target from the immutable operator registry."""
     try:
         target = registry.require_target(target_id)
     except InteropRegistryError:

@@ -36,11 +36,10 @@ only after its owner returns the corresponding redacted evidence.
 
 ## Outbound Interoperability Trust Boundary
 
-Outbound MCP/A2A discovery is an operator feature and is disabled by default.
-Enable it explicitly in the API environment, then restart the API process:
+Outbound MCP/A2A discovery is always mounted. Configure operator-owned
+targets in the API environment, then restart the API process:
 
 ```dotenv
-INTEROP_ENABLED=1
 INTEROP_TARGETS='[{"id":"mcp-peer","kind":"mcp","transport":"streamable_http","url":"https://mcp.example.test/mcp","allowed_tools":["search"]}]'
 ```
 

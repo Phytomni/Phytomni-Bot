@@ -4,17 +4,16 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Cross-surface feature-flag compatibility matrix.
 
-The optional A2A, outbound interop, and memory surfaces must compose
-without changing the always-on MCP/native-HTTP contract.  These tests build
-all eight deployment flag combinations and keep every peer operation
-offline.
+The optional A2A and memory surfaces must compose without changing the
+always-on MCP/native-HTTP/interop contract.  These tests build all four
+deployment flag combinations and keep every peer operation offline.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import httpx
 import pytest
@@ -23,15 +22,6 @@ from fastapi import FastAPI
 from mcp_server_phytomni.api.a2a.catalog import build_a2a_skills
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
-from mcp_server_phytomni.config.defaults import ApiConfig
-from mcp_server_phytomni.interop.a2a_discovery import (
-    discover_external_a2a_capabilities,
-)
-from mcp_server_phytomni.interop.capabilities import (
-    discover_external_mcp_capabilities,
-)
-from mcp_server_phytomni.interop.mcp_client import load_external_mcp_tools
-from mcp_server_phytomni.interop.registry import load_interop_registry
 from mcp_server_phytomni.mcp.app import TOOL_ARGUMENT_MODELS, TOOL_HANDLERS
 from mcp_server_phytomni.mcp.schemas import (
     AGENT_TOOL_DEFINITIONS,
@@ -64,10 +54,10 @@ _CORE_HTTP_PATHS = frozenset(
         "/v1/runs/{thread_id}/resume",
         "/v1/conversation-context/settle",
         "/v1/conversation-context/tombstone",
+        "/v1/interop/capabilities",
     }
 )
 _A2A_PATHS = frozenset({"/.well-known/agent-card.json", "/a2a"})
-_INTEROP_PATHS = frozenset({"/v1/interop/capabilities"})
 _MEMORY_PATHS = frozenset(
     {
         "/v1/memories",
@@ -83,35 +73,28 @@ class _SurfaceFlags:
     """One deployment row in the cross-surface feature matrix."""
 
     a2a_enabled: bool
-    interop_enabled: bool
     memory_enabled: bool
 
 
 def _flag_cases() -> list[Any]:
-    """Return every A2A/interop/memory flag combination."""
+    """Return every A2A/memory flag combination."""
     cases: list[Any] = []
     for a2a_enabled in (False, True):
-        for interop_enabled in (False, True):
-            for memory_enabled in (False, True):
-                flags = _SurfaceFlags(
-                    a2a_enabled=a2a_enabled,
-                    interop_enabled=interop_enabled,
-                    memory_enabled=memory_enabled,
+        for memory_enabled in (False, True):
+            flags = _SurfaceFlags(
+                a2a_enabled=a2a_enabled,
+                memory_enabled=memory_enabled,
+            )
+            bits = "".join(
+                "1" if value else "0"
+                for value in (a2a_enabled, memory_enabled)
+            )
+            cases.append(
+                pytest.param(
+                    flags,
+                    id=f"a2a-memory={bits}",
                 )
-                bits = "".join(
-                    "1" if value else "0"
-                    for value in (
-                        a2a_enabled,
-                        interop_enabled,
-                        memory_enabled,
-                    )
-                )
-                cases.append(
-                    pytest.param(
-                        flags,
-                        id=f"a2a-interop-memory={bits}",
-                    )
-                )
+            )
     return cases
 
 
@@ -154,7 +137,6 @@ def _configure_matrix_environment(
 ) -> tuple[Path, Path]:
     """Configure one isolated flag-combination test environment."""
     _set_flag(monkeypatch, "A2A_ENABLED", flags.a2a_enabled)
-    _set_flag(monkeypatch, "INTEROP_ENABLED", flags.interop_enabled)
     _set_flag(monkeypatch, "MEMORY_ENABLED", flags.memory_enabled)
 
     if flags.a2a_enabled:
@@ -166,13 +148,7 @@ def _configure_matrix_environment(
     else:
         _clear_alias(monkeypatch, "A2A_PUBLIC_BASE_URL")
 
-    # A malformed target payload proves the disabled interop path remains
-    # lazy.  Enabled rows use an empty, valid operator registry.
-    _set_alias(
-        monkeypatch,
-        "INTEROP_TARGETS",
-        "[]" if flags.interop_enabled else "{malformed",
-    )
+    _set_alias(monkeypatch, "INTEROP_TARGETS", "[]")
 
     memory_path = tmp_path / "memory.sqlite"
     _set_alias(monkeypatch, "MEMORY_DB_PATH", str(memory_path))
@@ -231,11 +207,9 @@ def _assert_optional_paths(
     expected_optional: set[str] = set()
     if flags.a2a_enabled:
         expected_optional.update(_A2A_PATHS)
-    if flags.interop_enabled:
-        expected_optional.update(_INTEROP_PATHS)
     if flags.memory_enabled:
         expected_optional.update(_MEMORY_PATHS)
-    optional_paths = _A2A_PATHS | _INTEROP_PATHS | _MEMORY_PATHS
+    optional_paths = _A2A_PATHS | _MEMORY_PATHS
     assert (paths & optional_paths) == expected_optional
 
 
@@ -268,7 +242,7 @@ async def _assert_http_surfaces(
         assert a2a.status_code == (401 if flags.a2a_enabled else 404)
 
         interop = await client.get("/v1/interop/capabilities", headers=headers)
-        assert interop.status_code == (200 if flags.interop_enabled else 404)
+        assert interop.status_code == 200
 
         memories = await client.get("/v1/memories", headers=headers)
         assert memories.status_code == (200 if flags.memory_enabled else 404)
@@ -323,52 +297,3 @@ async def test_all_feature_flag_combinations_preserve_surface_boundaries(
         assert not memory_path.exists()
 
     _assert_always_on_catalogs()
-
-
-async def test_disabled_interop_flag_keeps_mcp_and_a2a_adapters_inert() -> (
-    None
-):
-    """Malformed disabled config never reaches either outbound adapter."""
-    config = cast(Any, ApiConfig)(
-        _env_file=None,
-        INTEROP_ENABLED=False,
-        INTEROP_TARGETS="{malformed",
-    )
-    registry = load_interop_registry(config)
-    assert registry.enabled is False
-
-    def forbidden_mcp_adapter(*_args: Any, **_kwargs: Any) -> Any:
-        """Fail if disabled MCP code constructs the official adapter."""
-        raise AssertionError("disabled MCP adapter must not be constructed")
-
-    mcp_tools = await load_external_mcp_tools(
-        "mcp-peer",
-        registry=registry,
-        _client_cls=cast(type[Any], forbidden_mcp_adapter),
-    )
-    mcp_result = await discover_external_mcp_capabilities(
-        "mcp-peer",
-        registry=registry,
-        _client_cls=cast(type[Any], forbidden_mcp_adapter),
-    )
-
-    async def forbidden_resolver(*_args: Any, **_kwargs: Any) -> list[str]:
-        """Fail if disabled A2A discovery resolves a peer hostname."""
-        raise AssertionError("disabled A2A discovery must not resolve")
-
-    def forbidden_client(*_args: Any, **_kwargs: Any) -> Any:
-        """Fail if disabled A2A discovery opens an HTTP client."""
-        raise AssertionError("disabled A2A discovery must not open a client")
-
-    a2a_result = await discover_external_a2a_capabilities(
-        "a2a-peer",
-        registry=registry,
-        resolver=forbidden_resolver,
-        _client_factory=forbidden_client,
-    )
-
-    assert mcp_tools == ()
-    assert mcp_result.data == ()
-    assert mcp_result.errors[0].code == "disabled"
-    assert a2a_result.data == ()
-    assert a2a_result.errors[0].code == "disabled"

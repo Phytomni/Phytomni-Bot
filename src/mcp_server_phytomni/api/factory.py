@@ -573,9 +573,7 @@ def _register_interop_route(
     runtime: _RuntimeState,
     require_scope: Callable[..., Any],
 ) -> None:
-    """Register metadata-only interop discovery when enabled."""
-    if not _api_config().INTEROP_ENABLED:
-        return
+    """Register metadata-only interop discovery."""
 
     @app.get("/v1/interop/capabilities")
     async def list_interop_capabilities(
@@ -615,10 +613,6 @@ def _register_interop_route(
                     503, "interop registry unavailable"
                 )
         assert registry is not None
-        if not registry.enabled:
-            return _app_attr("_error_response")(
-                404, "interop capabilities unavailable"
-            )
         assert sensitive_config is not None
         result: DiscoveryResult = await _app_attr("_discover_interop_targets")(
             registry,

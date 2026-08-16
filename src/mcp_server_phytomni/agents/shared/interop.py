@@ -265,9 +265,9 @@ def has_interop_target_kind(
     target_ids: Sequence[str],
     kind: str,
 ) -> bool:
-    """Return whether an enabled registry contains a named target kind."""
+    """Return whether the registry contains a named target kind."""
     registry = getattr(dependencies, "registry", None)
-    if registry is None or not registry.enabled:
+    if registry is None:
         return False
     for target_id in target_ids:
         try:

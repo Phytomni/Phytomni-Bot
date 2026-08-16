@@ -529,7 +529,6 @@ async def test_interop_operation_cancellation_releases_and_reuses_owner(
         }
     )
     registry = InteropRegistry(
-        enabled=True,
         _targets={target.id: target},
     )
     clients: list[_CountingAsyncClient] = []
@@ -728,7 +727,7 @@ async def _run_direct_privacy_attempt(
         }
     )
     runtime = InteropResourceRuntime(
-        InteropRegistry(enabled=True, _targets={target.id: target}),
+        InteropRegistry(_targets={target.id: target}),
         cast(SensitiveConfig, SimpleNamespace()),
         pools,
         factories=InteropResourceFactories(

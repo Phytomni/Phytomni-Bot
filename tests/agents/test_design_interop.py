@@ -58,7 +58,7 @@ def _mcp_registry() -> InteropRegistry:
             "allowed_tools": [DESIGN_MCP_CAPABILITY],
         }
     )
-    return InteropRegistry(enabled=True, _targets={target.id: target})
+    return InteropRegistry(_targets={target.id: target})
 
 
 def _a2a_registry() -> InteropRegistry:
@@ -74,7 +74,7 @@ def _a2a_registry() -> InteropRegistry:
             "allowed_skills": [DESIGN_A2A_CAPABILITY],
         }
     )
-    return InteropRegistry(enabled=True, _targets={target.id: target})
+    return InteropRegistry(_targets={target.id: target})
 
 
 def _mcp_capability() -> InteropCapability:
@@ -168,7 +168,6 @@ async def test_design_mcp_evidence_never_forwards_local_output_dir() -> None:
     arguments = calls[0]["args"][2]
     assert arguments["task_name"] == "protein_design_analysis"
     assert "output_dir" not in arguments
-    assert calls[0]["kwargs"]["registry"].enabled is True
 
 
 async def test_design_a2a_stream_preserves_correlations() -> None:
@@ -297,7 +296,7 @@ async def test_required_design_never_pseudo_succeeds_without_evidence(
 ) -> None:
     """Required mode rejects an empty external-evidence result."""
     agent = _build_agent(
-        DesignInteropDependencies(registry=InteropRegistry.disabled())
+        DesignInteropDependencies(registry=InteropRegistry())
     )
     monkeypatch.setattr(
         design_agent_module,

@@ -179,10 +179,9 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
 - **Method:** `GET`
   **Path:** `/v1/interop/capabilities`
   **Auth:** yes
-  **Purpose:** Opt-in sanitized MCP/A2A capability discovery; route exists only
-  when `INTEROP_ENABLED=1`, accepts no query overrides, and
-  requires the `agents`
-  scope.
+  **Purpose:** Sanitized MCP/A2A capability discovery; accepts no query
+  overrides and requires the `agents` scope. An empty
+  `INTEROP_TARGETS` list returns no peers.
 
 - **Method:** `GET`
   **Path:** `/v1/models`
@@ -767,15 +766,13 @@ owner, context, generation, and pause state before calling the shared
 `aresume_graph` kernel; stale, repeated, or mismatched resumes are deterministic
 JSON-RPC invalid-params errors.
 
-## Outbound interop capability discovery (opt-in)
+## Outbound interop capability discovery
 
 `GET /v1/interop/capabilities` is a metadata-only discovery surface for
-operator-configured external MCP and A2A targets. It is mounted only when
-`INTEROP_ENABLED=1` (or `PHYTOMNI_INTEROP_ENABLED=1`) was enabled when the API
-application started. It requires an API key with the `agents` scope and the
-normal `API_RATE_LIMIT_PER_MIN` budget. With the flag off, the route does not
-exist and returns the ordinary `404`; enabling or disabling it requires a
-process restart.
+operator-configured external MCP and A2A targets. It requires an API key with
+the `agents` scope and the normal `API_RATE_LIMIT_PER_MIN` budget. An empty
+`INTEROP_TARGETS` list returns no peers. Changing the target registry or
+credential envelope requires a process restart.
 
 The request has no body and accepts no query parameters. URLs, commands, args,
 headers, tokens, and credential references are all operator configuration, not

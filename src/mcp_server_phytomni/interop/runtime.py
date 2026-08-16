@@ -146,10 +146,6 @@ class InteropResourceRuntime:
         factories: InteropResourceFactories | None = None,
     ) -> None:
         """Store trusted configuration and empty bounded resource maps."""
-        if not registry.enabled:
-            raise InteropResourceRuntimeError(
-                "enabled interop registry required"
-            )
         self._registry = registry
         self._sensitive_config = sensitive_config
         self._pools = pools
@@ -525,14 +521,12 @@ def build_interop_resource_runtime(
     api_config: ApiConfig | None = None,
     sensitive_config: SensitiveConfig | None = None,
     registry: InteropRegistry | None = None,
-) -> InteropResourceRuntime | None:
-    """Build the enabled process-owned Interop runtime, if configured."""
+) -> InteropResourceRuntime:
+    """Build the process-owned Interop runtime from the operator registry."""
     resolved_registry = registry or load_interop_registry(
         api_config=api_config,
         sensitive_config=sensitive_config,
     )
-    if not resolved_registry.enabled:
-        return None
     resolved_sensitive = sensitive_config or SensitiveConfig.load()
     return InteropResourceRuntime(
         resolved_registry,

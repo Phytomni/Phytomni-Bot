@@ -209,12 +209,6 @@ class ApiConfig(ApiLimitsConfig):
             "A2A_PUBLIC_BASE_URL", "PHYTOMNI_A2A_PUBLIC_BASE_URL"
         ),
     )
-    INTEROP_ENABLED: bool = Field(
-        default=False,
-        validation_alias=AliasChoices(
-            "INTEROP_ENABLED", "PHYTOMNI_INTEROP_ENABLED"
-        ),
-    )
     INTEROP_TARGETS: Annotated[
         SecretStr,
         Field(

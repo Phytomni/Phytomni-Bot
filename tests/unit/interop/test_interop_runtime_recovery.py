@@ -108,7 +108,7 @@ def _mcp_harness(
                 raise RuntimeError("session close failed")
 
     runtime = InteropResourceRuntime(
-        InteropRegistry(enabled=True, _targets={target.id: target}),
+        InteropRegistry(_targets={target.id: target}),
         SensitiveConfig.model_construct(),
         pools,
         factories=InteropResourceFactories(

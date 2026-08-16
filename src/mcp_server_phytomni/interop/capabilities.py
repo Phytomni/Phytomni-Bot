@@ -276,10 +276,6 @@ async def discover_external_mcp_capabilities(
 ) -> DiscoveryResult:
     """Discover one MCP target and return data/errors without peer details."""
     kind = _target_kind(registry, target_id)
-    if not registry.enabled:
-        return DiscoveryResult(
-            errors=(DiscoveryError(target_id, kind, "disabled"),)
-        )
     kwargs: dict[str, Any] = {"registry": registry}
     if sensitive_config is not None:
         kwargs["sensitive_config"] = sensitive_config

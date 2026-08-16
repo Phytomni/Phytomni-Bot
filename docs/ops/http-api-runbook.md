@@ -300,10 +300,8 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 - **Method:** `GET`
   **Path:** `/v1/interop/capabilities`
   **Auth:** yes
-  **Operational use:** Opt-in sanitized MCP/A2A capability discovery; only
-  present when `INTEROP_ENABLED=1`, accepts no query
-  overrides, and requires the
-  `agents` scope.
+  **Operational use:** Sanitized MCP/A2A capability discovery; accepts no
+  query overrides and requires the `agents` scope.
 
 - **Method:** `GET`
   **Path:** `/v1/models`
@@ -1510,12 +1508,11 @@ Expert flag, or route legacy A2A optional selection through the strict route.
 
 ## Outbound Interop Operations
 
-The outbound MCP/A2A boundary is disabled by default. It is mounted when
-`INTEROP_ENABLED=1` (or `PHYTOMNI_INTEROP_ENABLED=1`) is present while the API
-application starts; changing the flag, target registry, or credential envelope
-requires a restart. This is intentionally different from the relay flag,
-which is re-read on every request. While disabled,
-`GET /v1/interop/capabilities` is absent and returns `404`.
+The outbound MCP/A2A boundary is always mounted. Changing the target
+registry or credential envelope requires a restart. This is intentionally
+different from the relay flag, which is re-read on every request. An empty
+`INTEROP_TARGETS` list returns no peers from
+`GET /v1/interop/capabilities`.
 
 Configure targets and credentials separately. A target registry entry may name
 an HTTPS MCP URL, an absolute operator-owned stdio binary, or an A2A card base
@@ -1525,7 +1522,6 @@ credential-shaped stdio args. `INTEROP_CREDENTIALS` is sensitive JSON mapping
 envelope, not in the registry:
 
 ```dotenv
-INTEROP_ENABLED=1
 INTEROP_TARGETS='[{"id":"mcp-peer","kind":"mcp","transport":"streamable_http","url":"https://mcp.example.test/mcp","allowed_tools":["search"]}]'
 INTEROP_CREDENTIALS='{"peer-token":{"headers":{"Authorization":"Bearer <operator-secret>"}}}'
 ```
@@ -1577,12 +1573,13 @@ override.
 
 ### Interop rollback and capacity
 
-To disable outbound discovery or delegation, set `INTEROP_ENABLED=0` (or
-`PHYTOMNI_INTEROP_ENABLED=0`) and restart every API worker. Confirm
-`GET /v1/interop/capabilities` is absent (`404`) and that Research/Design
-requests with `interop_mode=auto|required` no longer attempt an external
-target. Keep the registry and encrypted credential material available for a
-later forward rollout; the process cache is intentionally disposable.
+To disable outbound discovery or delegation, set `INTEROP_TARGETS=[]` and
+keep Research/Design callers on `interop_mode=off`. Restart every API worker
+after changing the registry. Confirm
+`GET /v1/interop/capabilities` returns an empty peer list and that
+Research/Design requests with `interop_mode=auto|required` find no external
+target. Keep encrypted credential material available for a later forward
+rollout; the process cache is intentionally disposable.
 
 The registry accepts at most `INTEROP_MAX_TARGETS` entries (default `64`, hard
 range `1..256`) and each worker retains at most `INTEROP_CACHE_MAX_ENTRIES`

@@ -418,16 +418,6 @@ single env var carries the full map.
   Card and `/a2a` interface; trailing slashes are removed. Accepts
   `PHYTOMNI_A2A_PUBLIC_BASE_URL`.
 
-- **Variable:** `INTEROP_ENABLED`
-  **Default:** `false`
-  **Sensitive?:** no
-  **Purpose:** Feature flag for outbound MCP/A2A target loading, the read-only
-  `/v1/interop/capabilities` route, and request-level
-  Research/Design delegation;
-  each request still opts in with `interop_mode`; disabled by
-  default. Accepts
-  `PHYTOMNI_INTEROP_ENABLED`.
-
 - **Variable:** `INTEROP_TARGETS`
   **Default:** `[]`
   **Sensitive?:** yes
@@ -581,10 +571,11 @@ run rows.
   requests are accepted.
 
 - **Surface:** Outbound interop
-  **Enable:** `INTEROP_ENABLED=1` plus registry/credentials
-  **Disable / rollback:** Set `INTEROP_ENABLED=0`, restart, and verify
-  `/v1/interop/capabilities` returns `404`.
-  **State retained while disabled:** No persistent discovery state; the process
+  **Enable:** Non-empty `INTEROP_TARGETS` plus credentials
+  **Disable / rollback:** Set `INTEROP_TARGETS=[]`, keep callers on
+  `interop_mode=off`, restart, and verify
+  `/v1/interop/capabilities` returns no peers.
+  **State retained while empty:** No persistent discovery state; the process
   cache is discarded on restart.
 
 - **Surface:** Explicit memory
@@ -618,14 +609,15 @@ with load testing and disk/RAM review. The hard ranges are enforced by
 `ApiLimitsConfig`, so an out-of-range override fails startup rather than
 silently weakening the boundary.
 
-## Outbound Interoperability (opt-in)
+## Outbound Interoperability
 
-Outbound MCP/A2A discovery is disabled unless `INTEROP_ENABLED=1` (or
-`PHYTOMNI_INTEROP_ENABLED=1`) is present when the API application starts.
-Changing the flag, target registry, or credential envelope requires an API
-process restart; unlike the relay kill-switch, this flag is not re-read on
-each request. The first request lazily validates the registry, and a registry
-failure returns `503` without exposing the parser or secret error text.
+Outbound MCP/A2A discovery is always mounted. Changing the target registry or
+credential envelope requires an API process restart; unlike the relay
+kill-switch, the registry is not re-read on each request. The first request
+lazily validates the registry, and a registry failure returns `503` without
+exposing the parser or secret error text. An empty `INTEROP_TARGETS` list
+means no peers are configured. Request-level `interop_mode` still defaults to
+`off`.
 
 The target registry and credentials are separate. `INTEROP_TARGETS` contains
 only operator-approved target policy, while the sensitive
@@ -633,7 +625,6 @@ only operator-approved target policy, while the sensitive
 loaded from `SensitiveConfig` (normally the encrypted customer envelope):
 
 ```dotenv
-INTEROP_ENABLED=1
 INTEROP_TARGETS='[{"id":"mcp-peer","kind":"mcp","transport":"streamable_http","url":"https://mcp.example.test/mcp","allowed_tools":["search"]}]'
 INTEROP_CREDENTIALS='{"peer-token":{"headers":{"Authorization":"Bearer <operator-secret>"}}}'
 ```

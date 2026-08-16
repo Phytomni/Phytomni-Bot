@@ -71,7 +71,7 @@ def _registry() -> InteropRegistry:
             "allowed_tools": [RESEARCH_MCP_CAPABILITY],
         }
     )
-    return InteropRegistry(enabled=True, _targets={target.id: target})
+    return InteropRegistry(_targets={target.id: target})
 
 
 def _a2a_registry() -> InteropRegistry:
@@ -89,7 +89,7 @@ def _a2a_registry() -> InteropRegistry:
             "allowed_skills": [RESEARCH_A2A_CAPABILITY],
         }
     )
-    return InteropRegistry(enabled=True, _targets=dict([(target.id, target)]))
+    return InteropRegistry(_targets=dict([(target.id, target)]))
 
 
 def _a2a_capability() -> InteropCapability:
@@ -241,9 +241,6 @@ async def test_selected_result_is_bounded_redacted_and_marked() -> None:
     assert "https://peer.example.test" not in result["content"]
     assert "<redacted-secret>" in result["content"]
     invoke.assert_awaited_once()
-    invoke_call = invoke.await_args
-    assert invoke_call is not None
-    assert invoke_call.kwargs["registry"].enabled is True
 
 
 def test_bound_evidence_respects_utf8_byte_cap() -> None:
@@ -342,14 +339,14 @@ async def test_discovery_skips_unknown_targets_and_reuses_cache() -> None:
 
 
 async def test_active_request_without_registry_stays_local() -> None:
-    """An enabled request still falls back when the registry is disabled."""
+    """An auto request falls back when the registry has no matching target."""
     assert (
         await collect_research_evidence(
             _task(),
             mode="auto",
             target_ids=["peer"],
             dependencies=ResearchInteropDependencies(
-                registry=InteropRegistry.disabled(),
+                registry=InteropRegistry(),
             ),
         )
         is None

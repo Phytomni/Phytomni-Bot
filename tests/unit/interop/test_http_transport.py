@@ -52,7 +52,7 @@ def _target(**overrides: object) -> MCPStreamableHttpTarget:
 
 def _registry(target: MCPStreamableHttpTarget) -> InteropRegistry:
     """Return an enabled immutable registry containing one target."""
-    return InteropRegistry(enabled=True, _targets={target.id: target})
+    return InteropRegistry(_targets={target.id: target})
 
 
 def _sensitive(credentials: object) -> SensitiveConfig:
@@ -616,7 +616,7 @@ def test_transport_repr_redacts_endpoint_and_credentials() -> None:
 def test_unknown_target_error_does_not_echo_untrusted_identifier() -> None:
     """A caller cannot smuggle URL or token text into a lookup error."""
     untrusted = "https://attacker.test/?Authorization=Bearer-hidden"
-    registry = InteropRegistry(enabled=True, _targets={})
+    registry = InteropRegistry(_targets={})
 
     with pytest.raises(InteropHTTPError) as excinfo:
         httpx_client_factory(untrusted, registry=registry)

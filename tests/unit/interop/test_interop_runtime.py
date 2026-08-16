@@ -82,7 +82,6 @@ def _stdio_target(target_id: str = "peer-stdio") -> MCPStdioTarget:
 def _registry(*targets: InteropTarget) -> InteropRegistry:
     """Build an enabled immutable target registry."""
     return InteropRegistry(
-        enabled=True,
         _targets={target.id: target for target in targets},
     )
 

@@ -17,7 +17,6 @@ from pydantic import BaseModel
 from mcp_server_phytomni.interop import capabilities as capability_module
 from mcp_server_phytomni.interop.capabilities import (
     DiscoveryError,
-    DiscoveryResult,
     InteropCapability,
     InteropCapabilityError,
     discover_external_mcp_capabilities,
@@ -66,7 +65,7 @@ def _target() -> MCPStreamableHttpTarget:
 
 def _registry(target: MCPStreamableHttpTarget) -> InteropRegistry:
     """Build an enabled registry containing one target."""
-    return InteropRegistry(enabled=True, _targets={target.id: target})
+    return InteropRegistry(_targets={target.id: target})
 
 
 def test_normalize_capabilities_is_sorted_and_detached() -> None:
@@ -186,17 +185,6 @@ async def test_discovery_projects_only_sanitized_error_fields(
         ),
     )
     assert "secret peer response" not in repr(result)
-
-
-async def test_discovery_reports_feature_gate_without_loading_tools() -> None:
-    """Disabled mode is an explicit error rather than an empty success."""
-    result = await discover_external_mcp_capabilities(
-        "peer-http", registry=InteropRegistry.disabled()
-    )
-
-    assert result == DiscoveryResult(
-        errors=(DiscoveryError("peer-http", "mcp", "disabled"),)
-    )
 
 
 async def test_discovery_normalizes_one_target(

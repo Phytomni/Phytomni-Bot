@@ -59,11 +59,12 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # (attachment capabilities), the strict Expert request boundary, the private
 # native conversation envelope, resumable attachment references, the
 # purpose-constrained upload contract in fd19dcbb, the unified attachment
-# contract in 97867888, and the always-on conversation-context mutation
-# routes. The ``_normalized_openapi`` helper removes only unstable
-# version/server fields.
+# contract in 97867888, the always-on conversation-context mutation
+# routes, and the always-on interop capabilities route. The
+# ``_normalized_openapi`` helper removes only unstable version/server
+# fields.
 _OPENAPI_HASH = (
-    "f26293a3aab07b27a9cbfccc2f2a4b9156bef6cd55fa23949b8cbfed1076842d"
+    "4904d417b468b97368c992ac334c6f0ef4d3d68566c72aef7d3e51d7e039e883"
 )
 
 
@@ -178,6 +179,14 @@ _route = _RouteContract
 
 
 _DEFAULT_ROUTES = (
+    _route(
+        "/v1/interop/capabilities",
+        ("GET",),
+        200,
+        None,
+        ("agents",),
+        "list_interop_capabilities",
+    ),
     _route("/healthz", ("GET",), 200, "dict[str, str]", (), "healthz"),
     _route("/readyz", ("GET",), 200, None, (), "readyz"),
     _route("/v1/models", ("GET",), 200, None, ("agents",), "list_models"),
@@ -548,15 +557,6 @@ _MEMORY_ROUTES = (
     ),
 )
 
-_INTEROP_ROUTE = _route(
-    "/v1/interop/capabilities",
-    ("GET",),
-    200,
-    None,
-    ("agents",),
-    "list_interop_capabilities",
-)
-
 _A2A_ROUTES = (
     _route(
         "/.well-known/agent-card.json",
@@ -573,12 +573,11 @@ _A2A_ROUTES = (
 def _all_flag_routes() -> tuple[_RouteContract, ...]:
     """Build the expected order when every optional surface is enabled."""
     return (
-        (_INTEROP_ROUTE,)
-        + _DEFAULT_ROUTES[:3]
+        _DEFAULT_ROUTES[:4]
         + _MEMORY_ROUTES
-        + _DEFAULT_ROUTES[3:27]
+        + _DEFAULT_ROUTES[4:28]
         + _A2A_ROUTES
-        + _DEFAULT_ROUTES[27:]
+        + _DEFAULT_ROUTES[28:]
     )
 
 
@@ -626,7 +625,7 @@ def test_default_application_contract_is_literal() -> None:
     document = _normalized_openapi(app)
     if os.environ.get("PHYTOMNI_DEPENDENCY_FLOOR") != "1":
         assert _openapi_hash(app) == _OPENAPI_HASH
-    assert len(document["paths"]) == 45
+    assert len(document["paths"]) == 46
     assert len(document["components"]["schemas"]) == 29
     assert all(
         operation.get("operationId")
@@ -642,7 +641,6 @@ def test_optional_application_contract_is_literal(
     """Lock every feature-flag route and its scope boundary."""
     for name in (
         "PHYTOMNI_MEMORY_ENABLED",
-        "PHYTOMNI_INTEROP_ENABLED",
         "PHYTOMNI_A2A_ENABLED",
         "PHYTOMNI_RELAY_ENABLED",
     ):

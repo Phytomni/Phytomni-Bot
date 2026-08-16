@@ -121,7 +121,7 @@ def _registry(agent: AgentName, transport: Transport) -> InteropRegistry:
                 ],
             }
         )
-    return InteropRegistry(enabled=True, _targets={target_id: target})
+    return InteropRegistry(_targets={target_id: target})
 
 
 def _research_task() -> dict[str, Any]:

@@ -88,7 +88,7 @@ def _target(**overrides: object) -> A2ATarget:
 
 def _registry(target: A2ATarget) -> InteropRegistry:
     """Return an enabled registry containing the fixture peer."""
-    return InteropRegistry(enabled=True, _targets={target.id: target})
+    return InteropRegistry(_targets={target.id: target})
 
 
 async def _resolver(_hostname: str, _port: int) -> Sequence[str]:

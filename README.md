@@ -216,16 +216,16 @@ and same-task `SendMessage` resume are available for that pause; A2A
 `CancelTask`, push notifications, and extended cards remain later-phase work.
 
 Phase 3/4 also ship outbound MCP/A2A discovery and opt-in Research/Design
-delegation behind `PHYTOMNI_INTEROP_ENABLED=1`. Operators provide a target
+delegation. Operators provide a target
 registry and separate credential references; the read-only
 `GET /v1/interop/capabilities` endpoint requires the `agents` scope and
 returns sanitized capability metadata. Research and Design requests opt in
 per call with `interop_mode="auto"` or `interop_mode="required"` plus
 operator-registered `interop_targets`; the default `"off"` mode never
 discovers or invokes a peer. `auto` records a degraded local fallback when no
-external evidence is available, while `required` fails closed. Enabling or
-changing the registry requires an API process restart; the flag is off by
-default.
+external evidence is available, while `required` fails closed. Changing the
+registry requires an API process restart. An empty `INTEROP_TARGETS` list
+means no peers are configured.
 
 - **Capability:** A2A Agent Card and `/a2a` server
   **0.1.3 status:** Opt-in core

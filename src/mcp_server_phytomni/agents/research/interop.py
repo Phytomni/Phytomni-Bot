@@ -46,7 +46,11 @@ from ...interop.planner import (
     InteropTaskSpec,
     plan_interop_capabilities,
 )
-from ...interop.registry import InteropRegistry, InteropRegistryError
+from ...interop.registry import (
+    InteropRegistry,
+    InteropRegistryError,
+    load_interop_registry,
+)
 from ..shared.interop import (
     InteropA2APending,
     InteropA2AResult,
@@ -258,7 +262,7 @@ async def _discover_capabilities(
 ) -> list[InteropCapability]:
     """Discover MCP capabilities while isolating target-level failures."""
     registry = dependencies.registry
-    if registry is None or not registry.enabled:
+    if registry is None:
         return []
     caches = dependencies.caches
     if caches is None:
@@ -293,7 +297,7 @@ async def _discover_a2a_capabilities(
 ) -> list[InteropCapability]:
     """Discover A2A skills while isolating target-level failures."""
     registry = dependencies.registry
-    if registry is None or not registry.enabled:
+    if registry is None:
         return []
     caches = dependencies.caches
     if caches is None:
@@ -511,15 +515,9 @@ async def _collect_research_a2a_impl(
             capabilities=(),
         )
         return None
-    registry = resolved.registry or InteropRegistry.disabled()
-    if not registry.enabled:
-        plan_interop_capabilities(
-            task_spec,
-            mode=mode,
-            target_ids=request["target_ids"],
-            capabilities=(),
-        )
-        return None
+    registry = resolved.registry or load_interop_registry(
+        sensitive_config=resolved.sensitive_config
+    )
     discover_deps = resolved._replace(registry=registry)
     capabilities = await _discover_a2a_capabilities(
         request["target_ids"], discover_deps
@@ -592,16 +590,11 @@ async def collect_research_evidence(
         return None
 
     resolved_registry = (
-        resolved_dependencies.registry or InteropRegistry.disabled()
-    )
-    if not resolved_registry.enabled:
-        plan_interop_capabilities(
-            task_spec,
-            mode=mode,
-            target_ids=target_ids,
-            capabilities=(),
+        resolved_dependencies.registry
+        or load_interop_registry(
+            sensitive_config=resolved_dependencies.sensitive_config
         )
-        return None
+    )
 
     capabilities = await _discover_capabilities(
         target_ids,

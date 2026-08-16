@@ -73,9 +73,7 @@ A2AClientError = InteropA2AClientError
 
 
 def _target(target_id: str, registry: InteropRegistry) -> A2ATarget:
-    """Resolve one enabled A2A target without accepting a peer URL."""
-    if not registry.enabled:
-        raise InteropA2AClientError("disabled", target_id)
+    """Resolve one A2A target without accepting a peer URL."""
     try:
         target = registry.require_target(target_id)
     except InteropRegistryError:

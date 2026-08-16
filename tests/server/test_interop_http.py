@@ -61,7 +61,6 @@ def _registry() -> InteropRegistry:
         }
     )
     return InteropRegistry(
-        enabled=True,
         _targets={stdio.id: stdio, a2a.id: a2a},
     )
 
@@ -109,7 +108,6 @@ async def _client_bundle(
 ) -> AsyncIterator[tuple[httpx.AsyncClient, str]]:
     """Build an interop-enabled API app and an agents-scoped API key."""
     monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_ASYNC_REQUEST)
-    monkeypatch.setenv("PHYTOMNI_INTEROP_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_INTEROP_TARGETS", "[]")
     db = str(tmp_path / "interop-keys.sqlite")
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", db)
@@ -127,20 +125,6 @@ async def _client_bundle(
         yield client, key
     finally:
         await client.aclose()
-
-
-async def test_flag_off_does_not_register_capability_route(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Disabled mode does not register the opt-in route."""
-    monkeypatch.setenv("PHYTOMNI_INTEROP_ENABLED", "0")
-    monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_ASYNC_REQUEST)
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=create_app()),
-        base_url="http://api.test",
-    ) as client:
-        response = await client.get(_PATH)
-    assert response.status_code == 404
 
 
 async def test_listing_requires_authentication_and_has_no_query_overrides(

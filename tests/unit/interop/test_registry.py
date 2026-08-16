@@ -2,7 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for the feature-gated interoperability target registry."""
+"""Tests for the interoperability target registry."""
 
 import json
 from typing import Any, cast
@@ -11,7 +11,6 @@ import pytest
 from pydantic import ValidationError
 
 from mcp_server_phytomni.config.defaults import ApiConfig
-from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.interop.models import MCPStreamableHttpTarget
 from mcp_server_phytomni.interop.registry import (
     InteropRegistry,
@@ -35,13 +34,12 @@ def _target(target_id: str = "mcp-http") -> dict[str, object]:
 
 
 def _api_config(
-    *, enabled: bool, targets: str, max_targets: int | None = None
+    *, targets: str, max_targets: int | None = None
 ) -> ApiConfig:
     """Build an ApiConfig isolated from the developer dotenv file."""
     config_cls = cast(Any, ApiConfig)
     values: dict[str, object] = {
         "_env_file": None,
-        "INTEROP_ENABLED": enabled,
         "INTEROP_TARGETS": targets,
     }
     if max_targets is not None:
@@ -49,23 +47,6 @@ def _api_config(
     return config_cls(
         **values,
     )
-
-
-def test_disabled_registry_does_not_parse_targets_or_load_secrets(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off startup remains inert even with malformed interop JSON."""
-
-    def unexpected_load(cls: type[SensitiveConfig]) -> SensitiveConfig:
-        raise AssertionError(f"must not load {cls.__name__}")
-
-    monkeypatch.setattr(SensitiveConfig, "load", classmethod(unexpected_load))
-    config = _api_config(enabled=False, targets="{malformed")
-
-    registry = load_interop_registry(config)
-
-    assert registry.enabled is False
-    assert not registry.target_ids()
 
 
 def test_enabled_registry_loads_targets_by_operator_owned_id(
@@ -78,12 +59,11 @@ def test_enabled_registry_loads_targets_by_operator_owned_id(
             {"peer-auth": {"headers": {"Authorization": "Bearer secret"}}}
         ),
     )
-    config = _api_config(enabled=True, targets=json.dumps([_target()]))
+    config = _api_config(targets=json.dumps([_target()]))
 
     registry = load_interop_registry(config)
 
     target = registry.require_target("mcp-http")
-    assert registry.enabled is True
     assert registry.target_ids() == ("mcp-http",)
     assert isinstance(target, MCPStreamableHttpTarget)
     assert not hasattr(registry, "credentials")
@@ -99,7 +79,6 @@ def test_enabled_registry_rejects_duplicate_target_ids(
         '{"peer-auth": {"headers": {"X-Peer-Key": "x"}}}',
     )
     config = _api_config(
-        enabled=True,
         targets=json.dumps([_target(), _target()]),
     )
 
@@ -116,7 +95,6 @@ def test_enabled_registry_rejects_target_count_over_configured_limit(
         '{"peer-auth": {"headers": {"X-Peer-Key": "x"}}}',
     )
     config = _api_config(
-        enabled=True,
         targets=json.dumps([_target("mcp-http"), _target("mcp-http-2")]),
         max_targets=1,
     )
@@ -130,7 +108,7 @@ def test_enabled_registry_rejects_missing_credential_reference(
 ) -> None:
     """Every non-empty credential reference must exist in secret JSON."""
     monkeypatch.setenv("PHYTOMNI_INTEROP_CREDENTIALS", "{}")
-    config = _api_config(enabled=True, targets=json.dumps([_target()]))
+    config = _api_config(targets=json.dumps([_target()]))
 
     with pytest.raises(InteropRegistryError, match="peer-auth"):
         load_interop_registry(config)
@@ -143,7 +121,7 @@ def test_enabled_registry_suppresses_invalid_target_payload_from_error_chain(
     monkeypatch.setenv("PHYTOMNI_INTEROP_CREDENTIALS", "{}")
     target = _target()
     target["token"] = "must-not-be-stored"
-    config = _api_config(enabled=True, targets=json.dumps([target]))
+    config = _api_config(targets=json.dumps([target]))
 
     with pytest.raises(InteropRegistryError) as excinfo:
         load_interop_registry(config)
@@ -168,7 +146,7 @@ def test_enabled_registry_fails_fast_on_malformed_configuration(
 ) -> None:
     """Malformed enabled configuration fails during registry loading."""
     monkeypatch.setenv("PHYTOMNI_INTEROP_CREDENTIALS", credentials)
-    config = _api_config(enabled=True, targets=targets)
+    config = _api_config(targets=targets)
 
     with pytest.raises((InteropRegistryError, ValidationError), match=message):
         load_interop_registry(config)
@@ -182,7 +160,7 @@ def test_registry_missing_target_error_does_not_echo_configured_url(
         "PHYTOMNI_INTEROP_CREDENTIALS",
         '{"peer-auth": {"headers": {"X-Peer-Key": "x"}}}',
     )
-    config = _api_config(enabled=True, targets=json.dumps([_target()]))
+    config = _api_config(targets=json.dumps([_target()]))
     registry = load_interop_registry(config)
 
     with pytest.raises(InteropRegistryError) as excinfo:
@@ -196,7 +174,7 @@ def test_registry_copies_and_freezes_supplied_target_mapping() -> None:
     """Caller mutation cannot alter a constructed registry."""
     target = MCPStreamableHttpTarget.model_validate(_target())
     supplied = {target.id: target}
-    registry = InteropRegistry(enabled=True, _targets=supplied)
+    registry = InteropRegistry(_targets=supplied)
 
     supplied.clear()
 
@@ -206,17 +184,9 @@ def test_registry_copies_and_freezes_supplied_target_mapping() -> None:
         frozen_targets["other"] = target
 
 
-def test_registry_rejects_disabled_instance_with_targets() -> None:
-    """A disabled registry cannot retain reachable configured targets."""
-    target = MCPStreamableHttpTarget.model_validate(_target())
-
-    with pytest.raises(InteropRegistryError, match="disabled"):
-        InteropRegistry(enabled=False, _targets={target.id: target})
-
-
 def test_registry_rejects_mapping_key_that_differs_from_target_id() -> None:
     """Lookup keys cannot disagree with the immutable target identity."""
     target = MCPStreamableHttpTarget.model_validate(_target())
 
     with pytest.raises(InteropRegistryError, match="mapping key"):
-        InteropRegistry(enabled=True, _targets={"other": target})
+        InteropRegistry(_targets={"other": target})

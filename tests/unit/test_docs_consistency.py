@@ -163,7 +163,6 @@ def _api_endpoint_pairs() -> set[tuple[str, str]]:
         {
             ("GET", "/.well-known/agent-card.json"),
             ("POST", "/a2a"),
-            ("GET", "/v1/interop/capabilities"),
             ("GET", "/v1/memories"),
             ("POST", "/v1/memories"),
             ("GET", "/v1/memories/export"),
@@ -481,7 +480,6 @@ def test_readme_matches_the_current_interoperability_boundary() -> None:
         "User-scoped memory CRUD API",
         "Opt-in; bounded read-only recall",
     )
-    assert "PHYTOMNI_INTEROP_ENABLED" in readme
     assert "/v1/interop/capabilities" in readme
     assert _capability_status(
         readme, "A2A Agent Card and `/a2a` server", "Opt-in core"

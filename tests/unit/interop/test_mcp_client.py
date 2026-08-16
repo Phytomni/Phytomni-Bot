@@ -2,12 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for the feature-gated external MCP LangChain adapter seam."""
+"""Tests for the external MCP LangChain adapter seam."""
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from langchain_core.messages import ToolMessage
@@ -63,7 +63,7 @@ def _stdio_target(**overrides: object) -> MCPStdioTarget:
 
 def _registry(target: InteropTarget) -> InteropRegistry:
     """Build an enabled registry containing one validated target."""
-    return InteropRegistry(enabled=True, _targets={target.id: target})
+    return InteropRegistry(_targets={target.id: target})
 
 
 def _tool(
@@ -270,22 +270,6 @@ async def test_remote_error_is_stable_failure_not_success_tool_message() -> (
     assert caught.value.tool_name == "search_genes"
     assert "peer detail" not in str(caught.value)
     assert "placeholder" not in str(caught.value)
-
-
-async def test_flag_off_never_imports_or_constructs_adapter() -> None:
-    """Flag-off startup stays inert when the package is absent."""
-    tools = await load_external_mcp_tools(
-        "peer-http",
-        registry=InteropRegistry.disabled(),
-        _client_cls=cast(
-            Any,
-            lambda *_args, **_kwargs: pytest.fail(
-                "adapter must not be constructed"
-            ),
-        ),
-    )
-
-    assert tools == ()
 
 
 def test_a2a_target_is_not_consumed_by_the_mcp_adapter() -> None:

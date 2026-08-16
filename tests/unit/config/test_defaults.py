@@ -210,14 +210,11 @@ _REFERENCE_MODEL_MANIFEST = (
 def test_interop_config_defaults_disabled_and_keeps_json_lazy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Interop is opt-in and ApiConfig does not eagerly parse target JSON."""
-    monkeypatch.delenv("INTEROP_ENABLED", raising=False)
-    monkeypatch.delenv("PHYTOMNI_INTEROP_ENABLED", raising=False)
+    """ApiConfig does not eagerly parse interop target JSON."""
     monkeypatch.setenv("PHYTOMNI_INTEROP_TARGETS", "{malformed")
 
     config = ApiConfig()
 
-    assert config.INTEROP_ENABLED is False
     assert config.INTEROP_TARGETS.get_secret_value() == "{malformed"
     assert "{malformed" not in repr(config)
     assert "{malformed" not in str(config.model_dump())

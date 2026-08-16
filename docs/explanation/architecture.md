@@ -262,9 +262,9 @@ prompts, never instruction authority.
 
 ## Outbound Interoperability Boundary
 
-Outbound interop is an operator-owned, opt-in boundary, not a second public
-agent-dispatch path. `interop/registry.py` parses the target registry only
-when `INTEROP_ENABLED=1`; requests can carry a target id but never a URL,
+Outbound interop is an operator-owned boundary, not a second public
+agent-dispatch path. `interop/registry.py` parses the target registry on
+load; requests can carry a target id but never a URL,
 command, args, header, token, or credential reference. Target policy and
 credential values are deliberately separate: immutable target models hold
 origins, paths, allowlists, timeouts, and capability names, while
