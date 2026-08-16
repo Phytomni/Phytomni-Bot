@@ -793,10 +793,54 @@ async def test_reconcile_persists_live_analyst_terminal_status(
 
     assert result["status"] == "SUCCEEDED"
     assert result["output_dir"] == "/obs/done"
+    assert result["final_report"]
+    assert "no validated scientific text artifact" in result["final_report"]
     row = mgr.get_task("an-live")
     assert row is not None
     assert row["status"] == "succeeded"
     assert row["output_dir"] == "/obs/done"
+    assert mgr.get_task_final_report("an-live") == result["final_report"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_fills_empty_network_success_via_assembler(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GetTaskStatus must not return Network succeeded-without-report."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="net-live",
+            status="submitted",
+            output_dir="/obs/phytomni/agent_data/test/output/children/part-001",
+            run_context=RunContext(agent="network"),
+        )
+    )
+
+    async def _succeeded(t_id: str, **_: Any) -> dict[str, str]:
+        assert t_id == "net-live"
+        return {
+            "status": "SUCCEEDED",
+            "output_dir": (
+                "/obs/phytomni/agent_data/test/output/children/part-001"
+            ),
+        }
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _succeeded,
+    )
+
+    result = await reconcile_task("net-live")
+
+    assert result["status"] == "SUCCEEDED"
+    assert isinstance(result["final_report"], str)
+    assert result["final_report"].strip()
+    assert mgr.get_task_final_report("net-live") == result["final_report"]
 
 
 @pytest.mark.parametrize(

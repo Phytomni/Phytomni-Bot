@@ -25,6 +25,12 @@ from .deep_genome_store import (
 )
 from .live_tasks import is_live_running
 from .task_manager import TaskManager, resolve_tasks_db_path
+from .terminal_report import (
+    TerminalReportContext,
+    is_terminal_report_agent,
+    persist_terminal_report,
+    synthesize_terminal_report,
+)
 
 __all__ = ["reconcile_task", "reconcile_task_log"]
 
@@ -120,6 +126,39 @@ def _reconcile_deep_genome_local(
     return _project_deep_genome_snapshot(result, snapshot)
 
 
+async def _ensure_report_agent_final_report(
+    manager: TaskManager,
+    result: dict[str, Any],
+    *,
+    agent: str | None,
+    task_id: str,
+) -> dict[str, Any]:
+    """Persist assembler output when a report agent succeeds without one."""
+    if agent is None or not is_terminal_report_agent(agent):
+        return result
+    if str(result.get("status", "")).upper() != _LIVE_SUCCESS:
+        return result
+    existing = result.get("final_report")
+    if isinstance(existing, str) and existing.strip():
+        return result
+    assembled = await synthesize_terminal_report(
+        TerminalReportContext(
+            agent=agent,
+            status="succeeded",
+            live=[result],
+            artifacts=(),
+            query=None,
+        )
+    )
+    persist_terminal_report(
+        [{**result, "task_id": task_id}],
+        assembled,
+        task_manager=manager,
+    )
+    result["final_report"] = assembled.final_report
+    return result
+
+
 def _persist_live_terminal_row(
     manager: TaskManager,
     *,
@@ -163,9 +202,12 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
         ``analysis_id`` / ``live_status`` / ``final_report``. ``status``
         is ``"unknown"`` for an unrecorded id and the other fields are
         empty in that case. ``final_report`` carries the assembled
-        markdown DeepGenome persists on the row (``None`` for every
-        other agent and for rows with no report yet), letting the poll
-        formatter and the run-aggregate surface the report without
+        markdown DeepGenome persists on the row. Analyst-class agents
+        that observe live ``SUCCEEDED`` without a stored report receive
+        the existing assembler fallback so GetTaskStatus never returns
+        an empty successful scientific run. Other agents and
+        non-success rows still surface ``None``. The poll formatter
+        and the run-aggregate can then display the report without
         re-running the workflow. DeepGenome report/progress fields are
         merged from the local snapshot when the additive tables exist.
         A DeepGenome row still showing a non-terminal status but carrying
@@ -237,7 +279,12 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
         output_dir=str(result["output_dir"] or ""),
         remote_status=cleaned.upper(),
     )
-    return result
+    return await _ensure_report_agent_final_report(
+        manager,
+        result,
+        agent=task_agent,
+        task_id=task_id,
+    )
 
 
 async def reconcile_task_log(task_id: str) -> dict[str, Any] | None:
