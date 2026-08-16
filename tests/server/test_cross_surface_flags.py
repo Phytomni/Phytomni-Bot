@@ -271,7 +271,7 @@ async def test_all_feature_flag_combinations_preserve_surface_boundaries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Optional surfaces compose without changing always-on contracts."""
-    memory_path, tasks_path = _configure_matrix_environment(
+    memory_path, _tasks_path = _configure_matrix_environment(
         monkeypatch,
         tmp_path,
         flags,
