@@ -41,10 +41,8 @@ __all__ = [
     "serialize_research_input_descriptor",
 ]
 
-# Conversation-context enablement is read at call time from the live catalog
-# config, so the route passes the predicate in. Upload is unconditionally
-# available once its routes are registered (config presence is validated at
-# startup), so its predicate is a constant True.
+# Conversation context and upload are unconditionally advertised once their
+# routes are registered. Upload config presence is validated at startup.
 
 
 def _upload_enabled() -> bool:
@@ -67,13 +65,11 @@ class AdvertisedProtocol:
 
 
 def advertised_protocols(
-    context_enabled: Callable[[], bool],
     research_enabled: Callable[[], bool] | None = None,
 ) -> tuple[AdvertisedProtocol, ...]:
     """Return every protocol the catalog should publish right now.
 
-    ``context_enabled`` is supplied by the caller (the route handler) because
-    it reads from the live catalog dependency; upload enablement is static.
+    Conversation context is always advertised. Upload enablement is static.
     """
     entries = [
         AdvertisedProtocol(
@@ -84,7 +80,7 @@ def advertised_protocols(
         AdvertisedProtocol(
             name="conversation_context",
             version=CONVERSATION_CONTEXT_PROTOCOL_VERSION,
-            enabled=context_enabled,
+            enabled=lambda: True,
         ),
         AdvertisedProtocol(
             name=RESULT_ARCHIVE_PROTOCOL,
@@ -104,13 +100,12 @@ def advertised_protocols(
 
 
 def serialize_protocols(
-    context_enabled: Callable[[], bool],
     research_enabled: Callable[[], bool] | None = None,
 ) -> dict[str, list[int]]:
     """Build the top-level ``protocols`` map for ``GET /v1/agents``."""
     return {
         entry.name: [entry.version]
-        for entry in advertised_protocols(context_enabled, research_enabled)
+        for entry in advertised_protocols(research_enabled)
         if entry.enabled()
     }
 

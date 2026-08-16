@@ -242,33 +242,6 @@ async def test_chat_completions_requires_auth(
     assert response.json()["error"]["code"] == "unauthenticated"
 
 
-async def test_chat_context_envelope_is_rejected_while_v1_is_disabled(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    chat_completion: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A disabled deployment rejects V1 before it invokes ChatAgent."""
-    invoked = 0
-
-    async def forbidden(_args: Any) -> dict[str, Any]:
-        nonlocal invoked
-        invoked += 1
-        raise AssertionError("disabled V1 must not invoke ChatAgent")
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS, server.PhytomniAgents.CHAT_AGENT.value, forbidden
-    )
-    response = await chat_completion(
-        api_client,
-        issued_api_key,
-        conversation=_conversation_envelope(),
-    )
-
-    assert response.status_code == 404
-    assert invoked == 0
-
-
 async def test_instant_context_rejects_non_chat_model_before_dispatch(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -276,7 +249,6 @@ async def test_instant_context_rejects_non_chat_model_before_dispatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Instant cannot persist a non-Chat model for a ChatAgent run."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     invoked = 0
 
     async def forbidden(_args: Any) -> dict[str, Any]:
@@ -389,7 +361,6 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
     tmp_path: Any,
 ) -> None:
     """Instant V1 passes bounded native history to the Chat invoker once."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
     captured: list[dict[str, Any]] = []
 

@@ -58,11 +58,12 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # schema additions in 7321656 (locale), dd99f82 (dataset uploads), bcf20b6
 # (attachment capabilities), the strict Expert request boundary, the private
 # native conversation envelope, resumable attachment references, the
-# purpose-constrained upload contract in fd19dcbb, and the unified attachment
-# contract in 97867888. The ``_normalized_openapi`` helper removes only
-# unstable version/server fields.
+# purpose-constrained upload contract in fd19dcbb, the unified attachment
+# contract in 97867888, and the always-on conversation-context mutation
+# routes. The ``_normalized_openapi`` helper removes only unstable
+# version/server fields.
 _OPENAPI_HASH = (
-    "3cb004b2517d54a86de76db5cbd0ebd1cb2ab12184e5d1b0f5a59f2d8d89a7b5"
+    "f26293a3aab07b27a9cbfccc2f2a4b9156bef6cd55fa23949b8cbfed1076842d"
 )
 
 
@@ -246,6 +247,22 @@ _DEFAULT_ROUTES = (
         "route_query",
     ),
     *build_upload_route_contracts(_route),
+    _route(
+        "/v1/conversation-context/settle",
+        ("POST",),
+        200,
+        "ContextMutationResponse",
+        ("agents",),
+        "settle_context",
+    ),
+    _route(
+        "/v1/conversation-context/tombstone",
+        ("POST",),
+        200,
+        "ContextMutationResponse",
+        ("agents",),
+        "tombstone_context",
+    ),
     _route(
         "/v1/runs/{run_id}/logs",
         ("GET",),
@@ -559,9 +576,9 @@ def _all_flag_routes() -> tuple[_RouteContract, ...]:
         (_INTEROP_ROUTE,)
         + _DEFAULT_ROUTES[:3]
         + _MEMORY_ROUTES
-        + _DEFAULT_ROUTES[3:25]
+        + _DEFAULT_ROUTES[3:27]
         + _A2A_ROUTES
-        + _DEFAULT_ROUTES[25:]
+        + _DEFAULT_ROUTES[27:]
     )
 
 
@@ -609,8 +626,8 @@ def test_default_application_contract_is_literal() -> None:
     document = _normalized_openapi(app)
     if os.environ.get("PHYTOMNI_DEPENDENCY_FLOOR") != "1":
         assert _openapi_hash(app) == _OPENAPI_HASH
-    assert len(document["paths"]) == 43
-    assert len(document["components"]["schemas"]) == 26
+    assert len(document["paths"]) == 45
+    assert len(document["components"]["schemas"]) == 29
     assert all(
         operation.get("operationId")
         for path_item in document["paths"].values()
@@ -637,7 +654,7 @@ def test_optional_application_contract_is_literal(
     app = create_app()
 
     assert _route_manifest(app) == _all_flag_routes()
-    assert len(app.openapi()["paths"]) == 50
+    assert len(app.openapi()["paths"]) == 52
     assert _original_lifespan_name(app) == "_http_lifespan"
 
 

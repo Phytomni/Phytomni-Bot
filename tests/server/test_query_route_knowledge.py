@@ -53,7 +53,6 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     """Knowledge resolves retrieval privately and stages bounded context."""
     assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
     install_inline_citation_lookup(monkeypatch)
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
     calls: list[dict[str, Any]] = []
@@ -200,7 +199,6 @@ async def test_context_expert_knowledge_follow_up_returns_clarification(
     tmp_path: Path,
 ) -> None:
     """An unresolved Knowledge pronoun asks for clarification."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
     calls: list[dict[str, Any]] = []
@@ -261,7 +259,6 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
     """The native Brief Gene route returns its bounded context projection."""
     assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
     install_inline_citation_lookup(monkeypatch)
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
     calls: list[dict[str, Any]] = []
@@ -417,7 +414,6 @@ async def test_context_expert_knowledge_switch_replaces_topic(
     tmp_path: Path,
 ) -> None:
     """A successful topic switch commits only the new Knowledge topic."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
 
@@ -534,7 +530,6 @@ async def test_context_expert_knowledge_failed_switch_keeps_prior_topic(
     tmp_path: Path,
 ) -> None:
     """A failed explicit topic switch leaves the committed topic unchanged."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
 
@@ -659,7 +654,6 @@ async def test_context_expert_rebuilds_before_routing_when_state_is_missing(
     tmp_path: Path,
 ) -> None:
     """A stale V1 base returns rebuild-required before selecting an agent."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
 
     async def forbidden_router(*_args: Any, **_kwargs: Any) -> ToolSelection:
@@ -695,7 +689,6 @@ async def test_context_expert_rejects_selected_agent_outside_allowlist(
     tmp_path: Path,
 ) -> None:
     """A V1 selector cannot dispatch a tool outside Go's ordered allowlist."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
     invoked = 0
 

@@ -159,10 +159,6 @@ def _register_chat_route(
             principal, payload.owner_subject
         )
         if payload.conversation is not None:
-            if not dependencies.context.enabled():
-                raise HTTPException(
-                    status_code=404, detail="conversation context disabled"
-                )
             return await _execute_context_chat(
                 payload,
                 dependencies,
@@ -582,7 +578,6 @@ def _register_native_routes(
             ],
         }
         payload["protocols"] = serialize_protocols(
-            dependencies.catalog.conversation_context_enabled,
             research_enabled=lambda: research_ready,
         )
         if research_ready:
@@ -637,11 +632,6 @@ def _register_native_routes(
         )
         if agent == "research":
             if payload.conversation is not None:
-                if not dependencies.context.enabled():
-                    raise HTTPException(
-                        status_code=404,
-                        detail="conversation context disabled",
-                    )
                 _native_context_tool(agent, payload.conversation, dependencies)
             return await execute_native_research_http(
                 agent=agent,
@@ -652,10 +642,6 @@ def _register_native_routes(
                 dependencies=dependencies,
             )
         if payload.conversation is not None:
-            if not dependencies.context.enabled():
-                raise HTTPException(
-                    status_code=404, detail="conversation context disabled"
-                )
             return await _execute_context_native(
                 ContextNativeExecutionRequest(
                     agent=agent,
@@ -701,10 +687,6 @@ def _register_native_routes(
             principal, payload.owner_subject
         )
         if payload.conversation is not None:
-            if not dependencies.context.enabled():
-                raise HTTPException(
-                    status_code=404, detail="conversation context disabled"
-                )
             return await _execute_context_expert(
                 payload,
                 dependencies,

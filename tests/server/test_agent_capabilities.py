@@ -148,11 +148,11 @@ def test_result_archive_protocol_requires_direct_storage(
     monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
     monkeypatch.delenv("RELAY_MODE", raising=False)
 
-    direct = serialize_protocols(lambda: False)
+    direct = serialize_protocols()
 
     assert direct[RESULT_ARCHIVE_PROTOCOL] == [RESULT_ARCHIVE_PROTOCOL_VERSION]
     monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
-    assert RESULT_ARCHIVE_PROTOCOL not in serialize_protocols(lambda: False)
+    assert RESULT_ARCHIVE_PROTOCOL not in serialize_protocols()
 
 
 def test_research_input_descriptor_projects_effective_limits_and_formats() -> (
@@ -190,7 +190,7 @@ def test_research_input_descriptor_projects_effective_limits_and_formats() -> (
 
 def test_research_protocol_is_not_registered_before_readiness() -> None:
     """Pure descriptor support does not prematurely change the catalog."""
-    protocols = serialize_protocols(lambda: False)
+    protocols = serialize_protocols()
 
     assert RESEARCH_INPUT_PROTOCOL not in protocols
     assert RESEARCH_INPUT_PROTOCOL_VERSION == 1
@@ -265,7 +265,6 @@ async def test_agent_catalog_keeps_generic_capabilities_config_independent(
                 remote_agent_slugs=frozenset(),
                 legacy_aliases={},
                 serialize_capability=serialize_agent_capability,
-                conversation_context_enabled=lambda: False,
             ),
             upload=SimpleNamespace(
                 serialize_file_upload_capability=lambda: {},

@@ -56,8 +56,7 @@ def test_protocol_advertisement_and_canonical_allowlist_are_current() -> None:
 
     advertised = payload["protocol_advertisement"]
     assert advertised["object"] == "list"
-    # conversation_context is only present when its flag is on (this fixture
-    # captures the enabled state); obs-multipart-v2 is always advertised.
+    # conversation_context and obs-multipart-v2 are always advertised.
     assert advertised["protocols"]["conversation_context"] == [1]
     assert advertised["protocols"]["obs-multipart-v2"] == [2]
     assert (

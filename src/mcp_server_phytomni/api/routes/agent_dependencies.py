@@ -43,7 +43,6 @@ class AgentCatalogDependencies:
     remote_agent_slugs: frozenset[str]
     legacy_aliases: Mapping[str, list[str]]
     serialize_capability: Callable[[str], Any]
-    conversation_context_enabled: Callable[[], bool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,9 +95,8 @@ class AgentNativeDependencies:
 
 @dataclass(frozen=True, slots=True)
 class AgentContextDependencies:
-    """Conversation-context protocol gate and shared executor."""
+    """Shared conversation-context executor."""
 
-    enabled: Callable[[], bool]
     executor: ConversationContextExecutor
 
 

@@ -47,7 +47,6 @@ async def enabled_context_client(
     """Yield an enabled API client with isolated context and key stores."""
     tasks_db = tmp_path / "server_tasks.db"
     keys_db = tmp_path / "keys.sqlite"
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_db))
     key = ApiKeyStore(str(keys_db)).create(user_id="u1").api_key
@@ -275,24 +274,6 @@ async def test_context_mutations_reject_malformed_or_extra_fields(
     assert response.status_code == 422
 
 
-async def test_disabled_context_mutations_return_not_found(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-) -> None:
-    """A default-off deployment does not expose a half-active protocol."""
-    for path, payload in (
-        ("/v1/conversation-context/settle", _settlement_payload()),
-        ("/v1/conversation-context/tombstone", _tombstone_payload()),
-    ):
-        response = await api_client.post(
-            path, headers=_headers(issued_api_key), json=payload
-        )
-        assert response.status_code == 404
-    schema = (await api_client.get("/openapi.json")).json()
-    assert "/v1/conversation-context/settle" not in schema["paths"]
-    assert "/v1/conversation-context/tombstone" not in schema["paths"]
-
-
 async def test_settlement_commits_once_and_redacts_context_contents(
     context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
 ) -> None:
@@ -339,7 +320,6 @@ async def test_settlement_route_invokes_injected_review_ack_before_commit(
     tmp_path: Path,
 ) -> None:
     """The route promotes Review before committing shared context."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
     tasks_db = tmp_path / "server_tasks.db"
     keys_db = tmp_path / "keys.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
@@ -431,7 +411,6 @@ async def test_review_promotion_failure_does_not_commit_shared_context(
     tmp_path: Path,
 ) -> None:
     """A failed private promotion leaves the Bot context staged for retry."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
     tasks_db = tmp_path / "server_tasks.db"
     keys_db = tmp_path / "keys.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
@@ -534,7 +513,6 @@ async def test_review_stale_ledger_is_rejected_before_private_ack(
     tmp_path: Path,
 ) -> None:
     """A stale Review request cannot promote before the ledger check."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
     tasks_db = tmp_path / "server_tasks.db"
     keys_db = tmp_path / "keys.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
@@ -617,7 +595,6 @@ async def test_review_reservation_serializes_competing_context_commit(
     tmp_path: Path,
 ) -> None:
     """A competing context commit cannot stale a reserved Review settlement."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
     tasks_db = tmp_path / "server_tasks.db"
     keys_db = tmp_path / "keys.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))

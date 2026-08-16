@@ -154,13 +154,6 @@ class ApiConfig(ApiLimitsConfig):
             "PHYTOMNI_STREAM_ANSWER_MAX_BYTES",
         ),
     )
-    CONVERSATION_CONTEXT_V1_ENABLED: bool = Field(
-        default=False,
-        validation_alias=AliasChoices(
-            "CONVERSATION_CONTEXT_V1_ENABLED",
-            "PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED",
-        ),
-    )
     CONVERSATION_CONTEXT_CHAT_TOKEN_BUDGET: int = Field(
         default=6_000,
         ge=512,

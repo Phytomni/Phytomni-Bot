@@ -45,7 +45,6 @@ async def test_context_expert_store_failure_returns_retryable_503(
     tmp_path: Path,
 ) -> None:
     """Expert context storage failure stops before agent dispatch."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
 
     def fail_begin(*_args: object, **_kwargs: object) -> None:
@@ -97,7 +96,6 @@ async def test_context_expert_review_follow_up_and_revision_use_adapter(
 ) -> None:
     """V1 Review follow-ups and edits bypass the A2UI full graph."""
     query = case[0]
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
 
@@ -173,7 +171,6 @@ async def test_context_expert_review_full_graph_uses_candidate_thread(
     scope_change: bool,
 ) -> None:
     """V1 new and scope Review graphs cannot write the stable checkpoint."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
     query = (
@@ -277,7 +274,6 @@ async def test_context_expert_review_missing_candidate_fails_before_staging(
     tmp_path: Path,
 ) -> None:
     """A graph answer is not healthy until its candidate checkpoint exists."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
     query = "Review maize heat tolerance."
@@ -330,7 +326,6 @@ async def test_context_expert_review_graph_clarification_fails_without_staging(
     tmp_path: Path,
 ) -> None:
     """A full-graph Review clarification cannot become a healthy stage."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
     query = "Review maize heat tolerance."
@@ -390,7 +385,6 @@ async def test_context_expert_review_empty_local_revision_does_not_settle(
     tmp_path: Path,
 ) -> None:
     """An empty section response leaves the Review revision unchanged."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
 
@@ -444,7 +438,6 @@ async def test_context_expert_review_empty_follow_up_fails_without_staging(
     tmp_path: Path,
 ) -> None:
     """An empty Review follow-up is failed and cannot settle context."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
 
@@ -495,7 +488,6 @@ async def test_context_expert_review_unknown_section_clarification_fails_turn(
     tmp_path: Path,
 ) -> None:
     """An unknown local section is clarification, never a healthy stage."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
 

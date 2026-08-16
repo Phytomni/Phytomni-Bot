@@ -46,7 +46,6 @@ async def test_context_expert_data_reuses_ids_and_stages_bounded_intent(
     tmp_path: Path,
 ) -> None:
     """Expert Data continues intent through the real private handler seam."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
     calls: list[dict[str, Any]] = []
@@ -192,7 +191,6 @@ async def test_context_expert_chat_keeps_thread_private_to_primary_call(
     tmp_path: Path,
 ) -> None:
     """Explicit Chat keeps the stable thread private to the first call."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
     captured: list[dict[str, Any]] = []
 
@@ -302,7 +300,6 @@ async def test_context_expert_router_keeps_full_allowlist_and_async_202(
     tmp_path: Path,
 ) -> None:
     """Automatic V1 routing stages its accepted async turn."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
     received: list[str] = []
     received_history: tuple[dict[str, str], ...] = ()

@@ -137,16 +137,15 @@ async def test_list_agents_returns_all_ten(
     assert origins["analyst"] == "remote"
 
 
-async def test_list_agents_omits_disabled_context_protocol(
+async def test_list_agents_advertises_always_on_context_protocol(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
 ) -> None:
-    """The default-off context protocol is absent from the public catalog.
+    """Conversation context and upload are advertised; Research stays gated.
 
-    The upload protocol (obs-multipart-v2) is always advertised in the
-    top-level `protocols` map so the Web gateway can discover it via
-    SupportsProtocol; the uninstalled Research root and default-off context
-    protocols stay absent.
+    The upload protocol (obs-multipart-v2) and conversation_context stay
+    in the top-level `protocols` map so the Web gateway can discover them
+    via SupportsProtocol; the uninstalled Research root stays absent.
     """
     response = await api_client.get(
         "/v1/agents",
@@ -155,7 +154,7 @@ async def test_list_agents_omits_disabled_context_protocol(
 
     assert response.status_code == 200
     protocols = response.json()["protocols"]
-    assert "conversation_context" not in protocols
+    assert protocols["conversation_context"] == [1]
     assert protocols["obs-multipart-v2"] == [2]
     assert "research_input_resolution_v1" not in protocols
     assert "research_input_resolution" not in response.json()

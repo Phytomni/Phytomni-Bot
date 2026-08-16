@@ -311,10 +311,9 @@ def test_split_config_models_preserve_legacy_identity_and_shape() -> None:
 
 
 def test_defaults_reexport_conversation_context_configuration() -> None:
-    """Legacy defaults imports retain the default-off context settings."""
+    """Legacy defaults imports retain the conversation-context budgets."""
     config = ApiConfig()
 
-    assert config.CONVERSATION_CONTEXT_V1_ENABLED is False
     assert config.CONVERSATION_CONTEXT_CHAT_TOKEN_BUDGET == 6_000
 
 

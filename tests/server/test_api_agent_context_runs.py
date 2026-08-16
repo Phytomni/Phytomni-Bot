@@ -78,7 +78,6 @@ def _native_context_setup(
     tmp_path: Path,
 ) -> tuple[Any, str]:
     """Build an enabled app and key with isolated stores."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(tmp_path / "keys.sqlite"))
     key = (
@@ -92,7 +91,6 @@ def _native_context_delegated_setup(
     tmp_path: Path,
 ) -> tuple[Any, str]:
     """Build a context-enabled app with a files:delegate principal."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(tmp_path / "keys.sqlite"))
     key = (
@@ -571,33 +569,6 @@ def test_native_agent_request_keeps_legacy_serialization_without_context() -> (
     assert payload.model_dump(exclude_none=True) == {
         "arguments": {"user_query": "legacy"}
     }
-
-
-async def test_native_context_valid_envelope_is_rejected_when_flag_is_off(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """A valid V1 envelope cannot activate the protocol behind its flag."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "0")
-    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
-    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(tmp_path / "keys.sqlite"))
-    key = (
-        ApiKeyStore(str(tmp_path / "keys.sqlite")).create(user_id="u1").api_key
-    )
-
-    async with open_asgi_client(
-        monkeypatch,
-        api_app_module.create_app(),
-        base_url="http://api.native-context.test",
-    ) as client:
-        response = await client.post(
-            "/v1/agents/chat/runs",
-            headers={"Authorization": f"Bearer {key}"},
-            json=_native_request("chat", "ChatAgent"),
-        )
-
-    assert response.status_code == 404
-    assert response.json()["error"]["message"] == "resource not found"
 
 
 @pytest.mark.parametrize(

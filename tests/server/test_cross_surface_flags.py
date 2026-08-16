@@ -62,6 +62,8 @@ _CORE_HTTP_PATHS = frozenset(
         "/v1/runs/{run_id}/logs",
         "/v1/runs/{run_id}/a2ui-actions",
         "/v1/runs/{thread_id}/resume",
+        "/v1/conversation-context/settle",
+        "/v1/conversation-context/tombstone",
     }
 )
 _A2A_PATHS = frozenset({"/.well-known/agent-card.json", "/a2a"})

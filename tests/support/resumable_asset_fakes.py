@@ -396,8 +396,7 @@ def enable_conversation_context_v1(
     *,
     user_id: str = "u1",
 ) -> tuple[AssetHttpTestContext, str]:
-    """Enable Instant V1 context and return one owner API key plus context."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    """Build isolated stores and return one owner API key plus context."""
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(tmp_path / "keys.sqlite"))
     api_key = (

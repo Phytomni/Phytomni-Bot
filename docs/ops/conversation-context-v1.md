@@ -1,17 +1,12 @@
 # Conversation Context V1 Operations
 
-Status: dark launch. The Bot flag is disabled by default. This runbook defines
-the protocol and rollback boundary; it does not claim staging or production
-activation.
+Status: always on. This runbook defines the protocol and rollback boundary; it
+does not claim staging or production activation.
 
-## Flag and authority
+## Authority
 
-Bot reads the feature flag `CONVERSATION_CONTEXT_V1_ENABLED`. The supported
-environment aliases are `CONVERSATION_CONTEXT_V1_ENABLED` and
-`PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED`; the default is `false`.
-
-The Web Go gateway flag is `bot.multiturn_v1_enabled`. Go must stop sending V1
-before the Bot flag is disabled. Bot owns business-context projection, bounded
+The Web Go gateway flag is `bot.multiturn_v1_enabled`. Go can stop sending V1
+envelopes to keep clients on the V0 path. Bot owns business-context projection, bounded
 per-agent memory, route selection metadata, stable agent threads, and context
 delta staging/settlement. Bot does not authenticate end users, decide user
 permissions, or authorize artifact ownership. Those are Go responsibilities.
@@ -24,9 +19,8 @@ roll back the accepted conversation turn.
 
 ## Protocol surfaces
 
-- `GET /v1/agents` advertises `conversation_context: [1]` only when the Bot
-  capability is enabled. With the flag off, normal V0 capability behavior remains
-  available and V1 is not advertised.
+- `GET /v1/agents` advertises `conversation_context: [1]`. Requests that omit
+  the V1 envelope keep the ordinary V0 capability path.
 - `POST /v1/chat/completions`, `POST /v1/query/route`, and
   `POST /v1/agents/{slug}/runs` accept a validated V1 envelope when Go has
   enabled the contract. They return bounded route/stage metadata; display
@@ -40,9 +34,8 @@ roll back the accepted conversation turn.
   version.
 
 The mutation endpoints are server-to-server surfaces. They are not browser
-authorization endpoints and must not be used to infer user ownership. If the Bot
-feature is disabled, the V1 mutation routes are unavailable and V0 routes remain
-the compatibility path.
+authorization endpoints and must not be used to infer user ownership. Requests
+that omit the V1 envelope keep the V0 compatibility path.
 
 ## SQLite ownership and retention
 
@@ -65,7 +58,7 @@ Ordinary staged-turn purge is controlled by code/configured `expires_at`; do not
 invent a separate TTL. Tombstoning immediately deletes rows from
 `conversation_turns`, while `conversation_review_checkpoint_cleanup` rows remain
 retryable until Review checkpoint deletion completes. Do not delete the context
-tables as part of an ordinary flag rollback.
+tables as part of an ordinary rollback.
 
 ## Context and thread safety
 
@@ -110,9 +103,6 @@ values only.
 
 Use synthetic accounts and synthetic data only.
 
-1. Deploy Bot with `CONVERSATION_CONTEXT_V1_ENABLED=false`.
-1. Verify `/v1/agents` has no V1 conversation-context advertisement.
-1. Enable the Bot flag in authorized staging.
 1. Verify `/v1/agents` advertises `conversation_context: [1]`.
 1. Keep Go `bot.multiturn_v1_enabled=false` and run V0 smoke tests.
 1. Enable Go V1 only after the Bot advertisement and compatibility checks pass.
@@ -130,10 +120,8 @@ Use synthetic accounts and synthetic data only.
 
 1. Disable Go `bot.multiturn_v1_enabled` first.
 1. Verify Go has stopped sending V1 envelopes and settlement/tombstone requests.
-1. Disable `CONVERSATION_CONTEXT_V1_ENABLED` in Bot.
 1. Leave the SQLite context tables in place. Do not delete context data or
-   checkpoints as part of a flag rollback; use the existing tombstone and retention
+   checkpoints as part of rollback; use the existing tombstone and retention
    cleanup paths for deliberate deletion.
 
-The Bot must not be disabled while Go is still sending V1. A protocol or
-ownership regression is a release-blocking incident.
+A protocol or ownership regression is a release-blocking incident.

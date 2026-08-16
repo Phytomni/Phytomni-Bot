@@ -328,10 +328,6 @@ class _RouteAdapters:
         )
         return canonicalize_agent_run_body(response_body), status_code
 
-    def _conversation_context_enabled(self) -> bool:
-        """Read the current conversation-context protocol flag."""
-        return _api_config().CONVERSATION_CONTEXT_V1_ENABLED
-
     def a2ui_max_response_bytes(self) -> int:
         """Read the configured A2UI response-size cap."""
         return _api_config().A2UI_MAX_RESPONSE_BYTES
@@ -528,9 +524,6 @@ def _build_agent_dependencies(
             remote_agent_slugs=_app_attr("_REMOTE_AGENT_SLUGS"),
             legacy_aliases=_app_attr("_LEGACY_ALIASES"),
             serialize_capability=_app_attr("serialize_agent_capability"),
-            conversation_context_enabled=getattr(
-                adapters, "_conversation_context_enabled"
-            ),
         ),
         chat=agent_routes.AgentChatDependencies(
             input=agent_routes.AgentChatInputDependencies(
@@ -558,7 +551,6 @@ def _build_agent_dependencies(
             route_expert_query=adapters.expert_query,
         ),
         context=agent_routes.AgentContextDependencies(
-            enabled=getattr(adapters, "_conversation_context_enabled"),
             executor=context_executor,
         ),
         upload=agent_routes.AgentUploadDependencies(
@@ -742,16 +734,12 @@ def _register_run_routes(
 def _register_conversation_context_routes(
     app: FastAPI,
     runtime: _RuntimeState,
-    adapters: _RouteAdapters,
     context_executor: ConversationContextExecutor,
 ) -> None:
     """Register authenticated V1 context mutation routes."""
-    if not getattr(adapters, "_conversation_context_enabled")():
-        return
     conversation_context_routes.register_conversation_context_routes(
         app,
         conversation_context_routes.ContextRouteDependencies(
-            enabled=getattr(adapters, "_conversation_context_enabled"),
             require_agents=build_scope_dependency(
                 runtime.authorized, "agents"
             ),
@@ -849,9 +837,7 @@ def build_app(
     agent_routes.register_model_route(app, agent_dependencies)
     _register_memory_and_admin_routes(app, runtime, adapters)
     agent_routes.register_agent_routes(app, agent_dependencies)
-    _register_conversation_context_routes(
-        app, runtime, adapters, context_executor
-    )
+    _register_conversation_context_routes(app, runtime, context_executor)
     _register_run_routes(app, runtime, adapters)
     _register_a2a_routes(app, scope)
     app.include_router(_app_attr("create_relay_router")())

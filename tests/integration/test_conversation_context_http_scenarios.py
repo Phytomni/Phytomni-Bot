@@ -305,7 +305,6 @@ async def test_async_expert_selection_keeps_running_202_lifecycle(
     tmp_path: Path,
 ) -> None:
     """The public Expert route maps an async selection to HTTP 202."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "conversation.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(tmp_path / "keys.sqlite"))
@@ -452,7 +451,6 @@ async def test_explicit_async_expert_selection_records_explicit_route_source(
     tmp_path: Path,
 ) -> None:
     """An explicitly requested async agent bypasses the Expert router."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "conversation.sqlite"
     keys_path = tmp_path / "keys.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
@@ -512,14 +510,13 @@ async def test_explicit_async_expert_selection_records_explicit_route_source(
     assert context["route_reason_code"] == "EXPLICIT_SELECTION"
 
 
-async def test_legacy_request_and_response_shape_stay_v0_when_context_is_off(
+async def test_legacy_request_and_response_shape_stay_v0_without_envelope(
     api_client: Any,
     issued_api_key: str,
     chat_completion: Callable[..., Awaitable[Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Without a V1 envelope, the ordinary ChatCompletion path is unchanged."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "0")
     captured: dict[str, Any] = {}
     install_chat_handler(monkeypatch, captured, content="legacy answer")
 

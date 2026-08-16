@@ -116,7 +116,6 @@ async def test_context_stream_http_route_uses_context_stream_runtime(
 ) -> None:
     """The public chat route forwards V1 streams to the context runtime."""
     del tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
 
     async def fake_stream(
         _tool_name: str,

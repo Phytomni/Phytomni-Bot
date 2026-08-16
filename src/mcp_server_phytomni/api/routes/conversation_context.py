@@ -2,7 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Feature-gated HTTP settlement and deletion for conversation context."""
+"""HTTP settlement and deletion for conversation context."""
 
 from __future__ import annotations
 
@@ -45,18 +45,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class ContextRouteDependencies:
-    """Dependencies required by the optional context protocol routes."""
+    """Dependencies required by the context protocol routes."""
 
-    enabled: Callable[[], bool]
     require_agents: Callable[..., Any]
     get_store: Callable[[], ConversationContextStore]
     acknowledge_review_settlement: Callable[..., Awaitable[bool]] | None = None
-
-
-def _require_enabled(dependencies: ContextRouteDependencies) -> None:
-    """Hide the mutation surface whenever V1 is disabled."""
-    if not dependencies.enabled():
-        raise HTTPException(status_code=404, detail="not found")
 
 
 async def _delete_checkpoint_threads(
@@ -317,7 +310,6 @@ async def _settle_context_route(
     dependencies: ContextRouteDependencies,
 ) -> ContextMutationResponse:
     """Dispatch one settlement request to its Review or standard path."""
-    _require_enabled(dependencies)
     store = dependencies.get_store()
     key = str(payload.conversation_key)
     staged_turn = store.load_turn(key, payload.turn_id)
@@ -367,7 +359,6 @@ async def _tombstone_context_route(
     dependencies: ContextRouteDependencies,
 ) -> ContextMutationResponse:
     """Acquire the mutation lock and tombstone one context."""
-    _require_enabled(dependencies)
     store = dependencies.get_store()
     key = str(payload.conversation_key)
     try:
@@ -386,7 +377,7 @@ def register_conversation_context_routes(
     app: FastAPI,
     dependencies: ContextRouteDependencies,
 ) -> None:
-    """Register V1 context mutations behind auth and the runtime flag."""
+    """Register authenticated V1 context mutation routes."""
 
     @app.post(
         "/v1/conversation-context/settle",

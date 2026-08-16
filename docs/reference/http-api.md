@@ -280,6 +280,17 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
   **Purpose:** Resumes a ChatAgent or ReviewAgent run paused on an A2UI confirm
   surface (`input_required`).
 
+- **Method:** `POST`
+  **Path:** `/v1/conversation-context/settle`
+  **Auth:** yes
+  **Purpose:** Commits one staged conversation-context turn.
+
+- **Method:** `POST`
+  **Path:** `/v1/conversation-context/tombstone`
+  **Auth:** yes
+  **Purpose:** Tombstones one conversation context and schedules checkpoint
+  cleanup.
+
 - **Method:** `GET`
   **Path:** `/v1/runs/{run_id}/logs`
   **Auth:** yes
@@ -1918,10 +1929,8 @@ The complete sanitized request and response examples live in
 before run reservation or agent invocation. Its `mode` must be `expert`,
 `requested_agent_id` must equal the canonical tool represented by the URL
 slug, and that tool must be present in the ordered `allowed_agent_ids` list.
-An unknown slug retains the normal `404`; a valid envelope with
-`CONVERSATION_CONTEXT_V1_ENABLED` disabled retains the context-disabled
-`404`. The URL selects the native agent directly: this path does not invoke
-the Expert router.
+An unknown slug retains the normal `404`. The URL selects the native agent
+directly: this path does not invoke the Expert router.
 
 All ten canonical native slugs accept the envelope. `chat`, `knowledge`,
 `data`, `review`, and `brief_gene` use synchronous adapters and return a
@@ -1980,9 +1989,7 @@ idempotency record remain authoritative.
 
 Without `conversation`, native runs keep their V0 request and response
 projection. The private field is absent from the public MCP schemas, and MCP
-stdio tools do not accept or emit this envelope. The feature remains dark
-until `CONVERSATION_CONTEXT_V1_ENABLED` is enabled by the authorized
-operator.
+stdio tools do not accept or emit this envelope.
 
 ### Scientific and execution result projection
 

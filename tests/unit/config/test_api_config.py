@@ -108,7 +108,6 @@ def test_api_config_defaults() -> None:
     assert config.API_SERVICE_TOKEN is None
     assert config.API_UPLOAD_PREFIX == "agent_data/uploads"
     assert config.STREAM_ANSWER_MAX_BYTES == 1_048_576
-    assert config.CONVERSATION_CONTEXT_V1_ENABLED is False
     assert config.CONVERSATION_CONTEXT_CHAT_TOKEN_BUDGET == 6_000
     assert config.CONVERSATION_CONTEXT_KNOWLEDGE_TOKEN_BUDGET == 4_000
     assert config.CONVERSATION_CONTEXT_DATA_TOKEN_BUDGET == 3_000
@@ -257,8 +256,7 @@ def test_stream_answer_max_bytes_env_override(
 def test_conversation_context_config_uses_prefixed_aliases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Conversation context remains disabled until explicitly enabled."""
-    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
+    """Conversation context budgets accept PHYTOMNI-prefixed aliases."""
     monkeypatch.setenv(
         "PHYTOMNI_CONVERSATION_CONTEXT_CHAT_TOKEN_BUDGET", "512"
     )
@@ -277,7 +275,6 @@ def test_conversation_context_config_uses_prefixed_aliases(
 
     config = ApiConfig()
 
-    assert config.CONVERSATION_CONTEXT_V1_ENABLED is True
     assert config.CONVERSATION_CONTEXT_CHAT_TOKEN_BUDGET == 512
     assert config.CONVERSATION_CONTEXT_KNOWLEDGE_TOKEN_BUDGET == 16_000
     assert config.CONVERSATION_CONTEXT_DATA_TOKEN_BUDGET == 513

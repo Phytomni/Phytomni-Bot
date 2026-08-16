@@ -400,6 +400,16 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
   **Operational use:** Resume a ChatAgent or ReviewAgent A2UI confirm pause
   (`input_required`).
 
+- **Method:** `POST`
+  **Path:** `/v1/conversation-context/settle`
+  **Auth:** yes
+  **Operational use:** Commit one staged conversation-context turn.
+
+- **Method:** `POST`
+  **Path:** `/v1/conversation-context/tombstone`
+  **Auth:** yes
+  **Operational use:** Tombstone one conversation context.
+
 - **Method:** `GET`
   **Path:** `/v1/runs/{run_id}/logs`
   **Auth:** yes
@@ -645,11 +655,10 @@ descriptor is a capability preflight, not an authorization grant.
 
 ### Native conversation-context V1 probes (non-production only)
 
-Conversation context is dark by default. Run these probes only during a
-time-bounded, owner-approved non-production window with
-`CONVERSATION_CONTEXT_V1_ENABLED=1` on Bot and synthetic data/backends. The
-probes do not establish Web, Go, staging, or production acceptance. Stop the
-window and disable the Go sender before disabling the Bot flag.
+Conversation context is always on. Run these probes only during a
+time-bounded, owner-approved non-production window with synthetic
+data/backends. The probes do not establish Web, Go, staging, or production
+acceptance.
 
 The native envelope is private to the HTTP API. Use an opaque UUID pair and a
 64-character ledger version; do not substitute a customer dialogue, OBS path,
@@ -788,8 +797,7 @@ invocation or remote task submission; an identical response alone is not
 external acceptance evidence. A concurrent duplicate is expected to return
 `409 conversation_context_turn_in_progress`.
 
-The native envelope has no effect when omitted, and a valid envelope remains
-unavailable while the feature flag is off. A pre-outcome context-store error
+The native envelope has no effect when omitted. A pre-outcome context-store error
 must be a sanitized retryable `503`; a post-outcome staging error must retain
 the original `200` or `202` and expose only
 `conversation_context_degraded=true`. Neither case authorizes a retry that
