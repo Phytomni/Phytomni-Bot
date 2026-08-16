@@ -44,7 +44,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 - Introduced:
   `2026-08-11`
 - Review:
-  `2026-09-11`
+  `2026-11-16`
 - Expiry:
   `—`
 - Remediation:
@@ -76,7 +76,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 - Introduced:
   `2026-08-11`
 - Review:
-  `2026-09-11`
+  `2026-11-16`
 - Expiry:
   `—`
 - Remediation:
@@ -93,7 +93,8 @@ Rationale:
 
 ```text
 The one-method request Protocol intentionally describes the narrow dependency
-used by retry helpers.
+used by retry helpers. 2026-08-16 specialist promote: keep structural; do not
+broaden the retry client.
 ```
 
 Counterfactual:
@@ -114,7 +115,8 @@ Rationale:
 
 ```text
 DeepGenomeConfig intentionally composes the DataConfig and AnalystConfig field
-surfaces for existing agent consumers.
+surfaces for existing agent consumers. 2026-08-16 specialist promote: keep
+structural; do not split the inheritance graph.
 ```
 
 Counterfactual:
