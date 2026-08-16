@@ -152,7 +152,6 @@ def _synthetic_environment(
             }
         ),
         "OBS_SERVER": f"{upstream.base_url}/obs",
-        "PHYTOMNI_GRAPH_LOADER": "0",
         "SCOPE": "doc",
         "MAX_RETRIES": "0",
         "TIMEOUT": "30",

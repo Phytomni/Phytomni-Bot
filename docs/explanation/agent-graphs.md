@@ -863,20 +863,12 @@ view via `load_graph_manifest`.
 
 ## Declarative Graphs
 
-`graphs/loader.py` ships a default-off `load_graph_manifest`
-function that reads any committed
-`graphs/manifests/*.graph.json` snapshot back into a
+`graphs/loader.py` ships `load_graph_manifest`, which reads any
+committed `graphs/manifests/*.graph.json` snapshot back into a
 validated `GraphManifest` view. It is the read-back complement of
 the `export_manifest()` write path and the foundation for future
 LLM-authored or human-edited manifests that compile into LangGraph
 apps.
-
-**Feature flag.** `GRAPH_LOADER_ENABLED` on `ServerConfig` (env
-`GRAPH_LOADER_ENABLED` or `PHYTOMNI_GRAPH_LOADER`) gates
-the call; the default is `False`. With the flag off,
-`load_graph_manifest(...)` raises `GraphLoaderDisabledError`, so
-importing the function does not enable anything. Set
-`PHYTOMNI_GRAPH_LOADER=true` per deployment to opt in.
 
 **Allowlist.** `graphs/allowlist.py` derives
 `default_subgraph_allowlist()` from
@@ -902,8 +894,7 @@ Future phases extend the loader to assemble compiled graphs from a
 manifest; the safety constraint stays in `graphs/allowlist.py` so
 node-ref and route-fn lookups inherit the same guard.
 
-**Tour.** A flag-on smoke (e.g. in a Python REPL after setting
-the env var) looks like:
+**Tour.** A smoke load in a Python REPL looks like:
 
 ```python
 from mcp_server_phytomni.graphs.loader import load_graph_manifest

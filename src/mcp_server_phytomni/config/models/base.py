@@ -162,17 +162,6 @@ class ServerConfig(OutboundConfig):
         ),
     ] = None
 
-    GRAPH_LOADER_ENABLED: Annotated[
-        bool,
-        Field(
-            default=False,
-            validation_alias=AliasChoices(
-                "GRAPH_LOADER_ENABLED",
-                "PHYTOMNI_GRAPH_LOADER",
-            ),
-        ),
-    ] = False
-
     RELAY_MODE: bool = Field(
         default=False,
         validation_alias=AliasChoices("RELAY_MODE", "PHYTOMNI_RELAY_MODE"),

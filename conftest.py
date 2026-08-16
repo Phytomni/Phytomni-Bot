@@ -100,11 +100,6 @@ _TEST_ENV = {
         ' "medium": "00000000-0000-0000-0000-000000000002",'
         ' "large": "00000000-0000-0000-0000-000000000003"}'
     ),
-    # Declarative GraphLoader flag pinned off in tests so the loader's
-    # gated construction path (raises when disabled) is reachable from
-    # the flag-on tests via monkeypatch without bleeding into the
-    # default-off offline runs.
-    "PHYTOMNI_GRAPH_LOADER": "0",
 }
 
 

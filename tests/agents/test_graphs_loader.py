@@ -4,8 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the declarative graph manifest loader.
 
-Covers four contracts: default-off construction raises so the
-surface is inert; flag-on construction round-trips every committed
+Covers four contracts: construction round-trips every committed
 ``graphs/manifests/*.graph.json`` snapshot; a subgraph node
 referencing a non-allowlist id raises validation; and the exported
 schema file stays aligned with the Pydantic source-of-truth.
@@ -18,13 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from mcp_server_phytomni.config.defaults import ServerConfig
 from mcp_server_phytomni.graphs.allowlist import (
     default_subgraph_allowlist,
 )
 from mcp_server_phytomni.graphs.defaults import build_default_registry
 from mcp_server_phytomni.graphs.loader import (
-    GraphLoaderDisabledError,
     GraphLoaderValidationError,
     load_graph_manifest,
 )
@@ -40,25 +37,8 @@ MANIFESTS_DIR = (
 )
 
 
-def _enabled_config() -> ServerConfig:
-    """Return a ServerConfig with the loader flag flipped on."""
-    return ServerConfig(GRAPH_LOADER_ENABLED=True)
-
-
-def test_loader_disabled_by_default() -> None:
-    """Default-off ``ServerConfig`` makes manifest loading raise.
-
-    Pins the production-safety contract: importing the loader module
-    does not enable anything; only an explicit flag-on config (env or
-    constructor override) unblocks construction.
-    """
-    assert ServerConfig().GRAPH_LOADER_ENABLED is False
-    with pytest.raises(GraphLoaderDisabledError):
-        load_graph_manifest(MANIFESTS_DIR / "chat.graph.json")
-
-
-def test_loader_accepts_enabled_config(tmp_path: Path) -> None:
-    """Flag-on config loads a manifest using the default allowlist."""
+def test_loader_accepts_valid_manifest(tmp_path: Path) -> None:
+    """A valid manifest loads using the default allowlist."""
     manifest_path = tmp_path / "enabled.graph.json"
     manifest_path.write_text(
         json.dumps(
@@ -81,7 +61,6 @@ def test_loader_accepts_enabled_config(tmp_path: Path) -> None:
     manifest = load_graph_manifest(
         manifest_path,
         allowlist=default_subgraph_allowlist(),
-        config=_enabled_config(),
     )
     assert manifest.subgraph_node_names == ()
 
@@ -97,14 +76,14 @@ def test_loader_round_trips_every_committed_manifest(
     """Every committed manifest snapshot loads and round-trips identically.
 
     Loads each ``graphs/manifests/<agent>.graph.json`` through the
-    enabled loader and asserts the resulting ``GraphManifest``
+    loader and asserts the resulting ``GraphManifest``
     serializes back to a payload structurally equal to the on-disk
     JSON. The structural equality check excludes whitespace and key
     order so the loader stays compatible with both the snapshot's
     historic indent=2 form and any future canonicalization that
     sorts keys.
     """
-    manifest = load_graph_manifest(manifest_path, config=_enabled_config())
+    manifest = load_graph_manifest(manifest_path)
     expected = json.loads(manifest_path.read_text(encoding="utf-8"))
     # ``mode='json'`` coerces the model's tuple fields back to JSON
     # arrays so the round-trip equals the on-disk shape.
@@ -143,7 +122,7 @@ def test_loader_rejects_subgraph_outside_allowlist(
     bogus_path = tmp_path / "bogus.graph.json"
     bogus_path.write_text(json.dumps(bogus), encoding="utf-8")
     with pytest.raises(GraphLoaderValidationError) as exc_info:
-        load_graph_manifest(bogus_path, config=_enabled_config())
+        load_graph_manifest(bogus_path)
     assert "definitely_not_a_real_subgraph" in str(exc_info.value)
 
 
@@ -158,7 +137,7 @@ def test_loader_rejects_schema_violation(tmp_path: Path) -> None:
     bad_path = tmp_path / "bad.graph.json"
     bad_path.write_text(json.dumps(malformed), encoding="utf-8")
     with pytest.raises(GraphLoaderValidationError):
-        load_graph_manifest(bad_path, config=_enabled_config())
+        load_graph_manifest(bad_path)
 
 
 def test_exported_schema_matches_pydantic_model() -> None:
