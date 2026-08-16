@@ -190,13 +190,12 @@ async def test_http_poll_can_stop_on_running_with_gaps() -> None:
     """The long-job gate may accept HTTP running without a terminal."""
     client = _TimeoutCapturingClient(({"status": "RUNNING", "result": {}},))
 
-    terminal = await polling.poll_http_run_to_terminal(
+    terminal = await polling.poll_http_run_to_running_or_terminal(
         cast(httpx.AsyncClient, client),
         "run-running",
         headers={"X-Service-Token": "test"},
         timeout_seconds=1.0,
         poll_interval_seconds=0.0,
-        stop_statuses=polling.HTTP_RUNNING_OR_TERMINAL_STATUSES,
     )
 
     assert terminal.status == "running"

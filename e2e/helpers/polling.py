@@ -149,6 +149,15 @@ class HttpRunTerminal:
     revisions: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class _HttpPollSpec:
+    """Stop set and budgets for one HTTP run poll."""
+
+    stop_statuses: frozenset[str]
+    timeout_seconds: float | None = None
+    poll_interval_seconds: float = 10.0
+
+
 async def poll_http_run_to_terminal(
     client: httpx.AsyncClient,
     run_id: str,
@@ -156,7 +165,6 @@ async def poll_http_run_to_terminal(
     headers: Mapping[str, str],
     timeout_seconds: float | None = None,
     poll_interval_seconds: float = 10.0,
-    stop_statuses: frozenset[str] | None = None,
 ) -> HttpRunTerminal:
     """Poll one long-lived HTTP run and return its terminal result.
 
@@ -173,10 +181,6 @@ async def poll_http_run_to_terminal(
             Defaults to the environment-aware
             :func:`resolve_timeout_seconds` value.
         poll_interval_seconds: Delay between non-terminal reads.
-        stop_statuses: Statuses that end the poll. Defaults to
-            :data:`HTTP_TERMINAL_STATUSES`. Pass
-            :data:`HTTP_RUNNING_OR_TERMINAL_STATUSES` for the temporary
-            long-job ``ACCEPTED_WITH_GAPS`` gate.
 
     Returns:
         Terminal status, result mapping, and distinct report revisions.
@@ -187,11 +191,70 @@ async def poll_http_run_to_terminal(
         TaskPollingTimeoutError: If the local deadline expires.
         ValueError: If the polling budget is not finite and positive.
     """
-    stop_statuses = stop_statuses or HTTP_TERMINAL_STATUSES
+    return await _poll_http_run(
+        client,
+        run_id,
+        headers,
+        _HttpPollSpec(
+            stop_statuses=HTTP_TERMINAL_STATUSES,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        ),
+    )
+
+
+async def poll_http_run_to_running_or_terminal(
+    client: httpx.AsyncClient,
+    run_id: str,
+    *,
+    headers: Mapping[str, str],
+    timeout_seconds: float | None = None,
+    poll_interval_seconds: float = 10.0,
+) -> HttpRunTerminal:
+    """Poll one HTTP run until it is running or already terminal.
+
+    Temporary long-job gate: a live ``running`` status is
+    ``ACCEPTED_WITH_GAPS``. Terminal statuses keep the original meaning.
+
+    Args:
+        client: Authenticated HTTP client bound to the live API.
+        run_id: Owner-scoped run id returned by a submit endpoint.
+        headers: Authentication headers for the status route.
+        timeout_seconds: Finite positive monotonic local polling budget.
+        poll_interval_seconds: Delay between non-stop reads.
+
+    Returns:
+        Status, result mapping, and distinct report revisions.
+
+    Raises:
+        AssertionError: For malformed status responses or a regressing
+            report revision.
+        TaskPollingTimeoutError: If the local deadline expires.
+        ValueError: If the polling budget is not finite and positive.
+    """
+    return await _poll_http_run(
+        client,
+        run_id,
+        headers,
+        _HttpPollSpec(
+            stop_statuses=HTTP_RUNNING_OR_TERMINAL_STATUSES,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        ),
+    )
+
+
+async def _poll_http_run(
+    client: httpx.AsyncClient,
+    run_id: str,
+    headers: Mapping[str, str],
+    spec: _HttpPollSpec,
+) -> HttpRunTerminal:
+    """Drive one HTTP run poll with a prepared stop set and budgets."""
     effective_timeout = (
         resolve_timeout_seconds()
-        if timeout_seconds is None
-        else _validate_timeout_seconds(timeout_seconds)
+        if spec.timeout_seconds is None
+        else _validate_timeout_seconds(spec.timeout_seconds)
     )
     deadline = time.monotonic() + effective_timeout
     revisions: list[int] = []
@@ -226,7 +289,7 @@ async def poll_http_run_to_terminal(
         remaining_seconds = deadline - time.monotonic()
         if remaining_seconds <= 0:
             break
-        if status in stop_statuses:
+        if status in spec.stop_statuses:
             _logger.info(
                 "live run terminal status=%s revisions=%s artifacts=%s",
                 status,
@@ -242,7 +305,7 @@ async def poll_http_run_to_terminal(
                 result=result,
                 revisions=tuple(revisions),
             )
-        await asyncio.sleep(min(poll_interval_seconds, remaining_seconds))
+        await asyncio.sleep(min(spec.poll_interval_seconds, remaining_seconds))
     raise TaskPollingTimeoutError(_HTTP_RUN_DEADLINE_MESSAGE)
 
 
@@ -261,7 +324,7 @@ def resolve_timeout_seconds() -> float:
     """Return the polling timeout, honoring environment overrides.
 
     Override with ``PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS`` to extend the
-    default ten-minute wait without editing per-test source. A configured
+    default one-hour wait without editing per-test source. A configured
     value must be finite and greater than zero.
 
     Returns:
@@ -475,7 +538,6 @@ async def poll_until_done(
     db_path: Path | None = None,
     timeout_seconds: float | None = None,
     poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
-    extra_stop_statuses: frozenset[str] | None = None,
 ) -> TaskState:
     """Poll local DB + live backend until ``task_id`` reaches terminal.
 
@@ -496,8 +558,6 @@ async def poll_until_done(
         timeout_seconds: Total poll budget. Defaults to
             ``resolve_timeout_seconds()``.
         poll_interval_seconds: Delay between iterations.
-        extra_stop_statuses: Additional case-insensitive statuses that
-            end the poll besides :data:`TERMINAL_STATUSES`.
 
     Returns:
         Final ``TaskState`` once the task reaches a terminal status.
@@ -506,9 +566,41 @@ async def poll_until_done(
         TaskPollingTimeoutError: If the deadline elapses before the
             task reaches a terminal state.
     """
-    stop_statuses = TERMINAL_STATUSES | {
-        status.lower() for status in (extra_stop_statuses or frozenset())
-    }
+    return await _poll_until(
+        task_id,
+        TERMINAL_STATUSES,
+        db_path=db_path,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+
+
+async def poll_until_remote_running_or_done(
+    task_id: str,
+    *,
+    db_path: Path | None = None,
+    timeout_seconds: float | None = None,
+    poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
+) -> TaskState:
+    """Poll until the task is remotely running or already terminal."""
+    return await _poll_until(
+        task_id,
+        TERMINAL_STATUSES | RUNNING_STATUSES,
+        db_path=db_path,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+
+
+async def _poll_until(
+    task_id: str,
+    stop_statuses: frozenset[str],
+    *,
+    db_path: Path | None,
+    timeout_seconds: float | None,
+    poll_interval_seconds: float,
+) -> TaskState:
+    """Poll one task until its reconciled status matches ``stop_statuses``."""
     deadline = time.monotonic() + (
         timeout_seconds
         if timeout_seconds is not None
@@ -670,9 +762,7 @@ async def submit_and_poll_to_remote_running(
         timeout_seconds=submit_timeout_seconds(),
     )
     task_id = extract_task_id(response)
-    state = await poll_until_done(
-        task_id, extra_stop_statuses=RUNNING_STATUSES
-    )
+    state = await poll_until_remote_running_or_done(task_id)
     if state.succeeded or _status_in(state.status, RUNNING_STATUSES):
         if not state.succeeded:
             _logger.warning(

@@ -27,8 +27,7 @@ from .helpers.api_server import (
 )
 from .helpers.assertions import assert_deep_genome_terminal
 from .helpers.polling import (
-    HTTP_RUNNING_OR_TERMINAL_STATUSES,
-    poll_http_run_to_terminal,
+    poll_http_run_to_running_or_terminal,
     task_state_from_mapping,
 )
 
@@ -71,11 +70,10 @@ async def test_deep_genome_agent_e2e_polls_http_terminal_report(
     run_id = submit.json().get("id")
     assert isinstance(run_id, str) and run_id
 
-    terminal = await poll_http_run_to_terminal(
+    terminal = await poll_http_run_to_running_or_terminal(
         deep_genome_api_client,
         run_id,
         headers=auth_header(deep_genome_api_server),
-        stop_statuses=HTTP_RUNNING_OR_TERMINAL_STATUSES,
     )
     state_payload = {**terminal.result, "status": terminal.status}
     state = task_state_from_mapping(state_payload, task_id=run_id)
