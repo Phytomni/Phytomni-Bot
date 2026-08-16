@@ -765,7 +765,7 @@ async def test_reconcile_does_not_treat_empty_deep_genome_as_succeeded(
 async def test_reconcile_persists_live_analyst_terminal_status(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A remote SUCCEEDED verdict is stored so later polls see a terminal row."""
+    """A remote SUCCEEDED verdict is stored for later terminal polls."""
     monkeypatch.setattr(
         "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
         lambda: mgr_path,

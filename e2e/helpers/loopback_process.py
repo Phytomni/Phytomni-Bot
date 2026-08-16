@@ -37,7 +37,7 @@ class BoundedLogTail:
         """Return the immutable configured diagnostic bound."""
         return self._max_lines
 
-    def _append(self, line: str) -> None:
+    def record(self, line: str) -> None:
         """Append one drained line for the owning process helper only."""
         with self._lock:
             self._lines.append(line)
@@ -56,7 +56,7 @@ class BoundedLogTail:
 def _drain(stream: IO[str], logs: BoundedLogTail) -> None:
     """Keep a subprocess pipe flowing into its caller-bounded log tail."""
     for line in stream:
-        logs._append(line.rstrip("\n"))
+        logs.record(line.rstrip("\n"))
 
 
 @contextmanager

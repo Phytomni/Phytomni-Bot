@@ -43,7 +43,10 @@ def test_boot_yields_the_bounded_tail_shared_with_health_check() -> None:
         sys.executable,
         "-u",
         "-c",
-        "import time; print('one'); print('two'); print('three'); time.sleep(1)",
+        (
+            "import time; print('one'); print('two'); "
+            "print('three'); time.sleep(1)"
+        ),
     ]
     with boot_loopback_process(
         command,

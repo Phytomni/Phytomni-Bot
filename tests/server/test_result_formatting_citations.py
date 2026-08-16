@@ -62,7 +62,7 @@ def test_normalize_citations_captures_multi_index_with_prefix() -> None:
 def test_normalize_citations_captures_repeated_document_word_prefixes() -> (
     None
 ):
-    """BriefGene-style ``[document 3, document 4]`` must rewrite to superscripts."""
+    """Rewrite BriefGene ``[document 3, document 4]`` into superscripts."""
 
     answer = (
         "The locus is drought-linked "
