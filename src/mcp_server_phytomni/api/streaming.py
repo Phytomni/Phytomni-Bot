@@ -39,7 +39,7 @@ from ..mcp.handlers import (
 )
 from ..mcp.result_formatting import (
     AguiEvent,
-    ContextStagedPayload,
+    ContextStageMetadata,
     context_staged,
 )
 from ..mcp.stream_lifecycle import (
@@ -611,8 +611,8 @@ def _stage_context_stream_success(
         "context_degraded": degraded,
     }
     custom_event = context_staged(
-        ContextStagedPayload(
-            turn_id=context_stream.envelope.turn_id,
+        turn_id=context_stream.envelope.turn_id,
+        stage=ContextStageMetadata(
             selected_agent_id="ChatAgent",
             route_source="instant_lock",
             route_reason_code="INSTANT_LOCK",
@@ -626,7 +626,7 @@ def _stage_context_stream_success(
             context_truncated=snapshot.truncated,
             context_rebuilt=context_stream.rebuilt,
             context_degraded=degraded,
-        )
+        ),
     )
     final_replay_events = [
         *replay_events,

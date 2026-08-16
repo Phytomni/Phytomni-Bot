@@ -38,23 +38,3 @@ rationale = "DeepGenomeConfig intentionally composes the DataConfig and AnalystC
 counterfactual = "Split the model into a new shared configuration base and migrate every consumer."
 risk = "Changing the inheritance contract can alter Pydantic field and validator resolution."
 tests = ["tests/unit/config/test_defaults.py", "tests/server/test_handler_support.py"]
-
-[[exemptions]]
-id = "SAE-STR-0008"
-tool = "pylint"
-rule = "R0801"
-classification = "structural"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/mcp/result_formatting.py"
-symbol = "40:50"
-peer_path = "src/mcp_server_phytomni/runtime/conversation_context/service_types.py"
-peer_symbol = "84:92"
-fingerprint = "sha256:f7599cf258bd5b405e374d9783d78728f5841b8e5cb70acc5ee3debf9cfe2be1"
-owner = "bot-maintainers"
-introduced_on = 2026-08-11
-review_on = 2026-09-11
-rationale = "The bounded context-staged event payload is intentionally represented in both public formatting and service types."
-counterfactual = "Centralize the event payload type and update both consumers."
-risk = "Context metadata fields can drift between the two representations."
-tests = ["tests/server/test_api_chat_streaming_context.py", "tests/unit/test_result_formatting_projection.py"]

@@ -10,13 +10,12 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `3`
+- Authorized records: `2`
 
 ## Informational counts
 
 | Tool and rule                   | Records |
 | ------------------------------- | ------: |
-| `pylint:R0801`                  |       1 |
 | `pylint:too-few-public-methods` |       1 |
 | `pylint:too-many-ancestors`     |       1 |
 
@@ -86,38 +85,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
   - `tests/unit/config/test_defaults.py`
   - `tests/server/test_handler_support.py`
 
-### `SAE-STR-0008`
-
-- Tool:
-  `pylint`
-- Rule:
-  `R0801`
-- Classification:
-  `structural`
-- Mechanism:
-  `diagnostic`
-- Target:
-  `pair`
-- Path:
-  `src/mcp_server_phytomni/mcp/result_formatting.py`
-- Symbol:
-  `40:50`
-- Fingerprint:
-  `sha256:f7599cf258bd5b405e374d9783d78728f5841b8e5cb70acc5ee3debf9cfe2be1`
-- Owner:
-  `bot-maintainers`
-- Introduced:
-  `2026-08-11`
-- Review:
-  `2026-09-11`
-- Expiry:
-  `—`
-- Remediation:
-  `—`
-- Tests:
-  - `tests/server/test_api_chat_streaming_context.py`
-  - `tests/unit/test_result_formatting_projection.py`
-
 ## Review fields
 
 ### `SAE-STR-0001`
@@ -162,25 +129,4 @@ Risk:
 ```text
 Changing the inheritance contract can alter Pydantic field and validator
 resolution.
-```
-
-### `SAE-STR-0008`
-
-Rationale:
-
-```text
-The bounded context-staged event payload is intentionally represented in both
-public formatting and service types.
-```
-
-Counterfactual:
-
-```text
-Centralize the event payload type and update both consumers.
-```
-
-Risk:
-
-```text
-Context metadata fields can drift between the two representations.
 ```

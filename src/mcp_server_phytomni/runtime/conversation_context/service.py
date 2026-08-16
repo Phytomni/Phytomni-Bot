@@ -16,6 +16,7 @@ from weakref import WeakValueDictionary
 
 from ...agents.review.conversation import _candidate_thread_id
 from ...config.defaults import ApiConfig
+from ...contracts.conversation_context import CONTEXT_STAGE_FIELDS
 from .models import (
     MAX_CONTEXT_ITEMS,
     MAX_CONTEXT_TEXT_CHARS,
@@ -60,7 +61,6 @@ for _service_type in (
     AsyncAgentAcceptance,
     AgentOutcome,
     AgentSelection,
-    ContextStageMetadata,
     ContextStoreUnavailableError,
     PrepareStatus,
     PreparedTurn,
@@ -73,19 +73,7 @@ class SettlementMismatchError(RuntimeError):
 
 
 _PRIVATE_REVIEW_STAGE_KEY = "_review_settlement"
-_PUBLIC_STAGE_FIELDS = frozenset(
-    {
-        "selected_agent_id",
-        "route_source",
-        "route_reason_code",
-        "base_business_context_version",
-        "proposed_business_context_version",
-        "last_applied_ledger_cursor",
-        "context_truncated",
-        "context_rebuilt",
-        "context_degraded",
-    }
-)
+_PUBLIC_STAGE_FIELDS = CONTEXT_STAGE_FIELDS
 _REVIEW_STAGE_FIELDS = frozenset(
     {
         "version",

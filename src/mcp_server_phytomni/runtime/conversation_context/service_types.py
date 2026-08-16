@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from ...contracts.conversation_context import ContextStageMetadata
 from .models import BusinessContext, ContextDelta, ContextProjection
 from .store import StoredTurn
 
@@ -67,27 +68,6 @@ class AsyncAcceptanceError(RuntimeError):
 
 class ContextStoreUnavailableError(RuntimeError):
     """Context persistence failed before an agent outcome existed."""
-
-
-@dataclass(frozen=True)
-class _ContextStageRoute:
-    """Routing fields shared by durable stage metadata."""
-
-    selected_agent_id: str
-    route_source: str
-    route_reason_code: str
-
-
-@dataclass(frozen=True)
-class ContextStageMetadata(_ContextStageRoute):
-    """Public metadata describing one staged context update."""
-
-    base_business_context_version: int
-    proposed_business_context_version: int
-    last_applied_ledger_cursor: int
-    context_truncated: bool
-    context_rebuilt: bool
-    context_degraded: bool
 
 
 @dataclass(frozen=True)
