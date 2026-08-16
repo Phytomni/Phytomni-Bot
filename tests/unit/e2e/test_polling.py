@@ -651,7 +651,10 @@ def test_extract_task_id_from_execution_envelope() -> None:
     response = SimpleNamespace(
         raw_payload={
             "formatted": {
-                "answer": "Task created successfully:20260816T142501Z-task-analyst-f0fb60f7",
+                "answer": (
+                    "Task created successfully:"
+                    "20260816T142501Z-task-analyst-f0fb60f7"
+                ),
                 "metadata": {},
             },
             "execution": {

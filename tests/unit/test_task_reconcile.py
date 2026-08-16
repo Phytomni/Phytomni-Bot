@@ -816,7 +816,9 @@ async def test_reconcile_fills_empty_network_success_via_assembler(
         Submission(
             task_id="net-live",
             status="submitted",
-            output_dir="/obs/phytomni/agent_data/test/output/children/part-001",
+            output_dir=(
+                "/obs/phytomni/agent_data/test/output/children/part-001"
+            ),
             run_context=RunContext(agent="network"),
         )
     )
