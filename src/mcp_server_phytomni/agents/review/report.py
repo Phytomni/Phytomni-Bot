@@ -43,12 +43,9 @@ else:
     DeepResearchState = dict[str, Any]
 
 
-# Mirror of the ``_REVISED_WORKER_CAUGHT`` pattern at agent.py:92
-# (``(Exception,)``). Records only ``Exception``-class add_query
-# results as failed calls; cancellation / shutdown signals
-# (``CancelledError`` / ``KeyboardInterrupt`` — ``BaseException`` but
-# not ``Exception``) propagate instead, handled in
-# ``_partition_add_query_results``.
+# Exception only, matching ``_REVISED_WORKER_CAUGHT``. Cancellation
+# and shutdown (``CancelledError`` / ``KeyboardInterrupt``) propagate
+# instead and are handled in ``_partition_add_query_results``.
 _ADD_QUERY_FAILURE_TYPES: tuple[type[Exception], ...] = (Exception,)
 
 

@@ -82,28 +82,17 @@ from .summary import ReviewSummaryMixin
 
 logger = logging.getLogger(__name__)
 
-# Workers MUST NOT raise per the TW-1 sentinel-coexistence contract:
-# downstream ``draft_reduce_node`` consumes one indexed result per dimension;
-# a propagated exception would short-circuit. Workers catch broadly and write
-# BOTH a legacy empty-string sentinel and a ``FailureRecord`` to the shared
-# failures channel, mirroring ``_RETRIEVE_WORKER_CAUGHT`` in ``planning.py``.
-# This keeps the intent explicit for static analysis (pylint W0718).
+# Workers must not raise: draft_reduce_node needs one indexed result per
+# dimension. Catch broadly, write an empty-string sentinel plus a
+# FailureRecord (same shape as _RETRIEVE_WORKER_CAUGHT in planning.py).
 _DRAFT_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
 
-# Mirror of ``_DRAFT_WORKER_CAUGHT`` for the review_results fan-out
-# worker.  The legacy ``review_node`` substituted the empty-JSON
-# sentinel ``"{}"`` for failed critiques (see ``report.py``), and
-# ``revise_node`` downstream parses each critique via
-# ``_extract_json_object`` which returns ``{}`` on an empty payload, so
-# the sentinel must remain ``"{}"`` (NOT ``""``) to preserve behaviour.
+# Failed critiques use "{}" not "" so _extract_json_object keeps the
+# same empty-payload behaviour as the old review_node.
 _REVIEW_RESULTS_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
 
-# Mirror of ``_REVIEW_RESULTS_WORKER_CAUGHT`` for the revised fan-out
-# worker. Legacy ``revise_node`` substituted ``state["draft_contents"][idx]``
-# for failed workers (see ``report.py`` lines 159-165). The worker
-# writes an empty-string sentinel into ``revised_indexed_results`` and
-# ``revised_reduce_node`` substitutes the original draft so dimension
-# ordering and length stay aligned with ``research_dimensions``.
+# Empty-string sentinel; revised_reduce_node substitutes the original
+# draft so length and order stay aligned with research_dimensions.
 _REVISED_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
 
 REVIEW_CONFIG = ReviewConfig()
@@ -317,11 +306,10 @@ class DeepResearchAgent(
 
         On success writes a single ``(task_index, content)`` tuple
         into ``draft_indexed_results`` via ``operator.add``. On
-        exception writes BOTH a legacy empty-string sentinel AND a
-        ``FailureRecord`` into the shared failures channel (TW-1
-        coexistence — ``draft_reduce_node`` downstream still iterates
-        a string per dimension; per-task failure detail surfaces in
-        ``raw.phytomni_state``).
+        exception writes BOTH an empty-string sentinel AND a
+        ``FailureRecord`` into the shared failures channel
+        (``draft_reduce_node`` still iterates a string per dimension;
+        per-task failure detail surfaces in ``raw.phytomni_state``).
         """
         task_index = state["task_index"]
         try:
@@ -428,11 +416,11 @@ class DeepResearchAgent(
 
         On success writes a single ``(task_index, content)`` tuple
         into ``review_indexed_results`` via ``operator.add``. On
-        exception writes BOTH the legacy empty-JSON sentinel ``"{}"``
-        AND a ``FailureRecord`` into the shared failures channel
-        (TW-1 coexistence — ``review_results_reduce_node`` downstream
-        still iterates a string per dimension; per-task failure detail
-        surfaces in ``raw.phytomni_state``).
+        exception writes BOTH the empty-JSON sentinel ``"{}"`` AND a
+        ``FailureRecord`` into the shared failures channel
+        (``review_results_reduce_node`` still iterates a string per
+        dimension; per-task failure detail surfaces in
+        ``raw.phytomni_state``).
         """
         task_index = state["task_index"]
         try:
@@ -547,12 +535,12 @@ class DeepResearchAgent(
         ``revised_indexed_results`` plus any supplementary documents
         into ``add_doc_list`` via ``operator.add``.
 
-        On exception writes BOTH a legacy empty-string sentinel AND a
+        On exception writes BOTH an empty-string sentinel AND a
         ``FailureRecord`` into the shared failures channel
-        (TW-1 coexistence — ``revised_reduce_node`` downstream still
-        iterates one entry per dimension and substitutes the original
-        draft when the sentinel is empty; per-task failure detail
-        surfaces in ``raw.phytomni_state``).
+        (``revised_reduce_node`` still iterates one entry per
+        dimension and substitutes the original draft when the
+        sentinel is empty; per-task failure detail surfaces in
+        ``raw.phytomni_state``).
         """
         # The Send payload built by ``route_revised_tasks`` always
         # populates these four fields with their concrete types; the
@@ -613,8 +601,8 @@ class DeepResearchAgent(
         task_index so concurrent worker completion order does not
         affect downstream dimension ordering. Empty-string sentinels
         (written by the worker on exception) are replaced with the
-        original draft for that dimension, matching the legacy
-        ``revise_node`` substitution at ``report.py`` lines 159-165.
+        original draft for that dimension, matching the old
+        ``revise_node`` substitution.
 
         Writes BOTH the flat ``revised_contents`` list and the legacy
         ``revised_reports`` list of ``{"subtopic", "revised_report"}``
@@ -721,7 +709,7 @@ class DeepResearchAgent(
             "failures": [],
             "interop": [],
             "degraded_interop": False,
-            # Single-shot chat-mount fields (Step 6.2 pattern)
+            # Chat-mount fields
             "chat_payload": None,
             "chat_response": None,
             "pending_post": None,

@@ -90,18 +90,15 @@ class DeepResearchState(ParallelDispatchState):
     summary_content: str
     final_response: dict[str, Any]
 
-    # === Single-shot chat-mount fields (locked Step 6.0 pattern) ===
+    # Chat-mount fields. ordered_doc_list is forwarded so follow_up_post_node
+    # does not re-run _renumber_citations on already-renumbered [document:N]
+    # text (that second pass matches nothing and yields an empty list).
     chat_payload: dict[str, Any] | None
     chat_response: dict[str, Any] | None
     pending_post: str | None
-    # Renumbered reference list computed once by ``follow_up_prep_node``
-    # and read by ``follow_up_post_node``. Forwarding it avoids a second
-    # ``_renumber_citations`` pass over the already-renumbered
-    # ``[document:N]`` text, which matches nothing and recovers an empty
-    # ordered list.
     ordered_doc_list: list[dict[str, Any]] | None
 
-    # === Send-payload transient fields (set ONLY during Send invocation) ===
+    # Send-payload fields; set only during a Send invocation.
     subtopic: str | None
     knowledge: str | None
     dimension: str | None
@@ -113,7 +110,6 @@ class DeepResearchState(ParallelDispatchState):
     review_content: str | None
     raw_doc_list: list[dict[str, Any]] | None
 
-    # === Fan-out parallel accumulators (5 fields x Annotated reducer) ===
     retrieve_indexed_results: Annotated[
         list[tuple[int, list[dict[str, Any]]]], operator.add
     ]
@@ -122,17 +118,15 @@ class DeepResearchState(ParallelDispatchState):
     review_indexed_results: Annotated[list[tuple[int, str]], operator.add]
     revised_indexed_results: Annotated[list[tuple[int, str]], operator.add]
 
-    # === Fan-out final ordered output (write-once by reduce_node) ===
-    # draft_contents and review_contents already declared above (kept as-is).
-    # all_raw_doc_list already declared above (kept as-is).
+    # Write-once ordered output from the matching reduce node.
     revised_contents: list[str]
 
-    # === Human-in-the-loop approval (single-writer, no reducer) ===
+    # Human-in-the-loop approval (single-writer, no reducer).
     approval_pending: bool
     approval_decision: dict[str, Any]
     a2ui_round: int
 
-    # === Private conversation metadata (never part of public IO schemas) ===
+    # Conversation adapter only; never part of the public IO schemas.
     review_operation: str | None
     report_artifact_id: str | None
     report_revision: int
