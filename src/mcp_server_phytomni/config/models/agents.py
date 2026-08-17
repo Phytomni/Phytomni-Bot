@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Non-secret configuration models used by the Phytomni agents."""
 
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import AliasChoices, Field, field_validator
 
@@ -21,6 +21,35 @@ from .base import (
     ServerConfig,
     _require_non_empty_endpoint,
 )
+
+ComputeResourceName = Literal["small", "medium", "large"]
+
+
+def resolve_compute_resource(
+    config: Any,
+    analysis_type: str | None = None,
+) -> str:
+    """Return the configured compute tier, optionally specialized by type.
+
+    Callers must not invent ``small`` / ``medium`` / ``large`` at the
+    submit site.  Per-analysis overrides live on
+    ``COMPUTE_RESOURCE_BY_TYPE``; everything else uses
+    ``COMPUTE_RESOURCE``.
+    """
+    by_type = getattr(config, "COMPUTE_RESOURCE_BY_TYPE", None) or {}
+    if analysis_type:
+        specialized = by_type.get(analysis_type)
+        if specialized is not None:
+            return specialized
+    resource = getattr(config, "COMPUTE_RESOURCE", None)
+    if isinstance(resource, str) and resource:
+        return resource
+    fields = getattr(config, "model_fields", None)
+    if isinstance(fields, dict) and "COMPUTE_RESOURCE" in fields:
+        default = fields["COMPUTE_RESOURCE"].default
+        if isinstance(default, str) and default:
+            return default
+    raise TypeError("config is missing COMPUTE_RESOURCE")
 
 
 class ChatConfig(ServerConfig):
@@ -101,11 +130,12 @@ class AnalystConfig(KnowledgeConfig):
         mode="after",
     )(_require_non_empty_endpoint)
     OUTPUT_DIR: str = "/obs/phytomni/agent_data/test/output"
-    COMPUTE_RESOURCE: Literal["small", "medium", "large"] = "small"
+    COMPUTE_RESOURCE: ComputeResourceName = "small"
+    COMPUTE_RESOURCE_BY_TYPE: ClassVar[dict[str, ComputeResourceName]] = {}
     TASK_NAME: str = "analyst-agents-task"
     RESOURCE: dict[str, dict[str, int]] = {
         "small": {"cpu": 1, "memory": 4},
-        "medium": {"cpu": 4, "memory": 8},
+        "medium": {"cpu": 4, "memory": 16},
         "large": {"cpu": 16, "memory": 48},
     }
     APP_ID: Annotated[
@@ -163,6 +193,11 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
 
     RELAY_TIMEOUT_PROFILE: ClassVar[str | None] = None
     TIMEOUT: float = 600.0
+    COMPUTE_RESOURCE_BY_TYPE: ClassVar[dict[str, ComputeResourceName]] = {
+        "evolution_analysis": "medium",
+        "protein_structure_analysis": "medium",
+        "protein_design_analysis": "medium",
+    }
     DEEPGENOME_DATA: str = str(PRE_PREPARED_DATA_PATH)
     DEEPGENOME_OUT: str = str(DOWNLOAD_PATH)
     BATCH: bool = True
@@ -206,14 +241,21 @@ class DigitalDesignConfig(AnalystConfig):
     """Configuration settings specific to digital design tasks."""
 
     DEEPGENOME_DATA: str = str(PRE_PREPARED_DATA_PATH)
+    COMPUTE_RESOURCE_BY_TYPE: ClassVar[dict[str, ComputeResourceName]] = {
+        "protein_design_analysis": "medium",
+        "protein_structure_analysis": "medium",
+    }
 
 
 class InSilicoResearchConfig(AnalystConfig):
     """Configuration settings specific to in-silico research tasks."""
 
+    COMPUTE_RESOURCE: ComputeResourceName = "medium"
+
 
 class EnvironmentConfig(AnalystConfig):
     """Configuration settings specific to environment tasks."""
 
+    COMPUTE_RESOURCE: ComputeResourceName = "large"
     ENVIRONMENT_DATA: str = str(PRE_PREPARED_DATA_PATH)
     REGION_CODE: str = str(PRE_PREPARED_REGION_PATH)

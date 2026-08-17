@@ -84,6 +84,7 @@ from mcp_server_phytomni.config.defaults import (
     KnowledgeConfig,
     ReviewConfig,
     ServerConfig,
+    resolve_compute_resource,
 )
 from mcp_server_phytomni.config.models.agents import (
     AnalystConfig as LeafAnalystConfig,
@@ -558,6 +559,50 @@ def test_analyst_config_parses_app_id_json_env(monkeypatch):
         "medium": "tier-m",
         "large": "tier-l",
     }
+
+
+def test_compute_resource_table_and_agent_defaults() -> None:
+    """Compute tiers live on config; Research/Environment override the default."""
+    assert AnalystConfig.model_fields["RESOURCE"].default == {
+        "small": {"cpu": 1, "memory": 4},
+        "medium": {"cpu": 4, "memory": 16},
+        "large": {"cpu": 16, "memory": 48},
+    }
+    assert AnalystConfig.model_fields["COMPUTE_RESOURCE"].default == "small"
+    assert (
+        InSilicoResearchConfig.model_fields["COMPUTE_RESOURCE"].default
+        == "medium"
+    )
+    assert (
+        EnvironmentConfig.model_fields["COMPUTE_RESOURCE"].default == "large"
+    )
+    assert resolve_compute_resource(AnalystConfig) == "small"
+    assert resolve_compute_resource(InSilicoResearchConfig) == "medium"
+    assert resolve_compute_resource(EnvironmentConfig) == "large"
+    assert (
+        resolve_compute_resource(
+            DigitalDesignConfig, "protein_design_analysis"
+        )
+        == "medium"
+    )
+    assert (
+        resolve_compute_resource(
+            DigitalDesignConfig, "protein_structure_analysis"
+        )
+        == "medium"
+    )
+    assert (
+        resolve_compute_resource(DigitalDesignConfig, "promoter_analysis")
+        == "small"
+    )
+    assert (
+        resolve_compute_resource(DeepGenomeConfig, "evolution_analysis")
+        == "medium"
+    )
+    assert (
+        resolve_compute_resource(DeepGenomeConfig, "single_cell_analysis")
+        == "small"
+    )
 
 
 @pytest.mark.parametrize(

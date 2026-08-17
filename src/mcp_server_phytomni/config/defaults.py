@@ -22,6 +22,7 @@ from .models.agents import (
     InSilicoResearchConfig,
     KnowledgeConfig,
     ReviewConfig,
+    resolve_compute_resource,
 )
 from .models.api import ApiConfig
 from .models.base import (
@@ -76,6 +77,7 @@ __all__ = [
     "ReviewConfig",
     "SERVER_REQUIRED_ENDPOINT_FIELDS",
     "ServerConfig",
+    "resolve_compute_resource",
     "SpeciesDataIndex",
     "SpeciesEntryValue",
     "TEMP_PATH",

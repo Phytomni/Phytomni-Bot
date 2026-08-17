@@ -16,6 +16,7 @@ from .agents import (
     InSilicoResearchConfig,
     KnowledgeConfig,
     ReviewConfig,
+    resolve_compute_resource,
 )
 from .api import ApiConfig
 from .base import ServerConfig
@@ -48,4 +49,5 @@ __all__ = [
     "ReviewConfig",
     "ServerConfig",
     "SpeciesEntryValue",
+    "resolve_compute_resource",
 ]
