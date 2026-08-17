@@ -381,6 +381,7 @@ def test_open_surface_rejects_missing_and_widget_mismatch(tmp_path):
         ),
     )
     empty = RunRegistry(db).get_run("run-empty", owner="alice")
+    assert empty is not None
     with pytest.raises(HTTPException) as missing:
         a2ui_resume.open_surface_for_action(
             empty, surface_id="surface-1", widget="confirm"
@@ -388,6 +389,7 @@ def test_open_surface_rejects_missing_and_widget_mismatch(tmp_path):
     assert missing.value.status_code == 409
     _seed(db, "run-widget")
     rec = RunRegistry(db).get_run("run-widget", owner="alice")
+    assert rec is not None
     with pytest.raises(HTTPException) as widget:
         a2ui_resume.open_surface_for_action(
             rec, surface_id="surface-1", widget="form"
@@ -560,11 +562,12 @@ async def test_locale_backfill_and_claim_helpers(tmp_path):
         request_info=RunRequestInfo(query="hello"),
     )
     record = registry.get_run("run-locale", owner="alice")
+    assert record is not None
     a2ui_resume._bind_record_locale(record, registry=registry, owner="alice")
-    assert (
-        registry.get_run("run-locale", owner="alice").request_info.locale
-        is not None
-    )
+    rebound = registry.get_run("run-locale", owner="alice")
+    assert rebound is not None
+    assert rebound.request_info is not None
+    assert rebound.request_info.locale is not None
 
     class Boom:
         def update_request_info(self, *a, **k):

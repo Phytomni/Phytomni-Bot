@@ -217,7 +217,7 @@ async def test_synthesizer_writes_assembled_markdown(
     assert written.exists()
     assert "section-1" in written.read_text(encoding="utf-8")
     assert result["experiment_completed_branches"] == 1
-    assert "Bioinformatic Analysis" in result["synthesize_report"]
+    assert "Bioinformatic Analysis" in str(result["synthesize_report"])
 
 
 async def test_experiment_node_waits_and_skips_duplicates() -> None:

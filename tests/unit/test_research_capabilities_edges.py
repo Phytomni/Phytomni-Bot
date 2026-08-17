@@ -130,7 +130,7 @@ async def test_abort_refresh_cancels_in_flight_task() -> None:
     if pending is not None:
         pending.cancel()
         with suppress(asyncio.CancelledError):
-            await pending
+            await cast(Any, pending)
 
 
 async def test_refresh_rejects_incompatible_handshake_shape() -> None:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -90,8 +90,9 @@ def test_map_send_payload_accepts_tuple_obs_file_list() -> None:
     result = map_send_payload_to_analyst_input(
         _payload(obs_file_list=("obs://private/a.pdf",))
     )
+    mapped = cast(dict[str, Any], result)
 
-    assert result["obs_file_list"] == ["obs://private/a.pdf"]
+    assert mapped["obs_file_list"] == ["obs://private/a.pdf"]
 
 
 def test_map_send_payload_omits_optional_document_and_grant_fields() -> None:
@@ -112,10 +113,11 @@ def test_map_send_payload_threads_fingerprint_and_sidecar() -> None:
             research_grant_sidecar=sidecar,
         )
     )
+    mapped = cast(dict[str, Any], result)
 
-    assert result["dispatch_fingerprint"] == "sha256-map"
-    assert result["input_fingerprint"] == "sha256-map"
-    assert result["research_grant_sidecar"] is sidecar
+    assert mapped["dispatch_fingerprint"] == "sha256-map"
+    assert mapped["input_fingerprint"] == "sha256-map"
+    assert mapped["research_grant_sidecar"] is sidecar
 
 
 def test_map_analyst_output_projects_missing_keys_as_none() -> None:
