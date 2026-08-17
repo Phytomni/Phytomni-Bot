@@ -28,3 +28,23 @@ def result_run_root_from_child(child_dir: str) -> str:
     if not marker or not root or _CHILD_SEGMENT.fullmatch(part) is None:
         raise ValueError("output directory is not a result child")
     return root
+
+
+def is_unallocated_default_output_dir(output_dir: str, default: str) -> bool:
+    """Return True when ``output_dir`` is the shared config dump.
+
+    Analyst HTTP and MCP entry points historically seed
+    ``AnalystConfig.OUTPUT_DIR`` (a shared test placeholder) as if it
+    were a caller-allocated run root. Reusing that prefix makes harvest
+    list leftover objects from every prior job that wrote there.
+
+    The default itself and any descendant under it are unallocated.
+    Caller-owned paths outside that prefix stay reusable.
+    """
+    default_root = default.rstrip("/")
+    candidate = output_dir.rstrip("/")
+    if not default_root or not candidate:
+        return False
+    if candidate == default_root:
+        return True
+    return candidate.startswith(f"{default_root}/")

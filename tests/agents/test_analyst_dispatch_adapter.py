@@ -364,9 +364,9 @@ async def test_dispatch_seam_passes_fingerprint_to_output_dir_creator(
         data_list=data_list,
         obs_file_list=None,
     )
-    assert (
-        "fingerprint" in captured
-    ), "ensure_analysis_output_dir was not called or captured no fingerprint"
+    assert "fingerprint" in captured, (
+        "ensure_analysis_output_dir was not called or captured no fingerprint"
+    )
     assert captured["fingerprint"] == expected_fp
 
 
@@ -461,6 +461,94 @@ async def test_standalone_analyst_projects_the_ensured_root_to_first_child(
     )
 
     assert output_dir == "/obs/run-root/children/part-001"
+
+
+async def test_standalone_analyst_ignores_shared_default_output_dir(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The config test dump is not a caller-allocated run root.
+
+    HTTP/MCP Analyst historically seeds ``AnalystConfig.OUTPUT_DIR``.
+    Reusing that prefix makes harvest list leftover objects from every
+    prior job that wrote under the shared test output directory.
+    """
+    captured: dict[str, Any] = {}
+
+    async def ensure_output_dir(*args: Any, **kwargs: Any) -> str:
+        captured["output_dir"] = (
+            kwargs["output_dir"]
+            if "output_dir" in kwargs
+            else args[3]
+            if len(args) > 3
+            else None
+        )
+        return "/obs/run-scoped"
+
+    monkeypatch.setattr(
+        _analyst_graph_mod,
+        "ensure_run_output_dir",
+        ensure_output_dir,
+    )
+    default = "/obs/phytomni/agent_data/test/output"
+    agent = SimpleNamespace(
+        analyst_config=SimpleNamespace(
+            CREATE_DIR=True,
+            OUTPUT_DIR=default,
+        ),
+        sensitive_config=object(),
+    )
+
+    output_dir = await getattr(AnalystGraphMixin, "_submit_output_dir")(
+        agent,
+        {"output_dir": default, "input_fingerprint": ""},
+        RunIdentity.create(user_id="user-http"),
+    )
+
+    assert captured["output_dir"] == ""
+    assert output_dir == "/obs/run-scoped/children/part-001"
+
+
+async def test_standalone_analyst_ignores_default_child_without_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A child under the shared dump is still unallocated unless flagged."""
+    captured: dict[str, Any] = {}
+
+    async def ensure_output_dir(*args: Any, **kwargs: Any) -> str:
+        captured["output_dir"] = (
+            kwargs["output_dir"]
+            if "output_dir" in kwargs
+            else args[3]
+            if len(args) > 3
+            else None
+        )
+        return "/obs/run-scoped"
+
+    monkeypatch.setattr(
+        _analyst_graph_mod,
+        "ensure_run_output_dir",
+        ensure_output_dir,
+    )
+    default = "/obs/phytomni/agent_data/test/output"
+    agent = SimpleNamespace(
+        analyst_config=SimpleNamespace(
+            CREATE_DIR=True,
+            OUTPUT_DIR=default,
+        ),
+        sensitive_config=object(),
+    )
+
+    output_dir = await getattr(AnalystGraphMixin, "_submit_output_dir")(
+        agent,
+        {
+            "output_dir": f"{default}/children/part-001",
+            "input_fingerprint": "",
+        },
+        RunIdentity.create(user_id="user-http"),
+    )
+
+    assert captured["output_dir"] == ""
+    assert output_dir == "/obs/run-scoped/children/part-001"
 
 
 async def test_analyst_rejects_an_invalid_flagged_child() -> None:

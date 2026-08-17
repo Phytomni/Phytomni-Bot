@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from mcp_server_phytomni.runtime.result_run_layout import (
+    is_unallocated_default_output_dir,
     result_child_output_dir,
     result_run_root_from_child,
 )
@@ -46,3 +47,26 @@ def test_result_child_output_dir_rejects_the_upper_bound() -> None:
     )
     with pytest.raises(ValueError, match="invalid result child layout"):
         result_child_output_dir("obs://bucket/run", 199)
+
+
+def test_unallocated_default_covers_the_shared_dump_and_children() -> None:
+    """The config placeholder and its descendants are not run-scoped."""
+    default = "/obs/phytomni/agent_data/test/output"
+    assert is_unallocated_default_output_dir(default, default) is True
+    assert is_unallocated_default_output_dir(f"{default}/", default) is True
+    assert (
+        is_unallocated_default_output_dir(
+            f"{default}/children/part-001",
+            default,
+        )
+        is True
+    )
+    assert (
+        is_unallocated_default_output_dir(
+            "/obs/phytomni/agent_data/users/alice/run-1",
+            default,
+        )
+        is False
+    )
+    assert is_unallocated_default_output_dir("", default) is False
+    assert is_unallocated_default_output_dir(default, "") is False

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...runtime.result_run_layout import is_unallocated_default_output_dir
 from ...runtime.task_dedup import (
     analyst_task_fingerprint,
     mint_caller_owned_task_id,
@@ -24,6 +25,7 @@ from ...runtime.task_dedup import (
 )
 from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
 from ..shared.options import resolve_agent_locale
+from .defaults import ANALYST_CONFIG
 from .submission import _build_submit_agent, _shared_arun_kwargs
 from .task_ops import probe_live_status
 
@@ -73,24 +75,29 @@ async def retrieve_plan_submit(
         fingerprint
     )
     if prior is not None and should_reuse_prior_task(prior["status"] or ""):
-        source_task_id = prior.get("source_task_id") or prior["task_id"]
-        live_status = await probe_live_status(source_task_id)
-        if verify_live_status(
-            prior,
-            live_status=live_status,
-            require_terminal_success=False,
+        prior_output = str(prior.get("output_dir") or "")
+        if not is_unallocated_default_output_dir(
+            prior_output,
+            ANALYST_CONFIG.OUTPUT_DIR,
         ):
-            reused: dict[str, Any] = {
-                "task_id": mint_caller_owned_task_id("analyst"),
-                "output_dir": prior["output_dir"],
-                "job_name": "",
-                "compute_resource": compute_resource,
-                "input_fingerprint": fingerprint,
-                "source_task_id": source_task_id,
-            }
-            if kwargs.get("meta_meta"):
-                reused["meta_meta"] = kwargs["meta_meta"]
-            return reused
+            source_task_id = prior.get("source_task_id") or prior["task_id"]
+            live_status = await probe_live_status(source_task_id)
+            if verify_live_status(
+                prior,
+                live_status=live_status,
+                require_terminal_success=False,
+            ):
+                reused: dict[str, Any] = {
+                    "task_id": mint_caller_owned_task_id("analyst"),
+                    "output_dir": prior["output_dir"],
+                    "job_name": "",
+                    "compute_resource": compute_resource,
+                    "input_fingerprint": fingerprint,
+                    "source_task_id": source_task_id,
+                }
+                if kwargs.get("meta_meta"):
+                    reused["meta_meta"] = kwargs["meta_meta"]
+                return reused
 
     agent, output_dir, compute_resource, thread_id = _build_submit_agent(
         kwargs,

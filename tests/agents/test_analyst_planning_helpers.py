@@ -262,3 +262,40 @@ async def test_fresh_submit_overrides_arun_input_fingerprint(
     assert result["input_fingerprint"] != "AGENT-SHOULD-NOT-WIN"
     # SHA-256 hex digest length pin (mirrors the dedup test invariant).
     assert len(result["input_fingerprint"]) == 64
+
+
+async def test_dedup_hit_skips_shared_default_output_dir(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A prior row that wrote into the shared test dump must resubmit.
+
+    Reusing that prefix would harvest leftover objects from every other
+    job that landed in ``AnalystConfig.OUTPUT_DIR``.
+    """
+    _patch_prior(
+        monkeypatch,
+        {
+            "task_id": "prior-dump",
+            "output_dir": (
+                "/obs/phytomni/agent_data/test/output/children/part-001"
+            ),
+            "status": "succeeded",
+        },
+    )
+    _stub_probe(monkeypatch, "SUCCEEDED")
+    captured = _patch_submit_agent_capturing(
+        monkeypatch,
+        {"task_id": "fresh-isolated", "output_dir": "/obs/run-scoped"},
+    )
+
+    result = await retrieve_plan_submit(
+        goal_description="Count the rows in the uploaded table",
+        data_list={"/obs/lines.tsv": "table"},
+    )
+
+    assert result["task_id"] == "fresh-isolated"
+    assert result["output_dir"] == "/obs/run-scoped"
+    assert "source_task_id" not in result
+    assert captured["arun_kwargs"]["goal_description"] == (
+        "Count the rows in the uploaded table"
+    )

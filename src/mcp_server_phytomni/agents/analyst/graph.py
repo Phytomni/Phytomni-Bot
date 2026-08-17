@@ -39,6 +39,7 @@ from ...runtime.outbound import (
     current_outbound_http_client,
 )
 from ...runtime.result_run_layout import (
+    is_unallocated_default_output_dir,
     result_child_output_dir,
     result_run_root_from_child,
 )
@@ -187,6 +188,11 @@ class AnalystGraphMixin:
             return output_dir
         if not self.analyst_config.CREATE_DIR:
             return output_dir
+        if is_unallocated_default_output_dir(
+            output_dir,
+            str(getattr(self.analyst_config, "OUTPUT_DIR", "") or ""),
+        ):
+            output_dir = ""
         fingerprint = state.get("input_fingerprint") or ""
         run_root = output_dir
         if output_dir:
