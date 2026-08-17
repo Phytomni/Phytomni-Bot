@@ -116,6 +116,38 @@ def test_default_error_classifier_uses_only_exception_type() -> None:
         "invalid_stage_input",
         400,
     )
+    assert classify_stage_error(ConnectionError("PRIVATE-PAYLOAD")) == (
+        "upstream_unavailable",
+        502,
+    )
+    assert classify_stage_error(RuntimeError("PRIVATE-PAYLOAD")) == (
+        "stage_failed",
+        500,
+    )
+
+
+def test_stage_failure_from_exception_walks_cause_and_groups() -> None:
+    """Attached stage metadata is recovered from cause and exception groups."""
+    from mcp_server_phytomni.runtime.stage_trace import (
+        _STAGE_FAILURE_ATTRIBUTE,
+        stage_failure_from_exception,
+    )
+
+    inner = RuntimeError("inner")
+    setattr(inner, _STAGE_FAILURE_ATTRIBUTE, ("database_query", "upstream_failed", 502))
+    outer = RuntimeError("outer")
+    outer.__cause__ = inner
+    assert stage_failure_from_exception(outer) == (
+        "database_query",
+        "upstream_failed",
+        502,
+    )
+    grouped = ExceptionGroup("stages", [ValueError("x"), inner])
+    assert stage_failure_from_exception(grouped) == (
+        "database_query",
+        "upstream_failed",
+        502,
+    )
 
 
 async def test_stage_trace_preserves_order_and_sanitizes_labels() -> None:

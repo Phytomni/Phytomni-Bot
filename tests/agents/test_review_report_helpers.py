@@ -23,9 +23,30 @@ from mcp_server_phytomni.agents.review.report import (
     SupplementaryCounters,
     SupplementaryFormatState,
     SupplementaryResultContext,
+    _partition_add_query_results,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_partition_add_query_results_separates_failures() -> None:
+    """Protocol errors become None slots; cancellations still propagate."""
+    valid = [
+        {
+            "chunk_id": "c1",
+            "title": "t",
+            "content": "body",
+        }
+    ]
+    docs, failures = _partition_add_query_results(
+        [valid, RuntimeError("hidden"), "not-docs"]
+    )
+    assert failures == 2
+    assert docs[0] == valid
+    assert docs[1] is None
+    assert docs[2] is None
+    with pytest.raises(KeyboardInterrupt):
+        _partition_add_query_results([KeyboardInterrupt()])
 
 
 def test_supplementary_counters_defaults_to_zero() -> None:
