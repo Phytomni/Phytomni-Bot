@@ -15,6 +15,25 @@ Newest first.
 
 ______________________________________________________________________
 
+## [Unreleased]
+
+Operator-visible changes on `release/0.1.4` since 0.1.3. The installed
+package version remains `0.1.3` until the release bump.
+
+### Changed
+
+- **Compute tiers** — `AnalystConfig.RESOURCE` medium is now 4C/16G
+  (was 8G). Submit sites resolve `small` / `medium` / `large` through
+  `resolve_compute_resource`; InSilicoResearch defaults to `medium`.
+- **Outbound example budgets** — `config/.env.example` sets LLM 32,
+  retrieval/rerank/NL2SQL 16, and SPA FAQ 4. Other pools stay `0`
+  (unlimited per process). Restart the process to apply.
+- **A2UI** — Chat and Review widgets are always on. There is no
+  `A2UI_ENABLED` field; a leftover `PHYTOMNI_A2UI_ENABLED=0` is ignored.
+- **Review manuscript** — Review plans argument-led sections, drops
+  off-domain papers, writes claim-led subsections, and assembles
+  Abstract / Introduction / Conclusions. Citation delivery is unchanged.
+
 ## [0.1.3] — 2026-07-17
 
 Cross-surface capability and lifecycle release. It preserves the 0.1.2

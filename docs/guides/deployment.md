@@ -21,18 +21,21 @@ databases, local SQLite registries, or local virtual environments.
 
 ## Upgrading an existing deployment
 
-For the `0.1.2` → `0.1.3` rollout, follow the complete
-[Upgrade Notes](../ops/upgrading.md) before replacing the running wheel or
-image. It covers the stop-before-backup sequence, version/OpenAPI smoke,
-native `/v1/agents` capability discovery, additive SQLite state, and rollback
-ordering. The [HTTP API Operations Runbook](../ops/http-api-runbook.md) remains
-the source for health checks, feature-specific smoke tests, and multi-worker
+For the current `release/0.1.4` tree, start at
+[Upgrade Notes — 0.1.3 → current](../ops/upgrading.md). For a jump from
+`0.1.2`, follow the complete 0.1.2 → 0.1.3 sequence in the same file
+before replacing the running wheel or image. It covers the
+stop-before-backup sequence, version/OpenAPI smoke, native `/v1/agents`
+capability discovery, additive SQLite state, and rollback ordering. The
+[HTTP API Operations Runbook](../ops/http-api-runbook.md) remains the
+source for health checks, feature-specific smoke tests, and multi-worker
 limitations.
 
-The 0.1.3 A2UI, A2A, outbound interop, explicit memory, and credential-relay
-surfaces remain disabled by default. A Bot-local gate does not close Web/Go,
-DBA, operations, live-backend, or production acceptance; enable a surface
-only after its owner returns the corresponding redacted evidence.
+A2UI Chat/Review widgets are always on. A2A, outbound interop, explicit
+memory, and credential-relay remain disabled by default. A Bot-local
+gate does not close Web/Go, DBA, operations, live-backend, or production
+acceptance; enable an opt-in surface only after its owner returns the
+corresponding redacted evidence.
 
 ## Outbound Interoperability Trust Boundary
 

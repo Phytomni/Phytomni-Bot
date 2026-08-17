@@ -194,7 +194,7 @@ synthetic frame, while disconnecting after `RunFinished` preserves success.
 See [SSE Streaming](docs/reference/http-api.md#sse-streaming) for the
 redaction and operator-smoke contract.
 
-### Capability Boundary in 0.1.3
+### Capability Boundary
 
 The Bot-side implementation for the 14 dependency-underutilization items is
 complete on the `0.1.3` release branch: six gate rules, four reliability
@@ -495,7 +495,8 @@ for the approval and remediation contract.
   demo fixtures, E2E commands, and troubleshooting.
 - [STYLE.md](STYLE.md): naming, docstrings, imports, compatibility rules,
   and repository-specific code style.
-- [CHANGELOG.md](CHANGELOG.md): dated release history (0.1.0–0.1.3).
+- [CHANGELOG.md](CHANGELOG.md): dated release history (0.1.0–0.1.3 plus
+  Unreleased).
 - [CONTRIBUTING.md](CONTRIBUTING.md): setup, local gate, test markers,
   commit convention, and dependency policy.
 - [SECURITY.md](SECURITY.md): supported versions, vulnerability

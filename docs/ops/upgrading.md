@@ -3,6 +3,24 @@
 Operator upgrade manuals per release. See [CHANGELOG](../../CHANGELOG.md)
 for the full change list.
 
+## 0.1.3 → current (`release/0.1.4`)
+
+The installed package version is still `0.1.3`. This section covers the
+operator-visible work on `release/0.1.4` since that tag. There is **no
+required new secret**.
+
+- Outbound pool variables were already required. `config/.env.example`
+  now seeds LLM 32, retrieval/rerank/NL2SQL 16, and SPA FAQ 4. Restart
+  each API or MCP process after changing a capacity.
+- A2UI has no flag. A leftover `PHYTOMNI_A2UI_ENABLED=0` does nothing.
+- Compute CPU/memory sizes and per-agent defaults are in
+  [Configuration — Compute resource tiers](../reference/configuration.md#compute-resource-tiers).
+  Research submissions now default to `medium` (4C/16G).
+
+Keep the 0.1.2 → 0.1.3 sequence below for a jump from 0.1.2, including
+`/openapi.json`, `/v1/agents`, `checkpoints.db`, and capability
+discovery.
+
 ## 0.1.2 → 0.1.3
 
 ### Nature of This Release
