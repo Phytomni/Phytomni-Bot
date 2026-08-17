@@ -63,7 +63,7 @@ async def enabled_context_client(
 async def test_review_invalid_private_marker_fails_closed(context_client):
     """A non-mapping private marker cannot be promoted."""
     client, key, store = context_client
-    _stage_turn(store, review_metadata="not-a-mapping")
+    _stage_turn(store, review_metadata=cast(Any, "not-a-mapping"))
     response = await client.post(
         "/v1/conversation-context/settle",
         headers=_headers(key),
@@ -131,11 +131,13 @@ async def test_review_ack_false_and_missing_callback(monkeypatch, tmp_path):
         turn_id="1",
         ledger_version=_LEDGER_VERSION,
     )
+    staged = store.load_turn(str(_CONVERSATION_KEY), "1")
+    assert staged is not None
     with pytest.raises(conversation_context.HTTPException) as missing:
         await conversation_context._acknowledge_review_settlement(
             str(_CONVERSATION_KEY),
             payload,
-            store.load_turn(str(_CONVERSATION_KEY), "1"),
+            staged,
             deps,
         )
     assert missing.value.status_code == 503
