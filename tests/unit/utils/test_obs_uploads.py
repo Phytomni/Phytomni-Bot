@@ -550,8 +550,8 @@ def test_convert_multi_files_uses_process_pool(
         def __enter__(self) -> Self:
             return self
 
-        def __exit__(self, *_args: object) -> bool:
-            return False
+        def __exit__(self, *_args: object) -> None:
+            return None
 
         def map(self, fn: Any, items: list[str]) -> list[str]:
             """Apply ``fn`` to each item in-process."""

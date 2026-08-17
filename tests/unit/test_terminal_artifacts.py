@@ -371,11 +371,14 @@ async def test_structured_listing_truncates_and_sync_manifest_loader() -> None:
             _listed_object("c.md"),
         ]
 
+    def _sync_loader(_path: str) -> None:
+        return None
+
     result = await collect_terminal_artifact_set(
         task_id="task-1",
         output_dir="owner/out",
         lister=many,
-        manifest_loader=lambda _path: None,
+        manifest_loader=cast(Any, _sync_loader),
         cap=1,
     )
     assert result.artifacts[0].relative_path == "a.md"
@@ -408,7 +411,7 @@ async def test_manifest_loader_exception_fails_closed() -> None:
 def test_structured_collect_requires_task_identity() -> None:
     """Structured collection without task_id and output_dir fails fast."""
     with pytest.raises(ValueError, match="task_id and output_dir"):
-        collect_terminal_artifacts(lister=lambda _path: [])
+        collect_terminal_artifacts(task_id="task-1", output_dir="")
 
 
 @pytest.mark.asyncio
@@ -442,10 +445,14 @@ async def test_default_listers_use_storage_helpers(
     ]
     enumerated = await terminal_artifacts.enumerate_artifact_paths(live)
     assert enumerated[0]["artifact_paths"] == ["owner/out/report.md"]
+
+    async def _loader(_path: str) -> None:
+        return None
+
     artifact_set = await terminal_artifacts.collect_terminal_artifact_set(
         task_id="t1",
         output_dir="owner/out",
-        manifest_loader=lambda _path: None,
+        manifest_loader=_loader,
     )
     assert artifact_set.artifacts[0].relative_path == "report.md"
 

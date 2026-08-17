@@ -97,8 +97,9 @@ def test_default_root_factory_keeps_empty_remote_inspection_inputs(
     }
 
     resolve_descriptions = request.dependencies.resolve_descriptions
+    plan_builder = request.dependencies.plan_builder
     assert resolve_descriptions is not None
-    assert request.dependencies.plan_builder is not None
+    assert plan_builder is not None
 
     async def check_resolution() -> None:
         assert await resolve_descriptions(request) is None
@@ -195,7 +196,7 @@ def test_direct_goal_downloader_and_converter_branches(
 
     asyncio.run(_extract())
     downloader = research_root._ManagedDocumentDownloader(
-        SimpleNamespace(BUCKET_NAME="research-bucket")
+        cast(Any, SimpleNamespace(BUCKET_NAME="research-bucket"))
     )
     entry = SimpleNamespace(exact_reference="obs://research-bucket/a.pdf")
     assert (
@@ -320,10 +321,14 @@ def test_root_factory_closures_and_managed_resolver_bind(
         research_root, "revalidate_research_inventory", _revalidate
     )
     monkeypatch.setattr(research_root, "build_research_plan", _plan)
+
+    def _resolver_factory() -> object:
+        bound["factory"] = True
+        return object()
+
     factory = research_root.build_default_research_root_request_factory(
         metadata_port=cast(Any, _MetadataPort()),
-        asset_resolver_factory=lambda: bound.setdefault("factory", True)
-        or object(),
+        asset_resolver_factory=_resolver_factory,
     )
     request = factory(
         cast(
@@ -340,26 +345,26 @@ def test_root_factory_closures_and_managed_resolver_bind(
     )
     assert bound["factory"] is True and bound["resolver"]["owner"] == "owner-1"
 
+    build_inventory = request.dependencies.build_inventory
+    extract_evidence = request.dependencies.extract_evidence
+    revalidate_inventory = request.dependencies.revalidate_inventory
+    plan_builder = request.dependencies.plan_builder
+    assert build_inventory is not None
+    assert extract_evidence is not None
+    assert revalidate_inventory is not None
+    assert plan_builder is not None
+
     async def _run() -> None:
+        assert await build_inventory(request) == "inventory"
+        assert await extract_evidence(request) == "evidence"
+        assert await revalidate_inventory(request) == "revalidated"
         assert (
-            await request.dependencies.build_inventory(request) == "inventory"
-        )
-        assert (
-            await request.dependencies.extract_evidence(request) == "evidence"
-        )
-        assert (
-            await request.dependencies.revalidate_inventory(request)
-            == "revalidated"
-        )
-        assert (
-            await request.dependencies.plan_builder(
+            await plan_builder(
                 SimpleNamespace(effective_query="  Analyze genes.  "), request
             )
             == "plan"
         )
-        await request.dependencies.plan_builder(
-            SimpleNamespace(effective_query="   "), request
-        )
+        await plan_builder(SimpleNamespace(effective_query="   "), request)
         assert (
             captured["plan"][1].goal == "Analyze the supplied research inputs."
         )

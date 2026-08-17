@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import httpx
 import pytest
@@ -25,6 +26,7 @@ from mcp_server_phytomni.runtime.memory import (
     MemoryConflictError,
     MemoryNotFoundError,
     MemoryPolicyError,
+    MemoryStore,
     MemoryStoreError,
 )
 
@@ -354,17 +356,19 @@ class _ConfigurableMemoryStore:
         self._raise()
         return _FakeMemoryRecord()
 
-    def list(self, _owner: str, **_kwargs: object) -> list[_FakeMemoryRecord]:
+    def list(
+        self, _owner: str, **_kwargs: object
+    ) -> Sequence[_FakeMemoryRecord]:
         """Return an empty list after optional injected failure."""
         self._raise()
         return []
 
-    def export(self, _owner: str) -> list[_FakeMemoryRecord]:
+    def export(self, _owner: str) -> Sequence[_FakeMemoryRecord]:
         """Return an empty export after optional injected failure."""
         self._raise()
         return []
 
-    def list_audit(self, **_kwargs: object) -> list[object]:
+    def list_audit(self, **_kwargs: object) -> Sequence[object]:
         """Return an empty audit list after optional injected failure."""
         self._raise()
         return []
@@ -386,7 +390,7 @@ class _ConfigurableMemoryStore:
 
 
 def _isolated_memory_app(
-    *, store: object, current_user: object = "alice"
+    *, store: object, current_user: str | None = "alice"
 ) -> FastAPI:
     def _revision(value: str | None, *, required: bool) -> int | None:
         if value is None or not str(value).strip():
@@ -397,7 +401,7 @@ def _isolated_memory_app(
     memory.register_memory_routes(
         app,
         memory.MemoryRouteDependencies(
-            get_store=lambda: store,
+            get_store=lambda: cast(MemoryStore, store),
             auth=memory.MemoryAuthDependencies(
                 require_agents=lambda: None, require_service=lambda: None
             ),

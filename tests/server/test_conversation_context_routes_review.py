@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 import pytest
@@ -213,7 +213,11 @@ def _settlement_request() -> Any:
     )
 
 
-def _stored_turn(*, state: str, metadata: dict[str, object]) -> StoredTurn:
+def _stored_turn(
+    *,
+    state: Literal["in_progress", "staged", "committed", "failed"],
+    metadata: dict[str, object],
+) -> StoredTurn:
     """Build one stored turn for Review preflight tests."""
     return StoredTurn(
         conversation_key=str(_CONVERSATION_KEY),

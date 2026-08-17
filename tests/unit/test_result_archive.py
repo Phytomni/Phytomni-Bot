@@ -554,7 +554,7 @@ def test_validate_inventory_and_member_helpers() -> None:
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
         result_archive._validate_member_scalars(
             ResultArchiveMember(
-                True,  # type: ignore[arg-type]
+                True,
                 "/obs/x",
                 "results/part-001/a.md",
                 ArtifactRole.SCIENTIFIC_DATA,
@@ -603,7 +603,7 @@ def test_validate_inventory_and_member_helpers() -> None:
                 "results/part-001/a.md",
                 ArtifactRole.SCIENTIFIC_DATA,
                 "text/plain",
-                True,  # type: ignore[arg-type]
+                True,
             )
         )
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):

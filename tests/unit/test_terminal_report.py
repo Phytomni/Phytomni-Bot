@@ -835,6 +835,10 @@ async def test_generated_report_rejects_operational_echo() -> None:
             summarizer=summarizer,
         )
         assert result.report.state == "degraded"
+
+    async def _secret_summarizer(_prompt: str) -> str:
+        return "mentions secret-source-path"
+
     mapping_result = await assemble_terminal_report(
         context=_report_context(),
         artifacts=(
@@ -845,7 +849,7 @@ async def test_generated_report_rejects_operational_echo() -> None:
             },
         ),
         reader=reader,
-        summarizer=lambda _prompt: "mentions secret-source-path",
+        summarizer=_secret_summarizer,
     )
     assert mapping_result.report.state == "degraded"
 
