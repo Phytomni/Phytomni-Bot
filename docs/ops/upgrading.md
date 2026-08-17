@@ -7,12 +7,13 @@ for the full change list.
 
 ### Nature of This Release
 
-0.1.3 adds persistent Review interrupt/resume, flag-gated A2UI Chat/Review
-widgets, shared graph progress on HTTP SSE and MCP stdio, richer CLI output,
-and the remaining dependency-audit hardening. There is **no required new
-secret or environment variable** for this upgrade. `A2UI_ENABLED` /
-`PHYTOMNI_A2UI_ENABLED` remains false unless an operator explicitly enables
-it.
+0.1.3 adds persistent Review interrupt/resume, A2UI Chat/Review widgets
+that shipped flag-gated, shared graph progress on HTTP SSE and MCP stdio,
+richer CLI output, and the remaining dependency-audit hardening. There is
+**no required new secret or environment variable** for this upgrade. The
+current tree has no `A2UI_ENABLED` / `PHYTOMNI_A2UI_ENABLED` field; Chat
+and Review A2UI surfaces are always on. A leftover `PHYTOMNI_A2UI_ENABLED=0`
+in an old environment file has no effect.
 
 The release also adds bounded, default-safe API limits for explicit memory,
 outbound interop, and A2A projections. They are optional tuning knobs, not
@@ -121,10 +122,11 @@ means restart each API worker after the environment change; the relay flag is
 the one exception because it is evaluated per request.
 
 - **Surface:** A2UI Chat/Review
-  **0.1.3 default:** Off
+  **0.1.3 default:** Off (flag-gated at ship)
+  **Current tree:** Always on; no `A2UI_ENABLED` field
   **Persistent state:** `server_tasks.db`, `checkpoints.db`
-  **Flag-off rollback:** Disable and restart; drain or abandon paused A2UI runs
-  first.
+  **Flag-off rollback:** Not available on the current tree. Drain or abandon
+  paused A2UI runs before a rollback to 0.1.3.
   **Multi-worker limitation:** Checkpoint file is local; pin resume traffic to
   one worker.
 

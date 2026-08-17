@@ -182,7 +182,9 @@ operator's OBS relay confines each key to its own tenant namespace). See
 
 - **Variable:** `SPA_FAQ_URL`
   **Aliased as:** `PHYTOMNI_SPA_FAQ_URL`
-  **Purpose:** SPA-faq lookup template; expects `{repo_id}` substitution.
+  **Purpose:** Species-taxonomy FAQ template (Latin name to NCBI taxid) used
+  by Evolution and DeepGenome; expects `{repo_id}` substitution. Not a web
+  single-page app.
 
 - **Variable:** `DATABASE_URL`
   **Aliased as:** `PHYTOMNI_DATABASE_URL`
@@ -230,7 +232,8 @@ operator's OBS relay confines each key to its own tenant namespace). See
 
 - **Variable:** `SPA_REPO_ID`
   **Aliased as:** `PHYTOMNI_SPA_REPO_ID`
-  **Purpose:** DeepGenome SPA-repo UUID feeding into `SPA_FAQ_URL`.
+  **Purpose:** Species-taxonomy FAQ repository UUID substituted into
+  `SPA_FAQ_URL` for Evolution and DeepGenome.
 
 - **Variable:** `APP_ID`
   **Aliased as:** `PHYTOMNI_APP_ID`

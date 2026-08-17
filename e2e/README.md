@@ -194,7 +194,7 @@ The Web cutover smoke set covers, beyond the four chat completions:
   on `phyto-chat` returns `text/event-stream` with `data: {...}\n\n`
   frames and a terminal `data: [DONE]`.
 - `test_stream_true_accepts_graph_models` — Knowledge and BriefGene accept
-  an SSE handshake; Review uses its separate A2UI flag-gated path.
+  an SSE handshake; Review uses its separate always-on A2UI path.
 - `test_runs_history_self_query_by_dialogue_id` — chat with
   `dialogue_id` persists into `runs` and surfaces via
   `GET /v1/runs?dialogue_id=`.
