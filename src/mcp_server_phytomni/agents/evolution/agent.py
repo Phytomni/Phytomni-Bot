@@ -25,7 +25,7 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 from ...auth.iam import get_token
 from ...common.prompts import get_prompt
 from ...common.relay_client import RelayRequestOptions, current_relay_client
-from ...config.defaults import DeepGenomeConfig
+from ...config.defaults import DeepGenomeConfig, resolve_compute_resource
 from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
 from ...graphs.chat_adapters import invoke_chat_content
@@ -87,7 +87,9 @@ def evolution_submit_kwargs(
         sensitive.obs_credentials(),
         SubmitKwargsSpec(
             task_name="evolution-agents-evo-task",
-            compute_resource="medium",
+            compute_resource=resolve_compute_resource(
+                DEEP_GENOME_CONFIG, "evolution_analysis"
+            ),
             is_create_dir=False,
             enable_auto_select=enable_auto_select,
         ),

@@ -19,7 +19,7 @@ from functools import lru_cache
 from typing import Any
 
 from ...common.prompts import get_prompt, load_text_file
-from ...config.defaults import EnvironmentConfig
+from ...config.defaults import EnvironmentConfig, resolve_compute_resource
 from ...config.settings import get_sensitive_config
 from ...graphs.chat_adapters import invoke_chat_content
 from ...runtime.langgraph_runner import ainvoke_graph
@@ -69,7 +69,7 @@ def environment_submit_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
         sensitive.obs_credentials(),
         SubmitKwargsSpec(
             task_name="environment-agents-vci-task",
-            compute_resource="large",
+            compute_resource=resolve_compute_resource(ENVIRONMENT_CONFIG),
         ),
     )
 

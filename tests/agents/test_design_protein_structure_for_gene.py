@@ -60,8 +60,8 @@ async def test_request_shape_targets_protein_structure_analysis(
 ) -> None:
     """Request dict pins protein_structure_analysis at medium compute.
 
-    Compute tier 'medium' is hardcoded by the design producer wrapper
-    ``protein_structure_for_gene``.
+    The wrapper reads DigitalDesignConfig.COMPUTE_RESOURCE_BY_TYPE
+    rather than a submit-site literal.
     """
     submit_mock = install_design_dependencies(
         monkeypatch,

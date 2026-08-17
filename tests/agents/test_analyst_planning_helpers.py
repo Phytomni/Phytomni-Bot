@@ -99,7 +99,7 @@ def _stub_probe(monkeypatch: pytest.MonkeyPatch, status: str) -> None:
 async def test_dedup_hit_uses_small_compute_resource_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Reuse branch falls back to ``compute_resource='small'`` when omitted."""
+    """Reuse branch falls back to AnalystConfig.COMPUTE_RESOURCE when omitted."""
     _patch_prior(
         monkeypatch,
         {

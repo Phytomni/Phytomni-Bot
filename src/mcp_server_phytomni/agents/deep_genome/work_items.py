@@ -14,6 +14,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from ...config.defaults import DeepGenomeConfig, resolve_compute_resource
+
 
 @dataclass(frozen=True)
 class WorkItemSpec:
@@ -32,44 +34,19 @@ class WorkItemSpec:
 # a second hard-coded task list in the graph dispatch node.  Design's two
 # concrete jobs intentionally share the one logical ``digital_design``
 # section and retain their producer-specific analysis type.
-_WORK_ITEM_DEFINITIONS: tuple[tuple[str, str, str, str], ...] = (
-    ("evolution_analysis", "evolution_analysis", "medium", "original"),
-    (
-        "gene_expression_tissues",
-        "gene_expression_tissues",
-        "small",
-        "resolved",
-    ),
-    (
-        "gene_expression_cultivars",
-        "gene_expression_cultivars",
-        "small",
-        "resolved",
-    ),
-    (
-        "gene_expression_treatments",
-        "gene_expression_treatments",
-        "small",
-        "resolved",
-    ),
-    (
-        "gene_expression_genotypes",
-        "gene_expression_genotypes",
-        "small",
-        "resolved",
-    ),
-    ("single_cell_analysis", "single_cell_analysis", "small", "original"),
-    ("promoter_analysis", "promoter_analysis", "small", "original"),
-    ("smep_analysis", "smep_analysis", "small", "original"),
-    ("smoc_analysis", "smoc_analysis", "small", "original"),
-    (
-        "protein_structure_analysis",
-        "protein_structure_analysis",
-        "medium",
-        "original",
-    ),
-    ("digital_design", "protein_design", "medium", "original"),
-    ("digital_design", "promoter_design", "small", "original"),
+_WORK_ITEM_DEFINITIONS: tuple[tuple[str, str, str], ...] = (
+    ("evolution_analysis", "evolution_analysis", "original"),
+    ("gene_expression_tissues", "gene_expression_tissues", "resolved"),
+    ("gene_expression_cultivars", "gene_expression_cultivars", "resolved"),
+    ("gene_expression_treatments", "gene_expression_treatments", "resolved"),
+    ("gene_expression_genotypes", "gene_expression_genotypes", "resolved"),
+    ("single_cell_analysis", "single_cell_analysis", "original"),
+    ("promoter_analysis", "promoter_analysis", "original"),
+    ("smep_analysis", "smep_analysis", "original"),
+    ("smoc_analysis", "smoc_analysis", "original"),
+    ("protein_structure_analysis", "protein_structure_analysis", "original"),
+    ("digital_design", "protein_design", "original"),
+    ("digital_design", "promoter_design", "original"),
 )
 
 
@@ -98,7 +75,6 @@ def build_work_item_plan(
     for display_order, (
         section_key,
         work_item_key,
-        compute_resource,
         target_kind,
     ) in enumerate(_WORK_ITEM_DEFINITIONS):
         target_gene = (
@@ -119,7 +95,9 @@ def build_work_item_plan(
                 work_item_key=work_item_key,
                 analysis_type=analysis_type,
                 display_order=display_order,
-                compute_resource=compute_resource,
+                compute_resource=resolve_compute_resource(
+                    DeepGenomeConfig, analysis_type
+                ),
                 target_gene=target_gene,
                 species_code=species_code,
             )

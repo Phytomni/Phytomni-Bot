@@ -4,8 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Helper-method tests for agents/design/agent.
 
-Pin the compute-resource tier mapping (``protein_design_analysis``
-gets ``"medium"``; everything else gets ``"small"``) and the
+Pin the compute-resource tier mapping from DigitalDesignConfig
+(``protein_design_analysis`` and ``protein_structure_analysis`` use
+``medium``; everything else uses the config default) and the
 ``_analysis_prompt_parts`` guard that raises ``ValueError`` on an
 unknown analysis type before any prompt lookup.
 """
@@ -63,7 +64,7 @@ def _build_agent() -> DigitalDesignAgents:
 
 
 def test_get_compute_resource_protein_design_returns_medium() -> None:
-    """Protein design is the only documented medium-tier analysis."""
+    """Protein design reads the medium tier from DigitalDesignConfig."""
     agent = _build_agent()
 
     assert (
@@ -73,7 +74,7 @@ def test_get_compute_resource_protein_design_returns_medium() -> None:
 
 
 def test_get_compute_resource_unknown_falls_back_to_small() -> None:
-    """Every other analysis type stays on the small tier by default."""
+    """Unmapped analysis types use DigitalDesignConfig.COMPUTE_RESOURCE."""
     agent = _build_agent()
 
     get_resource = getattr(agent, "_get_compute_resource")

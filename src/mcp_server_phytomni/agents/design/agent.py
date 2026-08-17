@@ -27,7 +27,10 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command, interrupt
 
 from ...common.prompts import get_prompt
-from ...config.defaults import DigitalDesignConfig
+from ...config.defaults import (
+    DigitalDesignConfig,
+    resolve_compute_resource,
+)
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...interop.planner import InteropMode
 from ...runtime.langgraph_runner import ensure_checkpointer
@@ -417,10 +420,9 @@ class DigitalDesignAgents:
         self, analysis_type: str
     ) -> Literal["small", "medium", "large"]:
         """Determine compute resource level based on analysis type."""
-        medium_compute_types = {"protein_design_analysis"}
-        if analysis_type in medium_compute_types:
-            return "medium"
-        return "small"
+        return resolve_compute_resource(
+            self.digital_design_config, analysis_type
+        )
 
     def _design_interop_task(
         self,
@@ -914,7 +916,6 @@ async def protein_structure_for_gene(
                 analysis_type="protein_structure_analysis",
                 goal_path="user/structure_analysis",
                 meta_path="user/structure_analysis_meta",
-                compute_resource="medium",
             ),
             output_dir=output_dir,
             is_polling=is_polling,
@@ -939,7 +940,6 @@ async def promoter_design_for_gene(
                 analysis_type="promoter_analysis",
                 goal_path="user/promoter_analysis",
                 meta_path="user/promoter_analysis_meta",
-                compute_resource="small",
             ),
             output_dir=output_dir,
             is_polling=is_polling,

@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from ...config.defaults import resolve_compute_resource
 from ...runtime.locale import (
     SupportedLocale,
     current_effective_locale,
@@ -238,7 +239,8 @@ def build_submit_kwargs(
             kwargs.get("resource_dict"), config.RESOURCE
         ),
         "app_id_dict": dict(kwargs.get("app_id_dict") or config.APP_ID),
-        "compute_resource": spec.compute_resource,
+        "compute_resource": spec.compute_resource
+        or resolve_compute_resource(config),
         "timeout": kwargs.get("timeout", config.TIMEOUT),
         "retriable_codes": retry_codes_from_kwargs(kwargs, config),
         "max_retries": kwargs.get("max_retries", config.MAX_RETRIES),

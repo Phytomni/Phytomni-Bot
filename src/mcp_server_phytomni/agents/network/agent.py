@@ -22,7 +22,7 @@ from typing import (
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from ...common.prompts import get_prompt
-from ...config.defaults import GeneNetworkConfig
+from ...config.defaults import GeneNetworkConfig, resolve_compute_resource
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...runtime.langgraph_runner import ensure_checkpointer
@@ -311,7 +311,7 @@ class GeneNetworkAgents:
         self, _analysis_type: str
     ) -> Literal["small", "medium", "large"]:
         """Determine compute resource level based on analysis type."""
-        return "small"
+        return resolve_compute_resource(self.gene_network_config)
 
     async def prepare_tasks(self, state: GeneNetworkState) -> dict:
         """Prepare the list of network analysis tasks.

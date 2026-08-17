@@ -14,8 +14,9 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Literal, NamedTuple
+from typing import Any, NamedTuple
 
+from ...config.defaults import resolve_compute_resource
 from ..shared.remote_analysis import (
     RemoteAnalysisPrompt,
     RemoteAnalysisRequest,
@@ -28,7 +29,6 @@ class _DesignAnalysisSpec(NamedTuple):
     analysis_type: str
     goal_path: str
     meta_path: str
-    compute_resource: Literal["small", "medium", "large"]
 
 
 @dataclass(frozen=True)
@@ -84,7 +84,9 @@ async def submit_design_analysis(
             meta=meta,
             data_list=data_list,
         ),
-        compute_resource=request.spec.compute_resource,
+        compute_resource=resolve_compute_resource(
+            dependencies.config, request.spec.analysis_type
+        ),
     )
     return await dependencies.submit_remote_analysis(
         dependencies.analyst_factory(

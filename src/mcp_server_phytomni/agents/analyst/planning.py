@@ -97,7 +97,9 @@ async def retrieve_plan_submit(
         live-status probe, so the caller polls a row they own while the
         prior remote task stays the data source.
     """
-    compute_resource = kwargs.get("compute_resource", "small")
+    compute_resource = kwargs.get(
+        "compute_resource", ANALYST_CONFIG.COMPUTE_RESOURCE
+    )
     fingerprint = analyst_task_fingerprint(
         goal_description=goal_description,
         data_list=data_list,

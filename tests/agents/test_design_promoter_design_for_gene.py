@@ -57,8 +57,8 @@ async def test_request_shape_targets_promoter_analysis(
 ) -> None:
     """Request dict pins promoter_analysis at small compute tier.
 
-    Compute tier 'small' is hardcoded by the design producer wrapper
-    ``promoter_design_for_gene``.
+    Compute tier comes from DigitalDesignConfig.COMPUTE_RESOURCE
+    because promoter analysis is not in COMPUTE_RESOURCE_BY_TYPE.
     """
     submit_mock = install_design_dependencies(
         monkeypatch,

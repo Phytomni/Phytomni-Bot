@@ -19,6 +19,7 @@ from typing import Any, NamedTuple
 from langgraph.types import Send
 
 from ...common.prompts import get_prompt
+from ...config.defaults import DeepGenomeConfig, resolve_compute_resource
 from ..shared.analysis_storage import ANALYSIS_DATA_LIST_MAP, get_data_list
 from .coordinator import DeepGenomeWorkflowError, workflow_outcome_for_state
 
@@ -237,7 +238,12 @@ def build_analysis_prompt_parts(
     data_list = data_loader(data_file, data_json_path, context.species_code)
     if sub_title:
         data_list = data_list[sub_title]
-    return goal_description, data_list, meta, "small"
+    return (
+        goal_description,
+        data_list,
+        meta,
+        resolve_compute_resource(DeepGenomeConfig, analysis_type),
+    )
 
 
 def target_file_features(analysis_type: str) -> list[str]:
