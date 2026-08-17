@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Function-cache metadata and path lifecycle helpers."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -50,18 +52,22 @@ def test_check_and_update_meta_clears_on_config_change() -> None:
     calls: list[tuple[str, object]] = []
 
     class _Storage:
-        def get_meta(self, func_id: str) -> tuple[object, bool]:
+        def get_meta(self, _func_id: str) -> tuple[object, bool]:
+            """Return stale metadata so the helper clears the function."""
             return ("old", False)
 
         def set_meta(
             self, func_id: str, key_params: object, compress: bool
         ) -> None:
+            """Record the replacement metadata write."""
             calls.append(("set", (func_id, key_params, compress)))
 
         def delete_func(self, func_id: str) -> None:
+            """Record the function-cache delete."""
             calls.append(("delete", func_id))
 
         def cleanup_func_locks(self, func_id: str) -> None:
+            """Record lock cleanup after the function is deleted."""
             calls.append(("locks", func_id))
 
     lifecycle._check_and_update_meta(
@@ -80,8 +86,12 @@ def test_check_and_update_meta_logs_cache_errors(
     monkeypatch.setattr(lifecycle, "_log_warning", warnings.append)
 
     class _Storage:
-        def get_meta(self, func_id: str) -> None:
+        def get_meta(self, _func_id: str) -> None:
+            """Raise the storage error the helper must swallow."""
             raise CacheError("meta unavailable")
+
+        def close(self) -> None:
+            """Satisfy the pylint public-method floor for this stub."""
 
     lifecycle._check_and_update_meta(
         cast(Storage, _Storage()), "fn", (), False

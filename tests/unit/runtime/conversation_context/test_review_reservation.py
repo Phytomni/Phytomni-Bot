@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Review reservation precondition and marker-state transitions."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import sqlite3

@@ -55,7 +55,11 @@ from .schemas import (
 )
 from .templates import build_choice_template_props, build_form_template_props
 from .translate import action_to_resume_payload
-from .validation import A2uiSurfaceValidationError, validate_a2ui_surface
+from .validation import (
+    A2uiSurfaceValidationError,
+    project_interrupt_surface,
+    validate_a2ui_surface,
+)
 
 __all__ = [
     "A2UI_CATALOG_VERSION",
@@ -91,6 +95,7 @@ __all__ = [
     "match_domain_template",
     "mint_surface_id",
     "next_a2ui_round",
+    "project_interrupt_surface",
     "project_review_confirm",
     "review_action_to_resume",
     "select_chat_a2ui_widget",

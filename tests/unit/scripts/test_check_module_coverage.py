@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Inventory and evaluation helpers for production coverage."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..agents.shared.a2ui import (
     A2uiSurfaceValidationError,
+    project_interrupt_surface,
     project_review_confirm,
     validate_a2ui_surface,
 )
@@ -28,7 +29,7 @@ from ..runtime.deep_genome_store_projection import (
 )
 from ..runtime.execution_defaults import empty_execution_projection
 from ..runtime.locale import SupportedLocale, message_for
-from ..runtime.run_registry_delivery import result_delivery_from_result
+from ..runtime.run_registry_delivery import attach_public_delivery
 from ..runtime.run_registry_models import (
     RESEARCH_FAILURE_CODES,
     RESEARCH_FAILURE_MESSAGES,
@@ -712,11 +713,16 @@ def _canonicalize_input_required(
         raise LifecycleInvariantError(
             SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE
         )
-    projected_interrupt = (
-        _ensure_review_interrupt_surface(interrupt, run_id=request.run_id)
-        if request.agent == "review"
-        else _project_interrupt_surface(interrupt)
-    )
+    try:
+        projected_interrupt = (
+            _ensure_review_interrupt_surface(interrupt, run_id=request.run_id)
+            if request.agent == "review"
+            else project_interrupt_surface(interrupt)
+        )
+    except A2uiSurfaceValidationError as exc:
+        raise LifecycleInvariantError(
+            SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE
+        ) from exc
     validated = build_agent_run_response(
         run_id=request.run_id,
         agent=request.agent,
@@ -977,56 +983,4 @@ def _project_execution(
             execution.get("diagnostics"), ("code", "stage", "retryable")
         ),
     }
-    delivery = _project_delivery(execution)
-    if delivery is not None:
-        projected["delivery"] = delivery
-    return projected
-
-
-def _project_delivery(execution: Mapping[str, Any]) -> dict[str, Any] | None:
-    """Return the public archive-delivery block, or omit it when absent."""
-    parsed = result_delivery_from_result({"execution": execution})
-    if parsed is None:
-        return None
-    archive = None
-    if parsed.archive is not None:
-        archive = {
-            "role": parsed.archive.role,
-            "name": parsed.archive.name,
-            "media_type": parsed.archive.media_type,
-            "size_bytes": parsed.archive.size_bytes,
-            "downloadable": parsed.archive.downloadable,
-            "report_context_eligible": parsed.archive.report_context_eligible,
-            "download_ref": parsed.archive.download_ref,
-        }
-    return {
-        "schema_version": parsed.schema_version,
-        "required": parsed.required,
-        "status": parsed.status,
-        "revision": parsed.revision,
-        "inventory_digest": parsed.inventory_digest,
-        "archive": archive,
-        "error_code": parsed.error_code,
-        "retryable": parsed.retryable,
-    }
-
-
-def _project_interrupt_surface(interrupt: Mapping[str, Any]) -> dict[str, Any]:
-    """Keep only a nonblank thread id and a validated generic A2UI draft."""
-    draft = interrupt.get("draft")
-    surface = draft.get("a2ui") if isinstance(draft, Mapping) else None
-    if not isinstance(surface, Mapping):
-        raise LifecycleInvariantError(
-            SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE
-        )
-    try:
-        validate_a2ui_surface(surface)
-    except A2uiSurfaceValidationError as exc:
-        raise LifecycleInvariantError(
-            SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE
-        ) from exc
-    projected: dict[str, Any] = {"draft": {"a2ui": dict(surface)}}
-    thread_id = interrupt.get("thread_id")
-    if isinstance(thread_id, str) and thread_id.strip():
-        projected["thread_id"] = thread_id
-    return projected
+    return attach_public_delivery(execution, projected)

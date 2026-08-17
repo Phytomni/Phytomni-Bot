@@ -47,3 +47,17 @@ def validate_a2ui_surface(value: Mapping[str, Any]) -> A2uiDownlinkValue:
     except ValidationError as exc:
         raise A2uiSurfaceValidationError("invalid a2ui surface") from exc
     return surface
+
+
+def project_interrupt_surface(interrupt: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep only a nonblank thread id and a validated generic A2UI draft."""
+    draft = interrupt.get("draft")
+    surface = draft.get("a2ui") if isinstance(draft, Mapping) else None
+    if not isinstance(surface, Mapping):
+        raise A2uiSurfaceValidationError("missing a2ui surface")
+    validate_a2ui_surface(surface)
+    projected: dict[str, Any] = {"draft": {"a2ui": dict(surface)}}
+    thread_id = interrupt.get("thread_id")
+    if isinstance(thread_id, str) and thread_id.strip():
+        projected["thread_id"] = thread_id
+    return projected

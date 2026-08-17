@@ -36,6 +36,7 @@ from mcp_server_phytomni.runtime.result_archive import (
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
+    RunRequestInfo,
     RunSpec,
 )
 from mcp_server_phytomni.runtime.run_registry_delivery import (
@@ -593,3 +594,44 @@ async def test_exhausted_delivery_never_claims_a_fourth_attempt(
     assert record.status == "succeeded"
     assert record.result["execution"]["delivery"]["status"] == "failed"
     assert record.result["delivery_internal"]["attempts_claimed"] == 3
+
+
+def test_update_running_result_keeps_submit_delivery_marker(
+    tmp_path: Path,
+) -> None:
+    """A later running projection must not drop submit-time archive delivery.
+
+    HTTP background workers overwrite the reserved result with a formatted
+    tool envelope that has ``delivery: null``. Harvest only packs a zip
+    when ``delivery.required`` is still on the stored run.
+    """
+    db_path = str(tmp_path / "tasks.db")
+    registry = RunRegistry(db_path)
+    registry.reserve_run(
+        RunSpec(
+            run_id="run-keep-delivery",
+            user_id="alice",
+            agent="analyst",
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id="req-keep-delivery"),
+        result=empty_execution_projection(result_archive_required=True),
+    )
+    incoming = empty_execution_projection()
+    incoming["execution"]["tasks"] = [
+        {"id": "task-1", "accepted": True, "status": "submitted"}
+    ]
+    incoming["execution"]["delivery"] = None
+
+    assert registry.update_running_result(
+        "run-keep-delivery",
+        owner="alice",
+        result=incoming,
+    )
+    record = registry.get_run("run-keep-delivery", owner="alice")
+    assert record is not None
+    assert record.result is not None
+    delivery = record.result["execution"]["delivery"]
+    assert delivery["required"] is True
+    assert delivery["status"] == "pending"
+    assert record.result["execution"]["tasks"][0]["id"] == "task-1"

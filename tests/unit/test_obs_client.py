@@ -8,6 +8,8 @@ from __future__ import annotations
 import ssl
 import warnings
 
+import certifi
+
 from mcp_server_phytomni.storage.obs_client import ObsClient
 
 
@@ -27,8 +29,6 @@ def test_obs_client_uses_modern_tls_context_without_warning() -> None:
 
 def test_obs_client_loads_custom_ca_and_ciphers() -> None:
     """A file CA path and cipher string still use a modern TLS context."""
-    import certifi
-
     client = ObsClient(
         access_key_id="test-access",
         secret_access_key="test-secret",

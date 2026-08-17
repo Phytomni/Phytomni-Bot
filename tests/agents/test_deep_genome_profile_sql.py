@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """DeepGenome profile BI SQL error mapping."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import pytest

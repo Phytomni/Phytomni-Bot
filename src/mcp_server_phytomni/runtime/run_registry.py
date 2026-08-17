@@ -33,11 +33,11 @@ from .run_registry_delivery import (
     PrivateDeliveryState,
     ResultDeliveryDependencies,
     begin_delivery_retry,
-    carry_required_delivery,
     default_result_delivery_dependencies,
     delivery_attempts_exhausted,
     delivery_task_key,
     private_delivery_from_result,
+    replace_running_result,
     result_delivery_from_result,
     run_delivery_worker,
     settle_delivery_failure,
@@ -520,21 +520,9 @@ class RunRegistry(RunRegistryViewsMixin):
     ) -> bool:
         """Update the projection of an owned run only while it is running."""
         with sqlite_transaction(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT result_json FROM runs "
-                "WHERE run_id = ? AND user_id = ? AND status = 'running'",
-                (run_id, owner),
-            ).fetchone()
-            if row is None:
-                return False
-            stored = json.loads(row[0]) if row[0] else None
-            merged = carry_required_delivery(stored, result)
-            cursor = conn.execute(
-                "UPDATE runs SET result_json = ?, updated_at = ? "
-                "WHERE run_id = ? AND user_id = ? AND status = 'running'",
-                (json.dumps(merged), _now_iso(), run_id, owner),
+            return replace_running_result(
+                conn, run_id=run_id, owner=owner, result=result
             )
-            return cursor.rowcount == 1
 
     def transition_research_stage(
         self, current: RunRecord, stage: str

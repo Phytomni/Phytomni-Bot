@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Unit tests for the payload-free DataAgent stage trace."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import asyncio
@@ -14,10 +16,12 @@ import pytest
 
 from mcp_server_phytomni.runtime.request_context import request_context
 from mcp_server_phytomni.runtime.stage_trace import (
+    _STAGE_FAILURE_ATTRIBUTE,
     DataStage,
     StageTraceEvent,
     classify_stage_error,
     current_stage_trace,
+    stage_failure_from_exception,
     trace_data_stage,
 )
 
@@ -128,11 +132,6 @@ def test_default_error_classifier_uses_only_exception_type() -> None:
 
 def test_stage_failure_from_exception_walks_cause_and_groups() -> None:
     """Attached stage metadata is recovered from cause and exception groups."""
-    from mcp_server_phytomni.runtime.stage_trace import (
-        _STAGE_FAILURE_ATTRIBUTE,
-        stage_failure_from_exception,
-    )
-
     inner = RuntimeError("inner")
     setattr(
         inner,

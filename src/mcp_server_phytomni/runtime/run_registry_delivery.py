@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -48,8 +49,10 @@ __all__ = [
     "initial_pending_delivery",
     "load_private_inventory",
     "mark_degraded_delivery_failure",
+    "attach_public_delivery",
     "carry_required_delivery",
     "private_delivery_from_result",
+    "replace_running_result",
     "result_delivery_from_result",
     "run_delivery_worker",
     "settle_delivery_failure",
@@ -538,6 +541,62 @@ def _claimable_delivery(
         return False
     assert private is not None
     return not delivery_attempts_exhausted(private.attempts_claimed)
+
+
+def attach_public_delivery(
+    execution: Mapping[str, Any], projected: dict[str, Any]
+) -> dict[str, Any]:
+    """Copy a public archive-delivery block onto a projected execution."""
+    parsed = result_delivery_from_result({"execution": execution})
+    if parsed is None:
+        return projected
+    archive = None
+    if parsed.archive is not None:
+        archive = {
+            "role": parsed.archive.role,
+            "name": parsed.archive.name,
+            "media_type": parsed.archive.media_type,
+            "size_bytes": parsed.archive.size_bytes,
+            "downloadable": parsed.archive.downloadable,
+            "report_context_eligible": parsed.archive.report_context_eligible,
+            "download_ref": parsed.archive.download_ref,
+        }
+    projected["delivery"] = {
+        "schema_version": parsed.schema_version,
+        "required": parsed.required,
+        "status": parsed.status,
+        "revision": parsed.revision,
+        "inventory_digest": parsed.inventory_digest,
+        "archive": archive,
+        "error_code": parsed.error_code,
+        "retryable": parsed.retryable,
+    }
+    return projected
+
+
+def replace_running_result(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    owner: str,
+    result: dict[str, Any],
+) -> bool:
+    """Write one running-row projection while carrying required delivery."""
+    row = conn.execute(
+        "SELECT result_json FROM runs "
+        "WHERE run_id = ? AND user_id = ? AND status = 'running'",
+        (run_id, owner),
+    ).fetchone()
+    if row is None:
+        return False
+    stored = json.loads(row[0]) if row[0] else None
+    merged = carry_required_delivery(stored, result)
+    cursor = conn.execute(
+        "UPDATE runs SET result_json = ?, updated_at = ? "
+        "WHERE run_id = ? AND user_id = ? AND status = 'running'",
+        (json.dumps(merged), _now_iso(), run_id, owner),
+    )
+    return cursor.rowcount == 1
 
 
 def carry_required_delivery(
