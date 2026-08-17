@@ -85,6 +85,49 @@ def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
 
 
+_FRONT_MATTER_SLUGS = ("abstract", "introduction")
+_BACK_MATTER_SLUGS = ("conclusions", "conclusion")
+
+
+def _preferred_report_spans(
+    spans: Sequence[Any],
+    dimensions: Sequence[str],
+) -> list[Any]:
+    """Keep Abstract, Introduction, the four dimensions, and Conclusions."""
+    by_id = {span.section_id: span for span in spans}
+    ordered_ids: list[str] = []
+    for slug in _FRONT_MATTER_SLUGS:
+        if slug in by_id:
+            ordered_ids.append(slug)
+    for dimension in dimensions:
+        dim_slug = _slug(dimension)
+        if dim_slug in by_id and dim_slug not in ordered_ids:
+            ordered_ids.append(dim_slug)
+    for slug in _BACK_MATTER_SLUGS:
+        if slug in by_id and slug not in ordered_ids:
+            ordered_ids.append(slug)
+            break
+    return [by_id[section_id] for section_id in ordered_ids]
+
+
+def _outline_headings(
+    values: Mapping[str, Any],
+    sections: Sequence[Any],
+) -> tuple[str, ...]:
+    """Prefer manuscript top-level headings when the report has them."""
+    section_headings = [item.heading for item in sections]
+    has_front_matter = any(
+        _slug(heading) in {*_FRONT_MATTER_SLUGS, *_BACK_MATTER_SLUGS}
+        for heading in section_headings
+    )
+    source = (
+        section_headings
+        if has_front_matter
+        else values.get("research_dimensions") or section_headings
+    )
+    return _bounded_items(source, limit=_MAX_HEADINGS, item_limit=256)
+
+
 def _candidate_thread_id(stable_thread_id: str, turn_id: str) -> str:
     """Derive a deterministic isolated checkpoint thread for one turn."""
     digest = hashlib.sha256(
@@ -246,15 +289,9 @@ def _sections_from_report_document(
     """Project bounded section text from the private report source."""
     section_type = _review_classes()[4]
     spans = list(document.sections)
-    if dimensions:
-        by_id = {span.section_id: span for span in spans}
-        selected = [
-            by_id[_slug(dimension)]
-            for dimension in dimensions
-            if _slug(dimension) in by_id
-        ]
-        if selected:
-            spans = selected
+    selected = _preferred_report_spans(spans, dimensions)
+    if selected:
+        spans = selected
     sections = [
         section_type(
             section_id=span.section_id,
@@ -464,12 +501,7 @@ def extract_review_checkpoint(
         1024,
     )
     sections = _section_values(values)
-    headings = _bounded_items(
-        values.get("research_dimensions")
-        or [item.heading for item in sections],
-        limit=_MAX_HEADINGS,
-        item_limit=256,
-    )
+    headings = _outline_headings(values, sections)
     claims = _explicit_claims(values)
     if not claims:
         claims = _feedback_metadata(

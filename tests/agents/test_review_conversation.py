@@ -383,6 +383,49 @@ def test_extract_review_checkpoint_admits_only_bounded_review_snapshot() -> (
     assert all("raw source body" not in claim for claim in snapshot.key_claims)
 
 
+def test_extract_review_checkpoint_indexes_manuscript_front_matter() -> None:
+    """Front matter and conclusions become revisable outline headings."""
+    report = "\n".join(
+        (
+            "### Title: A rice wax module",
+            "### Abstract",
+            "Abstract body.",
+            "### Introduction",
+            "Introduction body.",
+            "### How identified",
+            "Identification body.",
+            "### Regulatory logic",
+            "Regulatory body.",
+            "#### Nested assay",
+            "Nested body must not become an outline heading.",
+            "### Conclusions",
+            "Open questions.",
+        )
+    )
+    state = {
+        "original_user_query": "ZOS7 in upland rice",
+        "research_dimensions": ["How identified", "Regulatory logic"],
+        "summary_content": report,
+    }
+    snapshot = extract_review_checkpoint(state)
+
+    assert snapshot is not None
+    assert snapshot.outline_headings == (
+        "Abstract",
+        "Introduction",
+        "How identified",
+        "Regulatory logic",
+        "Conclusions",
+    )
+    assert [item.section_id for item in snapshot.sections] == [
+        "abstract",
+        "introduction",
+        "how-identified",
+        "regulatory-logic",
+        "conclusions",
+    ]
+
+
 def test_review_snapshot_preserves_direct_dataclass_metadata() -> None:
     """Field factoring keeps the original public introspection contract."""
     field_names = [item.name for item in fields(ReviewCheckpointSnapshot)]
