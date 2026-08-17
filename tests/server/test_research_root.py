@@ -101,3 +101,261 @@ def test_default_root_factory_keeps_empty_remote_inspection_inputs(
         assert await resolve_descriptions(request) is None
 
     asyncio.run(check_resolution())
+
+
+def test_root_factory_rejects_incomplete_metadata_port() -> None:
+    """The factory fails closed when the metadata port is incomplete."""
+
+    class _PartialPort:
+        resolve = None
+        verify = None
+        revoke = None
+
+    with pytest.raises(TypeError, match="metadata"):
+        research_root.build_default_research_root_request_factory(
+            metadata_port=cast(Any, _PartialPort()),
+            asset_resolver_factory=None,
+        )
+
+
+def test_managed_snapshot_requires_resolver_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Managed assets cannot be admitted without a bound resolver."""
+    monkeypatch.setattr(
+        research_root,
+        "ApiLimitsConfig",
+        lambda: SimpleNamespace(
+            API_MAX_ATTACHMENTS_PER_REQUEST=4,
+            API_MAX_RESEARCH_DATASET_PATHS=8,
+            API_MAX_RESEARCH_INPUT_REFERENCES=12,
+        ),
+    )
+    monkeypatch.setattr(
+        research_root,
+        "ServerConfig",
+        lambda: SimpleNamespace(BUCKET_NAME="research-bucket"),
+    )
+    factory = research_root.build_default_research_root_request_factory(
+        metadata_port=cast(Any, _MetadataPort()), asset_resolver_factory=None
+    )
+    admission = cast(
+        Any,
+        SimpleNamespace(
+            owner="owner-1",
+            parsed_input=parse_research_input("q", "research-bucket"),
+            managed_snapshot=(object(),),
+            locale="en-US",
+            interop_mode="off",
+            interop_targets=(),
+        ),
+    )
+    with pytest.raises(RuntimeError, match="unavailable"):
+        factory(admission)
+
+
+def test_bind_default_factory_requires_runtime_and_port() -> None:
+    """Binding fails closed when the production runtime is incomplete."""
+    with pytest.raises(RuntimeError, match="not registered"):
+        research_root.bind_default_research_root_request_factory(
+            object(), None, asset_resolver_factory=None
+        )
+    with pytest.raises(RuntimeError, match="metadata port"):
+        research_root.bind_default_research_root_request_factory(
+            SimpleNamespace(),
+            SimpleNamespace(root_request_factory=None),
+            asset_resolver_factory=None,
+        )
+    from dataclasses import dataclass
+
+    @dataclass
+    class _Runtime:
+        root_request_factory: object = None
+
+    bound = research_root.bind_default_research_root_request_factory(
+        SimpleNamespace(metadata_port=_MetadataPort()),
+        _Runtime(),
+        asset_resolver_factory=None,
+    )
+    assert callable(bound.root_request_factory)
+
+
+def test_direct_goal_downloader_and_converter_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Goal, download, and conversion ports stay bounded."""
+    provider = research_root._DirectGoalProvider("Inspect the files.")
+
+    async def _extract() -> None:
+        assert (await provider.extract(object(), "en-US"))[
+            0
+        ].goal == "Inspect the files."
+
+    asyncio.run(_extract())
+    downloader = research_root._ManagedDocumentDownloader(
+        SimpleNamespace(BUCKET_NAME="research-bucket")
+    )
+    entry = SimpleNamespace(exact_reference="obs://research-bucket/a.pdf")
+    assert (
+        downloader.observe(
+            SimpleNamespace(
+                exact_reference=entry.exact_reference, snapshot="s"
+            )
+        ).exact_reference
+        == entry.exact_reference
+    )
+
+    class _Relay:
+        async def get_obs_object(self, _ref: str, *, message: str) -> bytes:
+            return b"relay-bytes"
+
+    monkeypatch.setattr(research_root, "relay_mode_enabled", lambda: True)
+    monkeypatch.setattr(
+        research_root, "current_relay_client", lambda: _Relay()
+    )
+
+    async def _relay() -> None:
+        assert await downloader.download(entry) == b"relay-bytes"
+
+    asyncio.run(_relay())
+
+    class _Obs:
+        async def run(self, _p: object, callback: Any) -> bytes:
+            return await callback(object())
+
+    monkeypatch.setattr(research_root, "relay_mode_enabled", lambda: False)
+    monkeypatch.setattr(research_root, "current_obs_runtime", lambda: _Obs())
+
+    async def _bytes(*_a: Any, **_k: Any) -> bytes:
+        return b"direct-bytes"
+
+    monkeypatch.setattr(research_root, "get_object_bytes", _bytes)
+
+    async def _direct() -> None:
+        assert await downloader.download(entry) == b"direct-bytes"
+
+    asyncio.run(_direct())
+    converter = research_root._MarkItDownDocumentConverter()
+    monkeypatch.setattr(
+        research_root,
+        "convert_single_file",
+        lambda _p, cleanup=False: "page-a\f\npage-b",
+    )
+    pages = converter.convert(
+        SimpleNamespace(compound_suffix=".pdf", safe_basename="paper.pdf"),
+        b"%PDF",
+    )
+    assert [page.label for page in pages] == ["page-1", "page-2"]
+    monkeypatch.setattr(
+        research_root,
+        "convert_single_file",
+        lambda _p, cleanup=False: "only section",
+    )
+    assert (
+        converter.convert(
+            SimpleNamespace(compound_suffix=".txt", safe_basename="notes.txt"),
+            b"t",
+        )[0].label
+        == "section-1"
+    )
+    monkeypatch.setattr(
+        research_root, "convert_single_file", lambda *_a, **_k: "   "
+    )
+    with pytest.raises(ValueError, match="no text"):
+        converter.convert(
+            SimpleNamespace(compound_suffix=".txt", safe_basename="notes.txt"),
+            b"e",
+        )
+
+
+def test_root_factory_closures_and_managed_resolver_bind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inventory, evidence, revalidate, and plan closures stay injectable."""
+    monkeypatch.setattr(
+        research_root,
+        "ApiLimitsConfig",
+        lambda: SimpleNamespace(
+            API_MAX_ATTACHMENTS_PER_REQUEST=4,
+            API_MAX_RESEARCH_DATASET_PATHS=8,
+            API_MAX_RESEARCH_INPUT_REFERENCES=12,
+        ),
+    )
+    monkeypatch.setattr(
+        research_root,
+        "ServerConfig",
+        lambda: SimpleNamespace(BUCKET_NAME="research-bucket"),
+    )
+    bound: dict[str, Any] = {}
+    monkeypatch.setattr(
+        research_root,
+        "bind_research_asset_resolver",
+        lambda **kw: bound.setdefault("resolver", kw),
+    )
+    captured: dict[str, Any] = {}
+
+    async def _inventory(request: Any, port: Any) -> str:
+        captured["inventory"] = (request, port)
+        return "inventory"
+
+    async def _evidence(request: Any, downloader: Any, converter: Any) -> str:
+        return "evidence"
+
+    async def _revalidate(*a: Any, **k: Any) -> str:
+        return "revalidated"
+
+    async def _plan(request: Any, provider: Any) -> str:
+        captured["plan"] = (request, provider)
+        return "plan"
+
+    monkeypatch.setattr(research_root, "build_research_inventory", _inventory)
+    monkeypatch.setattr(research_root, "extract_research_evidence", _evidence)
+    monkeypatch.setattr(
+        research_root, "revalidate_research_inventory", _revalidate
+    )
+    monkeypatch.setattr(research_root, "build_research_plan", _plan)
+    factory = research_root.build_default_research_root_request_factory(
+        metadata_port=cast(Any, _MetadataPort()),
+        asset_resolver_factory=lambda: bound.setdefault("factory", True)
+        or object(),
+    )
+    request = factory(
+        cast(
+            Any,
+            SimpleNamespace(
+                owner="owner-1",
+                parsed_input=parse_research_input("query", "research-bucket"),
+                managed_snapshot=(object(),),
+                locale="en-US",
+                interop_mode="off",
+                interop_targets=(),
+            ),
+        )
+    )
+    assert bound["factory"] is True and bound["resolver"]["owner"] == "owner-1"
+
+    async def _run() -> None:
+        assert (
+            await request.dependencies.build_inventory(request) == "inventory"
+        )
+        assert (
+            await request.dependencies.extract_evidence(request) == "evidence"
+        )
+        assert (
+            await request.dependencies.revalidate_inventory(request)
+            == "revalidated"
+        )
+        assert (
+            await request.dependencies.plan_builder(
+                SimpleNamespace(effective_query="  Analyze genes.  "), request
+            )
+            == "plan"
+        )
+        await request.dependencies.plan_builder(
+            SimpleNamespace(effective_query="   "), request
+        )
+        assert (
+            captured["plan"][1].goal == "Analyze the supplied research inputs."
+        )
+
+    asyncio.run(_run())

@@ -24,7 +24,10 @@ from mcp_server_phytomni.runtime.artifact_roles import (
 from mcp_server_phytomni.runtime.execution_models import ExecutionWarning
 from mcp_server_phytomni.runtime.result_archive import (
     ResultArchiveError,
+    ResultArchiveInventory,
+    ResultArchiveMember,
     build_result_archive_inventory,
+    validate_result_archive_inventory,
 )
 from mcp_server_phytomni.runtime.run_registry_reports import (
     ReportArtifactGroup,
@@ -423,3 +426,454 @@ def test_publish_rejects_post_upload_size_mismatch(
             client=object(),
         )
     assert not list(tmp_path.iterdir())
+
+
+def _valid_inventory() -> ResultArchiveInventory:
+    """Return one validated inventory for publish-boundary tests."""
+    return build_result_archive_inventory(
+        _groups(_set(_artifact("report.md", size=3)))
+    )
+
+
+def test_unknown_error_code_and_inventory_boundaries() -> None:
+    """Unknown codes remap; empty, ineligible, and missing fields fail."""
+    error = ResultArchiveError("not-a-real-code")
+    assert error.code == "archive_contract_invalid"
+    with pytest.raises(ResultArchiveError, match="no_user_deliverables"):
+        build_result_archive_inventory(())
+    with pytest.raises(ResultArchiveError, match="no_user_deliverables"):
+        build_result_archive_inventory(
+            _groups(
+                _set(_artifact("trace.log", role=ArtifactRole.EXECUTION_LOG))
+            )
+        )
+    missing_ref = ClassifiedArtifact(
+        source_path="private/report.md",
+        relative_path="report.md",
+        role=ArtifactRole.SCIENTIFIC_DATA,
+        media_type="application/octet-stream",
+        size_bytes=3,
+        download_ref="",
+    )
+    missing_media = ClassifiedArtifact(
+        source_path="private/report.md",
+        relative_path="report.md",
+        role=ArtifactRole.SCIENTIFIC_DATA,
+        media_type="",
+        size_bytes=3,
+        download_ref="/obs/phytomni/runs/run-1/report.md",
+    )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        build_result_archive_inventory(_groups(_set(missing_ref)))
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        build_result_archive_inventory(_groups(_set(missing_media)))
+    listing = ExecutionWarning(
+        "artifact_listing_failed", True, "artifact_listing"
+    )
+    with pytest.raises(ResultArchiveError, match="artifact_listing_failed"):
+        build_result_archive_inventory(
+            _groups(_set(_artifact("report.md"), warnings=(listing,)))
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        build_result_archive_inventory(
+            (
+                ReportArtifactGroup(
+                    task_id="task-1",
+                    output_dir="/obs/phytomni/runs/run-1/part-001",
+                    artifact_set=_set(_artifact("report.md")),
+                ),
+                ReportArtifactGroup(
+                    task_id="task-2",
+                    output_dir="/obs/other/runs/run-2/part-002",
+                    artifact_set=_set(_artifact("data.csv")),
+                ),
+            )
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        build_result_archive_inventory(
+            (
+                ReportArtifactGroup(
+                    task_id="task-1",
+                    output_dir="",
+                    artifact_set=_set(_artifact("report.md")),
+                ),
+            )
+        )
+
+
+def test_validate_inventory_and_member_helpers() -> None:
+    """Revalidation and scalar helpers reject contract violations."""
+    good = _valid_inventory()
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        validate_result_archive_inventory(
+            ResultArchiveInventory("", good.members, good.digest, 3)
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        validate_result_archive_inventory(
+            ResultArchiveInventory(good.run_root, (), good.digest, 0)
+        )
+    ineligible = ResultArchiveMember(
+        1,
+        "/obs/phytomni/runs/run-1/trace.log",
+        "results/part-001/trace.log",
+        ArtifactRole.EXECUTION_LOG,
+        "text/plain",
+        3,
+    )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        validate_result_archive_inventory(
+            ResultArchiveInventory(
+                good.run_root, (ineligible,), "sha256:" + "0" * 64, 3
+            )
+        )
+    duplicate = ResultArchiveMember(
+        1,
+        good.members[0].download_ref,
+        good.members[0].archive_path,
+        good.members[0].role,
+        good.members[0].media_type,
+        3,
+    )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        validate_result_archive_inventory(
+            ResultArchiveInventory(
+                good.run_root,
+                (good.members[0], duplicate),
+                "sha256:" + "0" * 64,
+                6,
+            )
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        validate_result_archive_inventory(
+            ResultArchiveInventory(
+                good.run_root, good.members, good.digest, 99
+            )
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive._validate_member_scalars(
+            ResultArchiveMember(
+                True,  # type: ignore[arg-type]
+                "/obs/x",
+                "results/part-001/a.md",
+                ArtifactRole.SCIENTIFIC_DATA,
+                "text/plain",
+                1,
+            )
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive._validate_member_scalars(
+            ResultArchiveMember(
+                0,
+                "/obs/x",
+                "results/part-001/a.md",
+                ArtifactRole.SCIENTIFIC_DATA,
+                "text/plain",
+                1,
+            )
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive._validate_member_scalars(
+            ResultArchiveMember(
+                1,
+                "",
+                "results/part-001/a.md",
+                ArtifactRole.SCIENTIFIC_DATA,
+                "text/plain",
+                1,
+            )
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive._validate_member_scalars(
+            ResultArchiveMember(
+                1,
+                "/obs/x",
+                "results/part-001/a.md",
+                ArtifactRole.SCIENTIFIC_DATA,
+                "",
+                1,
+            )
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive._validate_member_scalars(
+            ResultArchiveMember(
+                1,
+                "/obs/x",
+                "results/part-001/a.md",
+                ArtifactRole.SCIENTIFIC_DATA,
+                "text/plain",
+                True,  # type: ignore[arg-type]
+            )
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive._validate_member_scalars(
+            ResultArchiveMember(
+                1,
+                "/obs/x",
+                "results/part-001/a.md",
+                ArtifactRole.SCIENTIFIC_DATA,
+                "text/plain",
+                -1,
+            )
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive._safe_relative_path("dir\\file.md")
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive._safe_absolute_path("relative/run")
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive._safe_absolute_path("/obs/phytomni/../escape")
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive._safe_archive_path("results/part-001/summary.md", 1)
+
+
+def test_publish_rejects_invalid_inputs_and_maps_failures(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Publish rejects bad inputs and maps generation and publish failures."""
+    inventory = _valid_inventory()
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive.build_and_publish_result_archive(
+            inventory,
+            agent="bad-agent",
+            summary_markdown="safe",
+            client=object(),
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        result_archive.build_and_publish_result_archive(
+            inventory,
+            agent="analyst",
+            summary_markdown=None,  # type: ignore[arg-type]
+            client=object(),
+        )
+    monkeypatch.setattr(result_archive, "ARCHIVE_TEMP_ROOT", tmp_path)
+    monkeypatch.setattr(
+        result_archive,
+        "SERVER_CONFIG",
+        SimpleNamespace(BUCKET_NAME="phytomni"),
+    )
+
+    def boom(*_args: object, **_kwargs: object):
+        raise OSError("read")
+
+    monkeypatch.setattr(result_archive, "iter_object_chunks", boom)
+    with pytest.raises(ResultArchiveError, match="archive_generation_failed"):
+        result_archive.build_and_publish_result_archive(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            client=object(),
+        )
+    monkeypatch.setattr(
+        result_archive,
+        "iter_object_chunks",
+        lambda *_args, **_kwargs: iter((b"abc",)),
+    )
+    monkeypatch.setattr(result_archive, "object_size", lambda *_a, **_k: 1)
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        result_archive.build_and_publish_result_archive(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            client=object(),
+        )
+
+    def missing(*_args: object, **_kwargs: object) -> int:
+        raise OSError("missing")
+
+    def denied(*_args: object, **_kwargs: object) -> str:
+        raise OSError("denied")
+
+    monkeypatch.setattr(result_archive, "object_size", missing)
+    monkeypatch.setattr(result_archive, "put_object_file", denied)
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        result_archive.build_and_publish_result_archive(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            client=object(),
+        )
+    monkeypatch.setattr(
+        result_archive, "put_object_file", lambda *_a, **_k: "ok"
+    )
+    monkeypatch.setattr(result_archive, "object_size", lambda *_a, **_k: None)
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        result_archive.build_and_publish_result_archive(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            client=object(),
+        )
+    monkeypatch.setattr(
+        result_archive,
+        "iter_object_chunks",
+        lambda *_args, **_kwargs: iter(("abc",)),
+    )
+    with pytest.raises(ResultArchiveError, match="archive_generation_failed"):
+        result_archive.build_and_publish_result_archive(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            client=object(),
+        )
+
+    def boom_temp(*_args: object, **_kwargs: object) -> None:
+        raise OSError("scratch unavailable")
+
+    monkeypatch.setattr(
+        result_archive,
+        "iter_object_chunks",
+        lambda *_args, **_kwargs: iter((b"abc",)),
+    )
+    monkeypatch.setattr(
+        result_archive.tempfile, "TemporaryDirectory", boom_temp
+    )
+    with pytest.raises(ResultArchiveError, match="archive_generation_failed"):
+        result_archive.build_and_publish_result_archive(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            client=object(),
+        )
+
+
+async def test_async_publish_and_size_helpers(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runtime publish covers reuse, failures, and size helper mapping."""
+    inventory = _valid_inventory()
+    runtime = CountingObsRuntime(object())
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        await result_archive.build_and_publish_result_archive_with_runtime(
+            inventory, agent="", summary_markdown="safe", obs_runtime=runtime
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        await result_archive.build_and_publish_result_archive_with_runtime(
+            inventory,
+            agent="analyst",
+            summary_markdown=1,  # type: ignore[arg-type]
+            obs_runtime=runtime,
+        )
+    monkeypatch.setattr(result_archive, "ARCHIVE_TEMP_ROOT", tmp_path)
+    monkeypatch.setattr(
+        result_archive,
+        "SERVER_CONFIG",
+        SimpleNamespace(BUCKET_NAME="phytomni"),
+    )
+    monkeypatch.setattr(
+        result_archive,
+        "iter_object_chunks",
+        lambda *_args, **_kwargs: iter((b"abc",)),
+    )
+    original_write = result_archive._write_archive_from_sources
+
+    def fail_write(*_args: object, **_kwargs: object) -> None:
+        raise OSError("write")
+
+    monkeypatch.setattr(
+        result_archive, "_write_archive_from_sources", fail_write
+    )
+    with pytest.raises(ResultArchiveError, match="archive_generation_failed"):
+        await result_archive.build_and_publish_result_archive_with_runtime(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            obs_runtime=runtime,
+        )
+    monkeypatch.setattr(
+        result_archive, "_write_archive_from_sources", original_write
+    )
+    monkeypatch.setattr(result_archive, "object_size", lambda *_a, **_k: 1)
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        await result_archive.build_and_publish_result_archive_with_runtime(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            obs_runtime=runtime,
+        )
+    sizes: dict[str, int] = {}
+
+    def size(_bucket: str, key: str, **_kwargs: object) -> int:
+        if key not in sizes:
+            raise OSError("missing")
+        return sizes[key]
+
+    def put(_bucket: str, key: str, source, **_kwargs: object) -> str:
+        sizes[key] = source.stat().st_size
+        return key
+
+    monkeypatch.setattr(result_archive, "object_size", size)
+    monkeypatch.setattr(result_archive, "put_object_file", put)
+    key = await result_archive.build_and_publish_result_archive_with_runtime(
+        inventory,
+        agent="analyst",
+        summary_markdown="safe",
+        obs_runtime=runtime,
+    )
+    reused = (
+        await result_archive.build_and_publish_result_archive_with_runtime(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            obs_runtime=runtime,
+        )
+    )
+    assert reused == key
+
+    def missing(*_args: object, **_kwargs: object) -> int:
+        raise OSError("missing")
+
+    def denied(*_args: object, **_kwargs: object) -> str:
+        raise OSError("denied")
+
+    monkeypatch.setattr(result_archive, "object_size", missing)
+    monkeypatch.setattr(result_archive, "put_object_file", denied)
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        await result_archive.build_and_publish_result_archive_with_runtime(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            obs_runtime=runtime,
+        )
+    monkeypatch.setattr(
+        result_archive, "put_object_file", lambda *_a, **_k: "ok"
+    )
+    calls = {"n": 0}
+
+    def size_then_none(*_args: object, **_kwargs: object) -> int | None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("missing")
+        return None
+
+    monkeypatch.setattr(result_archive, "object_size", size_then_none)
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        await result_archive.build_and_publish_result_archive_with_runtime(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            obs_runtime=runtime,
+        )
+    monkeypatch.setattr(
+        result_archive,
+        "iter_object_chunks",
+        lambda *_args, **_kwargs: iter((b"ab",)),
+    )
+    with pytest.raises(ResultArchiveError, match="archive_generation_failed"):
+        await result_archive.build_and_publish_result_archive_with_runtime(
+            inventory,
+            agent="analyst",
+            summary_markdown="safe",
+            obs_runtime=runtime,
+        )
+
+    def down(*_args: object, **_kwargs: object) -> int:
+        raise OSError("down")
+
+    monkeypatch.setattr(result_archive, "object_size", down)
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        result_archive._published_archive_size("phytomni", "key", object())
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        await result_archive._published_archive_size_with_runtime(
+            "phytomni",
+            "key",
+            obs_runtime=CountingObsRuntime(object()),
+        )

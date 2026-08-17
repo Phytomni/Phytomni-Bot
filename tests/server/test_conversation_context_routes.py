@@ -10,7 +10,8 @@ import asyncio
 import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 from uuid import UUID
 
 import httpx
@@ -30,7 +31,9 @@ from mcp_server_phytomni.runtime.conversation_context.service_types import (
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
     ConversationTombstonedError,
+    ReviewMutationLockTimeoutError,
     StagedTurn,
+    StoredTurn,
 )
 
 pytestmark = pytest.mark.server
@@ -930,3 +933,319 @@ async def test_tombstone_is_idempotent_and_retries_pending_cleanup(
     complete = store.load_context(str(_CONVERSATION_KEY))
     assert complete is not None
     assert complete.checkpoint_cleanup_state == "complete"
+
+
+async def test_review_invalid_private_marker_fails_closed(context_client):
+    """A non-mapping private marker cannot be promoted."""
+    client, key, store = context_client
+    _stage_turn(store, review_metadata="not-a-mapping")
+    response = await client.post(
+        "/v1/conversation-context/settle",
+        headers=_headers(key),
+        json=_settlement_payload(),
+    )
+    assert response.status_code == 503
+    failed = store.load_turn(str(_CONVERSATION_KEY), "1")
+    assert failed is not None and failed.state == "failed"
+
+
+async def test_review_ack_false_and_missing_callback(monkeypatch, tmp_path):
+    """Pending Review settlement requires a successful adapter ack."""
+    tasks_db = tmp_path / "server_tasks.db"
+    keys_db = tmp_path / "keys.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_db))
+    key = ApiKeyStore(str(keys_db)).create(user_id="u1").api_key
+    store = ConversationContextStore(str(tasks_db))
+    stable = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
+    _stage_turn(
+        store,
+        review_metadata={
+            "version": 1,
+            "operation": "new_review",
+            "stable_thread_id": stable,
+            "candidate_thread_id": _candidate_thread_id(stable, "1"),
+            "turn_id": "1",
+            "report_revision": 0,
+            "settlement_state": "pending",
+        },
+    )
+
+    class FalseExecutor:
+        async def execute(self, **k):
+            raise AssertionError("no expert")
+
+        async def acknowledge_review_settlement_for_turn(self, *a, **k):
+            return False
+
+    async with open_asgi_client(
+        monkeypatch,
+        create_app(context_executor=FalseExecutor()),
+        base_url="http://api.context.test",
+    ) as client:
+        denied = await client.post(
+            "/v1/conversation-context/settle",
+            headers=_headers(key),
+            json=_settlement_payload(),
+        )
+    assert denied.status_code == 503
+    deps = conversation_context.ContextRouteDependencies(
+        require_agents=lambda: None,
+        get_store=lambda: store,
+        acknowledge_review_settlement=None,
+    )
+    payload = conversation_context.ContextSettlementRequest(
+        schema_version=1,
+        conversation_key=_CONVERSATION_KEY,
+        turn_id="1",
+        ledger_version=_LEDGER_VERSION,
+    )
+    with pytest.raises(conversation_context.HTTPException) as missing:
+        await conversation_context._acknowledge_review_settlement(
+            str(_CONVERSATION_KEY),
+            payload,
+            store.load_turn(str(_CONVERSATION_KEY), "1"),
+            deps,
+        )
+    assert missing.value.status_code == 503
+
+
+async def test_settlement_and_tombstone_lock_timeouts(
+    context_client, monkeypatch
+):
+    """Busy mutation locks fail closed without mutating context."""
+    client, key, store = context_client
+    _stage_turn(store)
+
+    async def _busy(_store, **k):
+        raise ReviewMutationLockTimeoutError()
+
+    monkeypatch.setattr(
+        conversation_context, "acquire_review_mutation_lock", _busy
+    )
+    assert (
+        await client.post(
+            "/v1/conversation-context/settle",
+            headers=_headers(key),
+            json=_settlement_payload(),
+        )
+    ).status_code == 503
+    assert (
+        await client.post(
+            "/v1/conversation-context/tombstone",
+            headers=_headers(key),
+            json=_tombstone_payload(),
+        )
+    ).status_code == 503
+
+
+async def test_commit_maps_storage_conflicts(context_client, monkeypatch):
+    """Commit failures stay mapped to public settlement conflicts."""
+    client, key, store = context_client
+    _stage_turn(store)
+    monkeypatch.setattr(
+        ConversationContextStore,
+        "commit_staged_turn",
+        lambda *a, **k: (_ for _ in ()).throw(
+            ConversationTombstonedError("t")
+        ),
+    )
+    assert (
+        await client.post(
+            "/v1/conversation-context/settle",
+            headers=_headers(key),
+            json=_settlement_payload(),
+        )
+    ).status_code == 409
+    monkeypatch.setattr(
+        ConversationContextStore,
+        "commit_staged_turn",
+        lambda *a, **k: (_ for _ in ()).throw(KeyError("turn")),
+    )
+    assert (
+        await client.post(
+            "/v1/conversation-context/settle",
+            headers=_headers(key),
+            json=_settlement_payload(),
+        )
+    ).status_code == 404
+
+
+async def test_review_validation_helpers_cover_conflict_states():
+    """Review preflight rejects tombstones, version drift, and bad states."""
+    payload = conversation_context.ContextSettlementRequest(
+        schema_version=1,
+        conversation_key=_CONVERSATION_KEY,
+        turn_id="1",
+        ledger_version=_LEDGER_VERSION,
+    )
+    staged = StoredTurn(
+        conversation_key=str(_CONVERSATION_KEY),
+        turn_id="1",
+        operation="append",
+        base_context_version=0,
+        state="staged",
+        selected_agent_id="ReviewAgent",
+        route_source="instant_lock",
+        result={},
+        delta={},
+        stage_metadata={"_review_settlement": {"turn_id": "1"}},
+        ledger_version=_LEDGER_VERSION,
+        created_at="now",
+        updated_at="now",
+        expires_at=None,
+    )
+    with pytest.raises(conversation_context.HTTPException):
+        conversation_context._validate_review_context_state(
+            staged,
+            {"settlement_state": "pending"},
+            SimpleNamespace(state="tombstoned", context_version=1),
+            payload,
+        )
+    with pytest.raises(conversation_context.HTTPException):
+        conversation_context._validate_review_context_state(
+            staged,
+            {"settlement_state": "pending"},
+            SimpleNamespace(state="active", context_version=3),
+            payload,
+        )
+    failed = StoredTurn(
+        conversation_key=str(_CONVERSATION_KEY),
+        turn_id="1",
+        operation="append",
+        base_context_version=0,
+        state="failed",
+        selected_agent_id="ReviewAgent",
+        route_source="instant_lock",
+        result={},
+        delta={},
+        stage_metadata={},
+        ledger_version=_LEDGER_VERSION,
+        created_at="now",
+        updated_at="now",
+        expires_at=None,
+    )
+    with pytest.raises(conversation_context.HTTPException):
+        conversation_context._validate_review_context_state(
+            failed, {"settlement_state": "pending"}, None, payload
+        )
+    committed = StoredTurn(
+        conversation_key=str(_CONVERSATION_KEY),
+        turn_id="1",
+        operation="append",
+        base_context_version=0,
+        state="committed",
+        selected_agent_id="ReviewAgent",
+        route_source="instant_lock",
+        result={},
+        delta={},
+        stage_metadata={},
+        ledger_version=_LEDGER_VERSION,
+        created_at="now",
+        updated_at="now",
+        expires_at=None,
+    )
+    with pytest.raises(conversation_context.HTTPException):
+        conversation_context._validate_review_context_state(
+            committed, {"settlement_state": "pending"}, None, payload
+        )
+    with pytest.raises(conversation_context.HTTPException):
+        conversation_context._validate_review_context_state(
+            staged, {"settlement_state": "failed"}, None, payload
+        )
+
+
+async def test_load_review_turn_rejects_unbound_key_and_missing_metadata():
+    """Review metadata must match the conversation key and stay bounded."""
+    payload = conversation_context.ContextSettlementRequest(
+        schema_version=1,
+        conversation_key=_CONVERSATION_KEY,
+        turn_id="1",
+        ledger_version=_LEDGER_VERSION,
+    )
+
+    class _Store:
+        def load_turn(self, _k, _t):
+            return StoredTurn(
+                conversation_key="not-a-uuid",
+                turn_id="1",
+                operation="append",
+                base_context_version=0,
+                state="staged",
+                selected_agent_id="ReviewAgent",
+                route_source="instant_lock",
+                result={},
+                delta={},
+                stage_metadata={
+                    "_review_settlement": {
+                        "version": 1,
+                        "operation": "follow_up",
+                        "stable_thread_id": "ctx-" + "a" * 64,
+                        "turn_id": "1",
+                        "report_revision": 0,
+                        "settlement_state": "pending",
+                    }
+                },
+                ledger_version=_LEDGER_VERSION,
+                created_at="now",
+                updated_at="now",
+                expires_at=None,
+            )
+
+        def mark_review_settlement_failed(self, *a, **k):
+            return None
+
+        def mark_turn_failed(self, *a, **k):
+            return None
+
+    with pytest.raises(conversation_context.HTTPException) as invalid:
+        conversation_context._load_and_validate_review_turn(
+            cast(Any, _Store()), "not-a-uuid", payload
+        )
+    assert invalid.value.status_code == 503
+
+    class _Bare(_Store):
+        def load_turn(self, _k, _t):
+            return StoredTurn(
+                conversation_key=str(_CONVERSATION_KEY),
+                turn_id="1",
+                operation="append",
+                base_context_version=0,
+                state="staged",
+                selected_agent_id="ChatAgent",
+                route_source="instant_lock",
+                result={},
+                delta={},
+                stage_metadata={},
+                ledger_version=_LEDGER_VERSION,
+                created_at="now",
+                updated_at="now",
+                expires_at=None,
+            )
+
+    with pytest.raises(conversation_context.HTTPException) as missing:
+        conversation_context._load_and_validate_review_turn(
+            cast(Any, _Bare()), str(_CONVERSATION_KEY), payload
+        )
+    assert missing.value.status_code == 409
+
+
+async def test_delete_checkpoint_threads_skips_stable_ids(monkeypatch):
+    """Candidate cleanup does not delete the stable Review thread twice."""
+
+    class _CP:
+        def __init__(self):
+            self.deleted = []
+
+        async def adelete_thread(self, tid):
+            self.deleted.append(tid)
+
+    cp = _CP()
+    monkeypatch.setattr(
+        conversation_context, "ensure_checkpointer", lambda: cp
+    )
+    stable = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
+    await conversation_context._delete_checkpoint_threads(
+        _CONVERSATION_KEY, (stable, "candidate-extra")
+    )
+    assert cp.deleted.count(stable) == 1 and "candidate-extra" in cp.deleted

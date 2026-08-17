@@ -363,3 +363,240 @@ async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
     file_path = Path(captured["file_path"])
     assert file_path.parent.parent.parent == tmp_path / "temp" / "agent_data"
     assert file_path.parent.parent.name.isdigit()
+
+
+async def test_download_upload_context_formats_converted_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-empty uploads convert then format as bounded prompt context."""
+
+    async def fake_convert(**kwargs: Any) -> list[str]:
+        assert kwargs["obs_file_list"] == ["uploads/notes.txt"]
+        return ["converted notes"]
+
+    monkeypatch.setattr(downloads, "download_list_convert", fake_convert)
+    formatted, length = await downloads.download_upload_context(
+        ["uploads/notes.txt"],
+        SimpleNamespace(
+            TEMP_DIR="/tmp/phytomni-downloads",
+            BUCKET_NAME="phytomni",
+            PART_SIZE=8,
+            TASK_NUM=1,
+            MAX_RETRIES=0,
+            MAX_CONCURRENCY=1,
+            MAX_WORKERS=1,
+            MAX_TOKENS=200,
+        ),
+    )
+    assert "converted notes" in formatted
+    assert length == len(formatted)
+
+
+async def test_download_obs_file_reuses_explicit_transfer_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keyword transfer_context is returned unchanged to the resolver."""
+    context = downloads.ObsTransferContext(
+        server_dir=str(tmp_path),
+        download=downloads.ObsDownloadOptions(bucket_name="phytomni"),
+    )
+    seen: list[downloads.ObsTransferContext] = []
+
+    async def fake_resolve(
+        obs_file: str, transfer: downloads.ObsTransferContext
+    ) -> downloads.ResolvedObsFile:
+        del obs_file
+        seen.append(transfer)
+        return downloads.ResolvedObsFile(str(tmp_path / "x"), False)
+
+    monkeypatch.setattr(downloads, "_resolve_obs_file", fake_resolve)
+    result = await downloads.download_obs_file(
+        "notes.txt", str(tmp_path), transfer_context=context
+    )
+    assert result == str(tmp_path / "x")
+    assert seen == [context]
+
+
+async def test_obsfs_source_file_swallows_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An obsfs probe failure degrades to the SDK download path."""
+
+    def boom(*_args: object, **_kwargs: object) -> Path:
+        raise OSError("mount missing")
+
+    async def fake_sdk(
+        obs_file: str, context: downloads.ObsTransferContext
+    ) -> str:
+        del context
+        return f"/tmp/{obs_file}"
+
+    monkeypatch.setattr(downloads, "obsfs_path_for", boom)
+    monkeypatch.setattr(downloads, "relay_mode_enabled", lambda: False)
+    monkeypatch.setattr(downloads, "_download_obs_file_from_sdk", fake_sdk)
+    assert (
+        await downloads.download_obs_file(
+            "notes.txt", "/tmp/server", obsfs_mount_root="/missing"
+        )
+        == "/tmp/notes.txt"
+    )
+
+
+async def test_sdk_download_requires_obs_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing outbound OBS runtime fails closed before the SDK call."""
+    monkeypatch.setattr(downloads, "relay_mode_enabled", lambda: False)
+    monkeypatch.setattr(
+        downloads,
+        "current_outbound_runtime",
+        lambda: SimpleNamespace(obs=None),
+    )
+    with pytest.raises(OSError, match="OBS runtime is unavailable"):
+        await downloads.download_obs_file(
+            "notes.txt",
+            str(tmp_path),
+            obsfs_mount_root=str(tmp_path / "missing"),
+        )
+
+
+class _ScriptedObsRuntime:
+    """Return scripted download responses for retry-path tests."""
+
+    def __init__(self, outcomes: list[object]) -> None:
+        self.outcomes = list(outcomes)
+
+    async def run(self, _profile: object, operation: Any) -> Any:
+        operation(SimpleNamespace(downloadFile=lambda **_kwargs: None))
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+
+async def test_sdk_download_retries_then_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A transient SDK error sleeps once and then returns the local file."""
+    runtime = _ScriptedObsRuntime(
+        [OSError("timeout"), SimpleNamespace(status=200)]
+    )
+    slept: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr(downloads, "relay_mode_enabled", lambda: False)
+    monkeypatch.setattr(
+        downloads,
+        "current_outbound_runtime",
+        lambda: SimpleNamespace(obs=runtime),
+    )
+    monkeypatch.setattr(downloads.asyncio, "sleep", fake_sleep)
+    result = await downloads.download_obs_file(
+        "notes.txt",
+        str(tmp_path),
+        obsfs_mount_root=str(tmp_path / "missing"),
+        max_retries=1,
+    )
+    assert Path(result).name == "notes.txt"
+    assert "uploads" in result
+    assert slept == [1.0]
+
+
+async def test_sdk_download_maps_error_response_after_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-2xx SDK response becomes download failed after retries expire."""
+    runtime = _ScriptedObsRuntime(
+        [
+            SimpleNamespace(
+                status=500,
+                requestId="req-1",
+                errorCode="ObsError",
+                errorMessage="unavailable",
+            )
+        ]
+    )
+    monkeypatch.setattr(downloads, "relay_mode_enabled", lambda: False)
+    monkeypatch.setattr(
+        downloads,
+        "current_outbound_runtime",
+        lambda: SimpleNamespace(obs=runtime),
+    )
+    with pytest.raises(OSError, match="download failed"):
+        await downloads.download_obs_file(
+            "owner/run/notes.txt",
+            str(tmp_path),
+            obsfs_mount_root=str(tmp_path / "missing"),
+            max_retries=0,
+        )
+
+
+def test_convert_multi_files_uses_process_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The multi-file helper maps conversion across one process pool."""
+
+    class ImmediatePool:
+        def __init__(self, max_workers: int | None = None) -> None:
+            self.max_workers = max_workers
+
+        def __enter__(self) -> ImmediatePool:
+            return self
+
+        def __exit__(self, *_args: object) -> bool:
+            return False
+
+        def map(self, fn: Any, items: list[str]) -> list[str]:
+            return [fn(item) for item in items]
+
+    monkeypatch.setattr(downloads, "ProcessPoolExecutor", ImmediatePool)
+    monkeypatch.setattr(
+        downloads, "convert_single_file", lambda path: f"md:{path}"
+    )
+    assert downloads.convert_multi_files(
+        ["a.txt", "b.txt"], max_workers=2
+    ) == [
+        "md:a.txt",
+        "md:b.txt",
+    ]
+
+
+async def test_download_list_convert_rejects_zero_concurrency(
+    tmp_path: Path,
+) -> None:
+    """A zero concurrency override fails before any executor starts."""
+    with pytest.raises(ValueError, match="max_concurrency must be at least 1"):
+        await downloads.download_list_convert(
+            ["notes.txt"], str(tmp_path), max_concurrency=0
+        )
+
+
+async def test_download_list_convert_shuts_down_owned_executor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Omitting an executor creates a pool and shuts it down afterward."""
+    owned: list[ThreadPoolExecutor] = []
+
+    def fake_pool(max_workers: int | None = None) -> ThreadPoolExecutor:
+        executor = ThreadPoolExecutor(max_workers=max_workers or 1)
+        owned.append(executor)
+        return executor
+
+    async def fake_resolve(
+        obs_file: str, context: downloads.ObsTransferContext
+    ) -> downloads.ResolvedObsFile:
+        del context
+        return downloads.ResolvedObsFile(f"/tmp/{obs_file}", False)
+
+    monkeypatch.setattr(downloads, "ProcessPoolExecutor", fake_pool)
+    monkeypatch.setattr(downloads, "convert_single_file", lambda *_a: "md")
+    monkeypatch.setattr(downloads, "relay_mode_enabled", lambda: False)
+    monkeypatch.setattr(downloads, "_resolve_obs_file", fake_resolve)
+    result = await downloads.download_list_convert(
+        ["notes.txt"], str(tmp_path)
+    )
+    assert result == ["md"]
+    assert owned
+    assert owned[0]._shutdown is True

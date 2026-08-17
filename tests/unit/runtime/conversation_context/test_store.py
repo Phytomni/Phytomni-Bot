@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import logging
@@ -956,3 +957,295 @@ def test_store_logs_do_not_expose_conversation_payloads(
         secret_marker,
     ):
         assert forbidden not in logged
+
+
+def test_review_mixin_helpers_cover_marker_and_claim_edges() -> None:
+    """Review mixin seams reject malformed markers and claim parts."""
+    from mcp_server_phytomni.runtime.conversation_context import review_mixin
+
+    assert review_mixin._review_record("{") is None
+    assert review_mixin._review_record("[]") is None
+    assert review_mixin._review_record("{}") is None
+    assert (
+        review_mixin._review_record('{"__conversation_context_store__": 1}')
+        is None
+    )
+    assert (
+        review_mixin._review_record(
+            json.dumps({"__conversation_context_store__": {}})
+        )
+        is None
+    )
+    assert (
+        review_mixin._review_record(
+            json.dumps(
+                {
+                    "__conversation_context_store__": {
+                        "stage_metadata": {"other": 1}
+                    }
+                }
+            )
+        )
+        is None
+    )
+    decoded_marker = review_mixin._review_record(
+        json.dumps(
+            {
+                "__conversation_context_store__": {
+                    "stage_metadata": {"_review_settlement": {"version": 1}}
+                }
+            }
+        )
+    )
+    assert decoded_marker is not None
+    decoded, marker = decoded_marker
+    assert marker["version"] == 1
+    assert review_mixin._with_review_record({}, {}) is None
+    assert (
+        review_mixin._with_review_record(
+            {"__conversation_context_store__": {}}, {}
+        )
+        is None
+    )
+    rewritten = review_mixin._with_review_record(decoded, {"version": 2})
+    assert rewritten is not None and '"version":2' in rewritten.replace(
+        " ", ""
+    )
+    assert review_mixin._claim_datetime(None).tzinfo is UTC
+    assert review_mixin._claim_datetime(datetime(2026, 1, 1)).tzinfo is UTC
+    assert (
+        review_mixin._claim_datetime(datetime(2026, 1, 1, tzinfo=UTC)).tzinfo
+        is UTC
+    )
+    assert (
+        review_mixin._claim_datetime("2026-01-01T00:00:00+00:00").year == 2026
+    )
+
+    class _NoneEncoder:
+        @staticmethod
+        def _with_review_record(_d, _m):
+            return None
+
+    request = _ReviewMarkerWriteRequest(
+        connection=sqlite3.connect(":memory:"),
+        key="k",
+        turn_id="t",
+        decoded={},
+        marker={},
+        now="now",
+    )
+    assert review_mixin._write_review_marker(_NoneEncoder, request) is False
+    assert review_mixin._marker_fence({"settlement_fence": True}) is None
+    assert review_mixin._marker_fence({"settlement_fence": 0}) is None
+    assert review_mixin._marker_fence({"settlement_fence": 2}) == 2
+    assert review_mixin._marker_operation({"version": 2}) is None
+    assert (
+        review_mixin._marker_operation({"version": 1, "operation": "x"})
+        is None
+    )
+    assert (
+        review_mixin._marker_operation(
+            {"version": 1, "operation": "follow_up"}
+        )
+        == "follow_up"
+    )
+    assert review_mixin._turn_id_is_bounded("ok-turn") is True
+    assert review_mixin._turn_id_is_bounded("bad/turn") is False
+    assert review_mixin._report_revision_is_bounded({}) is False
+    assert (
+        review_mixin._report_revision_is_bounded({"report_revision": True})
+        is False
+    )
+    assert (
+        review_mixin._report_revision_is_bounded({"report_revision": 0})
+        is True
+    )
+
+    class _Fields:
+        @staticmethod
+        def _marker_operation(m):
+            o = m.get("operation")
+            return o if isinstance(o, str) else None
+
+        @staticmethod
+        def _marker_stable_thread_id(m):
+            s = m.get("stable_thread_id")
+            return s if isinstance(s, str) else None
+
+        @staticmethod
+        def _turn_id_is_bounded(turn_id):
+            return turn_id == "turn-1"
+
+        @staticmethod
+        def _report_revision_is_bounded(m):
+            return m.get("report_revision") == 0
+
+    assert review_mixin._bounded_marker_fields(_Fields, {}, "turn-1") is None
+    assert (
+        review_mixin._bounded_marker_fields(
+            _Fields,
+            {
+                "operation": "follow_up",
+                "stable_thread_id": "ctx-" + "a" * 64,
+                "turn_id": "other",
+                "report_revision": 0,
+            },
+            "turn-1",
+        )
+        is None
+    )
+    assert (
+        review_mixin._bounded_marker_fields(
+            _Fields,
+            {
+                "operation": "follow_up",
+                "stable_thread_id": "ctx-" + "a" * 64,
+                "turn_id": "turn-1",
+                "report_revision": 1,
+            },
+            "turn-1",
+        )
+        is None
+    )
+    assert review_mixin._bounded_marker_fields(
+        _Fields,
+        {
+            "operation": "follow_up",
+            "stable_thread_id": "ctx-" + "a" * 64,
+            "turn_id": "turn-1",
+            "report_revision": 0,
+        },
+        "turn-1",
+    ) == ("follow_up", "ctx-" + "a" * 64)
+    key = str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7"))
+    expected = (
+        "ctx-"
+        + hashlib.sha256(
+            f"conversation-context-v1:{UUID(key)}:ReviewAgent".encode("ascii")
+        ).hexdigest()
+    )
+    assert review_mixin._stable_marker_matches_key(expected, key) is True
+    assert (
+        review_mixin._stable_marker_matches_key("ctx-" + "b" * 64, key)
+        is False
+    )
+    assert review_mixin._stable_marker_matches_key("x", "not-a-uuid") is True
+    assert (
+        review_mixin._marker_candidate_is_bounded(
+            {"operation": "follow_up"}, "follow_up"
+        )
+        is True
+    )
+    assert (
+        review_mixin._marker_candidate_is_bounded(
+            {"candidate_thread_id": "x", "operation": "follow_up"}, "follow_up"
+        )
+        is False
+    )
+    assert review_mixin._marker_candidate_is_bounded({}, "new_review") is False
+
+    class _Bounded:
+        @staticmethod
+        def _bounded_marker_fields(_m, _t):
+            return None
+
+        @staticmethod
+        def _stable_marker_matches_key(_s, _k):
+            return True
+
+        @staticmethod
+        def _marker_candidate_is_bounded(_m, _o):
+            return True
+
+    assert (
+        review_mixin._marker_is_bounded(_Bounded, {}, key="k", turn_id="t")
+        is False
+    )
+    assert review_mixin._claim_is_expired(
+        "not-a-time", clock=datetime.now(UTC), stale_after=timedelta(seconds=1)
+    )
+    assert review_mixin._bounded_claim_parts("", "t", 1) is None
+    assert review_mixin._bounded_claim_parts("tok", "", 1) is None
+    assert review_mixin._bounded_claim_parts("t" * 65, "now", 1) is None
+    assert review_mixin._bounded_claim_parts("tok", "c" * 65, 1) is None
+    assert review_mixin._bounded_claim_parts("tok", "now", None) is None
+    assert review_mixin._bounded_claim_parts("tok", "now", 3) == (
+        "tok",
+        "now",
+        3,
+    )
+
+    class _State:
+        @staticmethod
+        def _review_context_state(_c, _k):
+            return None
+
+    failure = review_mixin._claim_row_failure(
+        _State(),
+        _ReviewClaimLookupRequest(
+            connection=sqlite3.connect(":memory:"),
+            key="k",
+            row=("failed", "ledger", 0, "d"),
+            expected_ledger_version=None,
+            expected_base_context_version=None,
+        ),
+    )
+    assert failure is not None and failure.status == "conflict"
+
+    class _Live:
+        @staticmethod
+        def _review_context_state(_c, _k):
+            return (2, "active")
+
+    assert (
+        review_mixin._claim_row_failure(
+            _Live(),
+            _ReviewClaimLookupRequest(
+                connection=sqlite3.connect(":memory:"),
+                key="k",
+                row=("staged", "other", 2, "d"),
+                expected_ledger_version="ledger",
+                expected_base_context_version=None,
+            ),
+        ).status
+        == "conflict"
+    )
+    assert (
+        review_mixin._claim_row_failure(
+            _Live(),
+            _ReviewClaimLookupRequest(
+                connection=sqlite3.connect(":memory:"),
+                key="k",
+                row=("staged", "ledger", 1, "d"),
+                expected_ledger_version=None,
+                expected_base_context_version=2,
+            ),
+        ).status
+        == "conflict"
+    )
+    assert (
+        review_mixin._claim_row_failure(
+            _Live(),
+            _ReviewClaimLookupRequest(
+                connection=sqlite3.connect(":memory:"),
+                key="k",
+                row=("staged", "ledger", 0, "d"),
+                expected_ledger_version=None,
+                expected_base_context_version=None,
+            ),
+        ).status
+        == "conflict"
+    )
+    assert (
+        review_mixin._claim_row_failure(
+            _Live(),
+            _ReviewClaimLookupRequest(
+                connection=sqlite3.connect(":memory:"),
+                key="k",
+                row=("committed", "ledger", 2, "d"),
+                expected_ledger_version="ledger",
+                expected_base_context_version=2,
+            ),
+        )
+        is None
+    )
