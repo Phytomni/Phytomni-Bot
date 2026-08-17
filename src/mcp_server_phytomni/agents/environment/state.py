@@ -33,6 +33,7 @@ class EnvironmentInput(TypedDict, total=False):
         batch: When ``True`` the caller-provided ``output_dir`` in
             ``kwargs`` is reused instead of materialising a fresh
             run-scoped directory.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
         kwargs: Flat dict of chat / submit / OBS overrides forwarded
             to the chat extraction and analyst submission helpers
             (model id, api key, base url, access keys, prompt file,

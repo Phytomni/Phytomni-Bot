@@ -28,6 +28,7 @@ class ChatAgent(BaseModel):
     Attributes:
         user_query: User question or instruction for the chat model.
         obs_file_list: Optional OBS paths for uploaded context files.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
     user_query: Annotated[
@@ -68,6 +69,7 @@ class KnowledgeAgent(BaseModel):
     Attributes:
         user_query: Focused plant-science question requiring evidence.
         obs_file_list: Optional uploaded documents to combine with retrieval.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
     user_query: Annotated[
@@ -106,6 +108,7 @@ class DataAgent(BaseModel):
 
     Attributes:
         user_query: Natural-language database question to convert to SQL.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
     user_query: Annotated[
@@ -130,6 +133,7 @@ class AnalystAgent(BaseModel):
         goal_description: Bioinformatics analysis objective.
         data_list: OBS dataset paths mapped to role descriptions.
         obs_file_list: Optional supporting documents for workflow planning.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
     goal_description: Annotated[
@@ -192,6 +196,7 @@ class DeepGenomeAgent(BaseModel):
     Attributes:
         species_code: Supported three-letter species code.
         gene_id: Single target gene identifier in the selected species.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
     species_code: Annotated[
@@ -289,6 +294,7 @@ class ReviewAgent(BaseModel):
     Attributes:
         user_query: Broad review topic and desired report scope.
         obs_file_list: Optional source documents to consider in the review.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
     user_query: Annotated[
@@ -327,6 +333,7 @@ class BriefGeneAgent(BaseModel):
 
     Attributes:
         user_query: One plant gene or transcript identifier to summarize.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
     user_query: Annotated[
@@ -353,6 +360,7 @@ class InSilicoResearchAgent(BaseModel):
         interop_mode: External delegation policy. Defaults to local-only.
         interop_targets: Operator-registered target ids eligible for
             delegation.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
     user_query: Annotated[
@@ -436,6 +444,7 @@ class DigitalDesignAgent(BaseModel):
         interop_mode: External delegation policy. Defaults to local-only.
         interop_targets: Operator-registered target ids eligible for
             delegation.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
     species_code: Annotated[
@@ -565,6 +574,7 @@ class GeneNetworkAgent(BaseModel):
         to_id: Trait Ontology identifier for the target phenotype.
         obs_file_list: Legacy compatibility field; nonempty values are
             unsupported during migration.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
     species_code: Annotated[

@@ -42,6 +42,8 @@ class ChatInput(TypedDict, total=False):
         chat_kwargs: Flat dict of provider / OBS / timeout settings
             forwarded to the chat service (model id, api key, base
             url, server_dir, retry policy, etc.).
+        conversation_messages: Prior role-tagged turns for this chat.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
     user_query: Required[str]

@@ -40,6 +40,7 @@ class EvolutionInput(TypedDict, total=False):
         is_polling: When ``True`` the analyst submission blocks until the
             task reaches a terminal state (deep_genome's mount sets this);
             defaults to ``False`` for the submit-only external surface.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
         target_taxids: Pre-resolved taxonomy scope. When set (truthy) the
             chat extraction is skipped and this value passes straight to
             the submit node; deep_genome's mount pins ``"All"``.

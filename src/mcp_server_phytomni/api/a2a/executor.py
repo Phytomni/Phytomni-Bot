@@ -551,6 +551,7 @@ class A2ARequestHandler(RequestHandler):
     async def on_get_task(
         self, params: GetTaskRequest, context: ServerCallContext
     ) -> Task | None:
+        """Return a recorded A2A task when the lookup seam is injected."""
         if self._get_a2a_task is None:
             raise UnsupportedOperationError(message="GetTask is not supported")
         del context
@@ -559,11 +560,13 @@ class A2ARequestHandler(RequestHandler):
     async def on_list_tasks(
         self, params: ListTasksRequest, context: ServerCallContext
     ) -> ListTasksResponse:
+        """Reject ListTasks; the Phase 1 surface does not enumerate tasks."""
         raise UnsupportedOperationError(message="ListTasks is not supported")
 
     async def on_cancel_task(
         self, params: CancelTaskRequest, context: ServerCallContext
     ) -> Task | None:
+        """Reject CancelTask; cancellation is not wired on this handler."""
         raise UnsupportedOperationError(message="CancelTask is not supported")
 
     async def on_message_send_stream(
@@ -649,6 +652,7 @@ class A2ARequestHandler(RequestHandler):
         params: TaskPushNotificationConfig,
         context: ServerCallContext,
     ) -> TaskPushNotificationConfig:
+        """Reject push-notification create; this hook is unused on purpose."""
         raise UnsupportedOperationError(
             message="CreateTaskPushNotificationConfig is not supported"
         )
@@ -658,6 +662,7 @@ class A2ARequestHandler(RequestHandler):
         params: GetTaskPushNotificationConfigRequest,
         context: ServerCallContext,
     ) -> TaskPushNotificationConfig:
+        """Reject push-notification get; the hook is intentionally unused."""
         raise UnsupportedOperationError(
             message="GetTaskPushNotificationConfig is not supported"
         )
@@ -667,6 +672,7 @@ class A2ARequestHandler(RequestHandler):
         params: SubscribeToTaskRequest,
         context: ServerCallContext,
     ) -> AsyncGenerator[Event, None]:
+        """Reject SubscribeToTask; clients use SendStreamingMessage."""
         if TYPE_CHECKING:
             yield cast(Event, None)
         raise UnsupportedOperationError(
@@ -678,6 +684,7 @@ class A2ARequestHandler(RequestHandler):
         params: ListTaskPushNotificationConfigsRequest,
         context: ServerCallContext,
     ) -> ListTaskPushNotificationConfigsResponse:
+        """Reject push-notification list; the hook is intentionally unused."""
         raise UnsupportedOperationError(
             message="ListTaskPushNotificationConfigs is not supported"
         )
@@ -687,6 +694,7 @@ class A2ARequestHandler(RequestHandler):
         params: DeleteTaskPushNotificationConfigRequest,
         context: ServerCallContext,
     ) -> None:
+        """Reject push-notification delete; this hook is unused on purpose."""
         raise UnsupportedOperationError(
             message="DeleteTaskPushNotificationConfig is not supported"
         )
@@ -696,6 +704,7 @@ class A2ARequestHandler(RequestHandler):
         params: GetExtendedAgentCardRequest,
         context: ServerCallContext,
     ) -> AgentCard:
+        """Reject extended-card fetch; the published card is the only one."""
         raise UnsupportedOperationError(
             message="GetExtendedAgentCard is not supported"
         )
