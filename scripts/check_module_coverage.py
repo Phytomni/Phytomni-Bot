@@ -25,12 +25,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_COVERAGE_JSON = PROJECT_ROOT / "coverage.json"
 AGENT_PATH_PREFIX = "src/mcp_server_phytomni/agents/"
+SOURCE_PREFIXES = (
+    "src/mcp_server_phytomni/",
+    "src/mcp_client_phytomni/",
+)
 
 # Per-file floors. Each entry locks the current measured percentage so a
 # regression below it fails the local gate. Each ratchet push raises one
@@ -83,6 +89,16 @@ MODULE_FLOORS: dict[str, int] = {
 TARGET = 80
 
 
+@dataclass(frozen=True)
+class CoverageResult:
+    """Production inventory evaluation used before the all-source switch."""
+
+    checked: int
+    missing: list[str]
+    violations: list[str]
+    zero_statement: list[str]
+
+
 _DOC_FIRST_LINE = (__doc__ or "").splitlines()[0]
 
 
@@ -123,6 +139,65 @@ def _load_coverage(path: Path) -> dict[str, dict]:
         )
         sys.exit(2)
     return files
+
+
+def _tracked_production_files() -> set[str]:
+    """Return tracked Python files under the two production prefixes."""
+    completed = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "src/mcp_server_phytomni",
+            "src/mcp_client_phytomni",
+        ],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    tracked: set[str] = set()
+    for raw in completed.stdout.splitlines():
+        path = raw.replace("\\", "/")
+        if not path.endswith(".py"):
+            continue
+        if path.startswith(SOURCE_PREFIXES):
+            tracked.add(path)
+    return tracked
+
+
+def _evaluate_production(
+    files: dict[str, dict], expected: set[str]
+) -> CoverageResult:
+    """Evaluate the production inventory without changing the active gate."""
+    missing = sorted(expected - set(files))
+    violations: list[str] = []
+    zero_statement: list[str] = []
+    checked = 0
+    for path in sorted(expected):
+        record = files.get(path)
+        if record is None:
+            continue
+        summary = record.get("summary")
+        if not isinstance(summary, dict) or "percent_covered" not in summary:
+            violations.append(path)
+            continue
+        statements = int(summary.get("num_statements") or 0)
+        if statements == 0:
+            zero_statement.append(path)
+            continue
+        checked += 1
+        if float(summary["percent_covered"]) < TARGET:
+            violations.append(path)
+    return CoverageResult(
+        checked=checked,
+        missing=missing,
+        violations=violations,
+        zero_statement=zero_statement,
+    )
 
 
 def _evaluate(
