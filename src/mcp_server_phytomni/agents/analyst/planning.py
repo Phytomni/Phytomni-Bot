@@ -19,15 +19,13 @@ from typing import Any
 from ...runtime.result_run_layout import is_unallocated_default_output_dir
 from ...runtime.task_dedup import (
     analyst_task_fingerprint,
-    mint_caller_owned_task_id,
     should_reuse_prior_task,
-    verify_live_status,
 )
 from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
 from ..shared.options import resolve_agent_locale
 from .defaults import ANALYST_CONFIG
 from .submission import _build_submit_agent, _shared_arun_kwargs
-from .task_ops import probe_live_status
+from .task_ops import verified_reuse_task_ids
 
 
 async def _reuse_live_prior_task(
@@ -44,16 +42,15 @@ async def _reuse_live_prior_task(
         ANALYST_CONFIG.OUTPUT_DIR,
     ):
         return None
-    source_task_id = prior.get("source_task_id") or prior["task_id"]
-    live_status = await probe_live_status(source_task_id)
-    if not verify_live_status(
+    reuse_ids = await verified_reuse_task_ids(
         prior,
-        live_status=live_status,
         require_terminal_success=False,
-    ):
+    )
+    if reuse_ids is None:
         return None
+    caller_task_id, source_task_id = reuse_ids
     reused: dict[str, Any] = {
-        "task_id": mint_caller_owned_task_id("analyst"),
+        "task_id": caller_task_id,
         "output_dir": prior["output_dir"],
         "job_name": "",
         "compute_resource": compute_resource,

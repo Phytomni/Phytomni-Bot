@@ -33,6 +33,10 @@ from ...runtime.outbound import (
     OutboundPoolName,
     current_outbound_http_client,
 )
+from ...runtime.task_dedup import (
+    mint_caller_owned_task_id,
+    verify_live_status,
+)
 from .defaults import ANALYST_CONFIG
 
 
@@ -151,6 +155,23 @@ async def probe_live_status(task_id: str) -> str | None:
     if isinstance(live, dict):
         return str(live.get("status") or "").upper() or None
     return None
+
+
+async def verified_reuse_task_ids(
+    prior: dict[str, Any],
+    *,
+    require_terminal_success: bool,
+) -> tuple[str, Any] | None:
+    """Return caller-owned and source ids if the prior remote task is live."""
+    source_task_id = prior.get("source_task_id") or prior["task_id"]
+    live_status = await probe_live_status(source_task_id)
+    if not verify_live_status(
+        prior,
+        live_status=live_status,
+        require_terminal_success=require_terminal_success,
+    ):
+        return None
+    return mint_caller_owned_task_id("analyst"), source_task_id
 
 
 async def task_log(

@@ -22,7 +22,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from ..agents.analyst.state import AnalystInput
-from ..agents.analyst.task_ops import probe_live_status
+from ..agents.analyst.task_ops import verified_reuse_task_ids
 from ..agents.shared.analysis import prepare_analyst_dispatch_context
 from ..agents.shared.analysis_requests import (
     build_analyst_analysis_request,
@@ -32,10 +32,8 @@ from ..agents.shared.options import resolve_agent_locale
 from ..runtime.result_run_layout import result_run_root_from_child
 from ..runtime.task_dedup import (
     analyst_task_fingerprint,
-    mint_caller_owned_task_id,
     record_dispatch_submission,
     should_reuse_prior_task,
-    verify_live_status,
 )
 from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
 
@@ -377,16 +375,15 @@ async def _reuse_prior_dispatch(
         return None
     if not should_reuse_prior_task(prior["status"] or ""):
         return None
-    source_task_id = prior.get("source_task_id") or prior["task_id"]
-    live_status = await probe_live_status(source_task_id)
-    if not verify_live_status(
+    reuse_ids = await verified_reuse_task_ids(
         prior,
-        live_status=live_status,
         require_terminal_success=require_terminal_success,
-    ):
+    )
+    if reuse_ids is None:
         return None
+    caller_task_id, source_task_id = reuse_ids
     return {
-        "task_id": mint_caller_owned_task_id("analyst"),
+        "task_id": caller_task_id,
         "output_dir": prior["output_dir"],
         "plan": None,
         "tool_usages": None,
