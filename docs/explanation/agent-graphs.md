@@ -367,6 +367,28 @@ prep + post pair around a mounted `knowledge` subgraph node:
 network / research / deep_genome) that want to compose analyst via
 `adapter_node` rather than mounting it directly.
 
+## Research parent
+
+`InSilicoResearchAgent` decomposes a paper or research goal into
+computational tasks. It has no standalone `graphs/manifests/*.graph.json`.
+Child analysis submissions go through `submit_analyst_via_subgraph` and
+the Analyst adapters above. Default compute tier is `medium`; see
+[Compute resource tiers](../reference/configuration.md#compute-resource-tiers).
+
+## Design parent
+
+`DigitalDesignAgent` runs protein and promoter design workflows. It has
+no standalone graph manifest. Design jobs reuse Analyst through the
+same dispatch seam. Baseline compute is `small`;
+`protein_design_analysis` and `protein_structure_analysis` map to
+`medium`.
+
+## Network parent
+
+`GeneNetworkAgent` analyses a species and trait-ontology id. It has no
+standalone graph manifest. Network submissions reuse Analyst through
+the same dispatch seam. Default compute tier is `small`.
+
 ## BriefGene Subgraph
 
 The single-gene annotation + literature workflow is registered as
@@ -604,7 +626,8 @@ rather than pinning a routing flag.
 
 ## Environment Subgraph
 
-The regional VCI workflow is registered as `environment` in
+The regional VCI workflow is not an MCP tool. DeepGenome or an internal
+wrapper invokes it. It is registered as `environment` in
 [`graphs.defaults.build_default_registry()`](../../src/mcp_server_phytomni/graphs/defaults.py).
 The compiled app exposes a narrow IO contract through three
 TypedDicts in
@@ -642,8 +665,8 @@ extraction failure so the wrapper still returns
 
 ## Evolution Subgraph
 
-The taxonomy-driven evolution workflow is registered as `evolution`
-in
+The taxonomy-driven evolution workflow is not an MCP tool. DeepGenome
+mounts it. It is registered as `evolution` in
 [`graphs.defaults.build_default_registry()`](../../src/mcp_server_phytomni/graphs/defaults.py).
 The compiled app exposes a narrow IO contract through three
 TypedDicts in
