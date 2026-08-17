@@ -409,7 +409,7 @@ async def _publish_archive(
     agent: str,
     summary_markdown: str,
 ) -> ResultArchiveDescriptor:
-    """Publish through Task 3 and return only an opaque public reference."""
+    """Publish the archive and return only an opaque public reference."""
     return await _publish_archive_with_runtime(
         inventory,
         agent,

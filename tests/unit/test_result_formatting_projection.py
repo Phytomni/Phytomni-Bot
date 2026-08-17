@@ -259,9 +259,6 @@ def test_leaf_redaction_handles_dataclasses_sequences_and_unknown_values() -> (
     assert sanitized["unknown"] is unknown
 
 
-# --- resolve_debug ---
-
-
 def test_resolve_debug_returns_false_when_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -334,9 +331,6 @@ def test_resolve_debug_env_empty_is_falsy(
     assert resolve_debug(None) is False
 
 
-# --- strip_agent_result ---
-
-
 def test_strip_agent_result_removes_raw() -> None:
     """strip_agent_result removes the 'raw' key."""
     result = {
@@ -379,9 +373,6 @@ def test_strip_agent_result_preserves_extra_keys() -> None:
     }
     stripped = strip_agent_result(result)
     assert stripped == {"formatted": {"answer": "a"}, "extra": "kept"}
-
-
-# --- strip_chat_completion ---
 
 
 def _build_full_completion() -> dict:

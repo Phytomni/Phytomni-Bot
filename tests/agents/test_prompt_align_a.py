@@ -98,9 +98,6 @@ def test_literature_only_prompt_uses_align_a(name: str) -> None:
     )
 
 
-# --- e2e helper: citation-residue scanner ---
-
-
 def test_assert_no_citation_residue_passes_on_clean_markdown() -> None:
     """Current superscripts and tolerated raw numeric markers pass."""
 
