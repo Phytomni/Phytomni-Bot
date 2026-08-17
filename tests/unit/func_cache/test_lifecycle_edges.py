@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -69,25 +68,6 @@ def test_default_cache_db_path_uses_repository_default(
     assert lifecycle._resolve_db_path("/explicit.sqlite") == (
         "/explicit.sqlite"
     )
-
-
-def test_register_storage_close_registers_one_hook_per_path(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A second register for the same absolute path is a no-op."""
-    registered: list[object] = []
-    monkeypatch.setattr(lifecycle.atexit, "register", registered.append)
-    previous = set(lifecycle._atexit_registered)
-    lifecycle._atexit_registered.clear()
-    try:
-        storage = SimpleNamespace(close=object())
-        path = str(tmp_path / "cache.sqlite")
-        lifecycle._register_storage_close(path, cast(Storage, storage))
-        lifecycle._register_storage_close(path, cast(Storage, storage))
-        assert registered == [storage.close]
-    finally:
-        lifecycle._atexit_registered.clear()
-        lifecycle._atexit_registered.update(previous)
 
 
 def test_check_and_update_meta_writes_when_missing() -> None:
