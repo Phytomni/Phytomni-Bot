@@ -9,9 +9,12 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from langgraph.errors import NodeCancelledError
+import langgraph.errors as langgraph_errors
 
-GRAPH_CANCELLATION = (asyncio.CancelledError, NodeCancelledError)
+GRAPH_CANCELLATION = (
+    asyncio.CancelledError,
+    getattr(langgraph_errors, "NodeCancelledError", asyncio.CancelledError),
+)
 
 __all__ = ["GRAPH_CANCELLATION", "run_coroutine_on_owned_loop"]
 
