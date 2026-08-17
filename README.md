@@ -72,22 +72,11 @@ and progress to stderr:
 phytomni --api-url http://127.0.0.1:8080 follow run-1
 ```
 
-DeepGenome has a local, revisioned report lifecycle. An atomic reservation
-creates the owner run, umbrella task, required BriefGene section, and child
-tracking rows before the in-process coordinator begins. BriefGene must succeed
-before any remote analysis is submitted; optional children may fail or remain
-in flight without hiding the latest `intermediate_report`. The coordinator
-owns bounded polling and writes `report_revision`; HTTP status, MCP
-`GetTaskStatus`, and the HTTP-backed CLI read that local snapshot. A service
-restart does not resume after process restart: the orphan is settled at the
-documented failure boundary, with its last intermediate report preserved.
-This release does not ship a cross-process durable worker for DeepGenome,
-does not expose DataAgent over HTTP streaming, and has no production/live
-integration acceptance. Web/Go, DBA/Ops, live-backend, and production rollout
-are separate owner checks; local Bot gates do not close those obligations. The
-public [DeepGenome contract fixtures](docs/contracts/deep-genome/README.md)
-show the sanitized report states and are shape examples only, not live
-acceptance evidence.
+DeepGenome keeps a local revisioned report. BriefGene must succeed before
+remote analysis; HTTP, MCP `GetTaskStatus`, and the HTTP-backed CLI read
+that snapshot. A service restart does not resume after process restart.
+See [Architecture](docs/explanation/architecture.md) and the
+[DeepGenome contract fixtures](docs/contracts/deep-genome/README.md).
 
 The HTTP API runs as a separate process:
 
@@ -97,135 +86,33 @@ phytomni-api-key create --user-id alice --name laptop
 ```
 
 See [CLI Reference](docs/reference/cli.md) for the installed commands and
-[HTTP API](docs/reference/http-api.md) for authentication, endpoint contracts,
-run polling, retention, OpenAI-compatible chat, human-in-the-loop review
-resume, and A2UI confirm/form/choice widgets
-(Surface Author + Chat/Review N=2). Copyable
-A2UI goldens for Web/Go consumers (`chat_confirm`, `review_confirm`,
-`chat_form`, `chat_choice`, `review_form`, `review_choice`,
-`multi_turn`) live under
+[HTTP API](docs/reference/http-api.md) for authentication, polling,
+OpenAI-compatible chat, review resume, locale, attachments, Research
+input resolution, SSE failure boundaries, and A2UI widgets. Copyable
+A2UI goldens for Web/Go consumers live under
 [docs/contracts/a2ui/](docs/contracts/a2ui/README.md).
 
-The current-SHA Bot acceptance procedure, focused packet, gate
-interpretation, and external-acceptance boundary live in the [Bot contract
-acceptance runbook](docs/ops/bot-contract-acceptance-runbook.md). The
-[convergence ledger](docs/ops/bot-contract-convergence-ledger.md) and
-[compatibility register](docs/ops/bot-compatibility-register.md) record
-dispositions; local Bot evidence does not claim Web/Go or staging acceptance.
+Bot Ready is not Web/Go or staging acceptance. The [Bot contract
+acceptance runbook](docs/ops/bot-contract-acceptance-runbook.md) is the
+current-SHA procedure.
 
-The sanitized unified managed-attachment contract is pinned by five scenarios
-in [the attachment fixture packet](docs/contracts/unified-attachments/).
-Its JSON, channel projections, and ordered Expert eligibility are shape
-evidence only; they do not establish browser, backend, staging, or production
-acceptance.
-
-### Locale And File Attachments
-
-HTTP agent requests accept `locale` at the top level. The precedence is
-explicit body value, the first supported `Accept-Language` item, then
-inference from the latest user query (`zh-CN` for Han characters, otherwise
-`en-US`). Header values `en` / `en-*` normalize to `en-US`, and `zh` /
-`zh-*` normalize to `zh-CN`. A body value outside `en-US` / `zh-CN` returns
-`422 unsupported_locale`. Locale affects generated natural-language text and
-fixed error messages only; it is never an authorization or tool-selection
-input. Paused runs keep their stored locale when resumed.
-
-Example native run:
-
-```bash
-curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
-  -H "Authorization: Bearer ptm_..." \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "arguments": {"user_query": "What is this rice gene?", "obs_file_list": []},
-    "locale": "en-US"
-  }'
-```
-
-Use the resumable `POST /v1/files` control route to create an asset, upload
-parts with the returned capability, and complete it. Pass the completed
-`asset_id` in an HTTP agent request's `attachments` list; Bot resolves it
-owner-scoped before invoking the selected agent. Managed assets are projected
-solely from their persisted class and the selected Agent's final channel shape:
-document-only Agents receive managed references in `obs_file_list`, while
-dual-channel Agents receive dataset-class assets in `data_list` and the rest
-in `obs_file_list`. Managed projection has no pre-invocation filename suffix,
-CSV, MIME, purpose, or description gate; managed `data_list` values are exact
-empty strings. Capability discovery describes only managed channel presence,
-the native argument name, and invocation limits; it does not advertise
-general managed support for extensions, formats, encoding, delimiters,
-compression, or descriptions. Legacy raw native inputs are separate:
-document references keep their documented purpose and extension checks, and
-legacy `data_list` entries remain CSV/purpose-validated with nonblank
-descriptions. The transfer limit is
-10 GiB by default. Agent invocation remains bounded to 10 attachments,
-26,214,400 bytes per attachment, and 52,428,800 bytes in total. Repeated
-asset ids, foreign owners, incomplete assets, unsupported channels, and
-metadata mismatches fail closed. Existing preconfigured OBS paths in
-`data_list` are a separate legacy policy and are not user-upload registration
-evidence. See the
-[HTTP attachment
-contract](docs/reference/http-api.md#attachment-invocation-contract)
-and [operator
-runbook](docs/ops/http-api-runbook.md#attachment-preflight-and-orphan-review)
-for the capability matrix, stable error codes, and orphan review boundary.
-
-Research input resolution is a separate exact-key contract layered on the
-existing Research run surface. It accepts only the three documented `data:` /
-configured-bucket grammars, preserves query spans, resolves managed assets
-owner-scoped, and resolves pasted dataset metadata without list or body access.
-The request-wide defaults are 64 managed references, 64 pasted references,
-and 128 combined references (each hard-capped at 256); the effective values
-are advertised only by the versioned `research_input_resolution_v1` descriptor
-when direct or relay readiness is proven. Idempotent admission, four public
-stages, cancellation, bounded failure projections, and relay grants remain
-separate from the unchanged `relay:obs` and MCP contracts. Copyable sanitized
-fixtures and the operator boundary are in the
-[Research input-resolution contract packet](docs/contracts/research-input-resolution/README.md).
-
-HTTP streaming has two explicit failure boundaries. The API eagerly prepares
-the tool and primes the first AG-UI event before committing SSE response
-headers; setup or priming failures are ordinary JSON errors and settle a
-pre-created run as `failed`. Once the first event is primed, an ordinary
-producer failure emits exactly one sanitized `RunError`, does not emit
-`RunFinished`, and closes with one `[DONE]`. Client cancellation propagates
-for cleanup: disconnecting before `RunFinished` settles `failed` without a
-synthetic frame, while disconnecting after `RunFinished` preserves success.
-See [SSE Streaming](docs/reference/http-api.md#sse-streaming) for the
-redaction and operator-smoke contract.
+HTTP `locale` is `en-US` or `zh-CN`. Uploads use `POST /v1/files`, then
+`attachments[].asset_id`. Research input resolution and the attachment
+matrix are documented on the HTTP API page.
 
 ### Capability Boundary
 
-The Bot-side implementation for the 14 dependency-underutilization items is
-complete on the `0.1.3` release branch: six gate rules, four reliability
-improvements, three dormant-asset connections, and MCP stdio progress are
-shipped. Graph progress is available on HTTP SSE and, for Knowledge / Review /
-Data / BriefGene, through MCP `progressToken`. Review interrupt/resume uses a
-persistent local SQLite checkpointer. A2UI Chat/Review widgets are always
-on. Web/Go
-integration, DBA/Ops evidence, live backend acceptance, and production rollout
-remain separately owned checks and are not closed by this Bot-local statement.
+A2UI Chat/Review widgets are always on. Graph progress is available on
+HTTP SSE and, for Knowledge / Review / Data / BriefGene, through MCP
+`progressToken`. Review interrupt/resume uses a local SQLite
+checkpointer. Web/Go integration, DBA/Ops evidence, live backend
+acceptance, and production rollout remain separately owned checks.
 
-The A2A server core is now available as an opt-in 0.1.3 surface. It remains
-disabled unless `PHYTOMNI_A2A_ENABLED=1` and a public base URL are configured;
-flag-off behavior is unchanged. Phase 2 supports the public Agent Card,
-authenticated JSON-RPC `SendMessage`, `SendStreamingMessage` over SSE, and
-owner-scoped `GetTask` polling. Review and A2UI-backed Chat pauses expose a
-bounded `INPUT_REQUIRED` data artifact for the next resume phase. Cancellation,
-and same-task `SendMessage` resume are available for that pause; A2A
-`CancelTask`, push notifications, and extended cards remain later-phase work.
-
-Phase 3/4 also ship outbound MCP/A2A discovery and opt-in Research/Design
-delegation. Operators provide a target
-registry and separate credential references; the read-only
-`GET /v1/interop/capabilities` endpoint requires the `agents` scope and
-returns sanitized capability metadata. Research and Design requests opt in
-per call with `interop_mode="auto"` or `interop_mode="required"` plus
-operator-registered `interop_targets`; the default `"off"` mode never
-discovers or invokes a peer. `auto` records a degraded local fallback when no
-external evidence is available, while `required` fails closed. Changing the
-registry requires an API process restart. An empty `INTEROP_TARGETS` list
-means no peers are configured.
+A2A is opt-in (`PHYTOMNI_A2A_ENABLED=1` plus a public base URL). The
+read-only `GET /v1/interop/capabilities` endpoint requires the `agents`
+scope. Research and Design opt in per call with
+`interop_mode="auto"` or `"required"` plus operator-registered
+`interop_targets`; the default `"off"` mode stays local.
 
 - **Capability:** A2A Agent Card and `/a2a` server
   **0.1.3 status:** Opt-in core
@@ -248,17 +135,11 @@ There is no autonomous `langmem` writer and no embedding or semantic index.
 For tools that include `obs_file_list`, pass an empty list (`[]`) when no
 document upload is needed. See [MCP Tool Reference](docs/reference/mcp-tools.md)
 for detailed argument semantics, async behavior, and demo payload links.
-To attach a document through HTTP, create and complete a resumable asset with
-`POST /v1/files`, then put the returned `asset_id` in the request's
-`attachments` list. Bot converts the owner-checked asset to the internal
-`obs_file_list` shape before the agent runs. Demo upload samples live under
+To attach a document through HTTP, complete a resumable `POST /v1/files`
+asset and put its `asset_id` in `attachments`. Demo samples live under
 [`demo_data/`](demo_data/). Details:
 [MCP Tool Reference — Uploading
 documents](docs/reference/mcp-tools.md#uploading-documents-for-obs_file_list).
-New upload creates require the explicit server-classified `purpose` value
-`dataset` or `document`; historical `chat_attachment` rows remain readable as
-documents but are not writable through this route. Completion responses expose
-only the safe asset descriptor and never return `purpose` or provider data.
 
 - **Tool:** `ChatAgent`
   **Kind:** sync
@@ -325,15 +206,9 @@ or blank `task_id` is formatted as a failed submit (not
 `GetTaskStatus`; the lookup is non-blocking and returns
 `status: "unknown"` for an unrecorded id.
 
-Identical analysis submissions are deduplicated by a content fingerprint
-over `(goal_description, data_list, obs_file_list)`. The shared
-`runtime/task_dedup.py` helpers cover both the top-level `AnalystAgent` and
-the dispatch seam that `DigitalDesignAgent`, `GeneNetworkAgent`,
-`InSilicoResearchAgent`, and `DeepGenomeAgent` analysis submissions funnel
-through, so a re-submitted question reuses the prior remote task instead of
-launching a duplicate. A fingerprint hit is verified against the live remote
-status before reuse: an in-flight or succeeded task is reused, while a failed
-or cancelled task is written back and resubmitted.
+Identical analysis submissions are fingerprint-deduplicated through
+`runtime/task_dedup.py` after a live remote-status check. See
+[Architecture](docs/explanation/architecture.md).
 
 ## Response Envelope
 
