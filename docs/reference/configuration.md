@@ -238,7 +238,8 @@ operator's OBS relay confines each key to its own tenant namespace). See
 - **Variable:** `APP_ID`
   **Aliased as:** `PHYTOMNI_APP_ID`
   **Purpose:** JSON-string `{ "small": "<uuid>", "medium": "<uuid>",`
-  `"large": "<uuid>" }`; analyst compute-tier app-id map.
+  `"large": "<uuid>" }`; Huawei analysis-app UUID map. It does not set
+  CPU or memory; those come from `AnalystConfig.RESOURCE` below.
 
 The aliasing matches the existing `PHYTOMNI_TLS_VERIFY` / `PHYTOMNI_CA_BUNDLE`
 convention so deployments may use the prefixed form when other `PHYTOMNI_*`
@@ -247,6 +248,34 @@ entries (`REPO_ID_DICT` and `APP_ID`) ship as JSON strings (e.g.
 `PHYTOMNI_REPO_ID_DICT='{"a34b...77b":128,"ec3...b":64}'`,
 `PHYTOMNI_APP_ID='{"small":"<uuid>","medium":"<uuid>","large":"<uuid>"}'`) so a
 single env var carries the full map.
+
+## Compute resource tiers
+
+Analysis jobs are X86 CPU/memory tiers. The sizes live on
+`AnalystConfig.RESOURCE` (and subclasses), not on `APP_ID`:
+
+| Tier   | CPU | Memory |
+| ------ | --: | -----: |
+| small  |   1 |     4G |
+| medium |   4 |    16G |
+| large  |  16 |    48G |
+
+Submit sites must call `resolve_compute_resource(config, analysis_type=None)`
+instead of writing `"small"` / `"medium"` / `"large"` at the call site.
+Resolution order is `COMPUTE_RESOURCE_BY_TYPE[analysis_type]`, then the
+instance `COMPUTE_RESOURCE`, then the config-class default. These are
+Pydantic fields, not required deployment environment variables.
+
+Per-agent defaults:
+
+- Analyst and GeneNetwork: `small`.
+- InSilicoResearch: `medium`.
+- Environment: `large`.
+- DigitalDesign: `small`, with `protein_design_analysis` and
+  `protein_structure_analysis` mapped to `medium`.
+- DeepGenome: `small`, with `evolution_analysis`,
+  `protein_structure_analysis`, and `protein_design_analysis` mapped to
+  `medium`.
 
 ## HTTP API Variables
 
