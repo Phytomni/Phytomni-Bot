@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -21,6 +21,7 @@ from mcp_server_phytomni.runtime.artifact_roles import (
     ClassifiedArtifact,
 )
 from mcp_server_phytomni.runtime.terminal_artifacts import (
+    ManifestLoader,
     TerminalArtifactSet,
     collect_terminal_artifact_set,
     collect_terminal_artifacts,
@@ -120,11 +121,15 @@ async def test_collect_set_degrades_when_listing_fails() -> None:
     async def _boom(_output_dir: str) -> list[ListedArtifactObject]:
         raise OSError("obs down")
 
+    async def _no_manifest(_dir: str) -> None:
+        del _dir
+        return None
+
     result = await collect_terminal_artifact_set(
         task_id="task-1",
         output_dir="owner/out",
         lister=_boom,
-        manifest_loader=lambda _dir: None,
+        manifest_loader=_no_manifest,
     )
 
     assert result.artifacts == ()
@@ -138,11 +143,15 @@ async def test_collect_set_truncates_over_cap_listing() -> None:
     async def _many(_output_dir: str) -> list[ListedArtifactObject]:
         return [_listed(f"f{index}.txt") for index in range(5)]
 
+    async def _no_manifest(_dir: str) -> None:
+        del _dir
+        return None
+
     result = await collect_terminal_artifact_set(
         task_id="task-1",
         output_dir="owner/out",
         lister=_many,
-        manifest_loader=lambda _dir: None,
+        manifest_loader=_no_manifest,
         cap=2,
     )
 
@@ -215,7 +224,7 @@ async def test_collect_set_accepts_sync_manifest_loader() -> None:
         task_id="task-1",
         output_dir="owner/out",
         lister=_listed_objects,
-        manifest_loader=_loader,
+        manifest_loader=cast(ManifestLoader, _loader),
     )
 
     assert result.artifacts[0].role is ArtifactRole.SCIENTIFIC_TEXT
@@ -246,7 +255,7 @@ async def test_collect_set_invalidates_failed_manifest_loader() -> None:
 def test_structured_collect_requires_task_and_output_dir() -> None:
     """The structured seam rejects a missing task or output directory."""
     with pytest.raises(ValueError, match="task_id and output_dir"):
-        collect_terminal_artifacts(task_id="task-1")
+        cast(Any, collect_terminal_artifacts)(task_id="task-1")
 
 
 async def test_load_manifest_from_objects_handles_missing_and_oversize(

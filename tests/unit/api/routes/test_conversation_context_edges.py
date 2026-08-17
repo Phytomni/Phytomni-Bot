@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -25,6 +25,7 @@ from mcp_server_phytomni.api.schemas import (
 )
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ContextVersionConflictError,
+    ConversationContextStore,
     ConversationTombstonedError,
     ReviewMutationLockTimeoutError,
     StoredTurn,
@@ -125,11 +126,16 @@ class _Lock:
         self.released = True
 
 
+def _as_store(store: _Store) -> ConversationContextStore:
+    """Treat one route double as the durable conversation store."""
+    return cast(ConversationContextStore, store)
+
+
 def _deps(store: _Store, callback: Any = None) -> ContextRouteDependencies:
     """Bind one fake store into the route dependency object."""
     return ContextRouteDependencies(
         require_agents=lambda: None,
-        get_store=lambda: store,
+        get_store=lambda: _as_store(store),
         acknowledge_review_settlement=callback,
     )
 
@@ -138,7 +144,9 @@ def test_load_review_turn_not_found() -> None:
     """A missing Review turn maps to HTTP 404."""
     payload = _payload()
     with pytest.raises(HTTPException) as caught:
-        route_mod._load_and_validate_review_turn(_Store(), "key", payload)
+        route_mod._load_and_validate_review_turn(
+            _as_store(_Store()), "key", payload
+        )
     assert caught.value.status_code == 404
 
 
@@ -147,7 +155,9 @@ def test_load_review_turn_invalid_private_marker() -> None:
     store = _Store(_turn(stage_metadata={"_review_settlement": "broken"}))
     payload = _payload()
     with pytest.raises(HTTPException) as caught:
-        route_mod._load_and_validate_review_turn(store, "key", payload)
+        route_mod._load_and_validate_review_turn(
+            _as_store(store), "key", payload
+        )
     assert caught.value.status_code == 503
     assert store.failed == [("key", "1")]
 
@@ -157,7 +167,9 @@ def test_load_review_turn_without_metadata_is_conflict() -> None:
     payload = _payload()
     with pytest.raises(HTTPException) as caught:
         route_mod._load_and_validate_review_turn(
-            _Store(_turn(stage_metadata={"other": 1})), "key", payload
+            _as_store(_Store(_turn(stage_metadata={"other": 1}))),
+            "key",
+            payload,
         )
     assert caught.value.status_code == 409
 
@@ -169,7 +181,9 @@ def test_load_review_turn_invalid_conversation_key() -> None:
     )
     payload = _payload()
     with pytest.raises(HTTPException) as caught:
-        route_mod._load_and_validate_review_turn(store, "not-a-uuid", payload)
+        route_mod._load_and_validate_review_turn(
+            _as_store(store), "not-a-uuid", payload
+        )
     assert caught.value.status_code == 503
     assert store.failed == [("not-a-uuid", "1")]
 
@@ -272,7 +286,7 @@ def test_commit_review_turn_maps_storage_errors() -> None:
     for error, status in cases:
         store = _Store(commit_error=error)
         with pytest.raises(HTTPException) as caught:
-            route_mod._commit_review_turn(store, "key", payload)
+            route_mod._commit_review_turn(_as_store(store), "key", payload)
         assert caught.value.status_code == status
 
 
@@ -288,7 +302,7 @@ async def test_settle_review_route_lock_timeout(
     monkeypatch.setattr(route_mod, "acquire_review_mutation_lock", _busy)
     with pytest.raises(HTTPException) as caught:
         await route_mod._settle_review_context_route(
-            _Store(), "key", _payload(), _deps(_Store())
+            _as_store(_Store()), "key", _payload(), _deps(_Store())
         )
     assert caught.value.status_code == 503
     assert caught.value.detail == "Review settlement is busy"
@@ -305,7 +319,9 @@ async def test_commit_route_lock_timeout(
 
     monkeypatch.setattr(route_mod, "acquire_review_mutation_lock", _busy)
     with pytest.raises(HTTPException) as caught:
-        await route_mod._commit_context_route(_Store(), "key", _payload())
+        await route_mod._commit_context_route(
+            _as_store(_Store()), "key", _payload()
+        )
     assert caught.value.status_code == 503
     assert caught.value.detail == "context settlement is busy"
 
@@ -323,12 +339,16 @@ async def test_commit_route_maps_missing_and_tombstoned(
     payload = _payload()
     missing = _Store(commit_error=KeyError("missing"))
     with pytest.raises(HTTPException) as caught:
-        await route_mod._commit_context_route(missing, "key", payload)
+        await route_mod._commit_context_route(
+            _as_store(missing), "key", payload
+        )
     assert caught.value.status_code == 404
 
     tombstoned = _Store(commit_error=ConversationTombstonedError("gone"))
     with pytest.raises(HTTPException) as caught:
-        await route_mod._commit_context_route(tombstoned, "key", payload)
+        await route_mod._commit_context_route(
+            _as_store(tombstoned), "key", payload
+        )
     assert caught.value.status_code == 409
 
 

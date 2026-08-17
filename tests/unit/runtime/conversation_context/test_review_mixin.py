@@ -372,58 +372,50 @@ def test_claim_row_failure_maps_each_precondition() -> None:
         def _review_context_state(_connection: object, _key: object):
             return (2, "active")
 
-    assert (
-        review_mixin._claim_row_failure(
-            _Live(),
-            _ReviewClaimLookupRequest(
-                connection=connection,
-                key="k",
-                row=("failed", "ledger", 2, "d"),
-                expected_ledger_version=None,
-                expected_base_context_version=None,
-            ),
-        ).status
-        == "conflict"
+    failed = review_mixin._claim_row_failure(
+        _Live(),
+        _ReviewClaimLookupRequest(
+            connection=connection,
+            key="k",
+            row=("failed", "ledger", 2, "d"),
+            expected_ledger_version=None,
+            expected_base_context_version=None,
+        ),
     )
-    assert (
-        review_mixin._claim_row_failure(
-            _Live(),
-            _ReviewClaimLookupRequest(
-                connection=connection,
-                key="k",
-                row=("staged", "other", 2, "d"),
-                expected_ledger_version="ledger",
-                expected_base_context_version=None,
-            ),
-        ).status
-        == "conflict"
+    assert failed is not None and failed.status == "conflict"
+    ledger = review_mixin._claim_row_failure(
+        _Live(),
+        _ReviewClaimLookupRequest(
+            connection=connection,
+            key="k",
+            row=("staged", "other", 2, "d"),
+            expected_ledger_version="ledger",
+            expected_base_context_version=None,
+        ),
     )
-    assert (
-        review_mixin._claim_row_failure(
-            _Live(),
-            _ReviewClaimLookupRequest(
-                connection=connection,
-                key="k",
-                row=("staged", "ledger", 1, "d"),
-                expected_ledger_version=None,
-                expected_base_context_version=2,
-            ),
-        ).status
-        == "conflict"
+    assert ledger is not None and ledger.status == "conflict"
+    version = review_mixin._claim_row_failure(
+        _Live(),
+        _ReviewClaimLookupRequest(
+            connection=connection,
+            key="k",
+            row=("staged", "ledger", 1, "d"),
+            expected_ledger_version=None,
+            expected_base_context_version=2,
+        ),
     )
-    assert (
-        review_mixin._claim_row_failure(
-            _Live(),
-            _ReviewClaimLookupRequest(
-                connection=connection,
-                key="k",
-                row=("staged", "ledger", 0, "d"),
-                expected_ledger_version=None,
-                expected_base_context_version=None,
-            ),
-        ).status
-        == "conflict"
+    assert version is not None and version.status == "conflict"
+    current = review_mixin._claim_row_failure(
+        _Live(),
+        _ReviewClaimLookupRequest(
+            connection=connection,
+            key="k",
+            row=("staged", "ledger", 0, "d"),
+            expected_ledger_version=None,
+            expected_base_context_version=None,
+        ),
     )
+    assert current is not None and current.status == "conflict"
     assert (
         review_mixin._claim_row_failure(
             _Live(),

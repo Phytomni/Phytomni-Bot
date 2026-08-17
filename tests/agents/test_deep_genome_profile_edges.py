@@ -114,7 +114,7 @@ async def test_cached_gene_annotation_lookup_keeps_populated_sections(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Only annotation sections that return rows are copied into the dict."""
-    payloads = [
+    payloads: list[dict[str, Any]] = [
         {"data": [{"description": "leaf"}]},
         {"data": []},
         {"data": [{"interpro_id": "IPR1"}]},

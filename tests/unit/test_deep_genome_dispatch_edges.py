@@ -7,12 +7,13 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from langgraph.graph import END
 
 from mcp_server_phytomni.agents.deep_genome import dispatch as dispatch_mod
+from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeState
 from mcp_server_phytomni.agents.deep_genome.coordinator import (
     RemoteSubmission,
     WorkItemOutcome,
@@ -46,7 +47,7 @@ class _DispatchHost(DeepGenomeDispatchMixin):
         self.sensitive_config = SimpleNamespace()
 
 
-def _state(**overrides: Any) -> dict[str, Any]:
+def _state(**overrides: Any) -> DeepGenomeState:
     """Return a Send-style analyst state with optional overrides."""
     state: dict[str, Any] = {
         "task_index": 3,
@@ -55,7 +56,7 @@ def _state(**overrides: Any) -> dict[str, Any]:
         "analysis_type": "smep_analysis",
     }
     state.update(overrides)
-    return state
+    return cast(DeepGenomeState, state)
 
 
 def _context() -> AnalysisDispatchContext:

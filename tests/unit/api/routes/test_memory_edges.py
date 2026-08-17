@@ -6,8 +6,8 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -25,6 +25,7 @@ from mcp_server_phytomni.runtime.memory import (
     MemoryConflictError,
     MemoryNotFoundError,
     MemoryPolicyError,
+    MemoryStore,
     MemoryStoreError,
 )
 
@@ -41,15 +42,15 @@ class _RaisingStore:
         """Raise the configured create failure."""
         raise self.error
 
-    def list(self, _owner: str, **_kwargs: object) -> list[object]:
+    def list(self, _owner: str, **_kwargs: object) -> Sequence[object]:
         """Raise the configured list failure."""
         raise self.error
 
-    def export(self, _owner: str) -> list[object]:
+    def export(self, _owner: str) -> Sequence[object]:
         """Raise the configured export failure."""
         raise self.error
 
-    def list_audit(self, **_kwargs: object) -> list[object]:
+    def list_audit(self, **_kwargs: object) -> Sequence[object]:
         """Raise the configured audit failure."""
         raise self.error
 
@@ -88,7 +89,7 @@ def _dependencies(
 ) -> memory.MemoryRouteDependencies:
     """Build isolated memory dependencies around one store double."""
     return memory.MemoryRouteDependencies(
-        get_store=lambda: store,
+        get_store=lambda: cast(MemoryStore, store),
         auth=memory.MemoryAuthDependencies(
             require_agents=lambda: None,
             require_service=lambda: None,

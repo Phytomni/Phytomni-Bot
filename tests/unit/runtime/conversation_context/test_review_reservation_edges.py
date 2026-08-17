@@ -99,27 +99,21 @@ def test_reserve_row_failure_maps_committed_and_version_edges() -> None:
         _review_context_state=lambda *_args: (1, "tombstoned"),
         _review_record=lambda *_args: None,
     )
-    assert (
-        _reserve_row_failure(store, _lookup(("staged", "v", 0, "{}"))).status
-        == "conflict"
-    )
+    tombstoned = _reserve_row_failure(store, _lookup(("staged", "v", 0, "{}")))
+    assert tombstoned is not None and tombstoned.status == "conflict"
     store._review_context_state = lambda *_args: (0, "active")
-    assert (
-        _reserve_row_failure(
-            store, _lookup(("committed", "v", 0, "{}"))
-        ).status
-        == "conflict"
+    committed = _reserve_row_failure(
+        store, _lookup(("committed", "v", 0, "{}"))
     )
+    assert committed is not None and committed.status == "conflict"
     store._review_record = lambda *_args: (
         "x",
         {"settlement_state": "settling"},
     )
-    assert (
-        _reserve_row_failure(
-            store, _lookup(("committed", "v", 0, "{}"))
-        ).status
-        == "conflict"
+    settling = _reserve_row_failure(
+        store, _lookup(("committed", "v", 0, "{}"))
     )
+    assert settling is not None and settling.status == "conflict"
     store._review_record = lambda *_args: (
         "x",
         {"settlement_state": "promoted"},
@@ -127,37 +121,29 @@ def test_reserve_row_failure_maps_committed_and_version_edges() -> None:
     assert _reserve_row_failure(
         store, _lookup(("committed", "v", 0, "{}"))
     ) == ReviewSettlementClaim("promoted")
-    assert (
-        _reserve_row_failure(store, _lookup(("failed", "v", 0, "{}"))).status
-        == "conflict"
-    )
+    failed = _reserve_row_failure(store, _lookup(("failed", "v", 0, "{}")))
+    assert failed is not None and failed.status == "conflict"
     store._review_context_state = lambda *_args: None
-    assert (
-        _reserve_row_failure(
-            store,
-            _lookup(
-                ("staged", "other", 0, "{}"),
-                expected_ledger_version="ledger",
-            ),
-        ).status
-        == "conflict"
+    ledger = _reserve_row_failure(
+        store,
+        _lookup(
+            ("staged", "other", 0, "{}"),
+            expected_ledger_version="ledger",
+        ),
     )
-    assert (
-        _reserve_row_failure(
-            store,
-            _lookup(
-                ("staged", "ledger", 1, "{}"),
-                expected_base_context_version=0,
-            ),
-        ).status
-        == "conflict"
+    assert ledger is not None and ledger.status == "conflict"
+    version = _reserve_row_failure(
+        store,
+        _lookup(
+            ("staged", "ledger", 1, "{}"),
+            expected_base_context_version=0,
+        ),
     )
-    assert (
-        _reserve_row_failure(
-            store, _lookup(("staged", "ledger", 1, "{}"))
-        ).status
-        == "conflict"
+    assert version is not None and version.status == "conflict"
+    current = _reserve_row_failure(
+        store, _lookup(("staged", "ledger", 1, "{}"))
     )
+    assert current is not None and current.status == "conflict"
     assert (
         _reserve_row_failure(store, _lookup(("staged", "ledger", 0, "{}")))
         is None

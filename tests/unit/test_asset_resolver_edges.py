@@ -177,11 +177,14 @@ def test_cleanup_run_ignores_unsafe_ids_and_unlinks_symlinks(
 
 def test_completed_asset_requires_completion_timestamp(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Completed status without completed_at is a state conflict."""
     harness = build_resumable_asset(tmp_path)
-    harness.resolver.registry.get_asset = Mock(
-        return_value=_completed_record(completed_at=None)
+    monkeypatch.setattr(
+        harness.resolver.registry,
+        "get_asset",
+        Mock(return_value=_completed_record(completed_at=None)),
     )
     with pytest.raises(UploadContractError) as caught:
         harness.resolver.resolve(_ASSET_ID, "owner-1")
@@ -190,12 +193,19 @@ def test_completed_asset_requires_completion_timestamp(
 
 def test_legacy_projection_integrity_without_existing_row(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A colliding legacy insert without a readable row is a conflict."""
     harness = build_resumable_asset(tmp_path)
-    harness.resolver.legacy_registry.get_by_path = Mock(return_value=None)
-    harness.resolver.legacy_registry.record = Mock(
-        side_effect=sqlite3.IntegrityError()
+    monkeypatch.setattr(
+        harness.resolver.legacy_registry,
+        "get_by_path",
+        Mock(return_value=None),
+    )
+    monkeypatch.setattr(
+        harness.resolver.legacy_registry,
+        "record",
+        Mock(side_effect=sqlite3.IntegrityError()),
     )
     with pytest.raises(UploadContractError) as caught:
         harness.resolver.resolve_bundle(

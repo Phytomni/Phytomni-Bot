@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import FrozenInstanceError
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from langchain_core.tools import BaseTool, StructuredTool
@@ -327,12 +327,16 @@ def test_tool_schema_uses_schema_method_and_args() -> None:
         args_schema = None
         args = "not-a-mapping"
 
-    normalized = normalize_capabilities("peer-cap", [_LegacyTool()])
+    normalized = normalize_capabilities(
+        "peer-cap", [cast(BaseTool, _LegacyTool())]
+    )
     assert normalized[0].input_schema["properties"]["q"]["type"] == "string"
-    normalized = normalize_capabilities("peer-cap", [_ArgsTool()])
+    normalized = normalize_capabilities(
+        "peer-cap", [cast(BaseTool, _ArgsTool())]
+    )
     assert normalized[0].input_schema["type"] == "object"
     with pytest.raises(InteropCapabilityError, match="invalid_schema"):
-        normalize_capabilities("peer-cap", [_BadArgsTool()])
+        normalize_capabilities("peer-cap", [cast(BaseTool, _BadArgsTool())])
 
 
 def test_normalize_rejects_invalid_kind_and_description() -> None:
@@ -353,7 +357,7 @@ def test_normalize_rejects_invalid_kind_and_description() -> None:
             kind="x",
         )
     with pytest.raises(InteropCapabilityError, match="invalid_description"):
-        normalize_capabilities("peer-cap", [_BadDescription()])
+        normalize_capabilities("peer-cap", [cast(BaseTool, _BadDescription())])
 
 
 async def test_unknown_target_kind_defaults_to_mcp() -> None:

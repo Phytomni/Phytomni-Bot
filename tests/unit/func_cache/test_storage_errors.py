@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from collections.abc import Callable, Iterator
+from typing import Any, cast
 
 import pytest
 from tests.support.logging_helpers import capture_non_propagating_logger
@@ -52,11 +53,11 @@ class _FailingConn:
         self._fail_execute = fail_execute
         self._fail_close = fail_close
 
-    def execute(self, *args: object, **kwargs: object):
+    def execute(self, sql: str, *args: Any, **kwargs: Any) -> Any:
         """Optionally raise instead of running SQL."""
         if self._fail_execute:
             raise sqlite3.Error("disk i/o error")
-        return self._real.execute(*args, **kwargs)
+        return self._real.execute(sql, *args, **kwargs)
 
     def close(self) -> None:
         """Optionally raise instead of closing the handle."""
@@ -76,7 +77,9 @@ def _install_failing_conn(
     Storage._connections.pop(id(real), None)
     fake = _FailingConn(real, fail_execute=fail_execute, fail_close=fail_close)
     storage._local.conn = fake
-    Storage._connections[id(fake)] = (storage, fake)  # type: ignore[arg-type]
+    Storage._connections[id(fake)] = cast(
+        tuple[Storage, sqlite3.Connection], (storage, fake)
+    )
     return fake
 
 
@@ -101,7 +104,7 @@ def test_storage_connect_error_closes_partial_connection(
     """A PRAGMA failure after connect still closes the partial handle."""
     real_connect = sqlite3.connect
 
-    def _connect_then_fail(*args: object, **kwargs: object):
+    def _connect_then_fail(*args: Any, **kwargs: Any) -> _FailingConn:
         conn = real_connect(*args, **kwargs)
         return _FailingConn(conn, fail_execute=True, fail_close=True)
 
@@ -144,9 +147,9 @@ def test_storage_close_all_logs_connection_close_errors(
             """Raise the close error close_all must swallow."""
             raise sqlite3.Error("stale close")
 
-    Storage._connections[id(_BoomConn)] = (
-        None,  # type: ignore[arg-type]
-        _BoomConn(),  # type: ignore[arg-type]
+    Storage._connections[id(_BoomConn)] = cast(
+        tuple[Storage, sqlite3.Connection],
+        (None, _BoomConn()),
     )
     with capture_non_propagating_logger(_STORAGE_LOGGER, caplog.handler):
         Storage.close_all()

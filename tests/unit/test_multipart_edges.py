@@ -56,12 +56,30 @@ def _patch_obs_model(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_begin_rejects_blank_upload_id() -> None:
+def _stub_run(
+    monkeypatch: pytest.MonkeyPatch,
+    storage: BoundedMultipartStorage,
+    result: object,
+) -> None:
+    """Replace the SDK runner with a fixed result or exception."""
+
+    def _run(_operation: Any) -> Any:
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+    monkeypatch.setattr(storage, "_run", _run)
+
+
+def test_begin_rejects_blank_upload_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A success status without an upload id is still unavailable."""
     storage = _storage()
-    storage._run = lambda _operation: SimpleNamespace(
-        status=200,
-        body=SimpleNamespace(uploadId=""),
+    _stub_run(
+        monkeypatch,
+        storage,
+        SimpleNamespace(status=200, body=SimpleNamespace(uploadId="")),
     )
     with pytest.raises(
         MultipartStorageError, match="upload_storage_unavailable"
@@ -69,12 +87,13 @@ def test_begin_rejects_blank_upload_id() -> None:
         storage.begin(bucket="bucket", object_key="owner/file.bin")
 
 
-def test_put_part_rejects_blank_etag() -> None:
+def test_put_part_rejects_blank_etag(monkeypatch: pytest.MonkeyPatch) -> None:
     """A success status without an ETag is still unavailable."""
     storage = _storage()
-    storage._run = lambda _operation: SimpleNamespace(
-        status=200,
-        body=SimpleNamespace(etag=""),
+    _stub_run(
+        monkeypatch,
+        storage,
+        SimpleNamespace(status=200, body=SimpleNamespace(etag="")),
     )
     with pytest.raises(
         MultipartStorageError, match="upload_storage_unavailable"
@@ -91,9 +110,11 @@ def test_complete_timeout_reuses_reconciled_object(
     """An unknown complete recovers when metadata confirms the object."""
     _patch_obs_model(monkeypatch)
     storage = _storage()
-    storage._run = lambda _operation: (_ for _ in ()).throw(TimeoutError())
+    _stub_run(monkeypatch, storage, TimeoutError())
     expected = CompletedObject("bucket", "owner/file.bin", 3)
-    storage.reconcile_complete = lambda *_args, **_kwargs: expected
+    monkeypatch.setattr(
+        storage, "reconcile_complete", lambda *_args, **_kwargs: expected
+    )
     assert storage.complete(_session(), (_part(),)) == expected
 
 
@@ -103,16 +124,20 @@ def test_complete_timeout_stays_unknown_when_unreconciled(
     """An unknown complete stays unknown when metadata is missing."""
     _patch_obs_model(monkeypatch)
     storage = _storage()
-    storage._run = lambda _operation: (_ for _ in ()).throw(TimeoutError())
-    storage.reconcile_complete = lambda *_args, **_kwargs: None
+    _stub_run(monkeypatch, storage, TimeoutError())
+    monkeypatch.setattr(
+        storage, "reconcile_complete", lambda *_args, **_kwargs: None
+    )
     with pytest.raises(MultipartStorageError, match="obs_outcome_unknown"):
         storage.complete(_session(), (_part(),))
 
 
-def test_abort_maps_transport_failure() -> None:
+def test_abort_maps_transport_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Abort transport errors become the stable unavailable code."""
     storage = _storage()
-    storage._run = lambda _operation: (_ for _ in ()).throw(OSError("abort"))
+    _stub_run(monkeypatch, storage, OSError("abort"))
     with pytest.raises(
         MultipartStorageError, match="upload_storage_unavailable"
     ):
@@ -130,24 +155,25 @@ def test_abort_maps_transport_failure() -> None:
 )
 def test_reconcile_complete_returns_none_on_unconfirmed_object(
     response: object,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Metadata that cannot confirm the expected size is not reused."""
     storage = _storage()
     if response == "raise":
-        storage._run = lambda _operation: (_ for _ in ()).throw(
-            ConnectionError()
-        )
+        _stub_run(monkeypatch, storage, ConnectionError())
     else:
-        storage._run = lambda _operation, payload=response: payload
+        _stub_run(monkeypatch, storage, response)
     assert storage.reconcile_complete(_session(), (_part(),)) is None
 
 
-def test_download_to_path_verifies_expected_size(tmp_path) -> None:
+def test_download_to_path_verifies_expected_size(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A successful download returns the on-disk size when it matches."""
     storage = _storage()
     destination = tmp_path / "object.bin"
     destination.write_bytes(b"abc")
-    storage._run = lambda _operation: SimpleNamespace(status=200)
+    _stub_run(monkeypatch, storage, SimpleNamespace(status=200))
     assert (
         storage.download_to_path(
             bucket="bucket",
@@ -159,10 +185,12 @@ def test_download_to_path_verifies_expected_size(tmp_path) -> None:
     )
 
 
-def test_download_to_path_maps_missing_file(tmp_path) -> None:
+def test_download_to_path_maps_missing_file(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A download that never materializes the file is unavailable."""
     storage = _storage()
-    storage._run = lambda _operation: SimpleNamespace(status=200)
+    _stub_run(monkeypatch, storage, SimpleNamespace(status=200))
     with pytest.raises(
         MultipartStorageError, match="upload_storage_unavailable"
     ):
@@ -174,12 +202,14 @@ def test_download_to_path_maps_missing_file(tmp_path) -> None:
         )
 
 
-def test_download_to_path_rejects_size_mismatch(tmp_path) -> None:
+def test_download_to_path_rejects_size_mismatch(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A downloaded object whose size disagrees is a state conflict."""
     storage = _storage()
     destination = tmp_path / "object.bin"
     destination.write_bytes(b"ab")
-    storage._run = lambda _operation: SimpleNamespace(status=200)
+    _stub_run(monkeypatch, storage, SimpleNamespace(status=200))
     with pytest.raises(MultipartStorageError, match="upload_state_conflict"):
         storage.download_to_path(
             bucket="bucket",
@@ -189,10 +219,12 @@ def test_download_to_path_rejects_size_mismatch(tmp_path) -> None:
         )
 
 
-def test_download_to_path_maps_error_status(tmp_path) -> None:
+def test_download_to_path_maps_error_status(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A non-success download status is storage-unavailable."""
     storage = _storage()
-    storage._run = lambda _operation: SimpleNamespace(status=500)
+    _stub_run(monkeypatch, storage, SimpleNamespace(status=500))
     with pytest.raises(
         MultipartStorageError, match="upload_storage_unavailable"
     ):

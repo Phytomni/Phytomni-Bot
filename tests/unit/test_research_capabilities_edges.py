@@ -45,7 +45,7 @@ def _capability(
     )
 
 
-def _limits(**overrides: Any) -> SimpleNamespace:
+def _limits(**overrides: Any) -> ApiConfig:
     """Return numeric Research limits used by the public descriptor."""
     values = {
         "RELAY_MODE": False,
@@ -55,7 +55,7 @@ def _limits(**overrides: Any) -> SimpleNamespace:
         "API_MAX_RESEARCH_INPUT_REFERENCES": 128,
     }
     values.update(overrides)
-    return SimpleNamespace(**values)
+    return cast(ApiConfig, SimpleNamespace(**values))
 
 
 class _FakeRelayClient:
@@ -158,7 +158,9 @@ async def test_current_snapshot_schedules_and_swallows_errors(
     if cache._refresh_task is not None:
         await cache._refresh_task
 
-    cache.schedule_refresh = Mock(side_effect=RuntimeError("offline"))
+    monkeypatch.setattr(
+        cache, "schedule_refresh", Mock(side_effect=RuntimeError("offline"))
+    )
     assert (
         module.current_research_relay_snapshot(
             ApiConfig(), now + timedelta(seconds=400)
@@ -218,7 +220,9 @@ def test_runtime_capability_descriptor_and_constructible_edges(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Readiness fails closed for bad limits, relay caps, and OBS gaps."""
-    missing = research_input_runtime_capability(SimpleNamespace(), None)
+    missing = research_input_runtime_capability(
+        cast(ApiConfig, SimpleNamespace()), None
+    )
     assert missing.ready is False
 
     now = datetime.now(UTC)
@@ -253,7 +257,7 @@ def test_runtime_capability_descriptor_and_constructible_edges(
 
 def test_descriptor_and_shape_validation_edges() -> None:
     """Descriptor construction and capability shape checks fail closed."""
-    assert module._descriptor(SimpleNamespace()) is None
+    assert module._descriptor(cast(ApiConfig, SimpleNamespace())) is None
     assert module._descriptor(_limits(API_MAX_USER_QUERY_CHARS=0)) is None
     assert module._valid_protocol_versions(()) is False
     assert module._valid_protocol_versions((True,)) is False

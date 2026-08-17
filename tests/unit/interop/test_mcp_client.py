@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from langchain_core.messages import ToolMessage
@@ -31,6 +31,7 @@ from mcp_server_phytomni.interop.models import (
     MCPStdioTarget,
     MCPStreamableHttpTarget,
 )
+from mcp_server_phytomni.interop.runtime import InteropResourceRuntime
 
 pytestmark = pytest.mark.unit
 
@@ -354,7 +355,7 @@ def test_unknown_target_type_is_unsupported() -> None:
 
     with pytest.raises(InteropMCPError) as caught:
         build_mcp_connection(
-            unknown,
+            cast(InteropTarget, unknown),
             registry=_Registry(),  # type: ignore[arg-type]
         )
 
@@ -595,16 +596,19 @@ async def test_runtime_loader_uses_leased_session(
             return await operation(session)
 
     async def fake_loader(
-        leased: object,
+        leased: Any,
         **_: object,
     ) -> list[StructuredTool]:
         await leased.list_tools()
         await leased.call_tool("search_genes")
-        return [
-            _tool("peer-http_search_genes", _answer),
-            _tool("peer-http_hidden", _answer),
-            SimpleNamespace(name=None),
-        ]
+        return cast(
+            list[StructuredTool],
+            [
+                _tool("peer-http_search_genes", _answer),
+                _tool("peer-http_hidden", _answer),
+                SimpleNamespace(name=None),
+            ],
+        )
 
     monkeypatch.setattr(
         interop_mcp,
@@ -713,7 +717,9 @@ async def test_leased_session_proxies_runtime_operations() -> None:
             calls.append((target_id, result))
             return result
 
-    leased = interop_mcp._LeasedMcpSession(_Runtime(), "peer-http")
+    leased = interop_mcp._LeasedMcpSession(
+        cast(InteropResourceRuntime, _Runtime()), "peer-http"
+    )
     assert await leased.list_tools() == "listed"
     assert await leased.call_tool("search_genes") == "called"
     assert calls == [("peer-http", "listed"), ("peer-http", "called")]

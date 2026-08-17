@@ -20,6 +20,7 @@ from mcp_server_phytomni.agents.analyst.graph import (
     LiteralString,
     _relay_analysis_body,
 )
+from mcp_server_phytomni.agents.analyst.state import AnalystState
 from mcp_server_phytomni.storage.path_policy import RunIdentity
 
 pytestmark = pytest.mark.agent
@@ -550,7 +551,7 @@ async def test_tool_retrieve_node_concatenates_docs(
     )
 
     result = await AnalystGraphMixin.tool_retrieve_node(
-        host, {"extracted_tools": ["tool-a"]}
+        host, cast(AnalystState, {"extracted_tools": ["tool-a"]})
     )
 
     assert "[tool-a Usage START]" in result["tool_usages"]

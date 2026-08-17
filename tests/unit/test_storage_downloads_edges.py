@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
+from mcp_server_phytomni.runtime.outbound import ObsClientRuntime
 from mcp_server_phytomni.storage import downloads as downloads_module
 from mcp_server_phytomni.storage.downloads import (
     ObsDownloadOptions,
@@ -46,9 +47,9 @@ class _Executor:
     def __enter__(self) -> _Executor:
         return self
 
-    def __exit__(self, *args: Any) -> bool:
+    def __exit__(self, *args: Any) -> None:
         del args
-        return False
+        return None
 
     def map(self, func: Any, items: Any) -> list[Any]:
         """Return placeholder conversion results."""
@@ -156,7 +157,7 @@ async def test_download_retry_succeeds_after_transient_error(
     monkeypatch.setattr(downloads_module.asyncio, "sleep", _sleep)
     target = str(tmp_path / "notes.txt")
     result = await downloads_module._download_obs_file_with_retry(
-        SimpleNamespace(),
+        cast(ObsClientRuntime, SimpleNamespace()),
         "notes.txt",
         target,
         _context(str(tmp_path), max_retries=1),
@@ -182,7 +183,7 @@ async def test_download_retry_raises_after_status_error(
     monkeypatch.setattr(downloads_module, "_download_obs_file_once", _once)
     with pytest.raises(OSError, match="download failed"):
         await downloads_module._download_obs_file_with_retry(
-            SimpleNamespace(),
+            cast(ObsClientRuntime, SimpleNamespace()),
             "notes.txt",
             str(tmp_path / "notes.txt"),
             _context(str(tmp_path), max_retries=0),
@@ -195,7 +196,7 @@ async def test_download_retry_returns_when_budget_is_negative(
     """A negative retry budget skips the loop and returns the target."""
     target = str(tmp_path / "notes.txt")
     result = await downloads_module._download_obs_file_with_retry(
-        SimpleNamespace(),
+        cast(ObsClientRuntime, SimpleNamespace()),
         "notes.txt",
         target,
         _context(str(tmp_path), max_retries=-1),
@@ -214,7 +215,10 @@ async def test_download_once_uses_owned_runtime(tmp_path: Path) -> None:
 
     context = _context(str(tmp_path))
     result = await downloads_module._download_obs_file_once(
-        _Runtime(), "object-key", str(tmp_path / "f.txt"), context
+        cast(ObsClientRuntime, _Runtime()),
+        "object-key",
+        str(tmp_path / "f.txt"),
+        context,
     )
     assert result == "ok"
     assert seen

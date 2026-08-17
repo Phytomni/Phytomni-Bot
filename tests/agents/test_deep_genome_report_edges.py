@@ -27,7 +27,10 @@ from mcp_server_phytomni.agents.deep_genome.report import (
     _write_async,
 )
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
-from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
+from mcp_server_phytomni.runtime.deep_genome_store import (
+    DeepGenomeSnapshot,
+    DeepGenomeStore,
+)
 from mcp_server_phytomni.runtime.deep_genome_transitions import (
     DeepGenomeTransitionError,
 )
@@ -373,7 +376,9 @@ def test_fail_finalization_maps_store_errors(tmp_path: Path) -> None:
     class _BoomStore(DeepGenomeStore):
         """Raise a transition error from umbrella failure."""
 
-        def fail_umbrella(self, umbrella_task_id: str, *, reason: str) -> None:
+        def fail_umbrella(
+            self, umbrella_task_id: str, *, reason: str
+        ) -> DeepGenomeSnapshot:
             """Reject the failure write."""
             del umbrella_task_id, reason
             raise DeepGenomeTransitionError("cannot fail")
@@ -392,7 +397,9 @@ def test_fail_finalization_maps_sqlite_errors(tmp_path: Path) -> None:
     class _BoomStore(DeepGenomeStore):
         """Raise a sqlite error from umbrella failure."""
 
-        def fail_umbrella(self, umbrella_task_id: str, *, reason: str) -> None:
+        def fail_umbrella(
+            self, umbrella_task_id: str, *, reason: str
+        ) -> DeepGenomeSnapshot:
             """Reject the failure write with a durable sqlite error."""
             del umbrella_task_id, reason
             raise sqlite3.Error("locked")
