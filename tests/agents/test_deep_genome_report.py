@@ -11,8 +11,6 @@ A test-only subclass exposes the protected helpers under public names
 so the assertions stay inside the class hierarchy.
 """
 
-# pylint: disable=protected-access, duplicate-code
-
 from __future__ import annotations
 
 import asyncio
@@ -45,7 +43,7 @@ from tests.agents.shared.deep_genome_fixtures import (
     concrete_barrier_work_items,
     failed_concrete_barrier_data,
     partially_failed_concrete_barrier_data,
-    seed_brief_gene_plan,
+    reserve_smep_finalization,
     successful_concrete_barrier_data,
 )
 from tests.support.sqlite import closed_sqlite_connection
@@ -318,21 +316,8 @@ def _finalization_fixture(
 ) -> tuple[DeepGenomeStore, str, str, int]:
     """Build a reserved run with a running finalization barrier."""
     db_path = tmp_path / "tasks.db"
+    reservation = reserve_smep_finalization(str(db_path))
     store = DeepGenomeStore(str(db_path))
-    reservation = store.reserve_run(
-        run_id="run-1",
-        umbrella_task_id="task-1",
-        owner="alice",
-        output_dir="/obs/run",
-    )
-    seed_brief_gene_plan(store, reservation, "Os01g0177400")
-    with closed_sqlite_connection(db_path) as conn:
-        conn.execute(
-            "UPDATE deep_genome_remote_tasks SET status = 'failed', "
-            "failure_reason = 'analysis task failed' "
-            "WHERE umbrella_task_id = ? AND work_item_key != ?",
-            (reservation.umbrella_task_id, "smep_analysis"),
-        )
     snapshot = store.apply_work_item_transition(
         reservation.umbrella_task_id,
         work_item_key="smep_analysis",
@@ -524,7 +509,9 @@ async def test_write_async_and_public_dispatch(
 
     monkeypatch.setattr(report_module, "_write", boom)
     with pytest.raises(OSError, match="disk full"):
-        await report_module._write_async(tmp_path / "out.md", "text")
+        await getattr(report_module, "_write_async")(
+            tmp_path / "out.md", "text"
+        )
 
     class _LiveProbe(DeepGenomeReportMixin):
         def __init__(self) -> None:

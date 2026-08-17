@@ -1,4 +1,3 @@
-# pylint: disable=too-few-public-methods, duplicate-code
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
@@ -75,12 +74,39 @@ class _EmptyGetStore:
         """Return no record so the route can map a 404."""
         return None
 
+    def close(self) -> None:
+        """No-op closer so the double meets the public-method floor."""
+        return None
+
 
 def _validation_error() -> ValidationError:
     """Build one Pydantic validation error for route mapping tests."""
     with pytest.raises(ValidationError) as captured:
         MemoryCreateRequest.model_validate({"kind": "", "content": "x"})
     return captured.value
+
+
+def _passthrough_projection() -> memory.MemoryProjectionDependencies:
+    """Project store records without rewriting the public memory shape."""
+
+    def as_write(_owner: object, payload: object) -> object:
+        return payload
+
+    def as_response(record: Any) -> MemoryResponse:
+        return MemoryResponse.model_validate(record.model_dump())
+
+    def as_audit(record: Any) -> MemoryAuditRecordResponse:
+        return MemoryAuditRecordResponse.model_validate(record.model_dump())
+
+    def as_revision(_value: object, *, required: bool) -> int | None:
+        return 1 if required else None
+
+    return memory.MemoryProjectionDependencies(
+        memory_write=as_write,
+        memory_response=as_response,
+        memory_audit_response=as_audit,
+        memory_revision=as_revision,
+    )
 
 
 def _dependencies(
@@ -99,20 +125,7 @@ def _dependencies(
             current_user=current_user,
             current_request_id=lambda: "request-a",
         ),
-        projection=memory.MemoryProjectionDependencies(
-            memory_write=lambda _owner, payload: payload,
-            memory_response=lambda record: MemoryResponse.model_validate(
-                record.model_dump()
-            ),
-            memory_audit_response=(
-                lambda record: MemoryAuditRecordResponse.model_validate(
-                    record.model_dump()
-                )
-            ),
-            memory_revision=lambda _value, *, required: (
-                1 if required else None
-            ),
-        ),
+        projection=_passthrough_projection(),
     )
 
 

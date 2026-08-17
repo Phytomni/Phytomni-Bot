@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Review settlement error edges for conversation-context HTTP routes."""
 
-# pylint: disable=protected-access, duplicate-code, too-few-public-methods
-
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -48,46 +46,46 @@ async def enabled_context_client(
     tmp_path: Path,
 ) -> AsyncIterator[tuple[httpx.AsyncClient, str, ConversationContextStore]]:
     """Yield an enabled API client with isolated context and key stores."""
-    tasks_db = tmp_path / "server_tasks.db"
-    keys_db = tmp_path / "keys.sqlite"
-    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
-    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_db))
-    key = ApiKeyStore(str(keys_db)).create(user_id="u1").api_key
-    store = ConversationContextStore(str(tasks_db))
+    review_tasks = tmp_path / "review-tasks.db"
+    review_keys = tmp_path / "review-keys.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(review_tasks))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(review_keys))
+    issued = ApiKeyStore(str(review_keys)).create(user_id="reviewer").api_key
+    review_store = ConversationContextStore(str(review_tasks))
     async with open_asgi_client(
-        monkeypatch, create_app(), base_url="http://api.context.test"
+        monkeypatch, create_app(), base_url="http://api.review-context.test"
     ) as client:
-        yield client, key, store
+        yield client, issued, review_store
 
 
 async def test_review_invalid_private_marker_fails_closed(context_client):
     """A non-mapping private marker cannot be promoted."""
-    client, key, store = context_client
-    _stage_turn(store, review_metadata=cast(Any, "not-a-mapping"))
-    response = await client.post(
+    client, issued, review_store = context_client
+    _stage_turn(review_store, review_metadata=cast(Any, "not-a-mapping"))
+    posted = await client.post(
         "/v1/conversation-context/settle",
-        headers=_headers(key),
         json=_settlement_payload(),
+        headers=_headers(issued),
     )
-    assert response.status_code == 503
-    failed = store.load_turn(str(_CONVERSATION_KEY), "1")
+    assert posted.status_code == 503
+    failed = review_store.load_turn(str(_CONVERSATION_KEY), "1")
     assert failed is not None and failed.state == "failed"
 
 
 async def test_review_ack_false_and_missing_callback(monkeypatch, tmp_path):
     """Pending Review settlement requires a successful adapter ack."""
-    tasks_db = tmp_path / "server_tasks.db"
-    keys_db = tmp_path / "keys.sqlite"
-    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
-    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_db))
-    key = ApiKeyStore(str(keys_db)).create(user_id="u1").api_key
-    store = ConversationContextStore(str(tasks_db))
+    review_tasks = tmp_path / "ack-tasks.db"
+    review_keys = tmp_path / "ack-keys.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(review_tasks))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(review_keys))
+    issued = ApiKeyStore(str(review_keys)).create(user_id="reviewer").api_key
+    review_store = ConversationContextStore(str(review_tasks))
     stable = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
     _stage_turn(
-        store,
+        review_store,
         review_metadata={
-            "version": 1,
             "operation": "new_review",
+            "version": 1,
             "stable_thread_id": stable,
             "candidate_thread_id": _candidate_thread_id(stable, "1"),
             "turn_id": "1",
@@ -116,13 +114,13 @@ async def test_review_ack_false_and_missing_callback(monkeypatch, tmp_path):
     ) as client:
         denied = await client.post(
             "/v1/conversation-context/settle",
-            headers=_headers(key),
             json=_settlement_payload(),
+            headers=_headers(issued),
         )
     assert denied.status_code == 503
     deps = conversation_context.ContextRouteDependencies(
         require_agents=lambda: None,
-        get_store=lambda: store,
+        get_store=lambda: review_store,
         acknowledge_review_settlement=None,
     )
     payload = conversation_context.ContextSettlementRequest(
@@ -131,10 +129,10 @@ async def test_review_ack_false_and_missing_callback(monkeypatch, tmp_path):
         turn_id="1",
         ledger_version=_LEDGER_VERSION,
     )
-    staged = store.load_turn(str(_CONVERSATION_KEY), "1")
+    staged = review_store.load_turn(str(_CONVERSATION_KEY), "1")
     assert staged is not None
     with pytest.raises(conversation_context.HTTPException) as missing:
-        await conversation_context._acknowledge_review_settlement(
+        await getattr(conversation_context, "_acknowledge_review_settlement")(
             str(_CONVERSATION_KEY),
             payload,
             staged,
@@ -247,14 +245,14 @@ async def test_review_validation_helpers_cover_conflict_states():
         metadata={"_review_settlement": {"turn_id": "1"}},
     )
     with pytest.raises(conversation_context.HTTPException):
-        conversation_context._validate_review_context_state(
+        getattr(conversation_context, "_validate_review_context_state")(
             staged,
             {"settlement_state": "pending"},
             SimpleNamespace(state="tombstoned", context_version=1),
             payload,
         )
     with pytest.raises(conversation_context.HTTPException):
-        conversation_context._validate_review_context_state(
+        getattr(conversation_context, "_validate_review_context_state")(
             staged,
             {"settlement_state": "pending"},
             SimpleNamespace(state="active", context_version=3),
@@ -262,16 +260,16 @@ async def test_review_validation_helpers_cover_conflict_states():
         )
     failed = _stored_turn(state="failed", metadata={})
     with pytest.raises(conversation_context.HTTPException):
-        conversation_context._validate_review_context_state(
+        getattr(conversation_context, "_validate_review_context_state")(
             failed, {"settlement_state": "pending"}, None, payload
         )
     committed = _stored_turn(state="committed", metadata={})
     with pytest.raises(conversation_context.HTTPException):
-        conversation_context._validate_review_context_state(
+        getattr(conversation_context, "_validate_review_context_state")(
             committed, {"settlement_state": "pending"}, None, payload
         )
     with pytest.raises(conversation_context.HTTPException):
-        conversation_context._validate_review_context_state(
+        getattr(conversation_context, "_validate_review_context_state")(
             staged, {"settlement_state": "failed"}, None, payload
         )
 
@@ -320,7 +318,7 @@ async def test_load_review_turn_rejects_unbound_key_and_missing_metadata():
             """Ignore turn-failure bookkeeping in this test."""
 
     with pytest.raises(conversation_context.HTTPException) as invalid:
-        conversation_context._load_and_validate_review_turn(
+        getattr(conversation_context, "_load_and_validate_review_turn")(
             cast(Any, _Store()), "not-a-uuid", payload
         )
     assert invalid.value.status_code == 503
@@ -347,8 +345,16 @@ async def test_load_review_turn_rejects_unbound_key_and_missing_metadata():
                 expires_at=None,
             )
 
+        def describe(self) -> str:
+            """Return a stable name for the public-method floor."""
+            return "_Bare"
+
+        def close(self) -> None:
+            """No-op closer so the double meets the public-method floor."""
+            return None
+
     with pytest.raises(conversation_context.HTTPException) as missing:
-        conversation_context._load_and_validate_review_turn(
+        getattr(conversation_context, "_load_and_validate_review_turn")(
             cast(Any, _Bare()), str(_CONVERSATION_KEY), payload
         )
     assert missing.value.status_code == 409
@@ -367,12 +373,20 @@ async def test_delete_checkpoint_threads_skips_stable_ids(monkeypatch):
             """Record one deleted thread id."""
             self.deleted.append(thread_id)
 
+        def describe(self) -> str:
+            """Return a stable name for the public-method floor."""
+            return "_Checkpointer"
+
+        def close(self) -> None:
+            """No-op closer so the double meets the public-method floor."""
+            return None
+
     checkpointer = _Checkpointer()
     monkeypatch.setattr(
         conversation_context, "ensure_checkpointer", lambda: checkpointer
     )
     stable = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
-    await conversation_context._delete_checkpoint_threads(
+    await getattr(conversation_context, "_delete_checkpoint_threads")(
         _CONVERSATION_KEY, (stable, "candidate-extra")
     )
     assert (

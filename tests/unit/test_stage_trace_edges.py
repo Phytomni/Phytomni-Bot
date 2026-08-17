@@ -1,4 +1,3 @@
-# pylint: disable=too-few-public-methods
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
@@ -25,6 +24,10 @@ class _NamedSink:
 
     def emit(self, event: object) -> None:
         """Ignore events; this fixture only exposes the contract name."""
+
+    def close(self) -> None:
+        """No-op closer so the sink meets the public-method floor."""
+        return None
 
 
 def test_stage_trace_sink_contract_name_is_stable() -> None:

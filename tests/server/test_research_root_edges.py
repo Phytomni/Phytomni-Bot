@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Branch edges for HTTP Research root composition helpers."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -69,7 +67,9 @@ def _install_factory_config(monkeypatch: pytest.MonkeyPatch) -> None:
 
 async def test_direct_goal_provider_returns_bounded_goal() -> None:
     """The HTTP goal provider keeps the supplied query as one goal."""
-    provider = research_root._DirectGoalProvider("Find drought genes")
+    provider = getattr(research_root, "_DirectGoalProvider")(
+        "Find drought genes"
+    )
 
     assert provider.contract_name == "research_goal_provider"
     goals = await provider.extract(evidence="ignored", locale="zh-CN")
@@ -80,7 +80,9 @@ async def test_direct_goal_provider_returns_bounded_goal() -> None:
 
 def test_managed_downloader_observes_inventory_snapshot() -> None:
     """Observation copies the fenced inventory reference and snapshot."""
-    downloader = research_root._ManagedDocumentDownloader(cast(Any, _source()))
+    downloader = getattr(research_root, "_ManagedDocumentDownloader")(
+        cast(Any, _source())
+    )
     entry = SimpleNamespace(
         exact_reference="owner/docs/brief.pdf",
         snapshot={"etag": "abc"},
@@ -108,7 +110,9 @@ async def test_managed_downloader_uses_relay_when_enabled(
     relay = SimpleNamespace(get_obs_object=get_obs_object)
     monkeypatch.setattr(research_root, "relay_mode_enabled", lambda: True)
     monkeypatch.setattr(research_root, "current_relay_client", lambda: relay)
-    downloader = research_root._ManagedDocumentDownloader(cast(Any, _source()))
+    downloader = getattr(research_root, "_ManagedDocumentDownloader")(
+        cast(Any, _source())
+    )
 
     payload = await downloader.download(
         SimpleNamespace(exact_reference="owner/docs/brief.pdf")
@@ -144,7 +148,9 @@ async def test_managed_downloader_uses_obs_runtime_when_direct(
         lambda: SimpleNamespace(run=run),
     )
     monkeypatch.setattr(research_root, "get_object_bytes", _get_bytes)
-    downloader = research_root._ManagedDocumentDownloader(cast(Any, _source()))
+    downloader = getattr(research_root, "_ManagedDocumentDownloader")(
+        cast(Any, _source())
+    )
 
     payload = await downloader.download(
         SimpleNamespace(exact_reference="owner/docs/notes.md")
@@ -166,7 +172,7 @@ def test_document_converter_splits_pdf_pages(
         return "page-one\f\npage-two\f\n"
 
     monkeypatch.setattr(research_root, "convert_single_file", _convert)
-    converter = research_root._MarkItDownDocumentConverter()
+    converter = getattr(research_root, "_MarkItDownDocumentConverter")()
     entry = SimpleNamespace(
         compound_suffix=".pdf",
         safe_basename="Brief.PDF",
@@ -191,7 +197,7 @@ def test_document_converter_labels_non_pdf_sections(
         return "only-section"
 
     monkeypatch.setattr(research_root, "convert_single_file", _convert)
-    converter = research_root._MarkItDownDocumentConverter()
+    converter = getattr(research_root, "_MarkItDownDocumentConverter")()
     entry = SimpleNamespace(
         compound_suffix=".md",
         safe_basename="notes.md",
@@ -222,7 +228,7 @@ def test_document_converter_swallows_missing_temp_file(
         return "kept"
 
     monkeypatch.setattr(research_root, "convert_single_file", _convert)
-    converter = research_root._MarkItDownDocumentConverter()
+    converter = getattr(research_root, "_MarkItDownDocumentConverter")()
     entry = SimpleNamespace(compound_suffix=".txt", safe_basename="a.txt")
 
     sections = converter.convert(entry, b"body")

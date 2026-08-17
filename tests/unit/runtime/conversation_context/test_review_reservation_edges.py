@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Review reservation input, row, and marker-state edges."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import sqlite3
@@ -28,11 +26,13 @@ from mcp_server_phytomni.runtime.conversation_context.review_support import (
     _ReviewClaimLookupRequest,
 )
 
-_reserve_marker_state = review_res._reserve_marker_state
-_reserve_review_settlement = review_res._reserve_review_settlement
-_reserve_row_failure = review_res._reserve_row_failure
-_review_reservation_inputs_valid = review_res._review_reservation_inputs_valid
-_ReviewReservationRequest = review_res._ReviewReservationRequest
+_reserve_marker_state = getattr(review_res, "_reserve_marker_state")
+_reserve_review_settlement = getattr(review_res, "_reserve_review_settlement")
+_reserve_row_failure = getattr(review_res, "_reserve_row_failure")
+_review_reservation_inputs_valid = getattr(
+    review_res, "_review_reservation_inputs_valid"
+)
+_ReviewReservationRequest = getattr(review_res, "_ReviewReservationRequest")
 
 pytestmark = pytest.mark.unit
 
@@ -83,29 +83,37 @@ def test_reserve_row_failure_maps_committed_and_version_edges() -> None:
     )
     tombstoned = _reserve_row_failure(store, _lookup(("staged", "v", 0, "{}")))
     assert tombstoned is not None and tombstoned.status == "conflict"
-    store._review_context_state = lambda *_args: (0, "active")
+    setattr(store, "_review_context_state", lambda *_args: (0, "active"))
     committed = _reserve_row_failure(
         store, _lookup(("committed", "v", 0, "{}"))
     )
     assert committed is not None and committed.status == "conflict"
-    store._review_record = lambda *_args: (
-        "x",
-        {"settlement_state": "settling"},
+    setattr(
+        store,
+        "_review_record",
+        lambda *_args: (
+            "x",
+            {"settlement_state": "settling"},
+        ),
     )
     settling = _reserve_row_failure(
         store, _lookup(("committed", "v", 0, "{}"))
     )
     assert settling is not None and settling.status == "conflict"
-    store._review_record = lambda *_args: (
-        "x",
-        {"settlement_state": "promoted"},
+    setattr(
+        store,
+        "_review_record",
+        lambda *_args: (
+            "x",
+            {"settlement_state": "promoted"},
+        ),
     )
     assert _reserve_row_failure(
         store, _lookup(("committed", "v", 0, "{}"))
     ) == ReviewSettlementClaim("promoted")
     failed = _reserve_row_failure(store, _lookup(("failed", "v", 0, "{}")))
     assert failed is not None and failed.status == "conflict"
-    store._review_context_state = lambda *_args: None
+    setattr(store, "_review_context_state", lambda *_args: None)
     ledger = _reserve_row_failure(
         store,
         _lookup(

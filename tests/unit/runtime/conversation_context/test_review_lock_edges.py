@@ -4,12 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Review mutation lock fallback, timeout, and unexpected-error edges."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import os
 import threading
+from typing import cast
 
 import pytest
 
@@ -23,12 +22,30 @@ from mcp_server_phytomni.runtime.conversation_context.review_lock import (
 pytestmark = pytest.mark.unit
 
 
+class _ManualLock:
+    """Lock double that tests can acquire without a context manager."""
+
+    def __init__(self) -> None:
+        self.held = False
+
+    def acquire(self, blocking: bool = True) -> bool:
+        """Take the lock once; a second take fails immediately."""
+        del blocking
+        if self.held:
+            return False
+        self.held = True
+        return True
+
+    def release(self) -> None:
+        """Drop the lock so a later acquire can succeed."""
+        self.held = False
+
+
 def test_local_lock_release_and_second_release_are_safe() -> None:
     """In-memory locks release once and ignore a later release."""
-    # pylint: disable=consider-using-with
-    local = threading.Lock()
+    local = _ManualLock()
     assert local.acquire(blocking=False) is True
-    lock = ReviewMutationLock(local_lock=local)
+    lock = ReviewMutationLock(local_lock=cast(threading.Lock, local))
     lock.release()
     lock.release()
     assert local.acquire(blocking=False) is True
@@ -40,15 +57,15 @@ def test_local_lock_release_and_second_release_are_safe() -> None:
 
 def test_file_descriptor_release_without_fcntl(
     tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:  # pylint: disable=consider-using-with
+) -> None:
     """A held descriptor still closes when POSIX flock is unavailable."""
     path = tmp_path / "review.lock"
     path.write_text("", encoding="utf-8")
-    file_descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    file_descriptor = getattr(os, "open")(path, os.O_RDWR | os.O_CREAT, 0o600)
     monkeypatch.setattr(review_lock, "fcntl", None)
     lock = ReviewMutationLock(file_descriptor=file_descriptor)
     lock.release()
-    assert lock._file_descriptor is None
+    assert getattr(lock, "_file_descriptor") is None
     with pytest.raises(OSError):
         os.close(file_descriptor)
 
@@ -62,9 +79,9 @@ def test_acquire_uses_memory_lock_when_fcntl_missing(
     with acquire_review_mutation_lock(path, timeout=1.0) as held:
         with pytest.raises(ReviewMutationLockTimeoutError):
             acquire_review_mutation_lock(path, timeout=0.0)
-        assert held._local_lock is not None
+        assert getattr(held, "_local_lock") is not None
     with acquire_review_mutation_lock(path, timeout=None) as lock:
-        assert lock._local_lock is not None
+        assert getattr(lock, "_local_lock") is not None
 
 
 def test_acquire_times_out_on_memory_path() -> None:

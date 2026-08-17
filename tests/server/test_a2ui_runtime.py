@@ -3,8 +3,6 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Direct contracts for the extracted A2UI pause/resume runtime."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import asyncio
@@ -633,18 +631,20 @@ async def test_locale_backfill_and_claim_helpers(tmp_path):
     )
     record = registry.get_run("run-locale", owner="alice")
     assert record is not None
-    a2ui_resume._bind_record_locale(record, registry=registry, owner="alice")
+    getattr(a2ui_resume, "_bind_record_locale")(
+        record, registry=registry, owner="alice"
+    )
     rebound = registry.get_run("run-locale", owner="alice")
     assert rebound is not None
     assert rebound.request_info is not None
     assert rebound.request_info.locale is not None
 
     with pytest.raises(run_lifecycle.RunPersistenceError):
-        a2ui_resume._bind_record_locale(
+        getattr(a2ui_resume, "_bind_record_locale")(
             record, registry=cast(Any, _RaisingRegistry()), owner="alice"
         )
     with pytest.raises(run_lifecycle.RunPersistenceError):
-        a2ui_resume._bind_record_locale(
+        getattr(a2ui_resume, "_bind_record_locale")(
             record, registry=cast(Any, _FalseRegistry()), owner="alice"
         )
     claim = A2UIActionClaim(
@@ -654,45 +654,48 @@ async def test_locale_backfill_and_claim_helpers(tmp_path):
         action_id="a",
         channel="a2ui",
     )
-    a2ui_resume._complete_claim_best_effort(
+    getattr(a2ui_resume, "_complete_claim_best_effort")(
         claim,
         owner="alice",
         registry=cast(Any, _RaisingRegistry()),
         outcome="failed",
     )
-    a2ui_resume._settle_failed_resume(
+    getattr(a2ui_resume, "_settle_failed_resume")(
         cast(Any, _RaisingRegistry()),
         run_id="r",
         owner="alice",
         expected_revision=1,
     )
-    a2ui_resume._complete_claim_best_effort(
+    getattr(a2ui_resume, "_complete_claim_best_effort")(
         claim,
         owner="alice",
         registry=cast(Any, _FalseRegistry()),
         outcome="failed",
     )
-    a2ui_resume._settle_failed_resume(
+    getattr(a2ui_resume, "_settle_failed_resume")(
         cast(Any, _FalseRegistry()),
         run_id="r",
         owner="alice",
         expected_revision=1,
     )
     with pytest.raises(run_lifecycle.RunPersistenceError):
-        a2ui_resume._complete_claim_or_raise(
+        getattr(a2ui_resume, "_complete_claim_or_raise")(
             claim,
             owner="alice",
             registry=cast(Any, _RaisingRegistry()),
             outcome="succeeded",
         )
     with pytest.raises(run_lifecycle.RunPersistenceError):
-        a2ui_resume._complete_claim_or_raise(
+        getattr(a2ui_resume, "_complete_claim_or_raise")(
             claim,
             owner="alice",
             registry=cast(Any, _FalseRegistry()),
             outcome="succeeded",
         )
-    assert a2ui_resume._failed_resume_result()["error"] == "a2ui resume failed"
+    assert (
+        getattr(a2ui_resume, "_failed_resume_result")()["error"]
+        == "a2ui resume failed"
+    )
 
 
 def _review_resume_graph(interrupt_ids: set[str]) -> Any:

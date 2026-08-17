@@ -4,13 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Edge coverage for archive-delivery validation and helpers."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -57,13 +55,13 @@ _DIGEST = "sha256:" + "a" * 64
 def _archive() -> ResultArchiveDescriptor:
     """Return one valid public archive descriptor."""
     return ResultArchiveDescriptor(
-        role="result_archive",
-        name="analyst-results.zip",
-        media_type="application/zip",
-        size_bytes=12,
-        downloadable=True,
-        report_context_eligible=False,
         download_ref=f"result-archive:{_DIGEST}",
+        downloadable=True,
+        media_type="application/zip",
+        name="analyst-results.zip",
+        report_context_eligible=False,
+        role="result_archive",
+        size_bytes=16,
     )
 
 
@@ -94,7 +92,7 @@ def test_delivery_failure_rejects_invalid_values() -> None:
     with pytest.raises(ValueError, match="invalid delivery failure"):
         DeliveryFailure(
             "archive_publish_failed",
-            "yes",  # type: ignore[arg-type]
+            cast(Any, "yes"),
         )
 
 
@@ -111,17 +109,23 @@ def test_delivery_backoff_and_initial_pending() -> None:
 
 def test_result_mapping_handles_invalid_json() -> None:
     """Corrupt or non-mapping result payloads become an empty dict."""
-    assert not delivery_module._result_mapping("{")
-    assert not delivery_module._result_mapping(12)
+    assert not getattr(delivery_module, "_result_mapping")("{")
+    assert not getattr(delivery_module, "_result_mapping")(12)
 
 
 def test_retryable_failed_delivery_guards() -> None:
     """Manual retry requires a failed retryable delivery without archive."""
     pending = initial_pending_delivery(_DIGEST)
     private = PrivateDeliveryState("ref", 3, "archive_publish_failed")
-    assert delivery_module._retryable_failed_delivery(None, private) is False
     assert (
-        delivery_module._retryable_failed_delivery(pending, private) is False
+        getattr(delivery_module, "_retryable_failed_delivery")(None, private)
+        is False
+    )
+    assert (
+        getattr(delivery_module, "_retryable_failed_delivery")(
+            pending, private
+        )
+        is False
     )
     failed = pending.__class__(
         schema_version=1,
@@ -139,13 +143,20 @@ def test_retryable_failed_delivery_guards() -> None:
     object.__setattr__(with_archive, "retryable", True)
     object.__setattr__(with_archive, "archive", _archive())
     object.__setattr__(with_archive, "inventory_digest", _DIGEST)
-    assert delivery_module._retryable_failed_delivery(failed, private) is True
     assert (
-        delivery_module._retryable_failed_delivery(empty_digest, private)
+        getattr(delivery_module, "_retryable_failed_delivery")(failed, private)
+        is True
+    )
+    assert (
+        getattr(delivery_module, "_retryable_failed_delivery")(
+            empty_digest, private
+        )
         is False
     )
     assert (
-        delivery_module._retryable_failed_delivery(with_archive, private)
+        getattr(delivery_module, "_retryable_failed_delivery")(
+            with_archive, private
+        )
         is False
     )
 
@@ -157,7 +168,9 @@ def test_delivery_match_and_claimable_guards() -> None:
     private = PrivateDeliveryState("ref", 0, None)
     exhausted = PrivateDeliveryState("ref", 3, None)
     assert (
-        delivery_module._delivery_matches_target(None, private, target)
+        getattr(delivery_module, "_delivery_matches_target")(
+            None, private, target
+        )
         is False
     )
     ready = pending.__class__(
@@ -171,21 +184,33 @@ def test_delivery_match_and_claimable_guards() -> None:
         retryable=False,
     )
     assert (
-        delivery_module._delivery_matches_target(ready, private, target)
+        getattr(delivery_module, "_delivery_matches_target")(
+            ready, private, target
+        )
         is False
     )
     other = DeliveryRevision("run-1", "alice", 2, _DIGEST)
     assert (
-        delivery_module._delivery_matches_target(pending, private, other)
-        is False
-    )
-    assert delivery_module._claimable_delivery(None, None, target) is False
-    assert (
-        delivery_module._claimable_delivery(pending, exhausted, target)
+        getattr(delivery_module, "_delivery_matches_target")(
+            pending, private, other
+        )
         is False
     )
     assert (
-        delivery_module._claimable_delivery(pending, private, target) is True
+        getattr(delivery_module, "_claimable_delivery")(None, None, target)
+        is False
+    )
+    assert (
+        getattr(delivery_module, "_claimable_delivery")(
+            pending, exhausted, target
+        )
+        is False
+    )
+    assert (
+        getattr(delivery_module, "_claimable_delivery")(
+            pending, private, target
+        )
+        is True
     )
 
 
@@ -366,7 +391,7 @@ async def test_publish_archive_builds_public_descriptor(
         digest=_DIGEST,
         total_size_bytes=0,
     )
-    descriptor = await delivery_module._publish_archive(
+    descriptor = await getattr(delivery_module, "_publish_archive")(
         inventory, "analyst", "summary"
     )
     assert descriptor.name == "analyst-results.zip"

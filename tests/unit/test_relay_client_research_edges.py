@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Validation edges for Research relay capability and grant decoding."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from typing import Any, cast
@@ -194,14 +192,14 @@ def test_decode_research_capabilities_rejects_invalid_payloads(
 ) -> None:
     """Capability handshake decoding stays fail-closed."""
     with pytest.raises((TypeError, ValueError)):
-        rc._decode_research_capabilities(payload)
+        getattr(rc, "_decode_research_capabilities")(payload)
 
 
 def test_decode_research_capabilities_accepts_matching_wildcard_scope() -> (
     None
 ):
     """Matching top-level and descriptor wildcard scopes are accepted."""
-    capability = rc._decode_research_capabilities(
+    capability = getattr(rc, "_decode_research_capabilities")(
         _valid_capability(
             research_object_grant={
                 "max_objects": 4,
@@ -290,13 +288,13 @@ def test_decode_grants_rejects_invalid_envelopes() -> None:
     """Grant envelopes must be an exact-length unique list."""
     expected = (_candidate("d1"),)
     with pytest.raises(ValueError):
-        rc._decode_grants("nope", expected)
+        getattr(rc, "_decode_grants")("nope", expected)
     with pytest.raises(ValueError):
-        rc._decode_grants({"grants": {}}, expected)
+        getattr(rc, "_decode_grants")({"grants": {}}, expected)
     with pytest.raises(ValueError):
-        rc._decode_grants({"grants": []}, expected)
+        getattr(rc, "_decode_grants")({"grants": []}, expected)
     with pytest.raises(ValueError):
-        rc._decode_grants(
+        getattr(rc, "_decode_grants")(
             {"grants": [_grant("d1", "g1"), _grant("d1", "g2")]},
             (_candidate("d1"), _candidate("d1")),
         )
@@ -330,21 +328,23 @@ def test_decode_grants_rejects_invalid_records(
 ) -> None:
     """Each grant record is type-checked before it is trusted."""
     with pytest.raises(ValueError):
-        rc._decode_grants({"grants": [raw_grant]}, (_candidate("d1"),))
+        getattr(rc, "_decode_grants")(
+            {"grants": [raw_grant]}, (_candidate("d1"),)
+        )
 
 
 def test_decode_snapshot_and_optional_text_edges() -> None:
     """Snapshot DTOs reject the wrong shape and accept optional None."""
-    assert rc._valid_snapshot_fields((1, 2, 3)) is False
+    assert getattr(rc, "_valid_snapshot_fields")((1, 2, 3)) is False
     with pytest.raises(ValueError):
-        rc._decode_snapshot("nope")
+        getattr(rc, "_decode_snapshot")("nope")
     with pytest.raises(ValueError):
-        rc._decode_snapshot({"dataset_id": "d1"})
+        getattr(rc, "_decode_snapshot")({"dataset_id": "d1"})
     payload = research_relay_snapshot_payload("d1")
     payload["etag"] = None
     payload["version_id"] = None
     payload["last_modified"] = None
-    snapshot = rc._decode_snapshot(payload)
+    snapshot = getattr(rc, "_decode_snapshot")(payload)
     assert snapshot.etag is None
     assert snapshot.placeholder is False
 

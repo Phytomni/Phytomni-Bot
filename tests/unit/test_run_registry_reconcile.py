@@ -3,8 +3,6 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Reconciliation and report-synthesis contracts for the run registry."""
 
-# pylint: disable=duplicate-code
-
 from __future__ import annotations
 
 import asyncio
@@ -56,16 +54,7 @@ async def test_report_artifact_groups_preserve_child_directories() -> None:
         ]
 
     async def manifest(_output_dir: str) -> dict[str, object]:
-        return {
-            "version": "1.0",
-            "artifacts": [
-                {
-                    "path": "report.md",
-                    "role": "scientific_report",
-                    "media_type": "text/markdown",
-                }
-            ],
-        }
+        return await _report_manifest(_output_dir)
 
     groups = await run_registry_reports.collect_report_artifact_groups(
         [
@@ -162,16 +151,12 @@ async def _report_object_lister(
 
 async def _report_manifest(_output_dir: str) -> dict[str, object]:
     """Declare the report object as scientific text for tests."""
-    return {
-        "version": "1.0",
-        "artifacts": [
-            {
-                "path": "report.md",
-                "role": "scientific_report",
-                "media_type": "text/markdown",
-            }
-        ],
+    artifact = {
+        "media_type": "text/markdown",
+        "path": "report.md",
+        "role": "scientific_report",
     }
+    return {"artifacts": [artifact], "version": "1.0"}
 
 
 def _final_report_assembly(agent: str) -> TerminalReportAssembly:

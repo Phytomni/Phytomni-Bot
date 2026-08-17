@@ -1,4 +1,3 @@
-# pylint: disable=duplicate-code
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
@@ -7,59 +6,18 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from mcp_server_phytomni.agents.analyst import planning as analyst_planning
 from mcp_server_phytomni.agents.analyst import task_ops
 from mcp_server_phytomni.agents.analyst.planning import retrieve_plan_submit
+from tests.agents.test_analyst_planning_helpers import (
+    _patch_prior,
+    _patch_submit_agent_capturing,
+)
 
 pytestmark = pytest.mark.agent
-
-
-def _patch_prior(
-    monkeypatch: pytest.MonkeyPatch,
-    prior: dict[str, Any] | None,
-) -> None:
-    """Stub the fingerprint lookup to a scripted prior row."""
-
-    def fake_task_manager(db_path: str) -> SimpleNamespace:
-        del db_path
-
-        def lookup(_fingerprint: str) -> dict[str, Any] | None:
-            return prior
-
-        return SimpleNamespace(get_task_by_fingerprint=lookup)
-
-    monkeypatch.setattr(analyst_planning, "TaskManager", fake_task_manager)
-    monkeypatch.setattr(
-        analyst_planning, "resolve_tasks_db_path", lambda: ":memory:"
-    )
-
-
-def _patch_submit(
-    monkeypatch: pytest.MonkeyPatch,
-    arun_return: dict[str, Any],
-) -> dict[str, Any]:
-    """Replace the submit-agent builder and capture arun kwargs."""
-    captured: dict[str, Any] = {}
-
-    async def fake_arun(**kwargs: Any) -> dict[str, Any]:
-        captured["arun_kwargs"] = kwargs
-        return dict(arun_return)
-
-    def fake_build(*_args: Any, **_kwargs: Any) -> tuple[Any, str, str, str]:
-        return (
-            SimpleNamespace(arun=fake_arun),
-            "/out/fresh",
-            "small",
-            "thread-x",
-        )
-
-    monkeypatch.setattr(analyst_planning, "_build_submit_agent", fake_build)
-    return captured
 
 
 async def test_reuse_keeps_truthy_meta_meta(
@@ -97,7 +55,7 @@ async def test_fresh_submit_forwards_locale_and_obs_files(
 ) -> None:
     """Locale and obs_file_list reach arun on a fingerprint miss."""
     _patch_prior(monkeypatch, None)
-    captured = _patch_submit(
+    captured = _patch_submit_agent_capturing(
         monkeypatch, {"task_id": "fresh-locale", "output_dir": "/out/new"}
     )
 
@@ -120,17 +78,13 @@ async def test_reuse_skips_shared_default_output_dir(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A prior row in the shared dump must fall through to a fresh submit."""
-    _patch_prior(
-        monkeypatch,
-        {
-            "task_id": "prior-dump",
-            "output_dir": (
-                "/obs/phytomni/agent_data/test/output/children/part-001"
-            ),
-            "status": "succeeded",
-        },
-    )
-    captured = _patch_submit(
+    dump_prior = {
+        "output_dir": "/obs/phytomni/agent_data/test/output/children/part-001",
+        "status": "succeeded",
+        "task_id": "prior-dump",
+    }
+    _patch_prior(monkeypatch, dump_prior)
+    captured = _patch_submit_agent_capturing(
         monkeypatch, {"task_id": "fresh-dump", "output_dir": "/out/new"}
     )
 
@@ -163,7 +117,7 @@ async def test_reuse_skips_when_live_probe_is_dead(
         return "FAILED"
 
     monkeypatch.setattr(task_ops, "probe_live_status", fake_probe)
-    _patch_submit(
+    _patch_submit_agent_capturing(
         monkeypatch, {"task_id": "fresh-dead", "output_dir": "/out/new"}
     )
 

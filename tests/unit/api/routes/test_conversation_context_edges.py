@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """HTTP error-path coverage for conversation-context routes."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -147,7 +145,7 @@ def test_load_review_turn_not_found() -> None:
     """A missing Review turn maps to HTTP 404."""
     payload = _payload()
     with pytest.raises(HTTPException) as caught:
-        route_mod._load_and_validate_review_turn(
+        getattr(route_mod, "_load_and_validate_review_turn")(
             _as_store(_Store()), "key", payload
         )
     assert caught.value.status_code == 404
@@ -158,7 +156,7 @@ def test_load_review_turn_invalid_private_marker() -> None:
     store = _Store(_turn(stage_metadata={"_review_settlement": "broken"}))
     payload = _payload()
     with pytest.raises(HTTPException) as caught:
-        route_mod._load_and_validate_review_turn(
+        getattr(route_mod, "_load_and_validate_review_turn")(
             _as_store(store), "key", payload
         )
     assert caught.value.status_code == 503
@@ -169,7 +167,7 @@ def test_load_review_turn_without_metadata_is_conflict() -> None:
     """A Review path without settlement metadata is a 409."""
     payload = _payload()
     with pytest.raises(HTTPException) as caught:
-        route_mod._load_and_validate_review_turn(
+        getattr(route_mod, "_load_and_validate_review_turn")(
             _as_store(_Store(_turn(stage_metadata={"other": 1}))),
             "key",
             payload,
@@ -184,7 +182,7 @@ def test_load_review_turn_invalid_conversation_key() -> None:
     )
     payload = _payload()
     with pytest.raises(HTTPException) as caught:
-        route_mod._load_and_validate_review_turn(
+        getattr(route_mod, "_load_and_validate_review_turn")(
             _as_store(store), "not-a-uuid", payload
         )
     assert caught.value.status_code == 503
@@ -194,7 +192,7 @@ def test_load_review_turn_invalid_conversation_key() -> None:
 def test_validate_review_context_rejects_tombstone() -> None:
     """Tombstoned context cannot be settled."""
     with pytest.raises(HTTPException) as caught:
-        route_mod._validate_review_context_state(
+        getattr(route_mod, "_validate_review_context_state")(
             _turn(),
             {"settlement_state": "pending"},
             SimpleNamespace(state="tombstoned", context_version=0),
@@ -206,7 +204,7 @@ def test_validate_review_context_rejects_tombstone() -> None:
 def test_validate_review_context_version_mismatch() -> None:
     """A staged turn must still sit on its base context version."""
     with pytest.raises(HTTPException) as caught:
-        route_mod._validate_review_context_state(
+        getattr(route_mod, "_validate_review_context_state")(
             _turn(base_context_version=2),
             {"settlement_state": "pending"},
             SimpleNamespace(state="active", context_version=1),
@@ -218,7 +216,7 @@ def test_validate_review_context_version_mismatch() -> None:
 def test_validate_review_context_rejects_failed_state() -> None:
     """Only staged or committed Review turns can settle."""
     with pytest.raises(HTTPException) as caught:
-        route_mod._validate_review_context_state(
+        getattr(route_mod, "_validate_review_context_state")(
             _turn(state="failed"),
             {"settlement_state": "pending"},
             None,
@@ -230,7 +228,7 @@ def test_validate_review_context_rejects_failed_state() -> None:
 def test_validate_review_context_committed_must_be_promoted() -> None:
     """A committed turn that is not promoted is a conflict."""
     with pytest.raises(HTTPException) as caught:
-        route_mod._validate_review_context_state(
+        getattr(route_mod, "_validate_review_context_state")(
             _turn(state="committed"),
             {"settlement_state": "settling"},
             None,
@@ -242,7 +240,7 @@ def test_validate_review_context_committed_must_be_promoted() -> None:
 def test_validate_review_context_rejects_unknown_settlement() -> None:
     """Unknown settlement states fail closed."""
     with pytest.raises(HTTPException) as caught:
-        route_mod._validate_review_context_state(
+        getattr(route_mod, "_validate_review_context_state")(
             _turn(state="staged"),
             {"settlement_state": "unknown"},
             None,
@@ -255,7 +253,7 @@ async def test_acknowledge_review_requires_callback() -> None:
     """Missing Review adapter callback is a 503."""
     payload = _payload()
     with pytest.raises(HTTPException) as caught:
-        await route_mod._acknowledge_review_settlement(
+        await getattr(route_mod, "_acknowledge_review_settlement")(
             "key", payload, _turn(), _deps(_Store())
         )
     assert caught.value.status_code == 503
@@ -271,7 +269,7 @@ async def test_acknowledge_review_requires_promotion() -> None:
 
     payload = _payload()
     with pytest.raises(HTTPException) as caught:
-        await route_mod._acknowledge_review_settlement(
+        await getattr(route_mod, "_acknowledge_review_settlement")(
             "key", payload, _turn(), _deps(_Store(), _callback)
         )
     assert caught.value.status_code == 503
@@ -289,7 +287,9 @@ def test_commit_review_turn_maps_storage_errors() -> None:
     for error, status in cases:
         store = _Store(commit_error=error)
         with pytest.raises(HTTPException) as caught:
-            route_mod._commit_review_turn(_as_store(store), "key", payload)
+            getattr(route_mod, "_commit_review_turn")(
+                _as_store(store), "key", payload
+            )
         assert caught.value.status_code == status
 
 
@@ -304,7 +304,7 @@ async def test_settle_review_route_lock_timeout(
 
     monkeypatch.setattr(route_mod, "acquire_review_mutation_lock", _busy)
     with pytest.raises(HTTPException) as caught:
-        await route_mod._settle_review_context_route(
+        await getattr(route_mod, "_settle_review_context_route")(
             _as_store(_Store()), "key", _payload(), _deps(_Store())
         )
     assert caught.value.status_code == 503
@@ -322,7 +322,7 @@ async def test_commit_route_lock_timeout(
 
     monkeypatch.setattr(route_mod, "acquire_review_mutation_lock", _busy)
     with pytest.raises(HTTPException) as caught:
-        await route_mod._commit_context_route(
+        await getattr(route_mod, "_commit_context_route")(
             _as_store(_Store()), "key", _payload()
         )
     assert caught.value.status_code == 503
@@ -342,14 +342,14 @@ async def test_commit_route_maps_missing_and_tombstoned(
     payload = _payload()
     missing = _Store(commit_error=KeyError("missing"))
     with pytest.raises(HTTPException) as caught:
-        await route_mod._commit_context_route(
+        await getattr(route_mod, "_commit_context_route")(
             _as_store(missing), "key", payload
         )
     assert caught.value.status_code == 404
 
     tombstoned = _Store(commit_error=ConversationTombstonedError("gone"))
     with pytest.raises(HTTPException) as caught:
-        await route_mod._commit_context_route(
+        await getattr(route_mod, "_commit_context_route")(
             _as_store(tombstoned), "key", payload
         )
     assert caught.value.status_code == 409
@@ -369,6 +369,8 @@ async def test_tombstone_route_lock_timeout(
         schema_version=1, conversation_key=uuid4()
     )
     with pytest.raises(HTTPException) as caught:
-        await route_mod._tombstone_context_route(payload, _deps(_Store()))
+        await getattr(route_mod, "_tombstone_context_route")(
+            payload, _deps(_Store())
+        )
     assert caught.value.status_code == 503
     assert caught.value.detail == "conversation deletion is busy"

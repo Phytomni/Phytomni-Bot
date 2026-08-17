@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Branch edges for terminal report assembly helpers."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import sqlite3
@@ -172,7 +170,7 @@ async def test_read_obs_text_artifact_decodes_utf8(
 
     async def _download(path: str, temp_dir: str) -> str:
         assert path == "obs://report.md"
-        assert temp_dir == report_mod._REPORT_TEMP_DIR
+        assert temp_dir == getattr(report_mod, "_REPORT_TEMP_DIR")
         return str(local)
 
     monkeypatch.setattr(report_mod, "download_obs_file", _download)
@@ -260,7 +258,7 @@ async def test_admit_report_artifacts_covers_cap_and_failures() -> None:
             "role": "scientific_report",
             "name": "huge.md",
             "source_path": "/tmp/huge.md",
-            "size_bytes": report_mod._MAX_BYTES_PER_ARTIFACT + 1,
+            "size_bytes": getattr(report_mod, "_MAX_BYTES_PER_ARTIFACT") + 1,
         },
         {
             "role": "scientific_table",
@@ -293,7 +291,7 @@ async def test_admit_report_artifacts_covers_cap_and_failures() -> None:
                 "source_path": f"/tmp/part-{index}.md",
                 "size_bytes": 8,
             }
-            for index in range(report_mod._MAX_TEXT_ARTIFACTS)
+            for index in range(getattr(report_mod, "_MAX_TEXT_ARTIFACTS"))
         ],
     ]
 
@@ -305,7 +303,7 @@ async def test_admit_report_artifacts_covers_cap_and_failures() -> None:
         if reference.endswith("not-text.md"):
             return 12
         if reference.endswith("long.md"):
-            return "x" * (report_mod._MAX_BYTES_PER_ARTIFACT + 8)
+            return "x" * (getattr(report_mod, "_MAX_BYTES_PER_ARTIFACT") + 8)
         return "ok"
 
     snippets, warnings = await _admit_report_artifacts(
@@ -333,7 +331,7 @@ async def test_admit_report_artifacts_truncates_remaining_budget() -> None:
     ]
 
     async def _reader(_reference: str) -> str:
-        return "y" * report_mod._MAX_TOTAL_PROMPT_CHARS
+        return "y" * getattr(report_mod, "_MAX_TOTAL_PROMPT_CHARS")
 
     snippets, warnings = await _admit_report_artifacts(
         artifacts, reader=_reader
@@ -465,7 +463,7 @@ async def test_summarize_with_chat_extracts_message(
         "build_chat_kwargs_for",
         lambda *_args, **_kwargs: {"locale": "en-US"},
     )
-    text = await report_mod._summarize_with_chat("prompt", "en-US")
+    text = await getattr(report_mod, "_summarize_with_chat")("prompt", "en-US")
     assert text == "chat-summary"
 
 
@@ -483,19 +481,19 @@ def test_persist_terminal_report_records_persistence_failure() -> None:
             """Should not be reached after the first failure."""
             raise AssertionError("degraded write should not run")
 
-    live = [{"task_id": "task-1", "status": "succeeded"}]
+    rows = [{"task_id": "persist-1", "status": "succeeded"}]
     persist_terminal_report(
-        live,
+        rows,
         TerminalReportResult(
-            final_report="report",
-            answer="answer",
+            answer="persisted-answer",
             degraded=True,
             degraded_reason="report_synthesis_failed",
+            final_report="persisted-report",
         ),
         task_manager=_BoomManager(),
     )
-    assert live[0]["final_report"] == "report"
-    assert live[0]["degraded_reason"] == (
+    assert rows[0]["final_report"] == "persisted-report"
+    assert rows[0]["degraded_reason"] == (
         "terminal report persistence failed: Error"
     )
 

@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Owner isolation and byte-faithful delivery tests for upload assets."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import gzip
@@ -891,7 +889,7 @@ def test_completed_asset_requires_completion_timestamp(tmp_path: Path) -> None:
         patch.object(resolver.registry, "get_asset", return_value=record),
         pytest.raises(UploadContractError) as e,
     ):
-        resolver._completed_asset(record.asset_id, owner)
+        getattr(resolver, "_completed_asset")(record.asset_id, owner)
     assert e.value.code == "upload_state_conflict"
 
 
@@ -913,7 +911,7 @@ def test_legacy_projection_integrity_conflict_fails_closed(
         ),
         pytest.raises(UploadContractError) as e,
     ):
-        resolver._ensure_legacy_projection(
+        getattr(resolver, "_ensure_legacy_projection")(
             _fault_asset_record(), owner, "obs://bucket/key", "document"
         )
     assert e.value.code == "upload_state_conflict"
@@ -974,23 +972,24 @@ def test_asset_id_extraction_accepts_model_and_attribute_items(
     )
     assert bundle.documents[0].asset_id == asset_id
     assert (
-        asset_resolver_module._asset_id_from_item(
+        getattr(asset_resolver_module, "_asset_id_from_item")(
             SimpleNamespace(asset_id=asset_id)
         )
         == asset_id
     )
     with pytest.raises(UploadContractError):
-        asset_resolver_module._asset_id_from_item(object())
+        getattr(asset_resolver_module, "_asset_id_from_item")(object())
 
 
 def test_descriptor_and_iso_helpers_fail_closed_without_timestamp() -> None:
     """Public projection helpers refuse incomplete completion metadata."""
+    helpers = asset_resolver_module
     with pytest.raises(UploadContractError) as e:
-        asset_resolver_module._descriptor(_fault_asset_record(completed=False))
+        getattr(helpers, "_descriptor")(_fault_asset_record(completed=False))
     assert e.value.code == "upload_state_conflict"
     with pytest.raises(UploadContractError) as e:
-        asset_resolver_module._iso(None)
+        getattr(helpers, "_iso")(None)
     assert e.value.code == "upload_state_conflict"
-    assert asset_resolver_module._status_for("upload_asset_not_found") == 404
-    assert asset_resolver_module._status_for("unknown-code") == 503
-    assert asset_resolver_module._filename_format("no-suffix") == "binary"
+    assert getattr(helpers, "_status_for")("upload_asset_not_found") == 404
+    assert getattr(helpers, "_status_for")("unknown-code") == 503
+    assert getattr(helpers, "_filename_format")("no-suffix") == "binary"

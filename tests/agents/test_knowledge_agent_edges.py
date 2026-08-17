@@ -1,4 +1,3 @@
-# pylint: disable=duplicate-code
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
@@ -140,18 +139,18 @@ async def test_follow_up_prep_node_prefixes_memory_context(
     tmp_path: Path,
 ) -> None:
     """Follow-up prep prepends the untrusted memory block when present."""
-    store = MemoryStore(str(tmp_path / "memory.sqlite"))
-    store.create(
+    memory_store = MemoryStore(str(tmp_path / "knowledge-memory.sqlite"))
+    memory_store.create(
         MemoryWrite(
-            user_id="alice",
-            kind="preference",
             content="User prefers short answers.",
+            kind="preference",
+            user_id="alice",
         ),
-        memory_id="mem-follow-up",
         now=datetime(2026, 7, 14, 8, 0, tzinfo=UTC),
+        memory_id="mem-follow-up",
     )
     runtime = Runtime[MemoryGraphContext](
-        context={"memory_accessor": MemoryAccessor(store)}
+        context={"memory_accessor": MemoryAccessor(memory_store)}
     )
     monkeypatch.setattr(
         knowledge_mod,

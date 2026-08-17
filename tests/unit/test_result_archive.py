@@ -4,19 +4,18 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Behavior contracts for deterministic terminal result archives."""
 
-# pylint: disable=protected-access, duplicate-code
-
 from __future__ import annotations
 
 import math
 import stat
 from io import BytesIO
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from zipfile import ZipFile
 
 import pytest
 from tests.support.outbound_fakes import CountingObsRuntime
+from tests.unit.test_result_archive_edges import _patch_publish
 
 from mcp_server_phytomni.runtime import result_archive
 from mcp_server_phytomni.runtime.artifact_roles import (
@@ -84,17 +83,6 @@ async def test_async_publish_leases_each_source_and_archive_sdk_attempt(
     runtime = CountingObsRuntime(object())
     uploaded: dict[str, bytes] = {}
     sizes: dict[str, int] = {}
-    monkeypatch.setattr(result_archive, "ARCHIVE_TEMP_ROOT", tmp_path)
-    monkeypatch.setattr(
-        result_archive,
-        "SERVER_CONFIG",
-        SimpleNamespace(BUCKET_NAME="phytomni"),
-    )
-    monkeypatch.setattr(
-        result_archive,
-        "iter_object_chunks",
-        lambda *_args, **_kwargs: iter((b"abc",)),
-    )
 
     def size(_bucket: str, key: str, **_kwargs: object) -> int:
         if key not in sizes:
@@ -106,8 +94,13 @@ async def test_async_publish_leases_each_source_and_archive_sdk_attempt(
         sizes[key] = len(uploaded[key])
         return key
 
-    monkeypatch.setattr(result_archive, "object_size", size)
-    monkeypatch.setattr(result_archive, "put_object_file", put)
+    _patch_publish(
+        monkeypatch,
+        tmp_path,
+        chunks=lambda *_args, **_kwargs: iter((b"abc",)),
+        size=size,
+        put=put,
+    )
 
     key = await result_archive.build_and_publish_result_archive_with_runtime(
         inventory,
@@ -552,7 +545,7 @@ def test_validate_inventory_and_member_helpers() -> None:
             )
         )
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        result_archive._validate_member_scalars(
+        getattr(result_archive, "_validate_member_scalars")(
             ResultArchiveMember(
                 True,
                 "/obs/x",
@@ -563,7 +556,7 @@ def test_validate_inventory_and_member_helpers() -> None:
             )
         )
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        result_archive._validate_member_scalars(
+        getattr(result_archive, "_validate_member_scalars")(
             ResultArchiveMember(
                 0,
                 "/obs/x",
@@ -574,7 +567,7 @@ def test_validate_inventory_and_member_helpers() -> None:
             )
         )
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        result_archive._validate_member_scalars(
+        getattr(result_archive, "_validate_member_scalars")(
             ResultArchiveMember(
                 1,
                 "",
@@ -585,7 +578,7 @@ def test_validate_inventory_and_member_helpers() -> None:
             )
         )
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        result_archive._validate_member_scalars(
+        getattr(result_archive, "_validate_member_scalars")(
             ResultArchiveMember(
                 1,
                 "/obs/x",
@@ -596,7 +589,7 @@ def test_validate_inventory_and_member_helpers() -> None:
             )
         )
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        result_archive._validate_member_scalars(
+        getattr(result_archive, "_validate_member_scalars")(
             ResultArchiveMember(
                 1,
                 "/obs/x",
@@ -607,7 +600,7 @@ def test_validate_inventory_and_member_helpers() -> None:
             )
         )
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        result_archive._validate_member_scalars(
+        getattr(result_archive, "_validate_member_scalars")(
             ResultArchiveMember(
                 1,
                 "/obs/x",
@@ -618,13 +611,17 @@ def test_validate_inventory_and_member_helpers() -> None:
             )
         )
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        result_archive._safe_relative_path("dir\\file.md")
+        getattr(result_archive, "_safe_relative_path")("dir\\file.md")
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        result_archive._safe_absolute_path("relative/run")
+        getattr(result_archive, "_safe_absolute_path")("relative/run")
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        result_archive._safe_absolute_path("/obs/phytomni/../escape")
+        getattr(result_archive, "_safe_absolute_path")(
+            "/obs/phytomni/../escape"
+        )
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        result_archive._safe_archive_path("results/part-001/summary.md", 1)
+        getattr(result_archive, "_safe_archive_path")(
+            "results/part-001/summary.md", 1
+        )
 
 
 def test_publish_rejects_invalid_inputs_and_maps_failures(
@@ -643,20 +640,14 @@ def test_publish_rejects_invalid_inputs_and_maps_failures(
         result_archive.build_and_publish_result_archive(
             inventory,
             agent="analyst",
-            summary_markdown=None,  # type: ignore[arg-type]
+            summary_markdown=cast(Any, None),
             client=object(),
         )
-    monkeypatch.setattr(result_archive, "ARCHIVE_TEMP_ROOT", tmp_path)
-    monkeypatch.setattr(
-        result_archive,
-        "SERVER_CONFIG",
-        SimpleNamespace(BUCKET_NAME="phytomni"),
-    )
 
     def boom(*_args: object, **_kwargs: object):
         raise OSError("read")
 
-    monkeypatch.setattr(result_archive, "iter_object_chunks", boom)
+    _patch_publish(monkeypatch, tmp_path, chunks=boom)
     with pytest.raises(ResultArchiveError, match="archive_generation_failed"):
         result_archive.build_and_publish_result_archive(
             inventory,
@@ -751,21 +742,15 @@ async def test_async_publish_and_size_helpers(
         await result_archive.build_and_publish_result_archive_with_runtime(
             inventory,
             agent="analyst",
-            summary_markdown=1,  # type: ignore[arg-type]
+            summary_markdown=cast(Any, 1),
             obs_runtime=runtime,
         )
-    monkeypatch.setattr(result_archive, "ARCHIVE_TEMP_ROOT", tmp_path)
-    monkeypatch.setattr(
-        result_archive,
-        "SERVER_CONFIG",
-        SimpleNamespace(BUCKET_NAME="phytomni"),
+    _patch_publish(
+        monkeypatch,
+        tmp_path,
+        chunks=lambda *_args, **_kwargs: iter((b"abc",)),
     )
-    monkeypatch.setattr(
-        result_archive,
-        "iter_object_chunks",
-        lambda *_args, **_kwargs: iter((b"abc",)),
-    )
-    original_write = result_archive._write_archive_from_sources
+    original_write = getattr(result_archive, "_write_archive_from_sources")
 
     def fail_write(*_args: object, **_kwargs: object) -> None:
         raise OSError("write")
@@ -827,16 +812,10 @@ async def test_async_publish_maps_failures_and_size_helpers(
     """Remaining publish failures and size helpers stay fail-closed."""
     inventory = _valid_inventory()
     runtime = CountingObsRuntime(object())
-    monkeypatch.setattr(result_archive, "ARCHIVE_TEMP_ROOT", tmp_path)
-    monkeypatch.setattr(
-        result_archive,
-        "SERVER_CONFIG",
-        SimpleNamespace(BUCKET_NAME="phytomni"),
-    )
-    monkeypatch.setattr(
-        result_archive,
-        "iter_object_chunks",
-        lambda *_args, **_kwargs: iter((b"abc",)),
+    _patch_publish(
+        monkeypatch,
+        tmp_path,
+        chunks=lambda *_args, **_kwargs: iter((b"abc",)),
     )
 
     def missing(*_args: object, **_kwargs: object) -> int:
@@ -892,9 +871,11 @@ async def test_async_publish_maps_failures_and_size_helpers(
 
     monkeypatch.setattr(result_archive, "object_size", down)
     with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
-        result_archive._published_archive_size("phytomni", "key", object())
+        getattr(result_archive, "_published_archive_size")(
+            "phytomni", "key", object()
+        )
     with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
-        await result_archive._published_archive_size_with_runtime(
+        await getattr(result_archive, "_published_archive_size_with_runtime")(
             "phytomni",
             "key",
             obs_runtime=CountingObsRuntime(object()),

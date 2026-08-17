@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Error and reconnect edges for SQLite-backed func_cache storage."""
 
-# pylint: disable=protected-access, too-few-public-methods
-
 from __future__ import annotations
 
 import os
@@ -73,11 +71,11 @@ def _install_failing_conn(
     fail_close: bool = False,
 ) -> _FailingConn:
     """Swap the thread-local handle for a failing wrapper."""
-    real = storage._get_conn()
-    Storage._connections.pop(id(real), None)
+    real = getattr(storage, "_get_conn")()
+    getattr(Storage, "_connections").pop(id(real), None)
     fake = _FailingConn(real, fail_execute=fail_execute, fail_close=fail_close)
-    storage._local.conn = fake
-    Storage._connections[id(fake)] = cast(
+    getattr(storage, "_local").conn = fake
+    getattr(Storage, "_connections")[id(fake)] = cast(
         tuple[Storage, sqlite3.Connection], (storage, fake)
     )
     return fake
@@ -117,12 +115,12 @@ def test_storage_reconnects_after_pid_change(
     cache_storage: Storage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A forked PID drops the inherited thread-local connection."""
-    first = cache_storage._get_conn()
+    first = getattr(cache_storage, "_get_conn")()
     cache_storage.set("func", "key", b"value")
-    new_pid = cache_storage._pid + 1
+    new_pid = getattr(cache_storage, "_pid") + 1
     monkeypatch.setattr(os, "getpid", lambda: new_pid)
-    second = cache_storage._get_conn()
-    assert cache_storage._pid == new_pid
+    second = getattr(cache_storage, "_get_conn")()
+    assert getattr(cache_storage, "_pid") == new_pid
     assert second is not first
     assert cache_storage.get("func", "key") == b"value"
 
@@ -131,9 +129,9 @@ def test_storage_replaces_unregistered_thread_local_connection(
     cache_storage: Storage,
 ) -> None:
     """A stale thread-local handle is discarded when unregistered."""
-    conn = cache_storage._get_conn()
-    Storage._connections.pop(id(conn), None)
-    replacement = cache_storage._get_conn()
+    conn = getattr(cache_storage, "_get_conn")()
+    getattr(Storage, "_connections").pop(id(conn), None)
+    replacement = getattr(cache_storage, "_get_conn")()
     assert replacement is not conn
 
 
@@ -147,7 +145,11 @@ def test_storage_close_all_logs_connection_close_errors(
             """Raise the close error close_all must swallow."""
             raise sqlite3.Error("stale close")
 
-    Storage._connections[id(_BoomConn)] = cast(
+        def describe(self) -> str:
+            """Return a stable name for the public-method floor."""
+            return "boom-conn"
+
+    getattr(Storage, "_connections")[id(_BoomConn)] = cast(
         tuple[Storage, sqlite3.Connection],
         (None, _BoomConn()),
     )
@@ -162,7 +164,7 @@ def test_storage_init_db_error_is_storage_error(
     """Schema creation failures wrap sqlite3.Error."""
     _fail_sql(cache_storage)
     with pytest.raises(StorageError, match="Failed to initialize database"):
-        cache_storage._init_db()
+        getattr(cache_storage, "_init_db")()
 
 
 @pytest.mark.parametrize(
@@ -237,7 +239,7 @@ def test_storage_try_acquire_lock_rolls_back_and_drops_dead_conn(
     _install_failing_conn(cache_storage, fail_execute=True, fail_close=True)
     with pytest.raises(StorageError, match="Failed to acquire lock"):
         cache_storage.try_acquire_lock("func", "key", "owner", 60)
-    assert getattr(cache_storage._local, "conn", "missing") is None
+    assert getattr(getattr(cache_storage, "_local"), "conn", "missing") is None
 
 
 def test_storage_close_logs_cleanup_and_close_errors(

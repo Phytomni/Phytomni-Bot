@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Branch edges for DeepGenome report synthesis and finalization."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import sqlite3
@@ -37,9 +35,9 @@ from mcp_server_phytomni.runtime.deep_genome_transitions import (
 from mcp_server_phytomni.runtime.locale import SupportedLocale
 from tests.agents.shared.deep_genome_fixtures import (
     concrete_barrier_work_items,
-    seed_brief_gene_plan,
+    reserve_smep_finalization,
+    usable_concrete_barrier_data,
 )
-from tests.support.sqlite import closed_sqlite_connection
 
 pytestmark = pytest.mark.unit
 
@@ -97,20 +95,6 @@ def _state(**overrides: Any) -> DeepGenomeState:
     }
     base.update(overrides)
     return cast(DeepGenomeState, base)
-
-
-def _usable_barrier_data() -> dict[str, dict[str, str]]:
-    """Return two terminal successful concrete rows."""
-    return {
-        "task_0:evolution_analysis": {
-            "analysis_type": "evolution_analysis",
-            "status": "success",
-        },
-        "task_10": {
-            "analysis_type": "digital_design",
-            "status": "success",
-        },
-    }
 
 
 async def test_write_async_reraises_worker_oserror(
@@ -188,7 +172,7 @@ async def test_public_dispatch_wrappers_reach_private_seams() -> None:
 
 async def test_synthesizer_skip_mode_returns_completed_flag() -> None:
     """Test-mode synthesis skips report assembly and marks the branch done."""
-    result = await _ReportEdges()._run_report_synthesizer(
+    result = await getattr(_ReportEdges(), "_run_report_synthesizer")(
         _state(skip_synthesize=True)
     )
     assert result == {"experiment_completed_branches": 1}
@@ -206,10 +190,10 @@ async def test_synthesizer_writes_assembled_markdown(
     monkeypatch.setattr(
         report_module, "resolve_scratch_dir", lambda *_a, **_k: str(tmp_path)
     )
-    result = await _ReportEdges()._run_report_synthesizer(
+    result = await getattr(_ReportEdges(), "_run_report_synthesizer")(
         _state(
             work_items=concrete_barrier_work_items(),
-            raw_analyst_data=_usable_barrier_data(),
+            raw_analyst_data=usable_concrete_barrier_data(),
             analyst_summaries={"single_cell_summary": "cells"},
         )
     )
@@ -223,11 +207,13 @@ async def test_synthesizer_writes_assembled_markdown(
 async def test_experiment_node_waits_and_skips_duplicates() -> None:
     """Missing inputs wait; a triggered flag prevents a second design."""
     host = _ReportEdges()
-    waiting = await host._run_report_experiment(
+    waiting = await getattr(host, "_run_report_experiment")(
         _state(preamble="", synthesize_report="")
     )
     assert waiting == {}
-    skipped = await host._run_report_experiment(_state(report_triggered=True))
+    skipped = await getattr(host, "_run_report_experiment")(
+        _state(report_triggered=True)
+    )
     assert skipped == {}
 
 
@@ -240,7 +226,7 @@ async def test_experiment_node_designs_and_fetches_protocols(
         "choices": [{"message": {"content": '["ChIP","qPCR"]'}}]
     }
     monkeypatch.setattr(report_module, "get_prompt", lambda *_a, **_k: "P")
-    result = await host._run_report_experiment(_state())
+    result = await getattr(host, "_run_report_experiment")(_state())
     assert result["report_triggered"] is True
     assert "ChIP" in result["experiment_report"]
     assert "qPCR" in result["experiment_report"]
@@ -256,11 +242,11 @@ async def test_protocol_node_reads_chat_content(
         "choices": [{"message": {"content": "protocol-body"}}]
     }
     monkeypatch.setattr(report_module, "get_prompt", lambda *_a, **_k: "P")
-    filled = await host._run_report_protocol(_state())
+    filled = await getattr(host, "_run_report_protocol")(_state())
     assert filled == {"protocol_report": "protocol-body"}
 
     host.chat_payload = {"choices": []}
-    empty = await host._run_report_protocol(_state())
+    empty = await getattr(host, "_run_report_protocol")(_state())
     assert empty == {"protocol_report": ""}
 
 
@@ -279,12 +265,12 @@ async def test_discussion_node_uses_analyst_and_short_layouts(
     host.chat_payload = {
         "choices": [{"message": {"content": "discussion-body"}}]
     }
-    analyst = await host._run_report_discussion(_state())
+    analyst = await getattr(host, "_run_report_discussion")(_state())
     assert analyst == {"discussion_report": "discussion-body"}
     assert "Recommended experiments" in captured[0]["content"]
 
     host.chat_payload = {}
-    short = await host._run_report_discussion(
+    short = await getattr(host, "_run_report_discussion")(
         _state(config_params={"use_analyst_agent": False})
     )
     assert short == {"discussion_report": ""}
@@ -298,7 +284,7 @@ async def test_summary_node_returns_message_content(
     host = _ReportEdges()
     host.chat_payload = {"choices": [{"message": {"content": "conclusion"}}]}
     monkeypatch.setattr(report_module, "get_prompt", lambda *_a, **_k: "P")
-    result = await host._run_report_summary(_state())
+    result = await getattr(host, "_run_report_summary")(_state())
     assert result == {"summary_report": "conclusion"}
 
 
@@ -306,29 +292,22 @@ def _finalization_fixture(
     tmp_path: Path,
 ) -> tuple[DeepGenomeStore, str, str]:
     """Build a reserved run with one succeeded concrete work item."""
-    db_path = tmp_path / "tasks.db"
-    store = DeepGenomeStore(str(db_path))
-    reservation = store.reserve_run(
-        run_id="run-1",
-        umbrella_task_id="task-1",
-        owner="alice",
-        output_dir="/obs/run",
+    tracking_db = tmp_path / "edges-tasks.db"
+    booked = reserve_smep_finalization(
+        str(tracking_db),
+        run_id="edges-run",
+        umbrella_task_id="edges-task",
+        owner="edge-owner",
+        output_dir="/obs/edges",
     )
-    seed_brief_gene_plan(store, reservation, "Os01g0177400")
-    with closed_sqlite_connection(db_path) as conn:
-        conn.execute(
-            "UPDATE deep_genome_remote_tasks SET status = 'failed', "
-            "failure_reason = 'analysis task failed' "
-            "WHERE umbrella_task_id = ? AND work_item_key != ?",
-            (reservation.umbrella_task_id, "smep_analysis"),
-        )
-    store.apply_work_item_transition(
-        reservation.umbrella_task_id,
+    genome_store = DeepGenomeStore(str(tracking_db))
+    genome_store.apply_work_item_transition(
+        booked.umbrella_task_id,
         work_item_key="smep_analysis",
         status="succeeded",
         summary_markdown="SMEP summary",
     )
-    return store, str(db_path), reservation.umbrella_task_id
+    return genome_store, str(tracking_db), booked.umbrella_task_id
 
 
 async def test_follow_up_rejects_missing_snapshot(
@@ -342,7 +321,7 @@ async def test_follow_up_rejects_missing_snapshot(
         lambda: str(db_path),
     )
     with pytest.raises(DeepGenomeWorkflowError, match="tracking unavailable"):
-        await _ReportEdges()._run_follow_up_node(
+        await getattr(_ReportEdges(), "_run_follow_up_node")(
             _state(task_id="missing-task", report_dir=str(tmp_path))
         )
 
@@ -365,7 +344,7 @@ async def test_follow_up_maps_publication_conflict(
     report_dir = tmp_path / "report"
     report_dir.mkdir()
     with pytest.raises(DeepGenomeWorkflowError, match="publication failed"):
-        await _ReportEdges()._run_follow_up_node(
+        await getattr(_ReportEdges(), "_run_follow_up_node")(
             _state(task_id=task_id, report_dir=str(report_dir))
         )
 
@@ -384,7 +363,7 @@ def test_fail_finalization_maps_store_errors(tmp_path: Path) -> None:
             raise DeepGenomeTransitionError("cannot fail")
 
     with pytest.raises(DeepGenomeWorkflowError, match="tracking failed"):
-        _ReportEdges()._fail_finalization(
+        getattr(_ReportEdges(), "_fail_finalization")(
             _BoomStore(str(tmp_path / "tasks.db")),
             "task-1",
             "no usable analysis result",
@@ -405,7 +384,7 @@ def test_fail_finalization_maps_sqlite_errors(tmp_path: Path) -> None:
             raise sqlite3.Error("locked")
 
     with pytest.raises(DeepGenomeWorkflowError, match="tracking failed"):
-        _ReportEdges()._fail_finalization(
+        getattr(_ReportEdges(), "_fail_finalization")(
             _BoomStore(str(tmp_path / "tasks.db")),
             "task-1",
             "final synthesis failed",

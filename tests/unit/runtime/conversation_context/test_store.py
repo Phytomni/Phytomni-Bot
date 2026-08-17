@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Unit tests for durable, Bot-owned conversation context staging."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import inspect

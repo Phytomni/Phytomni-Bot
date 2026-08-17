@@ -1,4 +1,3 @@
-# pylint: disable=duplicate-code
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
@@ -87,6 +86,47 @@ def partially_failed_concrete_barrier_data() -> dict[str, dict[str, str]]:
             "status": "failed",
         },
     }
+
+
+def usable_concrete_barrier_data() -> dict[str, dict[str, str]]:
+    """Return two terminal successful concrete rows."""
+    return {
+        "task_0:evolution_analysis": {
+            "analysis_type": "evolution_analysis",
+            "status": "success",
+        },
+        "task_10": {
+            "analysis_type": "digital_design",
+            "status": "success",
+        },
+    }
+
+
+def reserve_smep_finalization(
+    db_path: str,
+    *,
+    run_id: str = "run-1",
+    umbrella_task_id: str = "task-1",
+    owner: str = "alice",
+    output_dir: str = "/obs/run",
+) -> DeepGenomeReservation:
+    """Reserve a run, seed BriefGene, and fail every non-SMEP work item."""
+    store = DeepGenomeStore(db_path)
+    reservation = store.reserve_run(
+        run_id=run_id,
+        umbrella_task_id=umbrella_task_id,
+        owner=owner,
+        output_dir=output_dir,
+    )
+    seed_brief_gene_plan(store, reservation, "Os01g0177400")
+    with closed_sqlite_connection(db_path) as conn:
+        conn.execute(
+            "UPDATE deep_genome_remote_tasks SET status = 'failed', "
+            "failure_reason = 'analysis task failed' "
+            "WHERE umbrella_task_id = ? AND work_item_key != ?",
+            (reservation.umbrella_task_id, "smep_analysis"),
+        )
+    return reservation
 
 
 def seed_partial_deep_genome_run(

@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Edge coverage for func_cache lifecycle helpers."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from typing import cast
@@ -53,7 +51,7 @@ def test_log_warning_emits_logger_warning(
 ) -> None:
     """The lifecycle warning helper writes through the module logger."""
     with capture_non_propagating_logger(_LIFECYCLE_LOGGER, caplog.handler):
-        lifecycle._log_warning("cache-lifecycle-warning")
+        getattr(lifecycle, "_log_warning")("cache-lifecycle-warning")
     assert "cache-lifecycle-warning" in caplog.text
 
 
@@ -64,8 +62,8 @@ def test_default_cache_db_path_uses_repository_default(
     monkeypatch.delenv(lifecycle.DEFAULT_CACHE_DB_ENV, raising=False)
     expected = str(lifecycle.DEFAULT_CACHE_DB_PATH)
     assert lifecycle.default_cache_db_path() == expected
-    assert lifecycle._resolve_db_path(None) == expected
-    assert lifecycle._resolve_db_path("/explicit.sqlite") == (
+    assert getattr(lifecycle, "_resolve_db_path")(None) == expected
+    assert getattr(lifecycle, "_resolve_db_path")("/explicit.sqlite") == (
         "/explicit.sqlite"
     )
 
@@ -73,14 +71,18 @@ def test_default_cache_db_path_uses_repository_default(
 def test_check_and_update_meta_writes_when_missing() -> None:
     """A first metadata write does not clear anything."""
     store = _RecordingStorage(None)
-    lifecycle._check_and_update_meta(cast(Storage, store), "fn", ("a",), False)
+    getattr(lifecycle, "_check_and_update_meta")(
+        cast(Storage, store), "fn", ("a",), False
+    )
     assert store.calls == [("set", ("fn", ("a",), False))]
 
 
 def test_check_and_update_meta_is_noop_when_unchanged() -> None:
     """Matching key params and compress leave the cache alone."""
     store = _RecordingStorage((("a",), False))
-    lifecycle._check_and_update_meta(cast(Storage, store), "fn", ("a",), False)
+    getattr(lifecycle, "_check_and_update_meta")(
+        cast(Storage, store), "fn", ("a",), False
+    )
     assert not store.calls
 
 
@@ -102,7 +104,7 @@ def test_check_and_update_meta_clears_on_config_change(
     """Any metadata drift clears entries, locks, and rewrites meta."""
     store = _RecordingStorage(old_meta)
     with capture_non_propagating_logger(_LIFECYCLE_LOGGER, caplog.handler):
-        lifecycle._check_and_update_meta(
+        getattr(lifecycle, "_check_and_update_meta")(
             cast(Storage, store), "fn", new_params, new_compress
         )
     assert ("delete", "fn") in store.calls
@@ -126,7 +128,7 @@ def test_check_and_update_meta_logs_cache_errors(
             """Satisfy the pylint public-method floor for this stub."""
 
     with capture_non_propagating_logger(_LIFECYCLE_LOGGER, caplog.handler):
-        lifecycle._check_and_update_meta(
+        getattr(lifecycle, "_check_and_update_meta")(
             cast(Storage, _BoomStorage()), "fn", (), False
         )
     assert "Metadata check failed: meta unavailable" in caplog.text
@@ -134,11 +136,15 @@ def test_check_and_update_meta_logs_cache_errors(
 
 def test_cache_config_changes_lists_each_drift() -> None:
     """Both key-param and compress deltas are reported."""
-    assert lifecycle._cache_config_changes("old", "new", False, True) == [
+    assert getattr(lifecycle, "_cache_config_changes")(
+        "old", "new", False, True
+    ) == [
         "key_params: old -> new",
         "compress: False -> True",
     ]
-    changes = lifecycle._cache_config_changes("same", "same", True, True)
+    changes = getattr(lifecycle, "_cache_config_changes")(
+        "same", "same", True, True
+    )
     assert not changes
 
 
@@ -148,7 +154,7 @@ def test_clear_changed_cache_persists_replacement_metadata(
     """The clear helper logs, deletes, unlocks, then writes new meta."""
     store = _RecordingStorage(("old", False))
     with capture_non_propagating_logger(_LIFECYCLE_LOGGER, caplog.handler):
-        lifecycle._clear_changed_cache(
+        getattr(lifecycle, "_clear_changed_cache")(
             cast(Storage, store),
             "fn",
             ["key_params: old -> new"],

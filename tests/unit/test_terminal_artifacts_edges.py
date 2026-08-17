@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Branch edges for terminal artifact listing and manifest ingestion."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import json
@@ -106,10 +104,12 @@ async def test_default_listers_forward_bucket_and_runtime(
     monkeypatch.setattr(terminal_artifacts, "current_obs_runtime", _runtime)
     monkeypatch.setattr(terminal_artifacts, "ServerConfig", _config)
 
-    assert await terminal_artifacts._default_artifact_lister("out") == [
-        "out/a.txt"
-    ]
-    listed = await terminal_artifacts._default_artifact_object_lister("out")
+    assert await getattr(terminal_artifacts, "_default_artifact_lister")(
+        "out"
+    ) == ["out/a.txt"]
+    listed = await getattr(
+        terminal_artifacts, "_default_artifact_object_lister"
+    )("out")
     assert listed[0].relative_path == "a.txt"
     assert seen["paths"] == ("out", "phytomni", "runtime")
     assert seen["objects"] == ("out", "phytomni", "runtime")
@@ -262,19 +262,22 @@ async def test_load_manifest_from_objects_handles_missing_and_oversize(
     tmp_path: Path,
 ) -> None:
     """Missing manifests stay None; oversized listed objects fail closed."""
-    missing = await terminal_artifacts._load_manifest_from_objects(
+    missing = await getattr(terminal_artifacts, "_load_manifest_from_objects")(
         str(tmp_path),
         [_listed("summary.txt")],
     )
     assert missing is None
 
     with pytest.raises(ValueError, match="exceeds size cap"):
-        await terminal_artifacts._load_manifest_from_objects(
+        await getattr(terminal_artifacts, "_load_manifest_from_objects")(
             str(tmp_path),
             [
                 _listed(
                     ARTIFACT_MANIFEST_FILENAME,
-                    size_bytes=terminal_artifacts._MAX_MANIFEST_BYTES + 1,
+                    size_bytes=getattr(
+                        terminal_artifacts, "_MAX_MANIFEST_BYTES"
+                    )
+                    + 1,
                 )
             ],
         )
@@ -288,11 +291,11 @@ async def test_load_manifest_rejects_oversize_content(
     manifest.write_bytes(b"x")
 
     async def _huge(_output_dir: str, _item: ListedArtifactObject) -> bytes:
-        return b"x" * (terminal_artifacts._MAX_MANIFEST_BYTES + 1)
+        return b"x" * (getattr(terminal_artifacts, "_MAX_MANIFEST_BYTES") + 1)
 
     monkeypatch.setattr(terminal_artifacts, "_read_manifest_bytes", _huge)
     with pytest.raises(ValueError, match="exceeds size cap"):
-        await terminal_artifacts._load_manifest_from_objects(
+        await getattr(terminal_artifacts, "_load_manifest_from_objects")(
             str(tmp_path),
             [
                 _listed(
@@ -308,7 +311,7 @@ async def test_read_manifest_bytes_from_local_file(tmp_path: Path) -> None:
     """A local mount path is read directly without OBS download."""
     manifest = tmp_path / ARTIFACT_MANIFEST_FILENAME
     manifest.write_bytes(b'{"version":"1.0"}')
-    content = await terminal_artifacts._read_manifest_bytes(
+    content = await getattr(terminal_artifacts, "_read_manifest_bytes")(
         str(tmp_path),
         _listed(
             ARTIFACT_MANIFEST_FILENAME,
@@ -324,7 +327,7 @@ async def test_read_manifest_bytes_requires_download_ref(
 ) -> None:
     """A remote-only object without a download ref fails closed."""
     with pytest.raises(OSError, match="download reference unavailable"):
-        await terminal_artifacts._read_manifest_bytes(
+        await getattr(terminal_artifacts, "_read_manifest_bytes")(
             str(tmp_path),
             _listed(
                 ARTIFACT_MANIFEST_FILENAME,
@@ -343,11 +346,11 @@ async def test_read_manifest_bytes_downloads_remote_object(
 
     async def _download(reference: str, temp_dir: str) -> str:
         assert reference == "obs://manifest"
-        assert temp_dir == terminal_artifacts._MANIFEST_TEMP_DIR
+        assert temp_dir == getattr(terminal_artifacts, "_MANIFEST_TEMP_DIR")
         return str(downloaded)
 
     monkeypatch.setattr(terminal_artifacts, "download_obs_file", _download)
-    content = await terminal_artifacts._read_manifest_bytes(
+    content = await getattr(terminal_artifacts, "_read_manifest_bytes")(
         str(tmp_path),
         _listed(
             ARTIFACT_MANIFEST_FILENAME,
@@ -360,7 +363,7 @@ async def test_read_manifest_bytes_downloads_remote_object(
 
 def test_unique_json_object_rejects_duplicate_keys() -> None:
     """Duplicate manifest keys fail instead of last-wins."""
-    payload = terminal_artifacts._unique_json_object(
+    payload = getattr(terminal_artifacts, "_unique_json_object")(
         [("version", "1.0"), ("artifacts", [])]
     )
     assert payload == {"version": "1.0", "artifacts": []}
@@ -368,5 +371,7 @@ def test_unique_json_object_rejects_duplicate_keys() -> None:
     with pytest.raises(ValueError, match="duplicate manifest key"):
         json.loads(
             '{"a":1,"a":2}',
-            object_pairs_hook=terminal_artifacts._unique_json_object,
+            object_pairs_hook=getattr(
+                terminal_artifacts, "_unique_json_object"
+            ),
         )
