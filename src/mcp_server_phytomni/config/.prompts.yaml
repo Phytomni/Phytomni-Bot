@@ -2153,10 +2153,22 @@ user:
 
     Requirements:
     - Write in English with a professional academic tone.
-    - Preserve citation tags exactly as they appear, such as [document 001].
+    - Write claim-led paragraphs of about 80-150 words. The first
+      sentence of each paragraph is a judgment, not "X was identified"
+      and not "Furthermore".
+    - Follow each judgment with checkable evidence: species, genotype,
+      assay (Y1H, ChIP, antisense), and direction or magnitude when the
+      snippets contain them.
+    - Correlation is not causation. Name the species of any analog.
+      Maize, apple, or human results must not be written as rice
+      conclusions.
+    - If direct evidence is lacking, write that it is lacking. Do not
+      fill the gap with PPI methodology or unrelated QTLs.
+    - Preserve citation tags exactly as they appear, such as
+      [document 001].
     - Put citations immediately after the supported claim.
     - Do not invent unsupported details.
-    - Return only the subsection text.
+    - Return only the subsection text. Do not invent ### headings.
 
     CITATION RULES (strictly enforced — violations will cause downstream
     errors):
@@ -2192,7 +2204,12 @@ user:
     {{new_snippets}}
 
     Requirements:
-    - Keep the original scope and tone.
+    - Keep the original scope and the claim-led tone.
+    - Revise only when the new snippets supply stronger or missing
+      in-domain evidence. Ignore human drug-target, viral, or C60
+      snippets.
+    - Keep paragraph openings as judgments, with species, assay, and
+      an explicit limit when evidence is analogical or incomplete.
     - Preserve existing valid citations.
     - Cite new evidence with the exact supplied tags, such as
       [add document S1-001].
