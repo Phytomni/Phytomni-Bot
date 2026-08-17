@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the external MCP LangChain adapter seam."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping

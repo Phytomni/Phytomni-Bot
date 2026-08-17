@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for safe external capability normalization and discovery results."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import json

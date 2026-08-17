@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for bounded, policy-bound external A2A card discovery."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import json

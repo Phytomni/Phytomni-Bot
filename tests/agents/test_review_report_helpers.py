@@ -404,7 +404,7 @@ def test_format_supplementary_query_empty_when_all_fragments_oversize() -> (
     )
 
     assert block == ""
-    assert add_doc_list == []
+    assert not add_doc_list
 
 
 async def test_audit_citations_returns_unchanged_without_known_tags(
@@ -424,7 +424,7 @@ async def test_audit_citations_returns_unchanged_without_known_tags(
     )
 
     assert checked == "See [document 999] and plain text."
-    assert probe.chat_prompts == []
+    assert not probe.chat_prompts
 
 
 async def test_audit_citations_rewrites_and_splits_token_batches(

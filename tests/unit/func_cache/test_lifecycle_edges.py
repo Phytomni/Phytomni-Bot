@@ -81,7 +81,7 @@ def test_check_and_update_meta_is_noop_when_unchanged() -> None:
     """Matching key params and compress leave the cache alone."""
     store = _RecordingStorage((("a",), False))
     lifecycle._check_and_update_meta(cast(Storage, store), "fn", ("a",), False)
-    assert store.calls == []
+    assert not store.calls
 
 
 @pytest.mark.parametrize(
@@ -138,7 +138,7 @@ def test_cache_config_changes_lists_each_drift() -> None:
         "key_params: old -> new",
         "compress: False -> True",
     ]
-    assert lifecycle._cache_config_changes("same", "same", True, True) == []
+    assert not lifecycle._cache_config_changes("same", "same", True, True)
 
 
 def test_clear_changed_cache_persists_replacement_metadata(
