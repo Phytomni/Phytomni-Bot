@@ -39,7 +39,6 @@ from mcp_server_phytomni.storage.artifact_listing import ListedArtifactObject
 
 pytestmark = pytest.mark.unit
 
-
 @pytest.mark.asyncio
 async def test_report_artifact_groups_preserve_child_directories() -> None:
     """Archive collection retains the task/output boundary before merging."""
@@ -92,7 +91,6 @@ async def test_report_artifact_groups_preserve_child_directories() -> None:
         artifact.relative_path for artifact in groups[0].artifact_set.artifacts
     ] == ["report.md"]
 
-
 @pytest.mark.asyncio
 async def test_scientific_child_failure_never_builds_or_publishes_delivery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -138,12 +136,10 @@ async def test_scientific_child_failure_never_builds_or_publishes_delivery(
     assert record.result["execution"]["delivery"]["status"] == "pending"
     assert "delivery_internal" not in record.result
 
-
 async def _empty_lister(output_dir: str) -> list:
     """No-op artifact lister for reconcile tests (avoids real OBS I/O)."""
     assert isinstance(output_dir, str)
     return []
-
 
 async def _report_object_lister(
     output_dir: str,
@@ -158,7 +154,6 @@ async def _report_object_lister(
         )
     ]
 
-
 async def _report_manifest(_output_dir: str) -> dict[str, object]:
     """Declare the report object as scientific text for tests."""
     return {
@@ -172,7 +167,6 @@ async def _report_manifest(_output_dir: str) -> dict[str, object]:
         ],
     }
 
-
 def _final_report_assembly(agent: str) -> TerminalReportAssembly:
     """Build a deterministic report result for one report-capable agent."""
     return TerminalReportAssembly(
@@ -184,7 +178,6 @@ def _final_report_assembly(agent: str) -> TerminalReportAssembly:
         ),
     )
 
-
 @dataclass(frozen=True)
 class _FakeReportResult:
     """Shared test double for terminal report results."""
@@ -195,7 +188,6 @@ class _FakeReportResult:
     degraded_reason: str | None = None
     selected_paths: tuple = ()
     skipped_paths: tuple = ()
-
 
 @pytest.mark.asyncio
 async def test_reconcile_terminal_run_does_not_poll(
@@ -223,7 +215,6 @@ async def test_reconcile_terminal_run_does_not_poll(
     assert record.status == "succeeded"
     assert calls["n"] == 0
 
-
 @pytest.mark.asyncio
 async def test_reconcile_cancelled_run_does_not_poll(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -249,7 +240,6 @@ async def test_reconcile_cancelled_run_does_not_poll(
     assert record is not None
     assert record.status == "cancelled"
 
-
 def test_terminal_cancellation_rejects_late_compatibility_settlement(
     tmp_path: Path,
 ) -> None:
@@ -273,7 +263,6 @@ def test_terminal_cancellation_rejects_late_compatibility_settlement(
     assert updated.status == "cancelled"
     assert updated.stage is None
     assert updated.result == {"status": "cancelled"}
-
 
 @pytest.mark.asyncio
 async def test_reconcile_aggregates_all_succeeded_into_terminal(
@@ -319,7 +308,6 @@ async def test_reconcile_aggregates_all_succeeded_into_terminal(
     assert cached is not None
     assert cached.status == "succeeded"
 
-
 @pytest.mark.asyncio
 async def test_reconcile_surfaces_deep_genome_final_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -362,7 +350,6 @@ async def test_reconcile_surfaces_deep_genome_final_report(
     assert record.result["final_report"] == report_md
     assert record.result["formatted"]["answer"]
 
-
 @pytest.mark.asyncio
 async def test_reconcile_final_report_none_without_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -400,7 +387,6 @@ async def test_reconcile_final_report_none_without_report(
         "source_artifact_count": 0,
     }
 
-
 @pytest.mark.asyncio
 async def test_reconcile_propagates_failure_status(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -437,7 +423,6 @@ async def test_reconcile_propagates_failure_status(
     assert record.result["execution"]["diagnostics"] == [
         {"code": "task_failed", "retryable": False, "stage": "reconcile"}
     ]
-
 
 @pytest.mark.asyncio
 async def test_reconcile_carries_submit_warnings_to_terminal_payload(
@@ -487,7 +472,6 @@ async def test_reconcile_carries_submit_warnings_to_terminal_payload(
         "partial_submission",
         "report_no_scientific_text",
     ]
-
 
 @pytest.mark.asyncio
 async def test_reconcile_assembles_answer_and_paths_once(
@@ -552,7 +536,6 @@ async def test_reconcile_assembles_answer_and_paths_once(
         == first.result["formatted"]["answer"]
     )
     assert glob_calls["n"] == 1  # settle-once: not re-globbed
-
 
 @pytest.mark.asyncio
 async def test_reconcile_concurrent_first_polls_are_idempotent(
@@ -619,7 +602,6 @@ async def test_reconcile_concurrent_first_polls_are_idempotent(
     assert rec2 == cached
     assert cached.result["execution"]["artifacts"][0]["name"] == "plot.png"
 
-
 @pytest.mark.asyncio
 async def test_concurrent_terminal_readers_return_one_persisted_winner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -677,7 +659,6 @@ async def test_concurrent_terminal_readers_return_one_persisted_winner(
     else:
         assert task_status == "failed"
         assert cached.error is not None
-
 
 @pytest.mark.asyncio
 async def test_losing_report_reader_does_not_replace_compatibility_report(
@@ -751,7 +732,6 @@ async def test_losing_report_reader_does_not_replace_compatibility_report(
         cached.result["formatted"]["answer"]
     )
 
-
 @pytest.mark.parametrize(
     "agent",
     ["analyst", "research", "design", "network"],
@@ -817,7 +797,6 @@ async def test_report_agents_have_manifest_backed_final_reports(
         result["formatted"]["answer"]
     )
 
-
 @pytest.mark.asyncio
 async def test_reconcile_terminal_analyst_run_includes_final_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -877,7 +856,6 @@ async def test_reconcile_terminal_analyst_run_includes_final_report(
     assert manager.get_task_final_report("task-1") == (
         "# Analyst Final Report\n\nLLM summary."
     )
-
 
 @pytest.mark.asyncio
 async def test_reconcile_terminal_report_degraded_reaches_payload(
@@ -955,7 +933,6 @@ async def test_reconcile_terminal_report_degraded_reaches_payload(
         }
     ]
     assert manager.get_task_degraded("task-1") == ("report_synthesis_failed")
-
 
 @pytest.mark.asyncio
 async def test_reconcile_non_target_agent_skips_terminal_report(
