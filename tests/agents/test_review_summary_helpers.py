@@ -169,6 +169,35 @@ async def test_summary_post_node_strips_backticks() -> None:
     assert result == {"summary_content": "Final report text"}
 
 
+async def test_summary_post_node_scrubs_overclaim_and_scope_paste() -> None:
+    """Assembled text is scrubbed before it becomes summary_content."""
+    in_scope = (
+        "Identification, regulatory evidence, wax phenotypes, and "
+        "breeding limits of the ZOS7-MYB60-CER1 pathway in upland rice."
+    )
+    draft = (
+        "### Title: The Pathway Confers Drought Resistance\n\n"
+        f"### Introduction\nHere we review {in_scope}\n"
+        "None of the supplied knowledge snippets mention CER1.\n"
+        "The link remains untested [document:2].\n"
+    )
+    result = await _build_agent().summary_post_node(
+        cast(
+            DeepResearchState,
+            {
+                "chat_response": _chat_response(draft),
+                "in_scope": in_scope,
+            },
+        )
+    )
+    text = result["summary_content"]
+    assert "Confers" not in text
+    assert "Is Proposed for Drought Resistance" in text
+    assert "supplied knowledge snippets" not in text.lower()
+    assert in_scope.rstrip(".") not in text
+    assert "[document:2]" in text
+
+
 @pytest.mark.parametrize(
     ("content", "expected"),
     [

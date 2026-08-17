@@ -2162,8 +2162,13 @@ user:
     - Correlation is not causation. Name the species of any analog.
       Maize, apple, or human results must not be written as rice
       conclusions.
-    - If direct evidence is lacking, write that it is lacking. Do not
-      fill the gap with PPI methodology or unrelated QTLs.
+    - If this subtopic's snippets omit a gene that belongs in a later
+      section, omit that gene here. Do not write that the pathway lacks
+      evidence, and do not mention supplied snippets, provided data, or
+      "the subtopic".
+    - If direct evidence for a claim that this subtopic does cover is
+      lacking, write that it is lacking. Do not fill the gap with PPI
+      methodology or unrelated QTLs.
     - Preserve citation tags exactly as they appear, such as
       [document 001].
     - Put citations immediately after the supported claim.
@@ -2584,11 +2589,16 @@ user:
     ## Skills
     1. Academic Manuscript Assembly
       - Title: write a claim-style title from `{{user_query}}` and
-      `{{thesis}}`. Do not write a colon-separated method list.
+      `{{thesis}}`. Do not write a colon-separated method list. If
+      any subsection says a link is untested, inferred, or lacking,
+      the title must not use confers, establishes, proves, or
+      demonstrates.
       - Front matter: write `### Abstract` (120-180 words) and
       `### Introduction` that states the bottleneck, defines the
-      object, and uses `{{in_scope}}` / `{{out_of_scope}}` to draw a
-      boundary with a "Here we review..." sentence.
+      object, and draws a boundary with a "Here we review..."
+      sentence. Paraphrase `{{in_scope}}` and `{{out_of_scope}}`.
+      Never copy `{{thesis}}`, `{{in_scope}}`, or `{{out_of_scope}}`
+      verbatim.
       - Section assembly: use each provided sub-section title as a
       `###` heading, in order. Add 0-3 `####` subheadings only when
       the content splits cleanly. Do not force two subheadings.
@@ -2650,12 +2660,17 @@ user:
     list.
     - Step 1: Read `{{user_query}}`, `{{thesis}}`, `{{in_scope}}`,
     `{{out_of_scope}}`, and Sub-sections 1-4.
-    - Step 2: Write a claim-style `### Title:`.
-    - Step 3: Write `### Abstract` then `### Introduction` with an
-    explicit scope sentence.
+    - Step 2: Write a claim-style `### Title:` that does not outrun
+    the weakest well-supported claim.
+    - Step 3: Write `### Abstract` then `### Introduction` in new
+    sentences. Do not paste the thesis or scope fields.
     - Step 4: Emit each provided title as `###` and copy the audited
-    sentences with their citation tags unchanged. Add 0-3 `####`
-    headings only if the text already splits.
+    sentences with their citation tags unchanged. If an earlier
+    subsection says a gene or assay is absent or unmentioned, and a
+    later subsection cites that gene or assay, delete the absence
+    claim and keep the later cited sentences. Do not mention
+    snippets or provided data. Add 0-3 `####` headings only if the
+    text already splits.
     - Step 5: If three or more comparable items exist, add one
     Markdown table. Otherwise omit the table.
     - Step 6: Write `### Conclusions` as two or three open questions

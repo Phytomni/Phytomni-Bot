@@ -23,6 +23,7 @@ from ...common.responses import message_content, parse_json_list_fragment
 from ...graphs.chat_adapters import build_chat_input
 from ...mcp.progress_events import emit_progress
 from .helpers import _renumber_citations, build_review_chat_kwargs
+from .manuscript import scrub_review_manuscript
 
 if TYPE_CHECKING:
     from .agent import DeepResearchState
@@ -109,9 +110,13 @@ class ReviewSummaryMixin:
         """
         emit_progress("generating", 0, detail="composing summary")
         content = message_content(state.get("chat_response") or "")
+        raw = (content or "No summary generated").replace("`", "")
         return {
-            "summary_content": (content or "No summary generated").replace(
-                "`", ""
+            "summary_content": scrub_review_manuscript(
+                raw,
+                thesis=str(state.get("thesis") or ""),
+                in_scope=str(state.get("in_scope") or ""),
+                out_of_scope=str(state.get("out_of_scope") or ""),
             )
         }
 
