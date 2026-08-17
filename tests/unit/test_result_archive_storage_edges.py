@@ -124,19 +124,24 @@ async def test_persist_runtime_reuses_identical_existing(
 ) -> None:
     """A second leased persist accepts byte-identical inventory reuse."""
     inventory = _inventory()
-    objects: dict[str, bytes] = {}
+    bucket_objects: dict[str, bytes] = {}
 
-    def _get(_bucket: str, key: str, **_kwargs: object) -> bytes:
-        if key not in objects:
+    def _read_object(
+        _bucket: str, object_key: str, **_kwargs: object
+    ) -> bytes:
+        payload = bucket_objects.get(object_key)
+        if payload is None:
             raise storage.ObsObjectNotFoundError("missing")
-        return objects[key]
+        return payload
 
-    def _put(_bucket: str, key: str, content: bytes, **_kwargs: object) -> str:
-        objects[key] = content
-        return key
+    def _write_object(
+        _bucket: str, object_key: str, content: bytes, **_kwargs: object
+    ) -> str:
+        bucket_objects[object_key] = content
+        return object_key
 
-    monkeypatch.setattr(storage, "get_object_bytes", _get)
-    monkeypatch.setattr(storage, "put_object_bytes_if_absent", _put)
+    monkeypatch.setattr(storage, "get_object_bytes", _read_object)
+    monkeypatch.setattr(storage, "put_object_bytes_if_absent", _write_object)
     first = await storage.persist_result_archive_inventory_with_runtime(
         inventory,
         bucket="phytomni",
@@ -148,7 +153,7 @@ async def test_persist_runtime_reuses_identical_existing(
         obs_runtime=CountingObsRuntime(object()),
     )
     assert first == second
-    assert len(objects) == 1
+    assert len(bucket_objects) == 1
 
 
 async def test_persist_runtime_race_reloads_identical_bytes(
@@ -156,7 +161,7 @@ async def test_persist_runtime_race_reloads_identical_bytes(
 ) -> None:
     """A leased create race rereads and accepts identical content."""
     inventory = _inventory()
-    objects: dict[str, bytes] = {}
+    stored: dict[str, bytes] = {}
     calls = 0
 
     def _get(*_args: object, **_kwargs: object) -> bytes:
@@ -164,7 +169,7 @@ async def test_persist_runtime_race_reloads_identical_bytes(
         calls += 1
         if calls == 1:
             raise storage.ObsObjectNotFoundError("missing")
-        return objects["inventory"]
+        return stored["inventory"]
 
     def _raced(
         _bucket: str,
@@ -172,7 +177,7 @@ async def test_persist_runtime_race_reloads_identical_bytes(
         content: bytes,
         **_kwargs: object,
     ) -> str:
-        objects["inventory"] = content
+        stored["inventory"] = content
         raise storage.ObsObjectAlreadyExistsError("exists")
 
     monkeypatch.setattr(storage, "get_object_bytes", _get)
@@ -314,19 +319,24 @@ async def test_load_runtime_round_trip(
 ) -> None:
     """A leased load revalidates the inventory it just persisted."""
     inventory = _inventory()
-    objects: dict[str, bytes] = {}
+    bucket_objects: dict[str, bytes] = {}
 
-    def _get(_bucket: str, key: str, **_kwargs: object) -> bytes:
-        if key not in objects:
+    def _read_object(
+        _bucket: str, object_key: str, **_kwargs: object
+    ) -> bytes:
+        payload = bucket_objects.get(object_key)
+        if payload is None:
             raise storage.ObsObjectNotFoundError("missing")
-        return objects[key]
+        return payload
 
-    def _put(_bucket: str, key: str, content: bytes, **_kwargs: object) -> str:
-        objects[key] = content
-        return key
+    def _write_object(
+        _bucket: str, object_key: str, content: bytes, **_kwargs: object
+    ) -> str:
+        bucket_objects[object_key] = content
+        return object_key
 
-    monkeypatch.setattr(storage, "get_object_bytes", _get)
-    monkeypatch.setattr(storage, "put_object_bytes_if_absent", _put)
+    monkeypatch.setattr(storage, "get_object_bytes", _read_object)
+    monkeypatch.setattr(storage, "put_object_bytes_if_absent", _write_object)
     runtime = CountingObsRuntime(object())
     await storage.persist_result_archive_inventory_with_runtime(
         inventory,

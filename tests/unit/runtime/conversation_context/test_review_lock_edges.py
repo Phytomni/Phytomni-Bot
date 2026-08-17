@@ -25,6 +25,7 @@ pytestmark = pytest.mark.unit
 
 def test_local_lock_release_and_second_release_are_safe() -> None:
     """In-memory locks release once and ignore a later release."""
+    # pylint: disable=consider-using-with
     local = threading.Lock()
     assert local.acquire(blocking=False) is True
     lock = ReviewMutationLock(local_lock=local)
@@ -39,7 +40,7 @@ def test_local_lock_release_and_second_release_are_safe() -> None:
 
 def test_file_descriptor_release_without_fcntl(
     tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+) -> None:  # pylint: disable=consider-using-with
     """A held descriptor still closes when POSIX flock is unavailable."""
     path = tmp_path / "review.lock"
     path.write_text("", encoding="utf-8")

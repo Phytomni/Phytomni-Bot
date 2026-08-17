@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for bounded multipart storage ports."""
 
+# pylint: disable=protected-access, too-few-public-methods
+
 from __future__ import annotations
 
 import asyncio
@@ -323,6 +325,7 @@ def test_require_ok_rewind_fake_and_read_part_errors(tmp_path) -> None:
 
     class _Unseekable:
         def seek(self, *_args: object, **_kwargs: object) -> int:
+            """Reject rewind on a closed or unseekable stream."""
             raise ValueError("closed")
 
     with pytest.raises(
@@ -393,6 +396,7 @@ def test_require_ok_rewind_fake_and_read_part_errors(tmp_path) -> None:
 
     class _Greedy:
         def read(self, _size: int = -1) -> bytes:
+            """Return more bytes than the declared content length."""
             return b"abcd"
 
     with pytest.raises(MultipartStorageError, match="upload_state_conflict"):

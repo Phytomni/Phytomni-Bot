@@ -1,3 +1,4 @@
+# pylint: disable=too-few-public-methods
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
@@ -178,6 +179,7 @@ async def test_poll_design_work_item_records_missing_submission(
 
     class _Tracking:
         async def record_work_item_failure(self, work_item_key: str) -> None:
+            """Record the failed design work-item key."""
             recorded.append(work_item_key)
 
     monkeypatch.setattr(
@@ -239,6 +241,7 @@ async def test_resolve_remote_analysis_validates_options_and_outcome() -> None:
         async def accept_remote_submission(
             self, work_item_key: str, received: RemoteSubmission
         ) -> None:
+            """Ignore accepted submissions in this validation test."""
             del work_item_key, received
 
     resolve = getattr(host, "_resolve_remote_analysis")

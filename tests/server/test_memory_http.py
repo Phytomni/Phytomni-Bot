@@ -306,6 +306,12 @@ async def test_memory_audit_is_service_gated_and_digest_only(
     ]
 
 
+def _default_memory_stamps() -> dict[str, datetime | None]:
+    """Return the default created/updated/expires stamps."""
+    stamp = datetime(2026, 1, 1, tzinfo=UTC)
+    return {"created_at": stamp, "updated_at": stamp, "expires_at": None}
+
+
 @dataclass
 class _FakeMemoryRecord:
     """Minimal memory record accepted by the public response model."""
@@ -315,21 +321,22 @@ class _FakeMemoryRecord:
     kind: str = "note"
     content: str = "hello"
     tags: list[str] = field(default_factory=list)
-    created_at: datetime = datetime(2026, 1, 1, tzinfo=UTC)
-    updated_at: datetime = datetime(2026, 1, 1, tzinfo=UTC)
-    expires_at: datetime | None = None
+    stamps: dict[str, datetime | None] = field(
+        default_factory=_default_memory_stamps
+    )
     revision: int = 1
 
     def model_dump(self) -> dict[str, object]:
+        """Return the public memory payload."""
         return {
             "id": self.id,
             "user_id": self.user_id,
             "kind": self.kind,
             "content": self.content,
             "tags": self.tags,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "expires_at": self.expires_at,
+            "created_at": self.stamps["created_at"],
+            "updated_at": self.stamps["updated_at"],
+            "expires_at": self.stamps["expires_at"],
             "revision": self.revision,
         }
 
@@ -343,30 +350,37 @@ class _ConfigurableMemoryStore:
             raise self.error
 
     def create(self, _write: object) -> _FakeMemoryRecord:
+        """Return one fake record after optional injected failure."""
         self._raise()
         return _FakeMemoryRecord()
 
     def list(self, _owner: str, **_kwargs: object) -> list[_FakeMemoryRecord]:
+        """Return an empty list after optional injected failure."""
         self._raise()
         return []
 
     def export(self, _owner: str) -> list[_FakeMemoryRecord]:
+        """Return an empty export after optional injected failure."""
         self._raise()
         return []
 
     def list_audit(self, **_kwargs: object) -> list[object]:
+        """Return an empty audit list after optional injected failure."""
         self._raise()
         return []
 
     def get(self, _owner: str, _memory_id: str) -> _FakeMemoryRecord | None:
+        """Return one fake record after optional injected failure."""
         self._raise()
         return _FakeMemoryRecord()
 
     def update(self, *_args: object, **_kwargs: object) -> _FakeMemoryRecord:
+        """Return a bumped-revision record after optional injected failure."""
         self._raise()
         return _FakeMemoryRecord(revision=2)
 
     def delete(self, *_args: object, **_kwargs: object) -> bool:
+        """Report a successful delete after optional injected failure."""
         self._raise()
         return True
 

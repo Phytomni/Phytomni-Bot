@@ -4,9 +4,12 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the repository-owned HTTP Research root composition."""
 
+# pylint: disable=protected-access, too-few-public-methods
+
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -166,7 +169,6 @@ def test_bind_default_factory_requires_runtime_and_port() -> None:
             SimpleNamespace(root_request_factory=None),
             asset_resolver_factory=None,
         )
-    from dataclasses import dataclass
 
     @dataclass
     class _Runtime:
@@ -207,12 +209,12 @@ def test_direct_goal_downloader_and_converter_branches(
 
     class _Relay:
         async def get_obs_object(self, _ref: str, *, message: str) -> bytes:
+            """Return scripted relay bytes."""
+            del message
             return b"relay-bytes"
 
     monkeypatch.setattr(research_root, "relay_mode_enabled", lambda: True)
-    monkeypatch.setattr(
-        research_root, "current_relay_client", lambda: _Relay()
-    )
+    monkeypatch.setattr(research_root, "current_relay_client", _Relay)
 
     async def _relay() -> None:
         assert await downloader.download(entry) == b"relay-bytes"
@@ -221,10 +223,11 @@ def test_direct_goal_downloader_and_converter_branches(
 
     class _Obs:
         async def run(self, _p: object, callback: Any) -> bytes:
+            """Invoke the download callback with a dummy client."""
             return await callback(object())
 
     monkeypatch.setattr(research_root, "relay_mode_enabled", lambda: False)
-    monkeypatch.setattr(research_root, "current_obs_runtime", lambda: _Obs())
+    monkeypatch.setattr(research_root, "current_obs_runtime", _Obs)
 
     async def _bytes(*_a: Any, **_k: Any) -> bytes:
         return b"direct-bytes"
@@ -295,13 +298,16 @@ def test_root_factory_closures_and_managed_resolver_bind(
     captured: dict[str, Any] = {}
 
     async def _inventory(request: Any, port: Any) -> str:
+        """Record the inventory closure arguments."""
         captured["inventory"] = (request, port)
         return "inventory"
 
-    async def _evidence(request: Any, downloader: Any, converter: Any) -> str:
+    async def _evidence(*_args: Any, **_kwargs: Any) -> str:
+        """Return a stub evidence payload."""
         return "evidence"
 
-    async def _revalidate(*a: Any, **k: Any) -> str:
+    async def _revalidate(*_args: Any, **_kwargs: Any) -> str:
+        """Return a stub revalidation payload."""
         return "revalidated"
 
     async def _plan(request: Any, provider: Any) -> str:

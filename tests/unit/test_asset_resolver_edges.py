@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Edge coverage for owner-scoped upload asset resolution."""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access, too-few-public-methods
 
 from __future__ import annotations
 

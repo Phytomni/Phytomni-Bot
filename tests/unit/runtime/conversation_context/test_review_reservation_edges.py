@@ -14,6 +14,9 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from tests.unit.runtime.conversation_context.test_review_reservation import (
+    _marker_request,
+)
 
 from mcp_server_phytomni.runtime.conversation_context import (
     review_reservation as review_res,
@@ -22,9 +25,7 @@ from mcp_server_phytomni.runtime.conversation_context.review_support import (
     _REVIEW_SETTLEMENT_FENCE_LIMIT,
     _REVIEW_SETTLEMENT_TOKEN_LIMIT,
     ReviewSettlementClaim,
-    _ReviewClaimIdentity,
     _ReviewClaimLookupRequest,
-    _ReviewReservationMarkerRequest,
 )
 
 _reserve_marker_state = review_res._reserve_marker_state
@@ -49,25 +50,6 @@ def _lookup(
         row=row,
         expected_ledger_version=expected_ledger_version,
         expected_base_context_version=expected_base_context_version,
-    )
-
-
-def _marker_request(
-    marker: dict[str, object],
-    *,
-    claim_token: str = "tok",
-    fence_token: int = 2,
-    row: tuple[object, ...] = ("staged", "ledger", 3, "{}"),
-) -> _ReviewReservationMarkerRequest:
-    """Build one reservation-marker request for the helper under test."""
-    return _ReviewReservationMarkerRequest(
-        connection=cast(sqlite3.Connection, object()),
-        identity=_ReviewClaimIdentity(key="k", turn_id="1"),
-        row=row,
-        decoded={},
-        marker=marker,
-        claim_token=claim_token,
-        fence_token=fence_token,
     )
 
 

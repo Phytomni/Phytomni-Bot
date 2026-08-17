@@ -138,7 +138,8 @@ def test_cache_config_changes_lists_each_drift() -> None:
         "key_params: old -> new",
         "compress: False -> True",
     ]
-    assert not lifecycle._cache_config_changes("same", "same", True, True)
+    changes = lifecycle._cache_config_changes("same", "same", True, True)
+    assert not changes
 
 
 def test_clear_changed_cache_persists_replacement_metadata(

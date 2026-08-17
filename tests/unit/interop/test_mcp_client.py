@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the external MCP LangChain adapter seam."""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access, too-few-public-methods
 
 from __future__ import annotations
 
@@ -352,6 +352,7 @@ def test_unknown_target_type_is_unsupported() -> None:
         """Return the unknown object so equality succeeds."""
 
         def require_target(self, target_id: str) -> object:
+            """Return the unknown target so identity checks can run."""
             del target_id
             return unknown
 
@@ -491,6 +492,7 @@ async def test_invalid_response_format_falls_back_to_content() -> None:
         return_direct = True
 
         async def ainvoke(self, arguments: Mapping[str, Any]) -> Any:
+            """Echo tool arguments for schema-normalization coverage."""
             return arguments
 
     target = _http_target()
@@ -594,6 +596,7 @@ async def test_runtime_loader_uses_leased_session(
             target_id: str,
             operation: Callable[[object], Awaitable[Any]],
         ) -> Any:
+            """Forward one leased MCP operation to the fake session."""
             del target_id
             return await operation(session)
 
@@ -612,15 +615,13 @@ async def test_runtime_loader_uses_leased_session(
             ],
         )
 
+    def _loader_factory() -> Any:
+        """Return the scripted official adapter loader."""
+        return fake_loader
+
+    monkeypatch.setattr(interop_mcp, "current_interop_runtime", _Runtime)
     monkeypatch.setattr(
-        interop_mcp,
-        "current_interop_runtime",
-        lambda: _Runtime(),
-    )
-    monkeypatch.setattr(
-        interop_mcp,
-        "_load_official_tool_loader",
-        lambda: fake_loader,
+        interop_mcp, "_load_official_tool_loader", _loader_factory
     )
     target = _http_target()
     tools = await load_external_mcp_tools(
@@ -642,16 +643,13 @@ async def test_runtime_loader_failure_is_discovery_failed(
         """Unused runtime; the loader fails before leasing."""
 
         async def run_mcp(self, *_: object, **__: object) -> Any:
+            """Fail if a lease is attempted after the loader exploded."""
             raise AssertionError("lease must not run")
 
     def boom_loader() -> Any:
         raise RuntimeError("adapter exploded")
 
-    monkeypatch.setattr(
-        interop_mcp,
-        "current_interop_runtime",
-        lambda: _Runtime(),
-    )
+    monkeypatch.setattr(interop_mcp, "current_interop_runtime", _Runtime)
     monkeypatch.setattr(
         interop_mcp,
         "_load_official_tool_loader",
@@ -700,10 +698,12 @@ async def test_leased_session_proxies_runtime_operations() -> None:
         """Record the inner MCP session method that ran."""
 
         async def list_tools(self, *args: object, **kwargs: object) -> str:
+            """Return a listed-tools marker."""
             del args, kwargs
             return "listed"
 
         async def call_tool(self, *args: object, **kwargs: object) -> str:
+            """Return a called-tool marker."""
             del args, kwargs
             return "called"
 
@@ -715,6 +715,7 @@ async def test_leased_session_proxies_runtime_operations() -> None:
             target_id: str,
             operation: Callable[[object], Awaitable[Any]],
         ) -> Any:
+            """Record the leased target id and forwarded result."""
             result = await operation(_Session())
             calls.append((target_id, result))
             return result

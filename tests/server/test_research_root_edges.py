@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from tests.server.test_research_root import _MetadataPort
 
 from mcp_server_phytomni.agents.research.document_evidence import (
     ConvertedResearchSection,
@@ -24,22 +25,6 @@ from mcp_server_phytomni.api import research_root
 from mcp_server_phytomni.runtime.outbound import ObsProfileName
 
 pytestmark = pytest.mark.server
-
-
-class _MetadataPort:
-    """Structural metadata port accepted by the root factory."""
-
-    async def resolve(self, _request: Any) -> tuple[Any, ...]:
-        """Return no authorities for this composition-only test."""
-        return ()
-
-    async def verify(self, _request: Any) -> tuple[Any, ...]:
-        """Return no authorities for this composition-only test."""
-        return ()
-
-    async def revoke(self, _request: Any) -> None:
-        """Accept revocation without external storage."""
-        return None
 
 
 def _limits() -> SimpleNamespace:

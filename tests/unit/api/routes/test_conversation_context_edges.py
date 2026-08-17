@@ -109,10 +109,9 @@ class _Store:
             raise self.commit_error
         raise AssertionError("unexpected commit")
 
-    def load_context(self, key: str) -> Any:
+    def load_context(self, key: str) -> None:
         """Unused in these error-path tests."""
         del key
-        return None
 
 
 class _Lock:
@@ -120,6 +119,10 @@ class _Lock:
 
     def __init__(self) -> None:
         self.released = False
+
+    def acquire(self) -> bool:
+        """These route doubles start already held."""
+        return True
 
     def release(self) -> None:
         """Mark the lock released."""

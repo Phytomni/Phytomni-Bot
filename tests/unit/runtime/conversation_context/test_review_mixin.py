@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Review mixin decode, marker, and claim-precondition edges."""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access, too-few-public-methods
 
 from __future__ import annotations
 
@@ -315,6 +315,8 @@ def test_marker_identity_and_expiry_edges() -> None:
         tzinfo = None
 
         def replace(self, tzinfo: object) -> None:
+            """Reject timezone repair so the claim is treated as expired."""
+            del tzinfo
             raise TypeError("bad clock")
 
     assert review_mixin._claim_is_expired(

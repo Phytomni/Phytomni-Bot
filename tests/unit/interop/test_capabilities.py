@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for safe external capability normalization and discovery results."""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access, too-few-public-methods
 
 from __future__ import annotations
 
@@ -304,6 +304,7 @@ def test_tool_schema_uses_schema_method_and_args() -> None:
         """JSON-schema object without model_json_schema."""
 
         def schema(self) -> dict[str, object]:
+            """Return a JSON schema object for the legacy args model."""
             return {"type": "object", "properties": {"q": {"type": "string"}}}
 
     class _LegacyTool:

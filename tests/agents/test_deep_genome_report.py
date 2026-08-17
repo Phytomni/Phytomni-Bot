@@ -11,10 +11,14 @@ A test-only subclass exposes the protected helpers under public names
 so the assertions stay inside the class hierarchy.
 """
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -514,7 +518,6 @@ async def test_write_async_and_public_dispatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Write failures surface; public wrappers unwrap chat/knowledge."""
-    from types import SimpleNamespace
 
     def boom(_path: Path, _text: str) -> None:
         raise OSError("disk full")
@@ -604,8 +607,6 @@ async def test_protocol_discussion_summary_and_finalization_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Report nodes unwrap chat; store faults fail the owner closed."""
-    import sqlite3
-
     monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
     probe = _ReportProbe()
     assert (await probe.run_protocol(_state()))["protocol_report"]

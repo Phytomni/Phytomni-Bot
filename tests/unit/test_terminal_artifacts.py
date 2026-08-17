@@ -20,10 +20,14 @@ import pytest
 
 from mcp_server_phytomni.agents.analyst.graph import AnalystGraphMixin
 from mcp_server_phytomni.runtime import terminal_artifacts
-from mcp_server_phytomni.runtime.artifact_roles import ArtifactRole
+from mcp_server_phytomni.runtime.artifact_roles import (
+    ArtifactRole,
+    ClassifiedArtifact,
+)
 from mcp_server_phytomni.runtime.terminal_artifacts import (
     ArtifactLister,
     TerminalArtifactSet,
+    collect_terminal_artifact_set,
     collect_terminal_artifacts,
 )
 from mcp_server_phytomni.storage.artifact_listing import ListedArtifactObject
@@ -325,8 +329,6 @@ async def test_result_archive_manifest_role_fails_closed() -> None:
 
 def test_artifact_set_to_public_drops_source_path() -> None:
     """Public projection keeps the download ref and hides the source path."""
-    from mcp_server_phytomni.runtime.artifact_roles import ClassifiedArtifact
-
     public = TerminalArtifactSet(
         artifacts=(
             ClassifiedArtifact(
@@ -368,10 +370,6 @@ async def test_structured_listing_truncates_and_sync_manifest_loader() -> None:
             _listed_object("a.md"),
             _listed_object("c.md"),
         ]
-
-    from mcp_server_phytomni.runtime.terminal_artifacts import (
-        collect_terminal_artifact_set,
-    )
 
     result = await collect_terminal_artifact_set(
         task_id="task-1",
@@ -527,7 +525,7 @@ async def test_manifest_size_cap_and_download_fallback(
     downloaded = tmp_path / "downloaded.json"
     downloaded.write_bytes(payload)
 
-    async def fake_download(reference: str, dest_dir: str) -> str:
+    async def fake_download(_reference: str, dest_dir: str) -> str:
         assert dest_dir == "terminal-manifest"
         return str(downloaded)
 

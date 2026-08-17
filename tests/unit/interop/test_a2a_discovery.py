@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for bounded, policy-bound external A2A card discovery."""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access, too-few-public-methods
 
 from __future__ import annotations
 
@@ -413,6 +413,7 @@ def _runtime_for(
             target_id: str,
             operation: Any,
         ) -> Any:
+            """Run one discovery HTTP operation against a mock transport."""
             del target_id
             if error is not None:
                 raise error

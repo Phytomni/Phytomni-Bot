@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Behavior contracts for deterministic terminal result archives."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import math
@@ -818,6 +820,25 @@ async def test_async_publish_and_size_helpers(
     )
     assert reused == key
 
+
+async def test_async_publish_maps_failures_and_size_helpers(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Remaining publish failures and size helpers stay fail-closed."""
+    inventory = _valid_inventory()
+    runtime = CountingObsRuntime(object())
+    monkeypatch.setattr(result_archive, "ARCHIVE_TEMP_ROOT", tmp_path)
+    monkeypatch.setattr(
+        result_archive,
+        "SERVER_CONFIG",
+        SimpleNamespace(BUCKET_NAME="phytomni"),
+    )
+    monkeypatch.setattr(
+        result_archive,
+        "iter_object_chunks",
+        lambda *_args, **_kwargs: iter((b"abc",)),
+    )
+
     def missing(*_args: object, **_kwargs: object) -> int:
         raise OSError("missing")
 
@@ -842,7 +863,8 @@ async def test_async_publish_and_size_helpers(
         calls["n"] += 1
         if calls["n"] == 1:
             raise OSError("missing")
-        return None
+        missing_size: int | None = None
+        return missing_size
 
     monkeypatch.setattr(result_archive, "object_size", size_then_none)
     with pytest.raises(ResultArchiveError, match="archive_publish_failed"):

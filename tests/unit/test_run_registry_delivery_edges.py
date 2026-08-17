@@ -110,8 +110,8 @@ def test_delivery_backoff_and_initial_pending() -> None:
 
 def test_result_mapping_handles_invalid_json() -> None:
     """Corrupt or non-mapping result payloads become an empty dict."""
-    assert delivery_module._result_mapping("{") == {}
-    assert delivery_module._result_mapping(12) == {}
+    assert not delivery_module._result_mapping("{")
+    assert not delivery_module._result_mapping(12)
 
 
 def test_retryable_failed_delivery_guards() -> None:
@@ -336,9 +336,7 @@ async def test_load_private_inventory_delegates_to_storage(
         "load_result_archive_inventory_with_runtime",
         _load,
     )
-    monkeypatch.setattr(
-        delivery_module, "current_obs_runtime", lambda: object()
-    )
+    monkeypatch.setattr(delivery_module, "current_obs_runtime", object)
     tail = (
         f"{_DIGEST.removeprefix('sha256:')}/" ".phytomni-result-inventory.json"
     )
@@ -369,9 +367,7 @@ async def test_publish_archive_builds_public_descriptor(
     monkeypatch.setattr(
         delivery_module, "_published_archive_size_with_runtime", _size
     )
-    monkeypatch.setattr(
-        delivery_module, "current_obs_runtime", lambda: object()
-    )
+    monkeypatch.setattr(delivery_module, "current_obs_runtime", object)
     inventory = ResultArchiveInventory(
         run_root="/obs/root",
         members=(),
@@ -436,7 +432,7 @@ async def test_worker_retries_archive_and_os_errors(
     )
     calls = {"n": 0}
 
-    def _publish(*args: Any) -> ResultArchiveDescriptor:
+    def _publish(*_args: Any) -> ResultArchiveDescriptor:
         calls["n"] += 1
         if calls["n"] == 1:
             raise ResultArchiveError("archive_publish_failed", True)

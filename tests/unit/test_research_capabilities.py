@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the Research relay handshake and fail-closed readiness seam."""
 
+# pylint: disable=protected-access, too-few-public-methods
+
 from __future__ import annotations
 
 import asyncio
@@ -396,12 +398,12 @@ async def test_current_snapshot_returns_fresh_and_swallows_schedule_errors(
     assert module.current_research_relay_snapshot(config, now) is not None
     empty = ResearchRelayCapabilityCache()
     monkeypatch.setattr(module, "_RELAY_CAPABILITY_CACHE", empty)
-    monkeypatch.setattr(
-        empty,
-        "schedule_refresh",
-        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("no loop")),
-    )
-    monkeypatch.setattr(module, "_current_relay_client", lambda: object())
+
+    def _raise_no_loop(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("no loop")
+
+    monkeypatch.setattr(empty, "schedule_refresh", _raise_no_loop)
+    monkeypatch.setattr(module, "_current_relay_client", object)
     assert module.current_research_relay_snapshot(config, now) is None
 
 
@@ -418,15 +420,15 @@ async def test_refresh_timeout_aborts_and_other_errors_fail_closed(
 
     class _Slow:
         async def get_research_capabilities(self) -> None:
+            """Sleep longer than the refresh timeout."""
             await asyncio.sleep(1)
 
-    monkeypatch.setattr(module, "_current_relay_client", lambda: _Slow())
+    def _raise_client_missing() -> None:
+        raise TypeError("client missing")
+
+    monkeypatch.setattr(module, "_current_relay_client", _Slow)
     assert await module.refresh_research_relay_capability(config, now) is None
-    monkeypatch.setattr(
-        module,
-        "_current_relay_client",
-        lambda: (_ for _ in ()).throw(TypeError("client missing")),
-    )
+    monkeypatch.setattr(module, "_current_relay_client", _raise_client_missing)
     assert await module.refresh_research_relay_capability(config, now) is None
 
 

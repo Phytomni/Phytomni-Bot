@@ -1,3 +1,4 @@
+# pylint: disable=too-few-public-methods
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
@@ -365,6 +366,7 @@ def test_read_part_rejects_negative_empty_and_overread() -> None:
         """Return more bytes than the caller asked to read."""
 
         def read(self, _size: int = -1) -> bytes:
+            """Return more bytes than the requested part size."""
             return b"abcd"
 
     with pytest.raises(MultipartStorageError, match="upload_state_conflict"):

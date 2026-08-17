@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Owner isolation and byte-faithful delivery tests for upload assets."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import gzip

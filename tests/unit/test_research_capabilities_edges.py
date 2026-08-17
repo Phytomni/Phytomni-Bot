@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Edge coverage for Research relay capability handshake helpers."""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access, too-few-public-methods
 
 from __future__ import annotations
 
@@ -177,7 +177,7 @@ async def test_refresh_capability_timeout_and_runtime_errors(
     cache = ResearchRelayCapabilityCache()
     monkeypatch.setattr(module, "_RELAY_CAPABILITY_CACHE", cache)
     monkeypatch.setattr(module, "_relay_mode", lambda _config: True)
-    monkeypatch.setattr(module, "_current_relay_client", lambda: object())
+    monkeypatch.setattr(module, "_current_relay_client", object)
 
     async def _hang(*args: Any, **kwargs: Any) -> None:
         del args, kwargs

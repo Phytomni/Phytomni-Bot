@@ -3,6 +3,8 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Tests for terminal remote-run final report assembly."""
 
+# pylint: disable=protected-access, too-few-public-methods
+
 from __future__ import annotations
 
 import pytest
@@ -576,8 +578,6 @@ def test_select_text_artifact_paths_skips_malformed_entries() -> None:
 
 def test_localize_report_reason_covers_known_and_unknown_zh() -> None:
     """Chinese fallback translates known assembler reasons only."""
-    from mcp_server_phytomni.runtime import terminal_report as report_mod
-
     assert report_mod._localize_report_reason("plain", "en-US") == "plain"
     assert (
         report_mod._localize_report_reason(
@@ -637,7 +637,7 @@ async def test_read_obs_text_artifact_reads_downloaded_file(
     local = tmp_path / "notes.txt"
     local.write_text("obs text", encoding="utf-8")
 
-    async def fake_download(path: str, dest_dir: str) -> str:
+    async def fake_download(_path: str, dest_dir: str) -> str:
         assert dest_dir == "terminal-report"
         return str(local)
 
@@ -779,7 +779,7 @@ async def test_default_summarizer_and_non_string_output(
 ) -> None:
     """Omitting a summarizer uses chat, and a non-string result degrades."""
 
-    async def fake_chat(prompt: str, locale: str = "en-US") -> str:
+    async def fake_chat(prompt: str, _locale: str = "en-US") -> str:
         assert "Scientific artifact: report.md" in prompt
         return "Results\nMethods\nLimitations\nScientific context"
 
@@ -873,14 +873,15 @@ async def test_summarize_with_chat_uses_chat_subgraph(
 
     class _FakeApp:
         async def ainvoke(self, payload: object) -> object:
+            """Return a canned chat-app payload."""
             assert payload == {"prompt": "ok"}
             return {"messages": ["chat"]}
 
-    monkeypatch.setattr(report_mod, "ChatConfig", lambda: object())
+    monkeypatch.setattr(report_mod, "ChatConfig", object)
     monkeypatch.setattr(
         report_mod,
         "SensitiveConfig",
-        type("Cfg", (), {"load": staticmethod(lambda: object())}),
+        type("Cfg", (), {"load": staticmethod(object)}),
     )
     monkeypatch.setattr(
         report_mod, "build_chat_kwargs_for", lambda *_a, **_k: {}
@@ -888,7 +889,7 @@ async def test_summarize_with_chat_uses_chat_subgraph(
     monkeypatch.setattr(
         report_mod, "build_chat_input", lambda **_k: {"prompt": "ok"}
     )
-    monkeypatch.setattr(report_mod, "_cached_chat_app", lambda: _FakeApp())
+    monkeypatch.setattr(report_mod, "_cached_chat_app", _FakeApp)
     monkeypatch.setattr(
         report_mod, "extract_chat_response", lambda output: output
     )
@@ -905,9 +906,11 @@ def test_persist_terminal_report_records_storage_failure() -> None:
 
     class _BoomManager:
         def set_task_final_report(self, *_args: object) -> bool:
+            """Fail persistence so the live row is marked degraded."""
             raise OSError("disk")
 
         def set_task_degraded(self, *_args: object) -> bool:
+            """Record the degraded reason on the live row."""
             return True
 
     live = [{"task_id": "task-1", "status": "succeeded"}]

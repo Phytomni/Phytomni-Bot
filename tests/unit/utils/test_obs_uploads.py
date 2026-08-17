@@ -8,12 +8,14 @@ Covers direct obsfs conversion, SDK temporary-file cleanup, OBS download
 fallback, and download-list conversion cleanup flags.
 """
 
+# pylint: disable=protected-access, too-few-public-methods
+
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Self
 
 import pytest
 
@@ -467,6 +469,7 @@ class _ScriptedObsRuntime:
         self.outcomes = list(outcomes)
 
     async def run(self, _profile: object, operation: Any) -> Any:
+        """Run the download callback, then return the next outcome."""
         operation(SimpleNamespace(downloadFile=lambda **_kwargs: None))
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, BaseException):
@@ -539,16 +542,19 @@ def test_convert_multi_files_uses_process_pool(
     """The multi-file helper maps conversion across one process pool."""
 
     class ImmediatePool:
+        """Execute ``map`` immediately for convert_multi_files tests."""
+
         def __init__(self, max_workers: int | None = None) -> None:
             self.max_workers = max_workers
 
-        def __enter__(self) -> ImmediatePool:
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, *_args: object) -> bool:
             return False
 
         def map(self, fn: Any, items: list[str]) -> list[str]:
+            """Apply ``fn`` to each item in-process."""
             return [fn(item) for item in items]
 
     monkeypatch.setattr(downloads, "ProcessPoolExecutor", ImmediatePool)

@@ -36,18 +36,18 @@ from mcp_server_phytomni.runtime.terminal_artifacts import TerminalArtifactSet
 pytestmark = pytest.mark.unit
 
 
-def _artifact(
-    path: str = "report.md",
+def _classified(
+    name: str = "report.md",
     *,
     role: ArtifactRole = ArtifactRole.SCIENTIFIC_DATA,
     media_type: str = "text/plain",
     size: int = 3,
     download_ref: str | None = "/obs/phytomni/runs/r/report.md",
 ) -> ClassifiedArtifact:
-    """Build one classified artifact for inventory-edge cases."""
+    """Build one artifact used only by archive inventory edge cases."""
     return ClassifiedArtifact(
-        source_path=f"private/{path}",
-        relative_path=path,
+        source_path=f"fixture://{name}",
+        relative_path=name,
         role=role,
         media_type=media_type,
         size_bytes=size,
@@ -71,23 +71,24 @@ def _group(
     )
 
 
-def _member(
-    *,
-    child_index: object = 1,
-    download_ref: object = "/obs/phytomni/runs/r/report.md",
-    archive_path: str = "results/part-001/report.md",
-    role: ArtifactRole = ArtifactRole.SCIENTIFIC_DATA,
-    media_type: object = "text/plain",
-    size_bytes: object = 3,
-) -> ResultArchiveMember:
+def _member(**overrides: object) -> ResultArchiveMember:
     """Build one member, including scalar types validate must reject."""
+    values: dict[str, object] = {
+        "child_index": 1,
+        "download_ref": "/obs/phytomni/runs/r/report.md",
+        "archive_path": "results/part-001/report.md",
+        "role": ArtifactRole.SCIENTIFIC_DATA,
+        "media_type": "text/plain",
+        "size_bytes": 3,
+    }
+    values.update(overrides)
     return ResultArchiveMember(
-        cast(int, child_index),
-        cast(str, download_ref),
-        archive_path,
-        role,
-        cast(str, media_type),
-        cast(int, size_bytes),
+        cast(int, values["child_index"]),
+        cast(str, values["download_ref"]),
+        cast(str, values["archive_path"]),
+        cast(ArtifactRole, values["role"]),
+        cast(str, values["media_type"]),
+        cast(int, values["size_bytes"]),
     )
 
 
@@ -162,8 +163,8 @@ def test_inventory_skips_ineligible_roles() -> None:
     inventory = build_result_archive_inventory(
         (
             _group(
-                _artifact("notes.log", role=ArtifactRole.DIAGNOSTIC),
-                _artifact("report.md"),
+                _classified("notes.log", role=ArtifactRole.DIAGNOSTIC),
+                _classified("report.md"),
             ),
         )
     )
@@ -175,9 +176,9 @@ def test_inventory_skips_ineligible_roles() -> None:
 @pytest.mark.parametrize(
     "artifact",
     [
-        _artifact(download_ref=None),
-        _artifact(download_ref=""),
-        _artifact(media_type=""),
+        _classified(download_ref=None),
+        _classified(download_ref=""),
+        _classified(media_type=""),
     ],
 )
 def test_inventory_rejects_blank_source_metadata(
@@ -191,16 +192,16 @@ def test_inventory_rejects_blank_source_metadata(
 def test_inventory_rejects_blank_or_split_run_roots() -> None:
     """Every child must share one absolute parent output directory."""
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        build_result_archive_inventory((_group(_artifact(), output_dir=""),))
+        build_result_archive_inventory((_group(_classified(), output_dir=""),))
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
         build_result_archive_inventory(
             (
-                _group(_artifact(), output_dir="/obs/runs/a/part-001"),
+                _group(_classified(), output_dir="/obs/runs/a/part-001"),
                 ReportArtifactGroup(
                     task_id="task-2",
                     output_dir="/obs/runs/b/part-001",
                     artifact_set=TerminalArtifactSet(
-                        artifacts=(_artifact("other.md"),),
+                        artifacts=(_classified("other.md"),),
                         warnings=(),
                     ),
                 ),
@@ -213,14 +214,14 @@ def test_inventory_maps_listing_failure() -> None:
     warning = ExecutionWarning("artifact_listing_failed", True, "listing")
     with pytest.raises(ResultArchiveError, match="artifact_listing_failed"):
         build_result_archive_inventory(
-            (_group(_artifact(), warnings=(warning,)),)
+            (_group(_classified(), warnings=(warning,)),)
         )
 
 
 def test_inventory_rejects_backslash_relative_path() -> None:
     """Windows separators are not valid ZIP member names."""
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
-        build_result_archive_inventory((_group(_artifact("dir\\file.md")),))
+        build_result_archive_inventory((_group(_classified("dir\\file.md")),))
 
 
 @pytest.mark.parametrize(
@@ -415,7 +416,8 @@ def test_publish_rejects_published_size_none(
         calls += 1
         if calls == 1:
             raise OSError("missing")
-        return None
+        missing_size: int | None = None
+        return missing_size
 
     _patch_publish(monkeypatch, tmp_path, size=_size)
     with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
@@ -600,7 +602,8 @@ async def test_async_publish_rejects_published_size_none(
         calls += 1
         if calls == 1:
             raise OSError("missing")
-        return None
+        missing_size: int | None = None
+        return missing_size
 
     _patch_publish(monkeypatch, tmp_path, size=_size)
     with pytest.raises(ResultArchiveError, match="archive_publish_failed"):

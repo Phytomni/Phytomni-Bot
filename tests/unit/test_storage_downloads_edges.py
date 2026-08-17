@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Edge coverage for OBS download helpers."""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access, too-few-public-methods
 
 from __future__ import annotations
 
@@ -49,7 +49,6 @@ class _Executor:
 
     def __exit__(self, *args: Any) -> None:
         del args
-        return None
 
     def map(self, func: Any, items: Any) -> list[Any]:
         """Return placeholder conversion results."""
@@ -141,7 +140,7 @@ async def test_download_retry_succeeds_after_transient_error(
     """A failing first attempt sleeps, then a 2xx response returns the path."""
     attempts: list[int] = []
 
-    async def _once(*args: Any, **kwargs: Any) -> SimpleNamespace:
+    async def _once(*_args: Any, **kwargs: Any) -> SimpleNamespace:
         del kwargs
         attempts.append(1)
         if len(attempts) == 1:
@@ -210,6 +209,7 @@ async def test_download_once_uses_owned_runtime(tmp_path: Path) -> None:
 
     class _Runtime:
         async def run(self, profile: Any, callback: Any) -> str:
+            """Record the outbound profile and return the callback result."""
             seen.append(profile)
             return callback(SimpleNamespace(downloadFile=lambda **k: "ok"))
 
