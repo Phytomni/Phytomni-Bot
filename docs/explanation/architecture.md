@@ -7,124 +7,29 @@ domain workflows live in dedicated packages.
 
 ## Package Layout
 
+Directory roles (file inventories go stale; open the tree in the repo):
+
 ```text
 src/mcp_server_phytomni/
-  server.py                  Compatibility startup module for MCP launchers
-  mcp/
-    app.py                   MCP server registration, dispatch, and serving
-    schemas.py               Public tool names and request schemas
-    handlers.py              Runtime handlers and config expansion
-    handler_support.py       Reusable handler assembly helpers (kwargs builders)
-    result_formatting.py     Tool-response formatter at the dispatch boundary
-  api/
-    app.py                   FastAPI application factory for the HTTP service
-    server.py                uvicorn launcher for the external HTTP API
-    auth.py                  SQLite-backed API key store and inbound auth
-    resolver
-    admin_auth.py            Service-token auth for /v1/api-keys management
-    routes
-    keys.py                  Admin CLI for the per-user API key store
-    openai_mapping.py        OpenAI-compatible chat mapping helpers
-    ratelimit.py             In-process per-key sliding-window rate limiter
-    resumable_uploads.py     Resumable OBS upload service and safe errors
-    asset_resolver.py        Owner-scoped completion and run materialization
-    schemas.py               HTTP API request and response schemas
-    relay/                   Credential-injecting customer relay subpackage
-  interop/
-    models.py                Immutable operator-owned MCP/A2A target policy
-    registry.py              Feature-gated target and credential-ref loader
-    security.py              Endpoint, DNS, IP, and origin/path policy
-    http_transport.py        Hardened HTTPX transport for external peers
-    mcp_client.py            Official external MCP adapter boundary
-    capabilities.py          Sanitized, non-executable capability DTOs
-    cache.py                 Monotonic TTL and per-target single-flight cache
-    a2a_discovery.py         External A2A Agent Card discovery
-    a2a_client.py            External A2A send/stream client
-    a2a_mapping.py           Bounded external A2A event mapping
-  agents/
-    chat/                    Chat service workflow
-    knowledge/               Retrieval, reranking, and synthesis workflow
-    data/                    NL2SQL and data query workflow
-    analyst/                 Analyst graph and wrapper
-    review/                  Deep research review workflow
-    brief_gene/              Brief gene function workflow
-    deep_genome/             Deep genome graph and helpers
-    research/                In-silico research decomposition workflow
-    design/                  Digital design workflow
-    network/                 Gene network workflow
-    environment/             Environment LangGraph subgraph (region VCI), not
-    MCP-bridged
-    evolution/               Evolution LangGraph subgraph (taxonomy-driven), not
-    MCP-bridged
-    expert/                  HTTP-only intent router (not an MCP tool)
-    shared/
-      analysis.py            Cross-agent Analyst-backed analysis helpers
-      analysis_storage.py    Cross-agent storage and OBS path helpers
-      intermediate_state.py  LangGraph final-state lifter to phytomni_state
-      options.py             Shared chat and submit kwargs builders
-      parallel_dispatch.py   Shared StateGraph builder for parallel agents
-      sql.py                 Shared SQL literal escaping helper
-  graphs/
-    loader.py                Declarative graph manifest loader (Pydantic +
-    allowlist)
-    allowlist.py             Allowed subgraph identifiers for the loader
-    adapters.py              Helpers for embedding compiled subgraphs in parents
-    manifests/               JSON subgraph composition manifests
-  runtime/
-    langgraph_runner.py      Shared LangGraph invocation helpers
-    agent_registry.py        Reusable agent registry keyed by safe config
-    request_context.py       Per-request user, run, and recorder-degraded
-    contextvars
-    memory/                   Explicit user memory models, local SQLite store,
-    and read accessor
-    outbound/                Process-owned logical pools and HTTP/OpenAI/OBS
-    conversation_context/    HTTP-private multi-turn projection and settlement
-    run_registry.py          HTTP API parent-run registry
-    submit_recorder.py       Submit-handler chokepoint: persists run + task
-    rows; logs and flags degraded_tracking on SQLite write failure
-    task_manager.py          Task lifecycle helper
-    task_reconcile.py        Per-task status reconciliation against backend
-    terminal_artifacts.py    Terminal-payload artifact persistence helpers
-    workflow_mixins.py       Reusable workflow mixin helpers for nodes
-  common/
-    cli.py                   Shared CLI entry-point helpers
-    docs.py                  Retrieved document formatting helpers
-    http.py                  JSON POST retry helpers
-    lists.py                 Small list helpers
-    logging_config.py        Package-level logging setup with PHYTOMNI_DEBUG
-    prompts.py               Prompt template and JSON file loading
-    reasoning_content.py     Helpers for OpenAI reasoning_content shaping
-    responses.py             LLM response parsing helpers
-  auth/
-    iam.py                   IAM token loading helper
-  storage/
-    obs_storage.py           OBS object naming and upload helpers
-    path_policy.py           Runtime path and ID policy
-    downloads.py             OBS and obsfs download/conversion helpers
-    scratch.py               Obsfs-first per-run scratch directory resolver
-    multipart.py             Bounded OBS multipart storage adapter
-  config/
-    defaults.py              Compatibility facade over config.models
-    models/                  Server, agent, API, citation, and outbound
-                             config classes
-    settings.py              Environment and secret loading
-    secret_envelope.py       AES-256-GCM envelope for the encrypted
-    .env.encrypted
-    relay_mode.py            Customer relay-mode flag detection (leaf module)
-    overrides.py             Wrapper argument to config override helpers
-    data_loaders.py          Validated loaders for the static datasets
-    .prompts.yaml            Prompt templates
-    species_data_list.json   Species metadata
-    region_map.json          Region metadata
-    to_ontology.json         Plant Trait Ontology catalog for the network
-    resolver
-  func_cache/                SQLite-backed function cache package
+  server.py           Compatibility MCP launcher
+  mcp/                Public MCP schemas, dispatch, and formatting
+  api/                FastAPI HTTP service, A2A, A2UI, relay, research
+  agents/             Domain workflows, including expert/ (HTTP-only)
+  graphs/             Subgraph registry, adapters, and JSON manifests
+  runtime/            Runs, tasks, memory/, outbound/, conversation_context/
+  interop/            Operator-owned external MCP/A2A discovery and clients
+  common/             Prompts, retry helpers, redaction, relay client
+  auth/               IAM token helper
+  storage/            OBS paths, downloads, scratch, multipart
+  config/             settings plus models/ (defaults.py is a facade)
+  func_cache/         SQLite function cache
 src/mcp_client_phytomni/
-  client.py                  PhytomniMcpClient, PhytomniToolRouter, and
-                             response models for stdio-driven applications
-  main.py                    `phytomni` CLI entry point
-  tool_result_formatters.py  FormattedToolResult model and parse-only shim
+  stdio client, phytomni CLI, and formatted-result shim
 ```
+
+`config/defaults.py` re-exports the classes in `config/models/` so
+historical imports stay stable. Environment and Evolution graphs are
+not MCP tools; Expert is HTTP-only.
 
 ## DeepGenome execution and report boundary
 
