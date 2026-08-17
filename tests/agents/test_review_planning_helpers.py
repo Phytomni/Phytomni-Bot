@@ -213,7 +213,11 @@ async def test_plan_query_post_node_uses_common_response_helpers(
     )
 
     assert captured == {"response": response, "text": "ignored"}
-    assert result == {"research_dimensions": ["one", "two", "three", "four"]}
+    assert result["research_dimensions"] == ["one", "two", "three", "four"]
+    assert result["thesis"] == ""
+    assert result["in_scope"] == ""
+    assert result["out_of_scope"] == ""
+    assert result["search_queries"] == []
 
 
 @pytest.mark.parametrize(
@@ -244,7 +248,8 @@ async def test_plan_query_post_node_accepts_object_fragments(
         )
     )
 
-    assert result == {"research_dimensions": expected}
+    assert result["research_dimensions"] == expected
+    assert result["search_queries"] == []
 
 
 @pytest.mark.parametrize("content", ["not-json", '["not-an-object"]'])
@@ -263,6 +268,52 @@ async def test_plan_query_post_node_rejects_non_object_fragments(
                 },
             )
         )
+
+
+async def test_plan_query_post_node_keeps_optional_outline_fields() -> None:
+    """Additive thesis, scope, and search queries survive parsing."""
+    content = (
+        '{"Research_dimensions":["A","B","C","D"],'
+        '"thesis":"T1","in_scope":"in","out_of_scope":"out",'
+        '"search_queries":["q1","q2","q3","q4"]}'
+    )
+    result = await _PlanningProbe().plan_query_post_node(
+        cast(
+            DeepResearchState,
+            {
+                "chat_response": {
+                    "choices": [{"message": {"content": content}}]
+                }
+            },
+        )
+    )
+
+    assert result["research_dimensions"] == ["A", "B", "C", "D"]
+    assert result["thesis"] == "T1"
+    assert result["in_scope"] == "in"
+    assert result["out_of_scope"] == "out"
+    assert result["search_queries"] == ["q1", "q2", "q3", "q4"]
+
+
+async def test_plan_query_post_node_drops_mismatched_search_queries() -> None:
+    """A search-query list that does not match the heading count is empty."""
+    content = (
+        '{"Research_dimensions":["A","B","C","D"],'
+        '"search_queries":["only-one"]}'
+    )
+    result = await _PlanningProbe().plan_query_post_node(
+        cast(
+            DeepResearchState,
+            {
+                "chat_response": {
+                    "choices": [{"message": {"content": content}}]
+                }
+            },
+        )
+    )
+
+    assert result["research_dimensions"] == ["A", "B", "C", "D"]
+    assert result["search_queries"] == []
 
 
 def test_dimension_fragments_returns_empty_on_exception_result() -> None:

@@ -81,6 +81,10 @@ class DeepResearchState(ParallelDispatchState):
     upload_context: str
     total_length: int
     research_dimensions: list[str]
+    thesis: str
+    in_scope: str
+    out_of_scope: str
+    search_queries: list[str]
     all_raw_doc_list: list[dict[str, Any]]
     dimension_params: list[dict[str, str]]
     draft_contents: list[str]

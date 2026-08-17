@@ -34,6 +34,7 @@ from ..knowledge.retrieval_result import (
     RetrievalProtocolError,
     retrieval_unavailable_error,
 )
+from .evidence_filter import compose_review_retrieve_query
 from .helpers import _format_doc_fragment
 
 if TYPE_CHECKING:
@@ -46,6 +47,37 @@ logger = logging.getLogger(__name__)
 # Ordinary retrieval failures stay in a private index accumulator. They are
 # not valid empty evidence and must not enter the public failures channel.
 _RETRIEVE_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
+
+
+def _plan_text(value: object) -> str:
+    """Return a stripped plan string, or empty when the value is absent."""
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
+def _plan_search_queries(value: object, count: int) -> list[str]:
+    """Return one search string per heading, or empty on any mismatch."""
+    if not isinstance(value, list) or len(value) != count:
+        return []
+    queries = [str(item).strip() for item in value]
+    if any(not item for item in queries):
+        return []
+    return queries
+
+
+def _retrieve_query_for_dimension(
+    user_query: str,
+    heading: str,
+    planned_queries: object,
+    index: int,
+) -> str:
+    """Compose the Knowledge retrieve query for one dimension."""
+    planned: str | None = None
+    if isinstance(planned_queries, list) and index < len(planned_queries):
+        candidate = str(planned_queries[index]).strip()
+        planned = candidate or None
+    return compose_review_retrieve_query(user_query, heading, planned)
 
 
 @dataclass
@@ -121,7 +153,14 @@ class ReviewPlanningMixin:
                         "Research_dimensions": {
                             "type": "array",
                             "items": {"type": "string"},
-                        }
+                        },
+                        "thesis": {"type": "string"},
+                        "in_scope": {"type": "string"},
+                        "out_of_scope": {"type": "string"},
+                        "search_queries": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
                     },
                     "required": ["Research_dimensions"],
                 },
@@ -153,7 +192,8 @@ class ReviewPlanningMixin:
                 written by the shared chat node.
 
         Returns:
-            State delta with ``research_dimensions``.
+            State delta with ``research_dimensions`` and optional
+            thesis, scope, and per-dimension search queries.
 
         Raises:
             ValueError: If the LLM returns no valid dimensions.
@@ -163,10 +203,16 @@ class ReviewPlanningMixin:
         dimensions = dimensions_json.get("Research_dimensions", [])
         if not isinstance(dimensions, list) or not dimensions:
             raise ValueError("Invalid research dimensions from phyto_chat")
+        headings = [str(dimension) for dimension in dimensions[:4]]
         return {
-            "research_dimensions": [
-                str(dimension) for dimension in dimensions[:4]
-            ],
+            "research_dimensions": headings,
+            "thesis": _plan_text(dimensions_json.get("thesis")),
+            "in_scope": _plan_text(dimensions_json.get("in_scope")),
+            "out_of_scope": _plan_text(dimensions_json.get("out_of_scope")),
+            "search_queries": _plan_search_queries(
+                dimensions_json.get("search_queries"),
+                len(headings),
+            ),
         }
 
     async def retrieve_prepare_tasks_node(
@@ -325,6 +371,8 @@ class ReviewPlanningMixin:
         """Build N Send payloads, one per research dimension."""
         dimensions = state["research_dimensions"]
         repo_id_dict = self.review_config.REPO_ID_DICT
+        user_query = str(state.get("original_user_query") or "")
+        planned_queries = state.get("search_queries") or []
         return [
             Send(
                 "retrieve_worker_node",
@@ -332,7 +380,12 @@ class ReviewPlanningMixin:
                     "task_index": i,
                     "dimension": dim,
                     "knowledge_payload": build_review_knowledge_input(
-                        dimension=dim,
+                        dimension=_retrieve_query_for_dimension(
+                            user_query,
+                            dim,
+                            planned_queries,
+                            i,
+                        ),
                         repo_id_dict=repo_id_dict,
                         locale=state.get("locale"),
                     ),

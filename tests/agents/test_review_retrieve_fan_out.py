@@ -93,6 +93,54 @@ def test_route_retrieve_tasks_returns_n_sends(
         assert payload["is_follow_up"] is False
 
 
+def test_route_retrieve_tasks_composes_scoped_queries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retrieve queries keep gene tokens even when the heading is generic."""
+    agent = _build_agent(monkeypatch)
+    state = cast(
+        DeepResearchState,
+        {
+            "original_user_query": (
+                "ZOS7-MYB60-CER1 pathway in upland rice drought"
+            ),
+            "research_dimensions": ["PPI Mechanisms"],
+            "search_queries": [],
+        },
+    )
+    sends = agent.route_retrieve_tasks(state)
+
+    assert len(sends) == 1
+    query = sends[0].arg["knowledge_payload"]["user_query"]
+    lowered = query.lower()
+    assert "zos7" in lowered
+    assert "myb60" in lowered
+    assert "cer1" in lowered
+    assert query.strip().lower() != "ppi mechanisms"
+
+
+def test_route_retrieve_tasks_uses_matching_search_queries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Planner search strings are composed instead of the bare heading."""
+    agent = _build_agent(monkeypatch)
+    state = cast(
+        DeepResearchState,
+        {
+            "original_user_query": "ZOS7 MYB60 CER1 in upland rice",
+            "research_dimensions": ["Regulatory logic"],
+            "search_queries": ["OsMYB60 OsCER1 promoter binding in rice"],
+        },
+    )
+    sends = agent.route_retrieve_tasks(state)
+
+    query = sends[0].arg["knowledge_payload"]["user_query"]
+    lowered = query.lower()
+    assert "osmyb60" in lowered
+    assert "oscer1" in lowered
+    assert "zos7" in lowered
+
+
 async def test_retrieve_worker_node_success_writes_indexed_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
