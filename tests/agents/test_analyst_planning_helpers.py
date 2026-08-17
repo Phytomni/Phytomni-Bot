@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.agents.analyst import planning as analyst_planning
+from mcp_server_phytomni.agents.analyst import task_ops as analyst_task_ops
 from mcp_server_phytomni.agents.analyst.planning import retrieve_plan_submit
 
 pytestmark = pytest.mark.agent
@@ -92,7 +93,7 @@ def _stub_probe(monkeypatch: pytest.MonkeyPatch, status: str) -> None:
         del task_id
         return status
 
-    monkeypatch.setattr(analyst_planning, "probe_live_status", fake_probe)
+    monkeypatch.setattr(analyst_task_ops, "probe_live_status", fake_probe)
 
 
 async def test_dedup_hit_uses_small_compute_resource_default(

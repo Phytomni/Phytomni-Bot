@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.agents.analyst import planning as analyst_planning
+from mcp_server_phytomni.agents.analyst import task_ops as analyst_task_ops
 from mcp_server_phytomni.agents.analyst.agent import retrieve_plan_submit
 from mcp_server_phytomni.agents.deep_genome.coordinator import (
     normalize_submission,
@@ -108,7 +109,7 @@ def _stub_probe(monkeypatch: pytest.MonkeyPatch, status: str) -> None:
         del task_id
         return status
 
-    monkeypatch.setattr(analyst_planning, "probe_live_status", fake_probe)
+    monkeypatch.setattr(analyst_task_ops, "probe_live_status", fake_probe)
 
 
 async def test_retrieve_plan_submit_reuses_in_flight_prior(

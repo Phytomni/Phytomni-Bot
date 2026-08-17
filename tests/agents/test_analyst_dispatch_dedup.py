@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from mcp_server_phytomni.agents.analyst import task_ops as analyst_task_ops
 from mcp_server_phytomni.graphs import analyst_dispatch_adapters as ada
 from mcp_server_phytomni.runtime import task_dedup
 from mcp_server_phytomni.runtime.task_manager import Submission, TaskManager
@@ -123,7 +124,7 @@ def _stub_probe(monkeypatch: pytest.MonkeyPatch, status: str | None) -> None:
         del task_id
         return status
 
-    monkeypatch.setattr(ada, "probe_live_status", fake_probe)
+    monkeypatch.setattr(analyst_task_ops, "probe_live_status", fake_probe)
 
 
 def _seed_and_probe(
@@ -238,7 +239,7 @@ async def test_seam_reuse_chain_probes_root_remote_id(
         probed.append(task_id)
         return "RUNNING"
 
-    monkeypatch.setattr(ada, "probe_live_status", capturing_probe)
+    monkeypatch.setattr(analyst_task_ops, "probe_live_status", capturing_probe)
 
     result = await ada.submit_analyst_via_subgraph(
         _no_submit_agent(),
