@@ -33,7 +33,6 @@ from tests.support.review_fan_out import (
 
 pytestmark = pytest.mark.agent
 
-
 _draft_failure = cast(
     FailureContract,
     {
@@ -44,10 +43,6 @@ _draft_failure = cast(
         "message": "chat timeout",
     },
 )
-
-# ---------------------------------------------------------------------------
-# Prepare node returns empty delta.
-# ---------------------------------------------------------------------------
 
 
 async def test_draft_prepare_tasks_node_returns_empty_delta() -> None:
@@ -63,11 +58,6 @@ async def test_draft_prepare_tasks_node_returns_empty_delta() -> None:
     )
     result = await agent.draft_prepare_tasks_node(state)
     assert result == {}
-
-
-# ---------------------------------------------------------------------------
-# Flag-on route_draft_tasks returns N Send payloads.
-# ---------------------------------------------------------------------------
 
 
 def test_route_draft_tasks_returns_n_sends() -> None:
@@ -89,11 +79,6 @@ def test_route_draft_tasks_returns_n_sends() -> None:
         assert param["knowledge"] in chat_payload["user_query"]
         assert "chat_kwargs" in chat_payload
         assert chat_payload["chat_kwargs"]["with_follow_up"] is False
-
-
-# ---------------------------------------------------------------------------
-# Flag-on worker success: writes (task_index, content) tuple.
-# ---------------------------------------------------------------------------
 
 
 async def test_draft_worker_node_success_writes_indexed_result(
@@ -122,11 +107,6 @@ async def test_draft_worker_node_success_writes_indexed_result(
     )
 
 
-# ---------------------------------------------------------------------------
-# Flag-on worker exception: writes empty sentinel AND FailureRecord.
-# ---------------------------------------------------------------------------
-
-
 async def test_draft_worker_node_exception_writes_sentinel_and_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -141,11 +121,6 @@ async def test_draft_worker_node_exception_writes_sentinel_and_failure(
         ),
         contract=_draft_failure,
     )
-
-
-# ---------------------------------------------------------------------------
-# Flag-on reduce: sorts indexed_results by task_index before projecting.
-# ---------------------------------------------------------------------------
 
 
 async def test_draft_reduce_node_sorts_by_task_index() -> None:
@@ -165,11 +140,6 @@ async def test_draft_reduce_node_sorts_by_task_index() -> None:
     result = await agent.draft_reduce_node(state)
 
     assert result["draft_contents"] == ["A", "B", "C"]
-
-
-# ---------------------------------------------------------------------------
-# Flag-on partial failure (1 of N): reduce produces N draft_contents entries.
-# ---------------------------------------------------------------------------
 
 
 async def test_draft_reduce_node_partial_failure_keeps_n_entries() -> None:
@@ -195,11 +165,6 @@ async def test_draft_reduce_node_partial_failure_keeps_n_entries() -> None:
     assert result["draft_contents"] == ["", "draft-B", ""]
 
 
-# ---------------------------------------------------------------------------
-# Structural: the compiled graph mounts the draft Send triad.
-# ---------------------------------------------------------------------------
-
-
 def test_compiled_graph_flag_on_has_send_triad() -> None:
     """Flag-on graph has ``draft_dispatch`` and ``draft_reduce_node``.
 
@@ -218,11 +183,6 @@ def test_compiled_graph_flag_on_has_send_triad() -> None:
     ), sorted(node_keys)
     assert "draft_reduce_node" in node_keys
     assert "draft_node" not in node_keys
-
-
-# ---------------------------------------------------------------------------
-# Xray: the chat subgraph expands UNDER ``draft_worker_node``.
-# ---------------------------------------------------------------------------
 
 
 def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:

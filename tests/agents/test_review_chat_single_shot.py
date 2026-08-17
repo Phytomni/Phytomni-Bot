@@ -55,11 +55,6 @@ def test_compiled_graph_preserves_chat_mount_topology() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Prep nodes stage ``chat_payload`` + ``pending_post``.
-# ---------------------------------------------------------------------------
-
-
 async def test_plan_query_prep_node_stages_payload() -> None:
     """Prep node stages ``chat_payload`` + ``pending_post`` for plan_query."""
     agent = build_review_agent()
@@ -110,11 +105,6 @@ async def test_follow_up_prep_node_stages_payload() -> None:
         "phyto-review"
     )
     assert chat_payload["chat_kwargs"]["with_follow_up"] is True
-
-
-# ---------------------------------------------------------------------------
-# Flag-on post nodes parse ``state['chat_response']`` into the legacy delta.
-# ---------------------------------------------------------------------------
 
 
 async def test_plan_query_post_node_parses_chat_response() -> None:
@@ -245,11 +235,6 @@ async def test_follow_up_prep_to_post_preserves_doc_list() -> None:
     assert message["follow_up_questions"] == ["How is light captured?"]
 
 
-# ---------------------------------------------------------------------------
-# Structural xray check: shared chat subgraph is mounted once.
-# ---------------------------------------------------------------------------
-
-
 def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     """Flag-on graph exposes the shared chat subgraph to ``xray``.
 
@@ -264,11 +249,6 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     agent = build_review_agent()
     node_keys = agent.app.get_graph(xray=True).nodes.keys()
     assert_subgraph_prefixes(node_keys, "chat:")
-
-
-# ---------------------------------------------------------------------------
-# Fan-out sites register Send triads.
-# ---------------------------------------------------------------------------
 
 
 def test_retrieve_send_triad_is_registered() -> None:

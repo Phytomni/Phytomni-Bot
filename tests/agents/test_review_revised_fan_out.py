@@ -33,7 +33,6 @@ from tests.support.subgraph_fakes import assert_subgraph_prefixes
 
 pytestmark = pytest.mark.agent
 
-
 _revised_failure = cast(
     FailureContract,
     {
@@ -47,22 +46,12 @@ _revised_failure = cast(
 )
 
 
-# ---------------------------------------------------------------------------
-# Flag-on prepare node returns empty delta.
-# ---------------------------------------------------------------------------
-
-
 async def test_revised_prepare_tasks_node_returns_empty_delta() -> None:
     """``revised_prepare_tasks_node`` acts as a no-op split node."""
     agent = build_review_agent()
     state = cast(DeepResearchState, revised_prepare_state())
     result = await agent.revised_prepare_tasks_node(state)
     assert result == {}
-
-
-# ---------------------------------------------------------------------------
-# Flag-on route_revised_tasks returns N Send payloads.
-# ---------------------------------------------------------------------------
 
 
 def test_route_revised_tasks_returns_n_sends() -> None:
@@ -92,11 +81,6 @@ def test_route_revised_tasks_returns_n_sends() -> None:
         # legacy ``revise_node`` pattern which forwarded the whole list
         # to each ``_feedback_rag`` call).
         assert send.arg["raw_doc_list"] == raw_doc_list
-
-
-# ---------------------------------------------------------------------------
-# Flag-on worker success: writes indexed result and supplementary docs.
-# ---------------------------------------------------------------------------
 
 
 async def test_revised_worker_node_success_writes_indexed_result_and_add_docs(
@@ -138,11 +122,6 @@ async def test_revised_worker_node_success_writes_indexed_result_and_add_docs(
     assert fake_feedback_rag.await_count == 1
 
 
-# ---------------------------------------------------------------------------
-# Flag-on worker exception: writes "" sentinel AND FailureRecord.
-# ---------------------------------------------------------------------------
-
-
 async def test_revised_worker_node_exception_writes_sentinel_and_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -150,9 +129,9 @@ async def test_revised_worker_node_exception_writes_sentinel_and_failure(
 
     The empty-string sentinel (not ``"{}"``) signals to
     ``revised_reduce_node`` to substitute the original draft for that
-    dimension — matches the legacy ``revise_node`` substitution at
-    ``report.py`` lines 159-165. ``add_doc_list`` is also written as
-    ``[]`` so the ``operator.add`` reducer never sees a missing key.
+    dimension — matches the old ``revise_node`` substitution.
+    ``add_doc_list`` is also written as ``[]`` so the
+    ``operator.add`` reducer never sees a missing key.
     """
     fake_feedback_rag = AsyncMock(
         side_effect=RuntimeError("supplementary retrieval timeout")
@@ -172,11 +151,6 @@ async def test_revised_worker_node_exception_writes_sentinel_and_failure(
     result = await agent.revised_worker_node(state)
 
     assert_failure_delta(result, _revised_failure)
-
-
-# ---------------------------------------------------------------------------
-# Flag-on reduce: sorts indexed_results by task_index before projecting.
-# ---------------------------------------------------------------------------
 
 
 async def test_revised_reduce_node_sorts_by_task_index() -> None:
@@ -205,19 +179,13 @@ async def test_revised_reduce_node_sorts_by_task_index() -> None:
     ]
 
 
-# ---------------------------------------------------------------------------
-# Flag-on reduce: empty sentinel falls back to the original draft.
-# ---------------------------------------------------------------------------
-
-
 async def test_revised_reduce_node_falls_back_to_original_draft_on_empty() -> (
     None
 ):
     """An empty-string sentinel triggers the original-draft fallback.
 
-    Mirrors the legacy ``revise_node`` substitution at ``report.py``
-    lines 159-165: a failed dimension surfaces its prior draft so the
-    summary node still sees a non-empty subsection for that slot.
+    A failed dimension surfaces its prior draft so the summary node
+    still sees a non-empty subsection for that slot.
     """
     agent = build_review_agent()
     state = cast(
@@ -243,11 +211,6 @@ async def test_revised_reduce_node_falls_back_to_original_draft_on_empty() -> (
         "draft-B-original",
         "revised-C",
     ]
-
-
-# ---------------------------------------------------------------------------
-# Flag-on reduce: mirror-writes ``revised_reports`` in the legacy shape.
-# ---------------------------------------------------------------------------
 
 
 async def test_revised_reduce_node_mirror_writes_revised_reports() -> None:
@@ -283,11 +246,6 @@ async def test_revised_reduce_node_mirror_writes_revised_reports() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# Structural: compiled graph has Send triad with xray-expanded worker key.
-# ---------------------------------------------------------------------------
-
-
 def test_compiled_graph_flag_on_has_revised_send_triad() -> None:
     """Compiled graph has ``revised_dispatch`` and the reduce node.
 
@@ -304,11 +262,6 @@ def test_compiled_graph_flag_on_has_revised_send_triad() -> None:
     assert "revised_worker_node" in node_keys
     assert "revised_reduce_node" in node_keys
     assert "revise_node" not in node_keys
-
-
-# ---------------------------------------------------------------------------
-# Xray: the chat subgraph still expands UNDER ``review_results_worker_node``.
-# ---------------------------------------------------------------------------
 
 
 def test_compiled_graph_xray_expands_chat_under_revised_worker() -> None:

@@ -34,7 +34,6 @@ from tests.support.review_fan_out import (
 
 pytestmark = pytest.mark.agent
 
-
 _review_results_failure = cast(
     FailureContract,
     {
@@ -46,10 +45,6 @@ _review_results_failure = cast(
     },
 )
 
-# ---------------------------------------------------------------------------
-# Prepare node returns empty delta.
-# ---------------------------------------------------------------------------
-
 
 async def test_review_results_prepare_tasks_node_returns_empty_delta() -> None:
     """``review_results_prepare_tasks_node`` acts as a no-op split node."""
@@ -57,11 +52,6 @@ async def test_review_results_prepare_tasks_node_returns_empty_delta() -> None:
     state = cast(DeepResearchState, review_results_prepare_state())
     result = await agent.review_results_prepare_tasks_node(state)
     assert result == {}
-
-
-# ---------------------------------------------------------------------------
-# Flag-on route_review_results_tasks returns N Send payloads.
-# ---------------------------------------------------------------------------
 
 
 def test_route_review_results_tasks_returns_n_sends() -> None:
@@ -83,11 +73,6 @@ def test_route_review_results_tasks_returns_n_sends() -> None:
         assert draft in chat_payload["user_query"]
         assert "chat_kwargs" in chat_payload
         assert chat_payload["chat_kwargs"]["with_follow_up"] is False
-
-
-# ---------------------------------------------------------------------------
-# Flag-on worker success: writes (task_index, content) tuple.
-# ---------------------------------------------------------------------------
 
 
 async def test_review_results_worker_node_success_writes_indexed_result(
@@ -115,11 +100,6 @@ async def test_review_results_worker_node_success_writes_indexed_result(
     )
 
 
-# ---------------------------------------------------------------------------
-# Flag-on worker exception: writes "{}" sentinel AND FailureRecord.
-# ---------------------------------------------------------------------------
-
-
 async def test_review_results_worker_exception_writes_sentinel_and_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -141,11 +121,6 @@ async def test_review_results_worker_exception_writes_sentinel_and_failure(
     )
 
 
-# ---------------------------------------------------------------------------
-# Flag-on reduce: sorts indexed_results by task_index before projecting.
-# ---------------------------------------------------------------------------
-
-
 async def test_review_results_reduce_node_sorts_by_task_index() -> None:
     """``review_results_reduce_node`` sorts results by task_index.
 
@@ -163,11 +138,6 @@ async def test_review_results_reduce_node_sorts_by_task_index() -> None:
     result = await agent.review_results_reduce_node(state)
 
     assert result["review_contents"] == ["A", "B", "C"]
-
-
-# ---------------------------------------------------------------------------
-# Flag-on partial failure (1 of N): reduce preserves the "{}" sentinel.
-# ---------------------------------------------------------------------------
 
 
 async def test_review_results_reduce_keeps_partial_failure_sentinel() -> None:
@@ -198,11 +168,6 @@ async def test_review_results_reduce_keeps_partial_failure_sentinel() -> None:
     ]
 
 
-# ---------------------------------------------------------------------------
-# Structural: compiled graph has Send triad with xray-expanded worker key.
-# ---------------------------------------------------------------------------
-
-
 def test_compiled_graph_flag_on_has_review_results_send_triad() -> None:
     """Compiled graph has ``review_results_dispatch`` and reduce nodes.
 
@@ -221,11 +186,6 @@ def test_compiled_graph_flag_on_has_review_results_send_triad() -> None:
     ), sorted(node_keys)
     assert "review_results_reduce_node" in node_keys
     assert "review_node" not in node_keys
-
-
-# ---------------------------------------------------------------------------
-# Xray: the chat subgraph expands UNDER ``review_results_worker_node``.
-# ---------------------------------------------------------------------------
 
 
 def test_compiled_graph_xray_expands_chat_under_review_results_worker() -> (

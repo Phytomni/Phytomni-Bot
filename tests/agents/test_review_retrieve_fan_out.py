@@ -59,11 +59,6 @@ def _build_agent(
     )
 
 
-# ---------------------------------------------------------------------------
-# Prepare node returns empty delta.
-# ---------------------------------------------------------------------------
-
-
 async def test_retrieve_prepare_tasks_node_returns_empty_delta(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -75,11 +70,6 @@ async def test_retrieve_prepare_tasks_node_returns_empty_delta(
     )
     result = await agent.retrieve_prepare_tasks_node(state)
     assert result == {}
-
-
-# ---------------------------------------------------------------------------
-# route_retrieve_tasks returns N Send payloads.
-# ---------------------------------------------------------------------------
 
 
 def test_route_retrieve_tasks_returns_n_sends(
@@ -101,11 +91,6 @@ def test_route_retrieve_tasks_returns_n_sends(
         assert payload["user_query"] == dim
         assert payload["is_generate"] is False
         assert payload["is_follow_up"] is False
-
-
-# ---------------------------------------------------------------------------
-# Worker success: writes (task_index, docs) tuple.
-# ---------------------------------------------------------------------------
 
 
 async def test_retrieve_worker_node_success_writes_indexed_result(
@@ -147,11 +132,6 @@ async def test_retrieve_worker_node_success_writes_indexed_result(
 
     assert result["retrieve_indexed_results"] == [(2, docs)]
     assert "failures" not in result
-
-
-# ---------------------------------------------------------------------------
-# Worker exception: writes only the internal failed-index accumulator.
-# ---------------------------------------------------------------------------
 
 
 async def test_retrieve_worker_node_exception_writes_failed_index(
@@ -200,11 +180,6 @@ async def test_retrieve_worker_reraises_cancellation(
         )
 
 
-# ---------------------------------------------------------------------------
-# Reduce: sorts indexed_results by task_index before iterating.
-# ---------------------------------------------------------------------------
-
-
 async def test_retrieve_reduce_node_sorts_by_task_index(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -235,11 +210,6 @@ async def test_retrieve_reduce_node_sorts_by_task_index(
     assert "c0" in params[0]["knowledge"]
     assert params[1]["subtopic"] == "dim1"
     assert "c1" in params[1]["knowledge"]
-
-
-# ---------------------------------------------------------------------------
-# Partial failure (1 of N): reduce produces N dimension_params.
-# ---------------------------------------------------------------------------
 
 
 async def test_retrieve_reduce_node_partial_failure_still_produces_n_params(
@@ -432,11 +402,6 @@ async def test_retrieve_reduce_fails_when_every_dimension_failed(
         await agent.retrieve_reduce_node(state)
 
 
-# ---------------------------------------------------------------------------
-# Structural: compiled graph has the retrieve Send triad.
-# ---------------------------------------------------------------------------
-
-
 def test_compiled_graph_has_send_triad(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -456,11 +421,6 @@ def test_compiled_graph_has_send_triad(
     ), sorted(node_keys)
     assert "retrieve_reduce_node" in node_keys
     assert "retrieve_node" not in node_keys
-
-
-# ---------------------------------------------------------------------------
-# Xray: the KnowledgeAgent subgraph expands UNDER ``retrieve_worker_node``.
-# ---------------------------------------------------------------------------
 
 
 def test_compiled_graph_xray_expands_knowledge_subgraph(

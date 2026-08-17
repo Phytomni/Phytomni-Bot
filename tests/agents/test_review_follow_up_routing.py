@@ -46,9 +46,7 @@ def test_review_conversation_operation_values_are_stable() -> None:
     ]
 
 
-# ---------------------------------------------------------------------------
 # Per-site prep-node parameter rows.
-# ---------------------------------------------------------------------------
 
 _PREP_ROWS = (
     ("plan-query", "plan_query_prep_node", plan_query_state, False),
@@ -91,11 +89,6 @@ async def test_review_chat_prep_follow_up_contract(
     assert chat_kwargs["with_follow_up"] is expected
 
 
-# ---------------------------------------------------------------------------
-# Per-Send-payload route-fan-out assertions.
-# ---------------------------------------------------------------------------
-
-
 def test_route_draft_tasks_payload_disables_follow_up() -> None:
     """Every ``route_draft_tasks`` Send carries ``with_follow_up`` False."""
     agent = build_review_agent()
@@ -118,11 +111,6 @@ def test_route_review_results_tasks_payload_disables_follow_up() -> None:
     for send in sends:
         chat_kwargs = send.arg["chat_payload"]["chat_kwargs"]
         assert chat_kwargs["with_follow_up"] is False
-
-
-# ---------------------------------------------------------------------------
-# Shared adapter tri-state contract.
-# ---------------------------------------------------------------------------
 
 
 def test_build_chat_kwargs_for_default_omits_follow_up_key() -> None:

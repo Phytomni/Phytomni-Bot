@@ -45,11 +45,6 @@ def _phases(seen: list[dict[str, Any]]) -> list[str]:
     return [e["phase"] for e in seen if e.get("kind") == "phyto.progress"]
 
 
-# ------------------------------------------------------------------ #
-# KnowledgeAgent                                                      #
-# ------------------------------------------------------------------ #
-
-
 async def test_knowledge_retrieve_node_emits_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -95,11 +90,6 @@ async def test_knowledge_generate_post_node_emits_progress(
     await agent.generate_post_node(state)
 
     assert "generating" in _phases(seen)
-
-
-# ------------------------------------------------------------------ #
-# ReviewAgent (DeepResearchAgent)                                     #
-# ------------------------------------------------------------------ #
 
 
 async def test_review_draft_reduce_node_emits_progress(
@@ -179,11 +169,6 @@ async def test_review_revised_reduce_node_emits_progress(
     assert "revising" in _phases(seen)
 
 
-# ------------------------------------------------------------------ #
-# DataAgent                                                           #
-# ------------------------------------------------------------------ #
-
-
 async def test_data_retrieve_post_node_emits_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -246,11 +231,6 @@ async def test_data_search_node_emits_progress(
     await agent.search_node(state)
 
     assert "querying" in _phases(seen)
-
-
-# ------------------------------------------------------------------ #
-# BriefGeneAgent                                                      #
-# ------------------------------------------------------------------ #
 
 
 async def test_brief_gene_section_discovery_emits_progress(
