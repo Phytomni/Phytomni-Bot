@@ -56,6 +56,7 @@ src/mcp_server_phytomni/
     MCP-bridged
     evolution/               Evolution LangGraph subgraph (taxonomy-driven), not
     MCP-bridged
+    expert/                  HTTP-only intent router (not an MCP tool)
     shared/
       analysis.py            Cross-agent Analyst-backed analysis helpers
       analysis_storage.py    Cross-agent storage and OBS path helpers
@@ -76,6 +77,8 @@ src/mcp_server_phytomni/
     contextvars
     memory/                   Explicit user memory models, local SQLite store,
     and read accessor
+    outbound/                Process-owned logical pools and HTTP/OpenAI/OBS
+    conversation_context/    HTTP-private multi-turn projection and settlement
     run_registry.py          HTTP API parent-run registry
     submit_recorder.py       Submit-handler chokepoint: persists run + task
     rows; logs and flags degraded_tracking on SQLite write failure
@@ -101,8 +104,9 @@ src/mcp_server_phytomni/
     scratch.py               Obsfs-first per-run scratch directory resolver
     multipart.py             Bounded OBS multipart storage adapter
   config/
-    defaults.py              Non-secret defaults, agent config classes,
-                             and Pydantic schemas for static datasets
+    defaults.py              Compatibility facade over config.models
+    models/                  Server, agent, API, citation, and outbound
+                             config classes
     settings.py              Environment and secret loading
     secret_envelope.py       AES-256-GCM envelope for the encrypted
     .env.encrypted
@@ -258,6 +262,44 @@ observable empty result without logging user ids or content. Agents do not
 write memory autonomously: there is no `langmem` writer, embedding store, or
 semantic index. Memory text is untrusted reference context injected into
 prompts, never instruction authority.
+
+## Outbound request runtime
+
+`init_outbound_runtime` builds one process-owned runtime at MCP stdio
+startup and again in the HTTP API lifespan. It owns twelve
+`OutboundPoolName` families (`llm`, `retrieval`, `rerank`, `nl2sql`,
+`analysis_control`, `analysis_status`, `iam`, `spa_faq`, `bi`, `obs`,
+`relay_control`, `interop`), two httpx profiles (`trusted` and
+`direct_upstream`), one `AsyncOpenAI` client with `max_retries=0`, the
+OBS SDK client, and optional Interop resources.
+
+A pool capacity of `0` is unlimited in that process. A positive value
+uses an AnyIO limiter. LLM completions and token streams share `llm`.
+Expert intent routing also leases `llm`, so a routed turn can take two
+leases (route, then generate). Socket limits stay on
+`HTTP_MAX_CONNECTIONS` / `HTTP_MAX_KEEPALIVE` and are independent of
+logical pools. Agent `MAX_CONCURRENCY` / `MAX_WORKERS` (default 4) are
+in-agent fan-out, not outbound leases.
+
+See [Configuration](../reference/configuration.md#outbound-logical-pool-variables)
+for the env names. Capacities are per process: `N` workers admit up to
+`N * capacity` borrowers.
+
+## Expert routing
+
+Expert is not an MCP tool. `POST /v1/query/route` and conversation-context
+automatic routing call `agents/expert`. Instant lock and an explicit
+`requested_agent_id` skip the model. The router uses the same `llm` pool
+as Chat. Contract details live in
+[HTTP API — Expert Routing](../reference/http-api.md#expert-routing).
+
+## Conversation context V1
+
+The Bot conversation-context store is always on. Go
+`bot.multiturn_v1_enabled` decides whether clients send V1 envelopes.
+A native `/v1/agents/{slug}/runs` request pins that slug and does not
+call Expert. Protocol, SQLite tables, and rollback live in
+[Conversation Context V1](../ops/conversation-context-v1.md).
 
 ## Outbound Interoperability Boundary
 
