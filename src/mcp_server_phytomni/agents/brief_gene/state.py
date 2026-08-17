@@ -116,11 +116,7 @@ class BriefGeneState(TypedDict):
     retrieve_context: str
     follow_up_questions: list[str]
     final_response: dict[str, Any]
-    # X3b A architecture (M6) — preamble fan-out fields.
-    # BI fetch outputs from the homology + protein interaction tables;
-    # ``fetch_homology_interactions_node`` writes these dicts and the
-    # six derived count summaries (consumed by the Basic Information
-    # bullets in ``render_node``).
+    # Homology + interaction BI fetch; counts feed Basic Information bullets.
     gene_structure_string: str
     orthologs_data: dict[str, Any]
     paralogs_data: dict[str, Any]
@@ -131,51 +127,25 @@ class BriefGeneState(TypedDict):
     interaction_count: int
     cross_species_alias_count: int
     cross_species_alias_species_count: int
-    # Section LLM outputs (the four parallel section nodes write these).
+    # Four parallel section nodes write these.
     section1_markdown: str
     section2_markdown: str
     section3_markdown: str
     section4_markdown: str
-    # Introduction LLM output (consumed by ``render_node`` and by
-    # ``deep_genome``'s mount IO projection so deep_genome skips its
-    # own legacy ``_run_report_introduction`` LLM call).
+    # Rendered intro. deep_genome reuses it and skips its own intro LLM.
     introduction_report: str
-    # Additive completion tally the four section nodes each bump by
-    # ``+1`` via the ``operator.add`` reducer (replaces the M5-era
-    # ``part1_completed_branches``). The four section nodes converge on
-    # ``introduction_node`` through one explicit multi-source edge; this
-    # counter is retained as a per-section completion signal.
+    # Each section node adds 1 via operator.add; they also join
+    # introduction_node on an explicit multi-source edge.
     gene_profile_completed_branches: Annotated[int, operator.add]
-    # Additive optional keys for the chat-subgraph split.
-    # ``generate_prep_node`` /
-    # ``follow_up_prep_node`` stage ``chat_payload`` + ``pending_post``;
-    # the shared ``chat`` mount writes the chat-completions-style
-    # ``chat_response``; the matching post node reads ``chat_response``
-    # to produce ``final_response`` / ``follow_up_questions``. Marked
-    # ``NotRequired`` so legacy fixtures that construct
-    # ``BriefGeneState`` without the chat-subgraph branch keep
-    # type-checking.
+    # Chat-subgraph split. NotRequired so fixtures without this
+    # branch still type-check.
     chat_payload: NotRequired[dict[str, Any]]
     pending_post: NotRequired[str]
     chat_response: NotRequired[dict[str, Any]]
-    # Additive optional keys for the knowledge-subgraph split.
-    # ``retrieve_prep_tasks_node`` stages the per-symbol task
-    # list under ``retrieve_tasks``; ``route_retrieve_tasks`` dispatches
-    # each task via ``Send`` with the per-task ``knowledge_input`` and
-    # ``task_index`` keys carried on the per-Send state delta; each
-    # ``retrieve_worker_node`` ``ainvoke``s the shared knowledge
-    # subgraph mount and writes the indexed result tuple onto the
-    # ``retrieve_indexed_results`` reducer channel (concat via
-    # ``operator.add``). Ordinary failures and LangGraph-consumed child
-    # cancellations use separate private index reducers; the reduce node
-    # validates that every planned index is classified exactly once and
-    # re-raises cancellation before progress or report work. It then sorts
-    # successful tuples by ``task_index``, merges documents by score,
-    # applies the config ``TOP_N`` cap, and projects ``retrieved_docs`` plus
-    # ``retrieve_context``. ``knowledge_payload``
-    # / ``pending_post_knowledge`` / ``knowledge_response`` carry the
-    # per-Send legs through the shared ``knowledge`` node wrapper
-    # registered via ``make_knowledge_node_wrapper``.
+    # Knowledge-subgraph Send fan-out. Failed and cancelled indices use
+    # separate reducers; the reduce node requires every planned index
+    # to land in exactly one bucket, re-raises cancellation first, then
+    # merges docs by score and applies TOP_N.
     retrieve_tasks: NotRequired[list[dict[str, Any]]]
     task_index: NotRequired[int]
     task_label: NotRequired[str]
@@ -189,14 +159,10 @@ class BriefGeneState(TypedDict):
     retrieve_failed_indices: Annotated[list[int], operator.add]
     retrieve_cancelled_indices: Annotated[list[int], operator.add]
     annotation_failed_indices: list[int]
-    # Internal status-independent channel: a retrieve worker that recovers
-    # from a per-symbol retrieve fault appends a bounded DegradedRecord here
-    # (operator.add merges concurrent legs). It never becomes report copy or
-    # public failure metadata.
+    # Recovered per-symbol retrieve faults. Never report copy or public
+    # failure metadata.
     literature_degraded: Annotated[list[DegradedRecord], operator.add]
-    # Private conversation metadata is additive and never part of the public
-    # BriefGene input/output topology.  The context adapter owns its bounded
-    # values; these fields are available only to native graph integrations.
+    # Conversation adapter only; not part of the public BriefGene IO.
     conversation_operation: NotRequired[str]
     conversation_thread_id: NotRequired[str]
     active_gene_id: NotRequired[str]

@@ -243,10 +243,8 @@ def _annotation_strings_delta(
 ) -> dict[str, str]:
     """Format the five annotation flat strings into a state-delta dict.
 
-    Keeps ``fetch_annotation_node`` within pylint R0914 too-many-locals
-    cap by computing the five derived strings (gene_structure /
-    go / kegg / interpro / description) in one place and returning
-    them as a dict the caller spreads into its state delta.
+    Computes gene_structure / go / kegg / interpro / description in one
+    place so ``fetch_annotation_node`` can spread the dict.
     """
     return {
         "gene_structure_string": _gene_structure_annotation_string(
@@ -270,9 +268,7 @@ def _alias_counts_delta(
     canonical gene_id returns one row per cross-species mapping;
     counting the rows gives the alias count and counting distinct
     ``species_code`` values gives the species-count summary.
-    Returns the dict pair directly so ``query_judge_node`` can
-    spread it into its state delta without allocating intermediate
-    locals (keeps pylint R0914 too-many-locals happy).
+    Returns the dict pair so ``query_judge_node`` can spread it.
     """
     rows = (gene_id_info_response or {}).get("data") or []
     species = {

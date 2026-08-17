@@ -8,8 +8,8 @@ Hosts ``_run_fetch_homology_interactions_node`` which issues two BI
 SQL queries (``homology_gene`` + ``protein_interaction_col``) and
 projects the responses into ``orthologs_data`` / ``paralogs_data`` /
 ``interaction_data`` state deltas with derived count summaries for
-Basic Information bullet rendering. Migrated from deep_genome's
-``_run_data_agent`` as part of the X3b A architecture fusion.
+Basic Information bullet rendering. Lives here rather than on
+deep_genome's data-agent path so brief_gene owns the BI fetch.
 """
 
 from __future__ import annotations

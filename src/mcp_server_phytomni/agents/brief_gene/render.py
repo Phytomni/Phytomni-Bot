@@ -55,17 +55,14 @@ def _render_basic_genomic_information(state: BriefGeneAgentState) -> str:
         f"{state.get('cross_species_alias_count', 0)} aliases mapped "
         f"across {state.get('cross_species_alias_species_count', 0)} "
         "species\n"
-        # Location + structure group
         f"- **Genomic Location**: Chromosome {state.get('gene_chr', '')}: "
         f"{state.get('gene_start', '')} - {state.get('gene_end', '')} "
         f"({state.get('gene_strand', '')})\n"
         f"- **Gene Structure**: {state.get('gene_structure_string', '')}\n"
         f"- **Description**: {state.get('description_string', '')}\n"
-        # Functional annotation group
         f"- **Core GO Annotations**: {state.get('go_string', '')}\n"
         f"- **KEGG / MapMan Pathways**: {state.get('kegg_string', '')}\n"
         f"- **InterPro Domains**: {state.get('interpro_string', '')}\n"
-        # Relationships group
         f"- **Cross-species Orthologs**: "
         f"{state.get('ortholog_count', 0)} across "
         f"{state.get('ortholog_species_count', 0)} species\n"

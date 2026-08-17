@@ -6,9 +6,8 @@
 
 Hosts ``BriefGeneKnowledgeSubgraphMixin`` with the dual-wire dispatch
 helpers (``_register_retrieve_nodes`` / ``_retrieve_targets``) plus
-the four Send-fan-out node methods. Lifting these out of ``core.py``
-keeps that module under the pylint ``C0302`` 1000-line ceiling and
-mirrors the analyst-side mixin pattern in
+the four Send-fan-out node methods. Lifting these out of
+``core.py`` mirrors the analyst-side mixin pattern in
 ``analyst/graph_knowledge_subgraph.py``.
 """
 
@@ -44,12 +43,7 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# Broad exception catch tuple used by the Send-dispatched retrieve
-# worker factory. Module-level constant lifts the pylint
-# ``broad-except`` (W0718) report once at module load instead of
-# silencing it at every ``except`` site; downstream readers can grep
-# this constant to find the catch scope. Matches the W0718 mitigation
-# pattern other consumer agents use (analyst / review).
+# Send-dispatched retrieve worker catch scope (grep this name).
 _BRIEF_GENE_RETRIEVE_WORKER_CAUGHT: tuple[type[BaseException], ...] = (
     Exception,
 )

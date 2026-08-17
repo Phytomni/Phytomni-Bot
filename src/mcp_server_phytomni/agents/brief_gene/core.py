@@ -131,9 +131,7 @@ def initial_brief_gene_state(
             "retrieve_context": "",
             "follow_up_questions": [],
             "final_response": {},
-            # X3b A architecture preamble fan-out fields.
-            # All seeded empty here so the TypedDict contract holds at
-            # ``arun`` entry; nodes populate them during the workflow.
+            # Seeded empty so the TypedDict contract holds at ``arun`` entry.
             "gene_structure_string": "",
             **_empty_homology_interactions_result(),
             "cross_species_alias_count": 0,
@@ -143,21 +141,15 @@ def initial_brief_gene_state(
             "section3_markdown": "",
             "section4_markdown": "",
             "introduction_report": "",
-            # Barrier counter reducer (replaces M5-era
-            # ``part1_completed_branches``); each section node writes
-            # +1 via ``operator.add``.
+            # Each section node writes +1 via ``operator.add``.
             "gene_profile_completed_branches": 0,
-            # Seed the Send fan-out reducer channel so the TypedDict
-            # contract is satisfied at ``arun`` entry. The retrieve
-            # workers concat per-worker ``(task_index, doc_list)``
-            # tuples onto this list via ``operator.add``.
+            # Retrieve workers concat ``(task_index, doc_list)`` via
+            # ``operator.add``.
             "retrieve_indexed_results": [],
             "retrieve_failed_indices": [],
             "retrieve_cancelled_indices": [],
             "annotation_failed_indices": [],
-            # Seed the status-independent degraded reducer channel so the
-            # TypedDict contract holds at ``arun`` entry; retrieve workers
-            # append ``DegradedRecord`` entries via ``operator.add``.
+            # Retrieve workers append ``DegradedRecord`` via ``operator.add``.
             "literature_degraded": [],
         },
     )
