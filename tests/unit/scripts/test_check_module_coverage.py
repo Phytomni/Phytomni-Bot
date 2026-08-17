@@ -47,7 +47,7 @@ def test_tracked_production_files_stay_inside_packaged_roots(
 
 
 def test_evaluate_production_classifies_missing_zero_and_violations() -> None:
-    """The diagnostic evaluator reports inventory gaps without changing floors."""
+    """Evaluator reports inventory gaps without changing coverage floors."""
     files = {
         "src/mcp_server_phytomni/ok.py": {
             "summary": {"percent_covered": 80.0, "num_statements": 10}

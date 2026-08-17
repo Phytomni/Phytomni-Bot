@@ -16,7 +16,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_projection_protocol_module_exports_runtime_contracts() -> None:
-    """Importing the protocol module executes the TypedDict and Protocol bodies."""
+    """Importing the protocol module runs TypedDict and Protocol bodies."""
     assert "selected_agent_id" in proto.ProjectionKwargs.__annotations__
     assert "observed_mode" in proto.RebuildKwargs.__annotations__
     assert proto.ProjectionBuilder.__name__ == "ProjectionBuilder"

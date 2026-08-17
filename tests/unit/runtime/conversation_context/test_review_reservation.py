@@ -10,10 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcp_server_phytomni.runtime.conversation_context.review_reservation import (
-    _reserve_marker_state,
-    _reserve_row_failure,
-    _review_reservation_inputs_valid,
+from mcp_server_phytomni.runtime.conversation_context import (
+    review_reservation as review_res,
 )
 from mcp_server_phytomni.runtime.conversation_context.review_support import (
     ReviewSettlementClaim,
@@ -21,6 +19,10 @@ from mcp_server_phytomni.runtime.conversation_context.review_support import (
     _ReviewClaimLookupRequest,
     _ReviewReservationMarkerRequest,
 )
+
+_reserve_marker_state = review_res._reserve_marker_state
+_reserve_row_failure = review_res._reserve_row_failure
+_review_reservation_inputs_valid = review_res._review_reservation_inputs_valid
 
 pytestmark = pytest.mark.unit
 
