@@ -248,21 +248,17 @@ class DeepGenomeState(TypedDict):
     summary_report: str | None
     follow_up_questions: list[str] | None
     final_report: str | None
-    # brief_gene owns the entire preamble: the mount projects its
-    # rendered answer (title swapped to deep_genome) into ``preamble``,
-    # which report.py consumes verbatim as the report's pre-analysis
-    # block.
+    # brief_gene mount projects its rendered answer here (title swapped);
+    # report.py uses it verbatim as the pre-analysis block.
     preamble: str | None
     part1_completed_branches: Annotated[int, operator.add]
     analysis_completed_branches: Annotated[int, operator.add]
     experiment_completed_branches: Annotated[int, operator.add]
-    # General failure channel: recoverable analysis nodes append a
-    # FailureRecord here (operator.add merges concurrent writes) so the
-    # report node can persist a degraded signal. BriefGene failure aborts.
+    # Recoverable analysis nodes append here (operator.add). BriefGene
+    # failure aborts instead.
     failures: Annotated[list[FailureRecord], operator.add]
-    # Status-independent literature degradation rolled up from a successful
-    # brief_gene mount. Never feeds project_universal_failure_metadata —
-    # only _persist_degraded's status-independent set_task_degraded path.
+    # Literature degradation from a successful brief_gene mount. Goes
+    # only through _persist_degraded; never project_universal_failure_metadata.
     literature_degraded: Annotated[list[DegradedRecord], operator.add]
     report_triggered: bool
     target_gene: str
@@ -383,37 +379,18 @@ class DeepGenomeAgents(
             kwargs.get("sensitive_config") or get_sensitive_config()
         )
         self._figure_index = 1
-        # Build a per-instance compiled BriefGeneAgent subgraph so the
-        # brief_gene_mount node (registered in ``_build_graph``)
-        # closes over a real ``CompiledStateGraph`` and LangGraph's
-        # ``find_subgraph_pregel`` walker can discover it for xray
-        # expansion. The knowledge_agent instance is reused so the
-        # func_cache layer dedups any redundant retrieve calls.
-        # Stash the compiled app on ``_agents`` (DeepGenomeAgentDeps
-        # NamedTuple) so the brief_gene_app sits alongside the other
-        # deep_genome dependencies rather than adding another instance
-        # attribute (pylint ``too-many-instance-attributes`` ceiling).
-        # Per-instance compiled KnowledgeAgent subgraph. Mirrors the
-        # analyst / brief_gene / review pattern: the report mixin's
-        # ``_dispatch_knowledge_retrieve`` helper routes through this
-        # app's ``ainvoke``. Stashed on ``_agents``
-        # (DeepGenomeAgentDeps NamedTuple) alongside ``brief_gene_app``
-        # so the per-instance attribute count stays under pylint's
-        # ``too-many-instance-attributes`` ceiling.
+        # Per-instance compiled BriefGene and Knowledge subgraphs so
+        # find_subgraph_pregel can expand them. Stashed on _agents, not
+        # new instance attributes. knowledge_agent is reused so
+        # func_cache dedups redundant retrieve calls.
         knowledge_app = build_knowledge_app(
             knowledge_config=self.deep_genome_config,
             sensitive_config=self.sensitive_config,
         )
-        # The mounted subgraphs are built with their own module-default
-        # config rather than the parent's per-request config/user. This is
-        # tenant-safe because the dispatch seam (ensure_analysis_output_dir)
-        # routes every fingerprinted submission to the content-addressed
-        # shared_output_key, OVERRIDING any user-scoped output_dir the
-        # evolution / generic graphs preset — so all sub-task results land
-        # at the tenant-neutral shared key regardless of the mount's config
-        # or (anonymous) user, and the result download follows the returned
-        # shared dir. Only the ephemeral thread_id carries the mount's user,
-        # and it never addresses stored results.
+        # Mounted subgraphs use their module-default config/user. Results
+        # still land on the tenant-neutral shared_output_key because
+        # ensure_analysis_output_dir overrides any user-scoped output_dir.
+        # Only the ephemeral thread_id carries the mount's user.
         self._agents = self._agents._replace(
             brief_gene_app=BriefGeneAgent(
                 knowledge_agent=self._agents.knowledge_agent,
@@ -435,17 +412,10 @@ class DeepGenomeAgents(
             tracking = DeepGenomeDispatchMixin._transition_sink(self, state)
             await tracking.record_mount_failure(work_item_keys)
 
-        # M11 — X3b A architecture topology completion. brief_gene's
-        # mount node (``brief_gene_node`` slot) substitutes for the
-        # entire preamble pipeline (data_node + orthologs / paralogs /
-        # interaction + their annotation sub-summaries + part1_node
-        # aggregator + deep_genome's own ``_run_report_introduction``).
-        # The mount IO projection writes ``gene_annotation`` +
-        # ``knowledge_context`` + the verbatim ``preamble`` +
-        # ``experiment_completed_branches: 1`` (the +1 the legacy
-        # ``part1_node`` used to write so the experiment_node 2-source
-        # barrier still fires once ``synthesize_node`` adds the
-        # analyst-side +1).
+        # Replaces the old preamble pipeline. Writes gene_annotation,
+        # knowledge_context, preamble, and experiment_completed_branches: 1
+        # so experiment_node's two-source barrier still fires after
+        # synthesize_node adds the other 1.
         workflow.add_node(
             "brief_gene_node",
             make_brief_gene_mount_node(

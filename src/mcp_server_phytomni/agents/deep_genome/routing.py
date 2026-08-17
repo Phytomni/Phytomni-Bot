@@ -31,7 +31,7 @@ RoutingState = Mapping[str, Any]
 
 
 # Generic types use worker nodes; evolution/design use mounted subgraphs.
-# Keep this ordered source aligned with the work-item plan and its test oracle.
+# Keep this order aligned with tests/unit/test_deep_genome_work_items.py.
 _GENERIC_ANALYSIS_NODE_TYPE_SOURCE = (
     "gene_expression_tissues|gene_expression_cultivars|"
     "gene_expression_treatments|gene_expression_genotypes|"

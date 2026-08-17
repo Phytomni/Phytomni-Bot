@@ -278,8 +278,8 @@ def _assemble_final_report(state: DeepGenomeState) -> str:
     the ``## Bioinformatic Analysis`` body, so this only appends the
     recommended-experiment, discussion, and conclusion sections.
     Branches on ``use_analyst_agent`` to drop the experiment block on the
-    analyst-off layout. Extracted from ``_run_follow_up_node`` to keep
-    that node within pylint's R0914 too-many-locals cap.
+    analyst-off layout. Extracted from ``_run_follow_up_node`` so that
+    node does not also assemble the final markdown.
     """
     use_analyst = state.get("config_params", {}).get("use_analyst_agent", True)
     part12 = state.get("part12_combined") or ""
@@ -635,9 +635,8 @@ class DeepGenomeReportMixin:
             "use_analyst_agent", True
         )
 
-        # Build content string. ``part12_str`` (the part12_combined head)
-        # already carries the preamble title + introduction + profiles +
-        # analysis, so only the recommended-experiment block is appended.
+        # part12_combined already has title + introduction + profiles +
+        # analysis; only the recommended-experiment block is appended.
         part12_str = state.get("part12_combined") or ""
         if use_analyst:
             protocol_report = state.get("protocol_report", "")

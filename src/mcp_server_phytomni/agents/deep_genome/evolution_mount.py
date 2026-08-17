@@ -30,15 +30,11 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# Broad catch tuple, lifted to module scope so the pylint broad-except
-# (W0718) report fires once at load instead of at the except site —
-# matches the brief_gene mount's _BRIEF_GENE_MOUNT_CAUGHT pattern.
+# Evolution-mount catch scope (grep this name).
 _EVOLUTION_MOUNT_CAUGHT: tuple[type[BaseException], ...] = (Exception,)
 
-# Callback shape: (submission, state) -> analyst-branch delta. The
-# finalize helper reads species_code / target_gene / task_index from the
-# Send payload state, so the mount node only forwards a normalized
-# submission.
+# Finalize reads species_code / target_gene / task_index from the Send
+# payload, so the mount only forwards a normalized submission.
 FinalizeFn = Callable[
     [RemoteSubmission, "DeepGenomeState"],
     Awaitable[dict[str, Any]],
