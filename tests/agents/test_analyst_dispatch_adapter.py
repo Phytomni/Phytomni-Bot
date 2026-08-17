@@ -364,9 +364,9 @@ async def test_dispatch_seam_passes_fingerprint_to_output_dir_creator(
         data_list=data_list,
         obs_file_list=None,
     )
-    assert "fingerprint" in captured, (
-        "ensure_analysis_output_dir was not called or captured no fingerprint"
-    )
+    assert (
+        "fingerprint" in captured
+    ), "ensure_analysis_output_dir was not called or captured no fingerprint"
     assert captured["fingerprint"] == expected_fp
 
 
@@ -478,9 +478,7 @@ async def test_standalone_analyst_ignores_shared_default_output_dir(
         captured["output_dir"] = (
             kwargs["output_dir"]
             if "output_dir" in kwargs
-            else args[3]
-            if len(args) > 3
-            else None
+            else args[3] if len(args) > 3 else None
         )
         return "/obs/run-scoped"
 
@@ -518,9 +516,7 @@ async def test_standalone_analyst_ignores_default_child_without_flag(
         captured["output_dir"] = (
             kwargs["output_dir"]
             if "output_dir" in kwargs
-            else args[3]
-            if len(args) > 3
-            else None
+            else args[3] if len(args) > 3 else None
         )
         return "/obs/run-scoped"
 

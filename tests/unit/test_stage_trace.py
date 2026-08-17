@@ -134,7 +134,11 @@ def test_stage_failure_from_exception_walks_cause_and_groups() -> None:
     )
 
     inner = RuntimeError("inner")
-    setattr(inner, _STAGE_FAILURE_ATTRIBUTE, ("database_query", "upstream_failed", 502))
+    setattr(
+        inner,
+        _STAGE_FAILURE_ATTRIBUTE,
+        ("database_query", "upstream_failed", 502),
+    )
     outer = RuntimeError("outer")
     outer.__cause__ = inner
     assert stage_failure_from_exception(outer) == (
