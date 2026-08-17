@@ -12,6 +12,7 @@ from typing import Any, cast
 
 import pytest
 
+from mcp_server_phytomni.agents.analyst import task_ops
 from mcp_server_phytomni.graphs import analyst_dispatch_adapters as ada
 from mcp_server_phytomni.graphs.analyst_dispatch_adapters import (
     build_analyst_dispatch_request,
@@ -224,7 +225,7 @@ async def test_reuse_prior_dispatch_skips_dead_live_status(
         del task_id
         return "FAILED"
 
-    monkeypatch.setattr(ada, "probe_live_status", fake_probe)
+    monkeypatch.setattr(task_ops, "probe_live_status", fake_probe)
 
     reuse_prior = getattr(ada, "_reuse_prior_dispatch")
     reused = await reuse_prior("fp-dead", require_terminal_success=False)
@@ -366,7 +367,7 @@ async def test_submit_via_subgraph_reuses_verified_prior(
         return "SUCCEEDED"
 
     monkeypatch.setattr(ada, "prepare_analyst_dispatch_context", fake_context)
-    monkeypatch.setattr(ada, "probe_live_status", fake_probe)
+    monkeypatch.setattr(task_ops, "probe_live_status", fake_probe)
     TaskManager(db).record(
         Submission(
             task_id="prior-ok",

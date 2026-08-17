@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.agents.analyst import planning as analyst_planning
+from mcp_server_phytomni.agents.analyst import task_ops
 from mcp_server_phytomni.agents.analyst.planning import retrieve_plan_submit
 
 pytestmark = pytest.mark.agent
@@ -77,7 +78,7 @@ async def test_reuse_keeps_truthy_meta_meta(
         del task_id
         return "SUCCEEDED"
 
-    monkeypatch.setattr(analyst_planning, "probe_live_status", fake_probe)
+    monkeypatch.setattr(task_ops, "probe_live_status", fake_probe)
 
     result = await retrieve_plan_submit(
         goal_description="reuse with meta",
@@ -160,7 +161,7 @@ async def test_reuse_skips_when_live_probe_is_dead(
         del task_id
         return "FAILED"
 
-    monkeypatch.setattr(analyst_planning, "probe_live_status", fake_probe)
+    monkeypatch.setattr(task_ops, "probe_live_status", fake_probe)
     _patch_submit(
         monkeypatch, {"task_id": "fresh-dead", "output_dir": "/out/new"}
     )
@@ -193,7 +194,7 @@ async def test_reuse_uses_source_task_id_for_live_probe(
         probed.append(task_id)
         return "RUNNING"
 
-    monkeypatch.setattr(analyst_planning, "probe_live_status", fake_probe)
+    monkeypatch.setattr(task_ops, "probe_live_status", fake_probe)
 
     result = await retrieve_plan_submit(
         goal_description="probe source",
