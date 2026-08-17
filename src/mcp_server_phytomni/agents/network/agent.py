@@ -16,7 +16,6 @@ from collections.abc import Mapping
 from typing import (
     Annotated,
     Any,
-    Literal,
 )
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -307,9 +306,7 @@ class GeneNetworkAgents:
         )
         return goal_description, meta, data_list
 
-    def _get_compute_resource(
-        self, _analysis_type: str
-    ) -> Literal["small", "medium", "large"]:
+    def _get_compute_resource(self, _analysis_type: str) -> str:
         """Determine compute resource level based on analysis type."""
         return resolve_compute_resource(self.gene_network_config)
 

@@ -417,9 +417,11 @@ class ReviewPlanningMixin:
         if isinstance(query_terms, (str, bytes)) or not isinstance(
             query_terms, Iterable
         ):
-            terms: Iterable[object] = ()
+            terms: tuple[str, ...] = ()
         else:
-            terms = query_terms
+            terms = tuple(
+                item for item in query_terms if isinstance(item, str)
+            )
 
         for doc in dimension_result:
             if not isinstance(doc, dict):

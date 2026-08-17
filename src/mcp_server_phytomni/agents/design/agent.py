@@ -18,7 +18,6 @@ from time import perf_counter
 from typing import (
     Annotated,
     Any,
-    Literal,
     NamedTuple,
     cast,
 )
@@ -416,9 +415,7 @@ class DigitalDesignAgents:
         )
         return goal_description, meta, data_list
 
-    def _get_compute_resource(
-        self, analysis_type: str
-    ) -> Literal["small", "medium", "large"]:
+    def _get_compute_resource(self, analysis_type: str) -> str:
         """Determine compute resource level based on analysis type."""
         return resolve_compute_resource(
             self.digital_design_config, analysis_type

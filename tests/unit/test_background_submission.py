@@ -123,6 +123,7 @@ def test_reserve_stamps_pending_delivery_for_archive_agents(
     )
     record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
     assert record is not None
+    assert record.result is not None
     delivery = record.result["execution"]["delivery"]
     assert delivery["required"] is True
     assert delivery["status"] == "pending"
