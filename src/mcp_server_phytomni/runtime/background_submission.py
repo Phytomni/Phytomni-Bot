@@ -20,6 +20,7 @@ from .live_tasks import (
     register_live_task,
 )
 from .request_context import request_context
+from .result_run_layout import RESULT_DELIVERY_AGENTS
 from .run_registry import RunRegistry, RunRequestInfo, RunSpec
 
 _LOGGER = logging.getLogger(__name__)
@@ -105,7 +106,9 @@ def reserve_background_submission(
                     origin="remote",
                 ),
                 request_info=safe_request_info,
-                result=empty_execution_projection(),
+                result=empty_execution_projection(
+                    result_archive_required=agent in RESULT_DELIVERY_AGENTS
+                ),
             )
         except sqlite3.IntegrityError:
             continue

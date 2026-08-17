@@ -107,6 +107,29 @@ async def test_launch_returns_before_operation_finishes(
     }
 
 
+@pytest.mark.parametrize("agent", ["analyst", "research", "network", "design"])
+def test_reserve_stamps_pending_delivery_for_archive_agents(
+    tmp_path: Path, agent: str
+) -> None:
+    """Archive agents must carry the required pending marker from reserve."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent=agent,
+        owner="alice",
+        request_info=RunRequestInfo(
+            request_id=f"req-reserve-{agent}", locale="en-US"
+        ),
+        db_path=db_path,
+    )
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    delivery = record.result["execution"]["delivery"]
+    assert delivery["required"] is True
+    assert delivery["status"] == "pending"
+    assert delivery["revision"] == 1
+    assert delivery["archive"] is None
+
+
 def test_reservation_discards_raw_request_payload(tmp_path: Path) -> None:
     """Reservations retain only correlation and routing metadata."""
     db_path = str(tmp_path / "tasks.db")
