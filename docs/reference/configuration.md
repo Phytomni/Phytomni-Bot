@@ -806,9 +806,10 @@ it.
   **Purpose:** Absolute path to a PEM CA bundle. Honoured when verification is
   on; ignored when verification is off.
 
-Every async HTTP call in `mcp_server_phytomni` should flow through
-`common.httpx_client.get_async_client`, which reads these settings once
-per call and hands the resolved `verify` argument to `httpx.AsyncClient`.
+The process-owned outbound runtime applies these TLS settings to its
+trusted and direct-upstream httpx profiles (and to the dedicated OpenAI
+transport). Logical admission budgets are separate; see
+[Outbound Logical Pool Variables](#outbound-logical-pool-variables).
 A missing or unreadable `PHYTOMNI_CA_BUNDLE` path surfaces as the same
 `ssl.SSLError` the underlying SDK would emit; flip
 `PHYTOMNI_TLS_VERIFY=0` in dev environments behind a corporate proxy or

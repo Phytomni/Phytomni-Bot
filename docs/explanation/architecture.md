@@ -87,7 +87,6 @@ src/mcp_server_phytomni/
     cli.py                   Shared CLI entry-point helpers
     docs.py                  Retrieved document formatting helpers
     http.py                  JSON POST retry helpers
-    httpx_client.py          Lifecycle-managed shared AsyncClient factory
     lists.py                 Small list helpers
     logging_config.py        Package-level logging setup with PHYTOMNI_DEBUG
     prompts.py               Prompt template and JSON file loading
@@ -271,8 +270,10 @@ origins, paths, allowlists, timeouts, and capability names, while
 `SensitiveConfig.INTEROP_CREDENTIALS` resolves a `credential_ref` only after
 the endpoint passes the security policy.
 
-The existing `common.httpx_client.get_async_client` pool remains the boundary
-for trusted, configured platform backends. External MCP and A2A peers must use
+Trusted platform backends use the process-owned outbound runtime in
+`runtime/outbound/`: twelve typed logical pools, two httpx profiles
+(`trusted` and `direct_upstream`), and one `AsyncOpenAI` client with
+`max_retries=0`. External MCP and A2A peers must use
 the separate interop transport, which disables environment proxies,
 redirects, and transparent retries; resolves and validates DNS/IP results;
 pins the connection to the validated address while preserving Host/SNI; and
