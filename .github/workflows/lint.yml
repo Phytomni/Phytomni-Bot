@@ -255,7 +255,9 @@ jobs:
             --cov=mcp_server_phytomni \
             --cov=mcp_client_phytomni \
             --cov-report=term-missing \
-            --cov-report=xml
+            --cov-report=xml \
+            --cov-report=json:coverage.json
+          python scripts/check_module_coverage.py
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:

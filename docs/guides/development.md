@@ -97,15 +97,20 @@ Equivalent explicit form:
 uv run pytest -m "not integration and not network"
 ```
 
-Coverage report form used by CI (both wheel packages are covered, and
-`[tool.coverage.report].fail_under` enforces a coverage floor):
+Every tracked production file under `src/mcp_server_phytomni/` and
+`src/mcp_client_phytomni/` must reach 80% branch-enabled coverage.
+`[tool.coverage.report].fail_under` enforces the global floor;
+`scripts/check_module_coverage.py` fail-closes on any below-target or
+missing file. Full coverage is part of `make push`. Scoped per-commit
+checks do not replace that full gate.
 
 ```bash
 uv run pytest \
   --cov=mcp_server_phytomni \
   --cov=mcp_client_phytomni \
   --cov-report=term-missing \
-  --cov-report=xml
+  --cov-report=json:coverage.json
+uv run python scripts/check_module_coverage.py
 ```
 
 Tests are grouped by directory and automatically marked as `unit`, `server`,

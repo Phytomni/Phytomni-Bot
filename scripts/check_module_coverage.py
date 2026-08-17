@@ -3,21 +3,20 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Enforce per-module coverage floors for ``src/mcp_server_phytomni/agents/``.
+"""Enforce 80% branch-enabled coverage for packaged production Python.
 
-The pyproject ``[tool.coverage.report].fail_under`` knob enforces a single
-global floor but does not let us pin individual agent files. This script
-reads the JSON coverage report (default: ``coverage.json`` produced by
-``pytest --cov-report=json:coverage.json``) and checks each
-``agents/*`` file against a ratchet floor: files listed in
-``MODULE_FLOORS`` must stay at or above their pinned percentage; every
-other agent file must reach ``TARGET`` (80%). Each push that lifts an
-agent module raises its entry toward ``TARGET`` so the floor never
-drifts back down.
+The pyproject ``[tool.coverage.report].fail_under`` knob enforces a
+single global floor. This script reads the JSON coverage report
+(default: ``coverage.json`` produced by
+``pytest --cov-report=json:coverage.json``) and fail-closes on every
+tracked file under ``src/mcp_server_phytomni/`` and
+``src/mcp_client_phytomni/``. Zero-statement files are inventoried but
+are not violations. Missing files and any ``percent_covered`` below
+``TARGET`` fail the gate.
 
 Exit codes:
-- ``0`` — all agent files meet their floor.
-- ``1`` — at least one agent file is below its floor.
+- ``0`` — every executable production file meets ``TARGET``.
+- ``1`` — at least one production file is missing or below ``TARGET``.
 - ``2`` — ``coverage.json`` is missing or malformed.
 """
 
@@ -32,66 +31,16 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_COVERAGE_JSON = PROJECT_ROOT / "coverage.json"
-AGENT_PATH_PREFIX = "src/mcp_server_phytomni/agents/"
 SOURCE_PREFIXES = (
     "src/mcp_server_phytomni/",
     "src/mcp_client_phytomni/",
 )
-
-# Per-file floors. Each entry locks the current measured percentage so a
-# regression below it fails the local gate. Each ratchet push raises one
-# entry toward ``TARGET`` alongside the new tests that support the bump.
-MODULE_FLOORS: dict[str, int] = {
-    "src/mcp_server_phytomni/agents/deep_genome/report.py": 23,
-    "src/mcp_server_phytomni/agents/chat/graph.py": 30,
-    # Recalibrated 42->33: the six unwired legacy monolithic nodes
-    # (parse_query / data_select / method_retrieve / plan / check /
-    # tool_extract) were deleted; their tests moved onto the wired
-    # prep/post nodes in graph_chat_subgraph.py /
-    # graph_knowledge_subgraph.py (covered there). graph.py now holds
-    # only the I/O-heavy tool_retrieve_node + submit_node, so its
-    # offline-measured coverage mechanically dropped to 33.91%. Coverage
-    # did not regress (it moved with the tests); ratchet back toward
-    # TARGET as the submit-pipeline nodes gain offline coverage.
-    "src/mcp_server_phytomni/agents/analyst/graph.py": 33,
-    "src/mcp_server_phytomni/agents/review/report.py": 42,
-    "src/mcp_server_phytomni/agents/data/agent.py": 96,
-    "src/mcp_server_phytomni/agents/knowledge/agent.py": 41,
-    # Recalibrated 47->46: the BI SQL POST relocated to the shared
-    # ``agents/shared/sql.py:bi_query`` seam (relay support), so its
-    # previously-counted covered lines left this module. Coverage did not
-    # regress (it moved to sql.py, covered by the bi_query operator test);
-    # profile.py mechanically dropped to 46.24%. Ratchet back toward
-    # TARGET as the deep_genome owner covers the remaining lookup nodes.
-    "src/mcp_server_phytomni/agents/deep_genome/profile.py": 46,
-    "src/mcp_server_phytomni/agents/brief_gene/core.py": 48,
-    # Transient regression: a merged off-peak / gene-id-conversion /
-    # analyst-node change landed un-gated and untested, dropping measured
-    # coverage below the prior 56 floor. A regression test for the gene-id
-    # BI-SQL escaping recovered it to 53.82%; ratchet this back toward
-    # TARGET (80) as the deep_genome owner adds tests for those nodes.
-    # The deep_genome thin-wrapper migration removed 9 nodes
-    # (orthologs/paralogs/interaction + 3 annotation_node + part1_node
-    # + gene_summary_node + data_agent) whose test coverage was high,
-    # dropping the measured floor for what remains in dispatch.py
-    # (mostly the analyst-side prepare_analysis_tasks + submit / download
-    # helpers). Reset the floor to the new measured baseline (44).
-    "src/mcp_server_phytomni/agents/deep_genome/dispatch.py": 44,
-    "src/mcp_server_phytomni/agents/review/planning.py": 58,
-    # chain.py was added at 20.38% measured coverage; the file has no
-    # dedicated test module yet (its only exercise is via the network-
-    # agent integration path). Pin the floor at the measured baseline
-    # so the gate stops blocking everyone's push; the chain owner
-    # should ratchet this toward TARGET alongside the new tests they
-    # write for ``network_to_deep_genome_chain`` + helpers.
-    "src/mcp_server_phytomni/agents/network/chain.py": 20,
-}
 TARGET = 80
 
 
 @dataclass(frozen=True)
 class CoverageResult:
-    """Production inventory evaluation used before the all-source switch."""
+    """Production inventory evaluation for the uniform 80% gate."""
 
     checked: int
     missing: list[str]
@@ -172,7 +121,7 @@ def _tracked_production_files() -> set[str]:
 def _evaluate_production(
     files: dict[str, dict], expected: set[str]
 ) -> CoverageResult:
-    """Evaluate the production inventory without changing the active gate."""
+    """Evaluate every tracked production file against ``TARGET``."""
     missing = sorted(expected - set(files))
     violations: list[str] = []
     zero_statement: list[str] = []
@@ -200,40 +149,37 @@ def _evaluate_production(
     )
 
 
-def _evaluate(
-    files: dict[str, dict],
-) -> tuple[int, list[str]]:
-    """Return (checked_count, violations) for all agent files."""
-    violations: list[str] = []
-    checked = 0
-    for path in sorted(files):
-        if not path.startswith(AGENT_PATH_PREFIX):
-            continue
-        pct = float(files[path]["summary"]["percent_covered"])
-        floor = MODULE_FLOORS.get(path, TARGET)
-        checked += 1
-        if pct < floor:
-            violations.append(f"  {path}: {pct:.2f}% < {floor}% floor")
-    return checked, violations
-
-
 def main() -> int:
     """Entrypoint."""
     args = _parse_args()
     files = _load_coverage(args.coverage_json)
-    checked, violations = _evaluate(files)
-    if violations:
+    result = _evaluate_production(files, _tracked_production_files())
+    if result.missing:
         print(
-            f"check_module_coverage: "
-            f"{len(violations)} module(s) below floor",
+            "check_module_coverage: "
+            f"{len(result.missing)} production file(s) missing from report",
             file=sys.stderr,
         )
-        for line in violations:
-            print(line, file=sys.stderr)
+        for path in result.missing:
+            print(f"  missing {path}", file=sys.stderr)
         return 1
+    if result.violations:
+        print(
+            "check_module_coverage: "
+            f"{len(result.violations)} module(s) below {TARGET}%",
+            file=sys.stderr,
+        )
+        for path in result.violations:
+            summary = files.get(path, {}).get("summary", {})
+            pct = summary.get("percent_covered", 0)
+            print(f"  {path}: {float(pct):.2f}% < {TARGET}%", file=sys.stderr)
+        return 1
+    zero = ""
+    if result.zero_statement:
+        zero = f" ({len(result.zero_statement)} zero-statement inventoried)"
     print(
-        f"check_module_coverage: all {checked} agents/* files at or "
-        f"above their floors (target {TARGET}%)."
+        f"check_module_coverage: all {result.checked} production files "
+        f"at or above {TARGET}%.{zero}"
     )
     return 0
 

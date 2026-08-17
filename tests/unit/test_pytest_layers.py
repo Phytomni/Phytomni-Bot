@@ -111,6 +111,8 @@ def test_ci_pytest_job_writes_coverage_report():
     assert "--cov=mcp_client_phytomni" in workflow
     assert "--cov-report=term-missing" in workflow
     assert "--cov-report=xml" in workflow
+    assert "--cov-report=json:coverage.json" in workflow
+    assert "scripts/check_module_coverage.py" in workflow
     assert "actions/upload-artifact@v4" in workflow
     assert "coverage.xml" in workflow
 
