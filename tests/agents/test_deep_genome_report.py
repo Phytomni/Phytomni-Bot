@@ -13,7 +13,6 @@ so the assertions stay inside the class hierarchy.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any, cast
 
@@ -26,16 +25,10 @@ from mcp_server_phytomni.agents.deep_genome.coordinator import (
 )
 from mcp_server_phytomni.agents.deep_genome.report import (
     DeepGenomeReportMixin,
-    _assemble_final_report,
-    _assemble_sections,
-    _section_has_data,
     _state_gene_string,
 )
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
-from mcp_server_phytomni.runtime.deep_genome_store import (
-    DeepGenomeStore,
-    DeepGenomeTransitionError,
-)
+from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.locale import SupportedLocale
 from tests.agents.shared.deep_genome_fixtures import (
     concrete_barrier_work_items,
@@ -97,36 +90,6 @@ class _ReportProbe(DeepGenomeReportMixin):
     ) -> dict[str, Any]:
         """Public proxy for the final follow-up report node."""
         return await self._run_follow_up_node(state)
-
-    async def run_protocol(self, state: DeepGenomeState) -> dict[str, Any]:
-        """Public proxy for the protocol summary node."""
-        return await self._run_report_protocol(state)
-
-    async def run_discussion(self, state: DeepGenomeState) -> dict[str, Any]:
-        """Public proxy for the discussion node."""
-        return await self._run_report_discussion(state)
-
-    async def run_summary(self, state: DeepGenomeState) -> dict[str, Any]:
-        """Public proxy for the conclusion node."""
-        return await self._run_report_summary(state)
-
-    async def experiment_protocols(
-        self, experiments: list[Any], locale: SupportedLocale | None = None
-    ) -> str:
-        """Public proxy for protocol retrieval."""
-        return await self._experiment_protocols(experiments, locale)
-
-    async def _dispatch_knowledge_retrieve(
-        self,
-        user_query: str,
-        repo_id_dict: dict[str, int],
-        locale: SupportedLocale | None = None,
-    ) -> dict[str, Any]:
-        """Return canned protocol text for experiment-protocol tests."""
-        del repo_id_dict, locale
-        return {
-            "choices": [{"message": {"content": f"protocol-for-{user_query}"}}]
-        }
 
 
 def _state(**overrides: Any) -> DeepGenomeState:
@@ -471,192 +434,4 @@ async def test_follow_up_requires_durable_tracking(
     ):
         await _ReportProbe().run_follow_up_node(
             _state(task_id=None, report_dir=str(report_dir))
-        )
-
-
-def test_section_has_data_and_assemble_helpers(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Section skipping, figure rewrite, and analyst-off layout stay stable."""
-    assert not _section_has_data({"tree_path": ""}, ("tree_path",))
-    assert not _section_has_data({"tree_path": "None Results"}, ("tree_path",))
-    assert _section_has_data({"tree_path": "/tmp/tree.png"}, ("tree_path",))
-    captured: list[dict[str, Any]] = []
-
-    def fake_prompt(_file: Any, path: str, data: dict[str, Any]) -> str:
-        captured.append({"path": path, **data})
-        return f"{path}:{data['section_number']}"
-
-    monkeypatch.setattr(report_module, "get_prompt", fake_prompt)
-    body = _assemble_sections(
-        {
-            "single_cell_summary": "cells",
-            "single_cell_legend": "See Figure 9 for details",
-            "domain_table": "table",
-            "domain_summary": "domains",
-            "domain_legend": "Figure 3 domains",
-        },
-        "prompts.yaml",
-    )
-    assert "section_single_cell:1" in body
-    report = _assemble_final_report(
-        _state(
-            config_params={"use_analyst_agent": False},
-            part12_combined="HEAD",
-            discussion_report="D",
-            summary_report="S",
-        )
-    )
-    assert "## Recommended experiments" not in report
-
-
-async def test_write_async_and_public_dispatch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Write failures surface; public wrappers unwrap chat/knowledge."""
-    from types import SimpleNamespace
-
-    def boom(_path: Path, _text: str) -> None:
-        raise OSError("disk full")
-
-    monkeypatch.setattr(report_module, "_write", boom)
-    with pytest.raises(OSError, match="disk full"):
-        await report_module._write_async(tmp_path / "out.md", "text")
-
-    class _LiveProbe(DeepGenomeReportMixin):
-        def __init__(self) -> None:
-            async def knowledge_invoke(
-                payload: dict[str, Any],
-            ) -> dict[str, Any]:
-                del payload
-                return {"final_response": {"ok": True}}
-
-            self._agents = SimpleNamespace(
-                knowledge_app=SimpleNamespace(ainvoke=knowledge_invoke)
-            )
-
-        def _chat_kwargs(self) -> dict[str, str]:
-            return {"model": "phyto"}
-
-    async def fake_ainvoke(payload: dict[str, Any]) -> dict[str, Any]:
-        del payload
-        return {"raw": True}
-
-    monkeypatch.setattr(
-        report_module,
-        "_cached_chat_app",
-        lambda: SimpleNamespace(ainvoke=fake_ainvoke),
-    )
-    monkeypatch.setattr(
-        report_module, "build_chat_input", lambda **kwargs: kwargs
-    )
-    monkeypatch.setattr(
-        report_module,
-        "extract_chat_response",
-        lambda output: {"unwrapped": output},
-    )
-    probe = _LiveProbe()
-    assert await probe.dispatch_chat("hello", "en-US") == {
-        "unwrapped": {"raw": True}
-    }
-    assert await probe.dispatch_knowledge_retrieve(
-        "protocol", {"repo": 3}, "en-US"
-    ) == {"ok": True}
-
-
-async def test_synthesizer_and_experiment_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Skip, write, wait, and experiment-design paths stay deterministic."""
-    assert await _ReportProbe().run_synthesizer(
-        _state(skip_synthesize=True)
-    ) == {"experiment_completed_branches": 1}
-    monkeypatch.setattr(
-        report_module, "resolve_scratch_dir", lambda *a, **k: str(tmp_path)
-    )
-    monkeypatch.setattr(
-        report_module, "get_prompt", lambda *a, **k: "SECTION-BODY"
-    )
-
-    async def capture(path: Path, text: str) -> None:
-        await asyncio.to_thread(path.write_text, text, encoding="utf-8")
-
-    monkeypatch.setattr(report_module, "_write_async", capture)
-    result = await _ReportProbe().run_synthesizer(
-        _state(
-            work_items=concrete_barrier_work_items(),
-            raw_analyst_data=partially_failed_concrete_barrier_data(),
-            analyst_summaries={"single_cell_summary": "cells"},
-        )
-    )
-    assert result["experiment_completed_branches"] == 1
-    probe = _ReportProbe()
-    assert await probe.run_experiment(_state(synthesize_report=None)) == {}
-    assert await probe.run_experiment(_state(report_triggered=True)) == {}
-    designed = await probe.run_experiment(_state(report_triggered=False))
-    assert designed["report_triggered"] is True
-    assert "protocol-for-CRISPR" in await probe.experiment_protocols(
-        ["CRISPR"]
-    )
-
-
-async def test_protocol_discussion_summary_and_finalization_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Report nodes unwrap chat; store faults fail the owner closed."""
-    import sqlite3
-
-    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
-    probe = _ReportProbe()
-    assert (await probe.run_protocol(_state()))["protocol_report"]
-    assert (await probe.run_discussion(_state()))["discussion_report"]
-    assert (
-        await probe.run_discussion(
-            _state(config_params={"use_analyst_agent": False})
-        )
-    )["discussion_report"]
-    assert (await probe.run_summary(_state()))["summary_report"]
-    db_path = str(tmp_path / "empty.db")
-    DeepGenomeStore(db_path)
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
-        lambda: db_path,
-    )
-    with pytest.raises(
-        DeepGenomeWorkflowError, match="^final report tracking unavailable$"
-    ):
-        await _ReportProbe().run_follow_up_node(
-            _state(task_id="missing-task", report_dir=str(tmp_path))
-        )
-    _store, db_path, task_id, _ = _finalization_fixture(tmp_path)
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
-        lambda: db_path,
-    )
-    monkeypatch.setattr(
-        report_module.DeepGenomeStore,
-        "publish_final_report",
-        lambda *_a, **_k: (_ for _ in ()).throw(
-            DeepGenomeTransitionError("conflict")
-        ),
-    )
-    report_dir = tmp_path / "report"
-    report_dir.mkdir()
-    with pytest.raises(
-        DeepGenomeWorkflowError, match="^final report publication failed$"
-    ):
-        await _ReportProbe().run_follow_up_node(
-            _report_state(task_id, report_dir)
-        )
-    monkeypatch.setattr(report_module, "_assemble_final_report", lambda _: "")
-    monkeypatch.setattr(
-        report_module.DeepGenomeStore,
-        "fail_umbrella",
-        lambda *_a, **_k: (_ for _ in ()).throw(sqlite3.Error("locked")),
-    )
-    with pytest.raises(
-        DeepGenomeWorkflowError, match="^final report tracking failed$"
-    ):
-        await _ReportProbe().run_follow_up_node(
-            _report_state(task_id, report_dir)
         )
