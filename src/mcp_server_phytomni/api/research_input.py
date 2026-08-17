@@ -13,7 +13,6 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal, cast
 
 from ..agents.analyst.agent import AnalystAgent
-from ..agents.analyst.defaults import ANALYST_CONFIG
 from ..agents.research.dispatch_runtime import ResearchDispatchRuntime
 from ..agents.research.input_contracts import (
     ParsedResearchInput,
@@ -30,7 +29,7 @@ from ..agents.research.input_parser import parse_research_input
 from ..agents.research.recovery import ResearchPreAcceptanceRejected
 from ..agents.research.recovery_support import register_recovery_service
 from ..config.api_limits import ApiLimitsConfig
-from ..config.defaults import ApiConfig
+from ..config.defaults import ApiConfig, InSilicoResearchConfig
 from ..config.settings import get_sensitive_config
 from ..runtime.conversation_context.models import ConversationEnvelopeV1
 from ..runtime.locale import SUPPORTED_LOCALES, SupportedLocale
@@ -186,15 +185,16 @@ def ensure_research_input_runtime(
     if runtime is not None:
         return runtime.coordinator
     sensitive_config = get_sensitive_config()
+    research_config = InSilicoResearchConfig()
     analyst_agent = AnalystAgent(
-        analyst_config=ANALYST_CONFIG,
+        analyst_config=research_config,
         sensitive_config=sensitive_config,
     )
     coordinator = build_research_input_coordinator(
         store=ResearchInputStore(db_path or ApiConfig().API_TASKS_DB_PATH),
         provider=_UnavailableResearchWorkProvider(),
         analyst_agent=analyst_agent,
-        analyst_config=ANALYST_CONFIG,
+        analyst_config=research_config,
         sensitive_config=sensitive_config,
         root_worker=_run_production_coordinator_root,
         root_request_factory=root_request_factory,

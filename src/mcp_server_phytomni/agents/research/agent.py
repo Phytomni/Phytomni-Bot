@@ -20,7 +20,10 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command, Send, interrupt
 
 from ...common.prompts import get_prompt
-from ...config.defaults import InSilicoResearchConfig
+from ...config.defaults import (
+    InSilicoResearchConfig,
+    resolve_compute_resource,
+)
 from ...config.overrides import (
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
@@ -445,7 +448,7 @@ class InSilicoResearchAgents:
                 meta=prompt_context,
                 data_list=task.data_list,
             ),
-            compute_resource="medium",
+            compute_resource=resolve_compute_resource(self.in_silico_config),
             output_dir_is_result_child=True,
         )
         result = await submit_remote_analysis(

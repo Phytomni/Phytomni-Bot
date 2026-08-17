@@ -873,12 +873,14 @@ def test_api_lifespan_runtime_constructs_and_registers_worker(
     assert coordinator.outbox is not None
     assert coordinator.recovery is not None
     assert registered == [coordinator.recovery]
-    assert analyst_instances == [
-        {
-            "analyst_config": research_input_api.ANALYST_CONFIG,
-            "sensitive_config": sensitive,
-        }
-    ]
+    assert len(analyst_instances) == 1
+    captured = analyst_instances[0]
+    assert captured["sensitive_config"] is sensitive
+    assert isinstance(
+        captured["analyst_config"],
+        research_input_api.InSilicoResearchConfig,
+    )
+    assert captured["analyst_config"].COMPUTE_RESOURCE == "medium"
 
 
 @pytest.mark.asyncio
@@ -931,7 +933,11 @@ async def test_direct_runtime_re_resolves_only_after_authority_restart(
         store,
         ProviderType(),
         analyst_agent=analyst_factory(submitted),
-        analyst_config=type("Config", (), {"USER_ID": "owner"})(),
+        analyst_config=type(
+            "Config",
+            (),
+            {"USER_ID": "owner", "COMPUTE_RESOURCE": "medium"},
+        )(),
         sensitive_config=object(),
         metadata_port=restarted_port,
         lease_owner="direct-worker",

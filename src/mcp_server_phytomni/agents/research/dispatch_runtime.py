@@ -19,7 +19,7 @@ from ...agents.shared.remote_analysis import (
     submit_remote_analysis,
 )
 from ...common.relay_client import current_relay_client
-from ...config.defaults import ServerConfig
+from ...config.defaults import ServerConfig, resolve_compute_resource
 from ...config.relay_mode import relay_mode_enabled
 from ...runtime.outbound import current_outbound_runtime
 from ...runtime.research_input_store import ResearchInputStore
@@ -85,10 +85,8 @@ class _RuntimeBindings:
                 data_list=_data_list(payload.get("data_list")),
             ),
             compute_resource=str(
-                payload.get(
-                    "compute_resource",
-                    getattr(self.analyst_config, "COMPUTE_RESOURCE", "medium"),
-                )
+                payload.get("compute_resource")
+                or resolve_compute_resource(self.analyst_config)
             ),
             dispatch_fingerprint=row.dispatch_fingerprint,
             research_grants=_grant_uses(payload.get("research_grants")),

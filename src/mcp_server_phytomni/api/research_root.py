@@ -19,7 +19,6 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
-from ..agents.analyst.defaults import ANALYST_CONFIG
 from ..agents.research.contracts import ResearchGoal
 from ..agents.research.document_evidence import (
     ConvertedResearchSection,
@@ -48,7 +47,11 @@ from ..agents.research.planning import (
 )
 from ..common.relay_client import current_relay_client
 from ..config.api_limits import ApiLimitsConfig
-from ..config.defaults import ServerConfig
+from ..config.defaults import (
+    InSilicoResearchConfig,
+    ServerConfig,
+    resolve_compute_resource,
+)
 from ..config.relay_mode import relay_mode_enabled
 from ..runtime.outbound import ObsProfileName, current_obs_runtime
 from ..storage.downloads import convert_single_file
@@ -264,8 +267,8 @@ def build_default_research_root_request_factory(
                     prepared=prepared,
                     evidence=request.evidence,
                     locale=admission.locale,
-                    compute_resource=getattr(
-                        ANALYST_CONFIG, "COMPUTE_RESOURCE", "medium"
+                    compute_resource=resolve_compute_resource(
+                        InSilicoResearchConfig
                     ),
                     interop_mode=admission.interop_mode,
                     interop_targets=admission.interop_targets,
