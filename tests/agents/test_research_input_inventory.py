@@ -506,3 +506,37 @@ async def test_inventory_rejects_malformed_metadata_authorities(
         await build_research_inventory(request, port)
 
     assert caught.value.code == "research_input_resolution_failed"
+
+
+def test_empty_allowlist_accepts_managed_configured_bucket_key() -> None:
+    """Managed inventory refs stay allow-all while the whitelist is empty."""
+    from mcp_server_phytomni.agents.research.input_inventory import (
+        _reference_identity,
+    )
+
+    identity, basename = _reference_identity(
+        "obs://dev-bucket/any/path/file.tsv", "dev-bucket"
+    )
+
+    assert identity == "obs://dev-bucket/any/path/file.tsv"
+    assert basename == "file.tsv"
+
+
+def test_populated_allowlist_rejects_unlisted_managed_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A later whitelist rejects an otherwise valid managed object key."""
+    from mcp_server_phytomni.agents.research import input_contracts
+    from mcp_server_phytomni.agents.research.input_inventory import (
+        _reference_identity,
+    )
+
+    monkeypatch.setattr(
+        input_contracts,
+        "RESEARCH_OBJECT_REF_ALLOWLIST",
+        frozenset({"obs://dev-bucket/listed.tsv"}),
+    )
+    with pytest.raises(ResearchInputFailure) as caught:
+        _reference_identity("obs://dev-bucket/other.tsv", "dev-bucket")
+
+    assert caught.value.code == "research_dataset_path_invalid"

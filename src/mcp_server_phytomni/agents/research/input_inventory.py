@@ -30,6 +30,7 @@ from .input_contracts import (
     ResearchInputFailure,
     SourceSpan,
     research_input_failure,
+    research_object_ref_permitted,
 )
 from .scientific_formats import classify_scientific_reference
 
@@ -834,9 +835,13 @@ def _reference_identity(reference: str, bucket: str) -> tuple[str, str]:
             "Research dataset path is invalid.",
         )
     normalized_key = unicodedata.normalize("NFC", key)
-    return f"obs://{bucket.lower()}/{normalized_key}", _safe_basename(
-        reference
-    )
+    identity = f"obs://{bucket.lower()}/{normalized_key}"
+    if not research_object_ref_permitted(identity):
+        raise research_input_failure(
+            "research_dataset_path_invalid",
+            "Research dataset path is invalid.",
+        )
+    return identity, _safe_basename(reference)
 
 
 def _safe_basename(reference: str) -> str:

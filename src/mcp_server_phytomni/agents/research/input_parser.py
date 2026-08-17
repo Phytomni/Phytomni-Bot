@@ -19,6 +19,7 @@ from .input_contracts import (
     ResearchInputFailure,
     SourceSpan,
     _PastedDatasetReference,
+    research_object_ref_permitted,
 )
 from .scientific_formats import classify_scientific_reference
 
@@ -332,7 +333,10 @@ def _comparison_key(reference: str, bucket: str) -> str | None:
     ):
         return None
     normalized_key = unicodedata.normalize("NFC", key)
-    return f"obs://{bucket.lower()}/{normalized_key}"
+    identity = f"obs://{bucket.lower()}/{normalized_key}"
+    if not research_object_ref_permitted(identity):
+        return None
+    return identity
 
 
 def _is_explicit_data_attempt(query: str, offset: int) -> bool:

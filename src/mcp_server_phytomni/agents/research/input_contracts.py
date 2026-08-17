@@ -26,6 +26,7 @@ __all__ = [
     "EvidenceSourceKind",
     "ParsedResearchInput",
     "PastedDatasetCandidate",
+    "RESEARCH_OBJECT_REF_ALLOWLIST",
     "ResearchConfidence",
     "ResearchCoordinatorDependencies",
     "ResearchCoordinatorRequest",
@@ -36,11 +37,24 @@ __all__ = [
     "SourceSpan",
     "TokenEstimator",
     "research_input_failure",
+    "research_object_ref_permitted",
 ]
 
 EvidenceSourceKind = Literal[
     "query", "pdf_page", "document_section", "user_hint", "dataset_meta"
 ]
+
+# Empty set = allow any configured-bucket key. Populate later for a whitelist.
+RESEARCH_OBJECT_REF_ALLOWLIST: frozenset[str] = frozenset()
+
+
+def research_object_ref_permitted(identity: str) -> bool:
+    """Return whether a normalized ``obs://`` identity is currently allowed."""
+    if not RESEARCH_OBJECT_REF_ALLOWLIST:
+        return True
+    return identity in RESEARCH_OBJECT_REF_ALLOWLIST
+
+
 ResearchInteropMode = Literal["off", "auto", "required"]
 ResearchConfidence = Literal["high", "medium", "low"]
 

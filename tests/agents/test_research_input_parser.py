@@ -249,6 +249,61 @@ def test_rejects_escaped_control_characters_in_json_hints(
     assert caught.value.code == "research_dataset_path_invalid"
 
 
+def test_empty_object_ref_allowlist_accepts_any_configured_bucket_key() -> (
+    None
+):
+    """An empty allowlist is allow-all inside the configured bucket."""
+    parsed = parse_research_input(
+        'data: {"obs://dev-bucket/any/path/file.tsv": "hint"}',
+        "dev-bucket",
+    )
+
+    assert parsed.candidates[0].comparison_key == (
+        "obs://dev-bucket/any/path/file.tsv"
+    )
+
+
+def test_populated_object_ref_allowlist_rejects_unlisted_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A later whitelist still uses the same invalid-path failure."""
+    from mcp_server_phytomni.agents.research import input_contracts
+
+    monkeypatch.setattr(
+        input_contracts,
+        "RESEARCH_OBJECT_REF_ALLOWLIST",
+        frozenset({"obs://dev-bucket/listed.tsv"}),
+    )
+    with pytest.raises(ResearchInputFailure) as caught:
+        parse_research_input(
+            'data: {"obs://dev-bucket/other.tsv": "hint"}',
+            "dev-bucket",
+        )
+
+    assert caught.value.code == "research_dataset_path_invalid"
+
+
+def test_populated_object_ref_allowlist_accepts_listed_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A later whitelist still accepts the listed configured-bucket key."""
+    from mcp_server_phytomni.agents.research import input_contracts
+
+    monkeypatch.setattr(
+        input_contracts,
+        "RESEARCH_OBJECT_REF_ALLOWLIST",
+        frozenset({"obs://dev-bucket/listed.tsv"}),
+    )
+    parsed = parse_research_input(
+        'data: {"obs://dev-bucket/listed.tsv": "hint"}',
+        "dev-bucket",
+    )
+
+    assert parsed.candidates[0].comparison_key == (
+        "obs://dev-bucket/listed.tsv"
+    )
+
+
 def test_malformed_explicit_data_block_does_not_fall_back_to_prose() -> None:
     """An associated data label selects the strict parser even when invalid."""
     query = "目标\ndata: {not valid json}"
