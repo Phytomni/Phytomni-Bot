@@ -7,11 +7,13 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from mcp_server_phytomni.func_cache import lifecycle
 from mcp_server_phytomni.func_cache.exceptions import CacheError
+from mcp_server_phytomni.func_cache.storage import Storage
 
 pytestmark = pytest.mark.unit
 
@@ -38,8 +40,8 @@ def test_register_storage_close_is_idempotent_per_path(
     lifecycle._atexit_registered.clear()
     storage = SimpleNamespace(close=object())
     path = str(tmp_path / "cache.sqlite")
-    lifecycle._register_storage_close(path, storage)
-    lifecycle._register_storage_close(path, storage)
+    lifecycle._register_storage_close(path, cast(Storage, storage))
+    lifecycle._register_storage_close(path, cast(Storage, storage))
     assert registered == [storage.close]
 
 
@@ -62,7 +64,9 @@ def test_check_and_update_meta_clears_on_config_change() -> None:
         def cleanup_func_locks(self, func_id: str) -> None:
             calls.append(("locks", func_id))
 
-    lifecycle._check_and_update_meta(_Storage(), "fn", "new", True)
+    lifecycle._check_and_update_meta(
+        cast(Storage, _Storage()), "fn", "new", True
+    )
     assert ("delete", "fn") in calls
     assert ("locks", "fn") in calls
     assert ("set", ("fn", "new", True)) in calls
@@ -79,5 +83,7 @@ def test_check_and_update_meta_logs_cache_errors(
         def get_meta(self, func_id: str) -> None:
             raise CacheError("meta unavailable")
 
-    lifecycle._check_and_update_meta(_Storage(), "fn", (), False)
+    lifecycle._check_and_update_meta(
+        cast(Storage, _Storage()), "fn", (), False
+    )
     assert warnings and "meta unavailable" in warnings[0]

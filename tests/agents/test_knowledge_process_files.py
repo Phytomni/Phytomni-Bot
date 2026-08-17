@@ -7,12 +7,13 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from mcp_server_phytomni.agents.knowledge import agent as knowledge_mod
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
+from mcp_server_phytomni.agents.knowledge.state import KnowledgeState
 
 pytestmark = pytest.mark.unit
 
@@ -44,8 +45,8 @@ async def test_process_files_node_formats_obs_uploads(
         MAX_TOKENS=100,
     )
     filled = await agent.process_files_node(
-        {"obs_file_list": ["obs://bucket/a.md"]}
+        cast(KnowledgeState, {"obs_file_list": ["obs://bucket/a.md"]})
     )
-    empty = await agent.process_files_node({})
+    empty = await agent.process_files_node(cast(KnowledgeState, {}))
     assert filled == {"upload_context": "formatted-upload"}
     assert empty == {"upload_context": ""}

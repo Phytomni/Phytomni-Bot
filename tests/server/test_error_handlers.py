@@ -7,7 +7,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from collections.abc import Awaitable
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -75,16 +76,22 @@ async def test_mcp_retrieval_and_traced_failures_keep_safe_envelopes() -> None:
     request = _request()
     mcp_handler = app.exception_handlers[McpError]
     unhandled = app.exception_handlers[Exception]
-    retrieval = await mcp_handler(
-        request,
-        McpError(
-            ErrorData(
-                code=INTERNAL_ERROR, message=RETRIEVAL_UNAVAILABLE_MESSAGE
-            )
+    retrieval = await cast(
+        Awaitable[Any],
+        mcp_handler(
+            request,
+            McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR, message=RETRIEVAL_UNAVAILABLE_MESSAGE
+                )
+            ),
         ),
     )
-    other = await mcp_handler(
-        request, McpError(ErrorData(code=INTERNAL_ERROR, message="other"))
+    other = await cast(
+        Awaitable[Any],
+        mcp_handler(
+            request, McpError(ErrorData(code=INTERNAL_ERROR, message="other"))
+        ),
     )
     bind_stage_trace(
         (
@@ -100,7 +107,9 @@ async def test_mcp_retrieval_and_traced_failures_keep_safe_envelopes() -> None:
             ),
         )
     )
-    traced = await unhandled(request, RuntimeError("hidden"))
+    traced = await cast(
+        Awaitable[Any], unhandled(request, RuntimeError("hidden"))
+    )
     assert retrieval.status_code == 500
     assert json.loads(retrieval.body)["code"] == (
         "knowledge_retrieval_unavailable"

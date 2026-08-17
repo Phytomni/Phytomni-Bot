@@ -36,6 +36,7 @@ def test_obs_client_loads_custom_ca_and_ciphers() -> None:
         ssl_verify=certifi.where(),
         custom_ciphers="HIGH",
     )
+    assert client.context is not None
     assert client.context.check_hostname is True
     assert client.context.verify_mode == ssl.CERT_REQUIRED
 
@@ -48,5 +49,6 @@ def test_obs_client_disables_verification_when_requested() -> None:
         server="https://obs.example.invalid",
         ssl_verify=False,
     )
+    assert client.context is not None
     assert client.context.check_hostname is False
     assert client.context.verify_mode == ssl.CERT_NONE

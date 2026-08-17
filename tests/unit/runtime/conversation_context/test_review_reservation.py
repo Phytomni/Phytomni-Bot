@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import sqlite3
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -44,7 +46,7 @@ def test_reserve_row_failure_maps_tombstone_and_promoted_rows() -> None:
     tombstoned = _reserve_row_failure(
         store,
         _ReviewClaimLookupRequest(
-            connection=object(),
+            connection=cast(sqlite3.Connection, object()),
             key="k",
             row=("staged", "v", 0, "{}"),
             expected_ledger_version=None,
@@ -56,7 +58,7 @@ def test_reserve_row_failure_maps_tombstone_and_promoted_rows() -> None:
     promoted = _reserve_row_failure(
         store,
         _ReviewClaimLookupRequest(
-            connection=object(),
+            connection=cast(sqlite3.Connection, object()),
             key="k",
             row=("committed", "v", 0, "{}"),
             expected_ledger_version=None,
@@ -75,7 +77,7 @@ def _marker_request(
 ) -> _ReviewReservationMarkerRequest:
     """Build one reservation-marker request for the helper under test."""
     return _ReviewReservationMarkerRequest(
-        connection=object(),
+        connection=cast(sqlite3.Connection, object()),
         identity=_ReviewClaimIdentity(key="k", turn_id="1"),
         row=row,
         decoded={},

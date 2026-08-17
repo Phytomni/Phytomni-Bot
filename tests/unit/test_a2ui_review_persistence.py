@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -20,7 +21,10 @@ from mcp_server_phytomni.api.a2ui_review_persistence import (
     settle_review_projection_failure,
 )
 from mcp_server_phytomni.api.lifecycle_contract import SafeErrorCode
-from mcp_server_phytomni.runtime.run_registry import RunRequestInfo
+from mcp_server_phytomni.runtime.run_registry import (
+    RunRegistry,
+    RunRequestInfo,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -44,7 +48,7 @@ def test_settle_failed_run_rejects_unknown_kwargs() -> None:
         TypeError, match="unexpected review settlement keyword"
     ):
         settle_failed_run(
-            SimpleNamespace(),
+            cast(RunRegistry, SimpleNamespace()),
             run_id="r1",
             owner="u1",
             result={},
@@ -61,7 +65,7 @@ def test_create_review_pause_maps_sqlite_errors() -> None:
     )
     with pytest.raises(type(review_persistence_error())):
         create_review_pause(
-            registry,
+            cast(RunRegistry, registry),
             run_id="r1",
             owner="u1",
             request_info=_request_info(),
@@ -73,17 +77,22 @@ def test_settle_review_pause_requires_durable_success() -> None:
     """A False settle result is treated as persistence failure."""
     registry = SimpleNamespace(settle_run=lambda *_args, **_kwargs: False)
     with pytest.raises(type(review_persistence_error())):
-        settle_review_pause(registry, run_id="r1", owner="u1", result={})
+        settle_review_pause(
+            cast(RunRegistry, registry),
+            run_id="r1",
+            owner="u1",
+            result={},
+        )
 
 
 def test_settle_review_projection_failure_creates_failed_row() -> None:
     """New projection failures persist a failed Review run."""
-    created: list[object] = []
+    created: list[tuple[Any, Any]] = []
     registry = SimpleNamespace(
         create_run=lambda spec, **kwargs: created.append((spec, kwargs))
     )
     settle_review_projection_failure(
-        registry,
+        cast(RunRegistry, registry),
         run_id="r1",
         owner="u1",
         request_info=_request_info(),
