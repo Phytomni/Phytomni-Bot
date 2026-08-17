@@ -177,7 +177,11 @@ class ReviewReportMixin:
         add_doc_list: list[dict[str, Any]] = []
         content_to_check = draft_content
 
-        if review_json.get("has_critical_gaps", False) and add_queries:
+        if (
+            not review_json.get("off_topic")
+            and review_json.get("has_critical_gaps", False)
+            and add_queries
+        ):
             add_query_results = await asyncio.gather(
                 *[
                     self.ka.arun(

@@ -288,6 +288,45 @@ async def test_feedback_rag_has_no_failure_metadata_when_no_add_queries(
     assert not arun_calls
 
 
+async def test_feedback_rag_skips_add_queries_when_off_topic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Off-topic drafts do not launch supplementary retrieval."""
+    monkeypatch.setattr(
+        ReviewReportMixin, "_audit_citations", _audit_passthrough
+    )
+
+    arun_calls: list[str] = []
+
+    async def fake_arun(
+        self: Any,
+        *,
+        user_query: str,
+        is_generate: bool,
+        is_follow_up: bool,
+    ) -> list[dict[str, Any]]:
+        del self, is_generate, is_follow_up
+        arun_calls.append(user_query)
+        return []
+
+    monkeypatch.setattr(KnowledgeAgent, "arun", fake_arun)
+
+    agent = _build_agent()
+    result = await getattr(agent, "_feedback_rag")(
+        subtopic_idx=1,
+        draft_content="draft-orig",
+        review_content=(
+            '{"has_critical_gaps": true, "off_topic": true, '
+            '"search_queries": ["generic PPI drug target"]}'
+        ),
+        raw_doc_list=[],
+    )
+
+    assert result["revised_content"] == "draft-orig"
+    assert result["add_doc_list"] == []
+    assert not arun_calls
+
+
 def test_partition_counts_failures_without_retaining_exception_text() -> None:
     """Partitioning keeps valid lists and replaces failures with no payload."""
     results: list[Any] = [[], RuntimeError("boom"), []]
