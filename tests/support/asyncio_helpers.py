@@ -9,7 +9,14 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-__all__ = ["run_coroutine_on_owned_loop"]
+try:
+    from langgraph.errors import NodeCancelledError
+except ImportError:  # pragma: no cover - older langgraph
+    NodeCancelledError = asyncio.CancelledError
+
+GRAPH_CANCELLATION = (asyncio.CancelledError, NodeCancelledError)
+
+__all__ = ["GRAPH_CANCELLATION", "run_coroutine_on_owned_loop"]
 
 
 def run_coroutine_on_owned_loop(coro: Any) -> Any:

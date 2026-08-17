@@ -31,6 +31,7 @@ from mcp_server_phytomni.agents.brief_gene.core import (
 from mcp_server_phytomni.agents.brief_gene.state import BriefGeneInput
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.asyncio_helpers import GRAPH_CANCELLATION
 
 from ._network_escape import install_network_escape_guard
 from ._subgraph_branch_fakes import install_chat_subgraph_mocks
@@ -378,7 +379,7 @@ async def test_preamble_propagates_identity_lookup_cancellation(
     knowledge = AsyncMock(return_value=_KNOWLEDGE_OUTPUT)
     _install_knowledge_outcome(monkeypatch, knowledge)
 
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(GRAPH_CANCELLATION):
         await _invoke_preamble("Os01g0177400")
 
     knowledge.assert_not_awaited()
@@ -540,7 +541,7 @@ async def test_preamble_propagates_literature_cancellation(
         AsyncMock(side_effect=asyncio.CancelledError()),
     )
 
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(GRAPH_CANCELLATION):
         await _invoke_preamble("Os01g0177400")
     chat_mock.assert_not_awaited()
 
@@ -613,7 +614,7 @@ async def test_preamble_same_thread_retry_after_cancellation_resets_state(
     thread_id = "same-thread-cancel-retry"
     config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(GRAPH_CANCELLATION):
         await _invoke_agent_preamble(
             agent,
             "Os01g0177400",

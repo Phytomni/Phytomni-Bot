@@ -42,6 +42,7 @@ from mcp_server_phytomni.config.defaults import AnalystConfig, DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.runtime.task_manager import TaskManager
 from tests.agents._subgraph_branch_fakes import install_chat_subgraph_mocks
+from tests.support.asyncio_helpers import GRAPH_CANCELLATION
 
 pytestmark = pytest.mark.agent
 
@@ -417,7 +418,7 @@ async def test_data_graph_rejects_unusable_retrieval_without_side_effects(
         data_config=DataConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
-    expected_error = McpError if case == "failure" else asyncio.CancelledError
+    expected_error = McpError if case == "failure" else GRAPH_CANCELLATION
 
     with pytest.raises(expected_error) as exc_info:
         await agent.app.ainvoke(
@@ -477,7 +478,7 @@ async def test_analyst_graph_stops_at_unusable_knowledge_without_side_effects(
     """Failure/cancellation stops before validation, planning, or submit."""
     events: list[str] = []
     harness = build_analyst_proof_harness(monkeypatch, tmp_path, case, events)
-    expected_error = McpError if case == "failure" else asyncio.CancelledError
+    expected_error = McpError if case == "failure" else GRAPH_CANCELLATION
 
     with pytest.raises(expected_error) as exc_info:
         await harness.agent.app.ainvoke(
@@ -621,7 +622,7 @@ async def test_analyst_direct_tool_retrieval_stops_before_submission(
     retrieve_spy = AsyncMock(side_effect=reject_tool_usage)
     monkeypatch.setattr(analyst_graph, "retrieve", retrieve_spy)
     accepted_results: list[dict[str, Any]] = []
-    expected_error = McpError if case == "failure" else asyncio.CancelledError
+    expected_error = McpError if case == "failure" else GRAPH_CANCELLATION
 
     with pytest.raises(expected_error) as exc_info:
         accepted_results.append(

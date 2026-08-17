@@ -56,6 +56,7 @@ from tests.agents.test_knowledge_failure_consumers import (
     install_ordered_knowledge_boundary,
     isolate_task_store,
 )
+from tests.support.asyncio_helpers import GRAPH_CANCELLATION
 
 pytestmark = pytest.mark.agent
 
@@ -449,7 +450,7 @@ async def test_boundary_cancellation_propagates_without_side_effects(
     output_dir = str(tmp_path / consumer / "run" / "children" / "part-001")
     invoke = _build_consumer(consumer, harness.agent, output_dir, monkeypatch)
 
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(GRAPH_CANCELLATION):
         await invoke()
 
     assert harness.knowledge.calls == []
@@ -525,7 +526,7 @@ async def test_retrieval_cancellation_skips_recorder_and_final_projection(
     projection = Mock(wraps=format_tool_result)
 
     with request_context("anonymous", f"request-{consumer}-cancel"):
-        with pytest.raises(asyncio.CancelledError):
+        with pytest.raises(GRAPH_CANCELLATION):
             await _record_and_format_consumer(invoke, projection)
         _assert_no_recorded_terminal_projection(
             tmp_path / "tasks.sqlite", projection
