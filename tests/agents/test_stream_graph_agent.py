@@ -269,12 +269,12 @@ async def test_terminal_events_carry_answer_and_custom(
 async def test_graph_stream_passes_thread_id_config_to_astream() -> None:
     """astream receives a config carrying the run's non-empty thread_id.
 
-    Pins Step 0 at the unit layer: ``_stream_graph_agent`` must pass
+    ``_stream_graph_agent`` must pass
     ``config=build_runnable_config(run_id)`` to ``app.astream`` because
     the real Knowledge/Review graphs compile with a checkpointer and
-    LangGraph raises ``ValueError`` on a checkpointer graph invoked
-    without ``configurable.thread_id``. The fake records the config and
-    the test asserts the thread_id equals the caller's run id.
+    LangGraph raises ``ValueError`` without ``configurable.thread_id``.
+    The fake records the config; thread_id must equal the caller's
+    run id.
     """
     fake_app = FakeStreamApp(
         [

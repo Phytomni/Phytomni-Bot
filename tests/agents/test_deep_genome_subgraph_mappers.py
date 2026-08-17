@@ -6,9 +6,8 @@
 
 Pins the ``user_query`` construction inside
 ``map_deepgenome_to_knowledge_input`` against the inline shape in
-``deep_genome/dispatch.py:_run_knowledge_agent`` so Phase 6a's
-adapter wire-up can mount the knowledge subgraph through the
-helper without behavior drift.
+``deep_genome/dispatch.py:_run_knowledge_agent`` so the knowledge
+subgraph mounts through the helper without behavior drift.
 """
 
 from __future__ import annotations
@@ -33,7 +32,7 @@ def test_knowledge_mapper_uses_dispatch_query_shape() -> None:
     :meth:`_run_knowledge_agent` (``user_query =
     f"{gene_symbol}\\n{species_name}?"``). If a future refactor changes
     the join, this test fails first so the dispatch site and the
-    mapper stay aligned and Phase 6a can swap one for the other.
+    mapper stay aligned.
     """
     sample_code = next(iter(SPECIES_CODE_MAP))
     expected_name = SPECIES_CODE_MAP[sample_code]

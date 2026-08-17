@@ -75,12 +75,10 @@ def test_brief_gene_output_exposes_minimal_subset() -> None:
 def test_brief_gene_state_carries_preamble_fan_out_fields() -> None:
     """``BriefGeneState`` declares the preamble fan-out fields.
 
-    M6 adds 16 new keys for the X3b A architecture: BI fetch
-    outputs (orthologs / paralogs / interaction dicts), six count
-    summaries for Basic Information bullets, gene structure
-    annotation, four section LLM markdowns, the introduction
-    report, and the ``gene_profile_completed_branches`` barrier
-    counter (renamed from M5-era ``part1_completed_branches``).
+    Covers BI fetch outputs, six Basic Information count summaries,
+    gene structure annotation, four section markdowns, the
+    introduction report, and the ``gene_profile_completed_branches``
+    barrier counter.
     """
     actual = set(get_type_hints(BriefGeneState).keys())
     missing = BRIEF_GENE_STATE_PREAMBLE_FIELDS - actual

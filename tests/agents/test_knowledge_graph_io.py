@@ -40,11 +40,8 @@ def _required(td: type) -> frozenset[str]:
     """Return ``td.__required_keys__`` via getattr.
 
     PEP 705 attaches ``__required_keys__`` / ``__optional_keys__`` to
-    every TypedDict class, and pyright + mypy resolve the attribute
-    fine. Pylint's inference layer does not model TypedDict
-    introspection, so direct attribute access trips E1101 no-member.
-    Routing through ``getattr`` hides the access from pylint's static
-    analysis without losing runtime semantics.
+    every TypedDict class. Direct attribute access is not visible to
+    every checker; ``getattr`` keeps the same runtime semantics.
     """
     return getattr(td, "__required_keys__")
 

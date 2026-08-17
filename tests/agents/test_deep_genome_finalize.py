@@ -88,7 +88,6 @@ def test_finalize_workflow_logs_and_swallows_terminal_write_error(
     )
     agent = _FinalizeProbe(knowledge_agent=None, analyst_agent=None)
 
-    # Must return normally even though the registry write explodes.
     agent.run_finalize(
         _succeeded_task(), umbrella_id="dg-fin", output_dir="/obs/o"
     )

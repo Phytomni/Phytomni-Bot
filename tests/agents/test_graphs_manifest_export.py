@@ -153,9 +153,7 @@ def test_manifest_is_frozen() -> None:
     ``manifest.nodes = ()`` assignment (Pydantic raises
     ``ValidationError`` for frozen models there); the dynamic form
     lets static checkers see an API call instead of a forbidden
-    field write, removing the need for ``# type: ignore[misc]``.
-    Same refactor as the GeneRetrieveRequest frozen test at
-    ``9072103``.
+    field write, without a per-line type ignore.
     """
     manifest = export_manifest(_build_linear_app())
     with __import__("pytest").raises(Exception):
