@@ -32,9 +32,10 @@ def resolve_compute_resource(
     """Return the configured compute tier, optionally specialized by type.
 
     Callers must not invent ``small`` / ``medium`` / ``large`` at the
-    submit site.  Per-analysis overrides live on
+    submit site. Per-analysis overrides live on
     ``COMPUTE_RESOURCE_BY_TYPE``; everything else uses
-    ``COMPUTE_RESOURCE``.
+    ``COMPUTE_RESOURCE``. ``AnalystConfig.RESOURCE`` maps those names to
+    cpu/memory. ``APP_ID`` is a Huawei UUID map, not a compute tier.
     """
     by_type = getattr(config, "COMPUTE_RESOURCE_BY_TYPE", None) or {}
     if analysis_type:
@@ -109,7 +110,13 @@ class DataConfig(KnowledgeConfig):
 
 
 class AnalystConfig(KnowledgeConfig):
-    """Configuration settings for analysis workflows."""
+    """Configuration settings for analysis workflows.
+
+    ``COMPUTE_RESOURCE`` is the default tier name (``small`` here).
+    ``RESOURCE`` is the only cpu/memory table: small 1C/4G, medium
+    4C/16G, large 16C/48G. ``APP_ID`` maps analysis types to Huawei
+    application UUIDs and is not a resource size.
+    """
 
     RELAY_TIMEOUT_PROFILE: ClassVar[str | None] = None
     TIMEOUT: float = 600.0
@@ -143,6 +150,10 @@ class AnalystConfig(KnowledgeConfig):
         Field(
             default={},
             validation_alias=AliasChoices("APP_ID", "PHYTOMNI_APP_ID"),
+            description=(
+                "Huawei application UUID map keyed by analysis type. "
+                "Not a CPU or memory size; those live on RESOURCE."
+            ),
         ),
     ] = {}
 
@@ -189,7 +200,13 @@ class GeneNetworkConfig(AnalystConfig):
 
 # pylint: disable-next=too-many-ancestors
 class DeepGenomeConfig(DataConfig, AnalystConfig):
-    """Configuration settings specific to gene function analysis tasks."""
+    """Configuration settings specific to gene function analysis tasks.
+
+    ``SPA_FAQ_URL`` / ``SPA_REPO_ID`` are the species-taxonomy FAQ
+    (Latin name to NCBI taxid) used by Evolution and DeepGenome, not a
+    web SPA. ``COMPUTE_RESOURCE_BY_TYPE`` raises evolution and protein
+    analyses to ``medium``.
+    """
 
     RELAY_TIMEOUT_PROFILE: ClassVar[str | None] = None
     TIMEOUT: float = 600.0
@@ -219,6 +236,10 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
             validation_alias=AliasChoices(
                 "SPA_REPO_ID", "PHYTOMNI_SPA_REPO_ID"
             ),
+            description=(
+                "Species-taxonomy FAQ repository id for Latin-name "
+                "to NCBI taxid lookup. Not a web frontend id."
+            ),
         ),
     ] = ""
     SPA_FAQ_URL: Annotated[
@@ -227,6 +248,10 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
             default="",
             validation_alias=AliasChoices(
                 "SPA_FAQ_URL", "PHYTOMNI_SPA_FAQ_URL"
+            ),
+            description=(
+                "Species-taxonomy FAQ URL template. Format with "
+                "repo_id=SPA_REPO_ID. Not a web SPA origin."
             ),
         ),
     ] = ""
@@ -248,13 +273,21 @@ class DigitalDesignConfig(AnalystConfig):
 
 
 class InSilicoResearchConfig(AnalystConfig):
-    """Configuration settings specific to in-silico research tasks."""
+    """Configuration settings specific to in-silico research tasks.
+
+    Defaults ``COMPUTE_RESOURCE`` to ``medium`` so Research children
+    do not inherit Analyst's ``small`` tier.
+    """
 
     COMPUTE_RESOURCE: ComputeResourceName = "medium"
 
 
 class EnvironmentConfig(AnalystConfig):
-    """Configuration settings specific to environment tasks."""
+    """Configuration settings specific to environment tasks.
+
+    Defaults ``COMPUTE_RESOURCE`` to ``large``. Environment is an
+    Analyst-backed subgraph, not an MCP tool.
+    """
 
     COMPUTE_RESOURCE: ComputeResourceName = "large"
     ENVIRONMENT_DATA: str = str(PRE_PREPARED_DATA_PATH)

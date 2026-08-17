@@ -2,7 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""HTTP API settings model."""
+"""HTTP API settings model.
+
+A2A and relay stay behind ``A2A_ENABLED`` / ``RELAY_ENABLED``. There
+is no A2UI enable flag: A2UI surfaces are always on. Conversation
+context V1 is also always on in this process and does not read
+``MEMORY_ENABLED``.
+"""
 
 from pathlib import Path
 from typing import Annotated
@@ -22,7 +28,13 @@ _API_CACHE_DIR = Path(".cache") / "phytomni"
 
 
 class ApiConfig(ApiLimitsConfig):
-    """Non-secret configuration for the external HTTP API service."""
+    """Non-secret configuration for the external HTTP API service.
+
+    ``MEMORY_ENABLED`` gates the explicit cross-session memory store
+    only. Conversation-context V1, A2UI, and upload routes do not
+    consult it. ``A2A_ENABLED`` and ``RELAY_ENABLED`` remain real
+    feature flags and stay off unless an operator turns them on.
+    """
 
     API_HOST: str = "127.0.0.1"
     API_PORT: int = 8080
@@ -41,6 +53,10 @@ class ApiConfig(ApiLimitsConfig):
     )
     MEMORY_ENABLED: bool = Field(
         default=False,
+        description=(
+            "Enable the explicit cross-session memory store. "
+            "Conversation-context V1 is always on and ignores this flag."
+        ),
         validation_alias=AliasChoices(
             "MEMORY_ENABLED", "PHYTOMNI_MEMORY_ENABLED"
         ),

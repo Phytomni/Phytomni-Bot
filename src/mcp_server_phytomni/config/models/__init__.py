@@ -2,7 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Configuration model leaves."""
+"""Split configuration models loaded through the defaults facade.
+
+Concrete leaves live here so ``config.defaults`` can keep historical
+import paths. ``resolve_compute_resource`` is the only submit-site
+tier helper; ``APP_ID`` is not a compute size.
+"""
 
 from .agents import (
     AnalystConfig,
