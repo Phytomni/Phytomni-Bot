@@ -16,6 +16,7 @@ plugs into DeepResearchAgent via multiple inheritance and shares the
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -34,7 +35,11 @@ from ..knowledge.retrieval_result import (
     RetrievalProtocolError,
     retrieval_unavailable_error,
 )
-from .evidence_filter import compose_review_retrieve_query
+from .evidence_filter import (
+    compose_review_retrieve_query,
+    extract_review_query_terms,
+    review_document_permitted,
+)
 from .helpers import _format_doc_fragment
 
 if TYPE_CHECKING:
@@ -345,12 +350,16 @@ class ReviewPlanningMixin:
             self.review_config.MAX_TOKENS - state["total_length"]
         ) / max(1, len(dimensions))
 
+        user_query = str(state.get("original_user_query") or "")
         for index, dimension in enumerate(dimensions):
             result = indexed_by_index.get(index, [])
             fragments = self._dimension_fragments(
                 result,
                 accumulator,
                 state["total_length"] + dimension_length * (index + 1),
+                query_terms=extract_review_query_terms(
+                    f"{user_query} {dimension}"
+                ),
             )
             dimension_params.append(
                 {
@@ -399,13 +408,24 @@ class ReviewPlanningMixin:
         dimension_result: Any,
         accumulator: RetrievalAccumulator,
         length_limit: float,
+        query_terms: object = (),
     ) -> list[str]:
         """Format bounded fragments for one research dimension."""
         fragments: list[str] = []
         if isinstance(dimension_result, BaseException):
             return fragments
+        if isinstance(query_terms, (str, bytes)) or not isinstance(
+            query_terms, Iterable
+        ):
+            terms: Iterable[object] = ()
+        else:
+            terms = query_terms
 
         for doc in dimension_result:
+            if not isinstance(doc, dict):
+                continue
+            if not review_document_permitted(doc, terms):
+                continue
             current_doc_id = f"document {accumulator.file_id + 1:03d}"
             doc_copy = doc.copy()
             doc_copy["doc_id"] = current_doc_id

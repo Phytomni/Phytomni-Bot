@@ -250,6 +250,42 @@ def test_format_supplementary_results_joins_blocks_with_separator() -> None:
     assert len(add_doc_list) == 2
 
 
+def test_format_supplementary_query_skips_off_topic_documents() -> None:
+    """Supplementary C60 or EBV papers do not enter add_doc_list."""
+    docs = [
+        {
+            "title": "Baiting proteins with C60",
+            "content": "Fullerene docking.",
+        },
+        {
+            "title": (
+                "Rice OsGL1-6 is involved in leaf cuticular wax "
+                "accumulation and drought resistance"
+            ),
+            "content": "Antisense plants lost wax.",
+        },
+    ]
+    add_doc_list: list = []
+    context = SupplementaryResultContext(
+        subtopic_idx=0,
+        add_queries=["OsCER1 wax biosynthesis in rice"],
+        add_query_results=[docs],
+        add_doc_list=add_doc_list,
+        draft_content="",
+        query_terms=("zos7", "rice", "drought"),
+    )
+    probe = _ReportProbe()
+    fmt_state = SupplementaryFormatState(
+        query_length=10_000, counters=SupplementaryCounters()
+    )
+
+    block = probe.format_supplementary_query(context, docs, 0, fmt_state)
+
+    assert len(add_doc_list) == 1
+    assert "OsGL1-6" in add_doc_list[0]["title"]
+    assert "C60" not in block
+
+
 class _MixinSurface(ReviewReportMixin):
     """Harness that keeps the mixin public wrappers un-overridden."""
 

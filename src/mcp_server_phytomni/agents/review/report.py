@@ -29,6 +29,10 @@ from ..knowledge.retrieval_result import (
     require_retrieval_docs,
     retrieval_unavailable_error,
 )
+from .evidence_filter import (
+    extract_review_query_terms,
+    review_document_permitted,
+)
 from .helpers import (
     CITATION_PATTERN,
     _doc_content,
@@ -87,6 +91,7 @@ class SupplementaryResultContext:
         add_query_results: Retrieval results for supplementary queries.
         add_doc_list: Mutable list that receives accepted new documents.
         draft_content: Draft content used to size supplementary snippets.
+        query_terms: Optional gene or crop tokens from the parent review.
     """
 
     subtopic_idx: int
@@ -94,6 +99,7 @@ class SupplementaryResultContext:
     add_query_results: list[Any]
     add_doc_list: list[dict[str, Any]]
     draft_content: str
+    query_terms: tuple[str, ...] = ()
 
 
 @dataclass
@@ -268,9 +274,17 @@ class ReviewReportMixin:
         query = str(context.add_queries[add_num])
         fragments = []
         valid_doc_count = 0
+        query_terms = {
+            *context.query_terms,
+            *extract_review_query_terms(query),
+        }
         for doc in add_result:
             if valid_doc_count >= 3:
                 break
+            if not isinstance(doc, dict):
+                continue
+            if not review_document_permitted(doc, query_terms):
+                continue
             current_doc_id = (
                 "add document "
                 f"S{context.subtopic_idx + 1}-{counters.file_id + 1:03d}"

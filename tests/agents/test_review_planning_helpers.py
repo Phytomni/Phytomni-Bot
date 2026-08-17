@@ -21,6 +21,9 @@ from typing import Any, cast
 import pytest
 
 from mcp_server_phytomni.agents.review import planning as review_planning
+from mcp_server_phytomni.agents.review.evidence_filter import (
+    extract_review_query_terms,
+)
 from mcp_server_phytomni.agents.review.helpers import (
     CITATION_PATTERN,
     _doc_content,
@@ -156,10 +159,14 @@ class _PlanningProbe(ReviewPlanningMixin):
         dimension_result: Any,
         accumulator: RetrievalAccumulator,
         length_limit: float,
+        query_terms: object = (),
     ) -> list[str]:
         """Public proxy for the protected ``_dimension_fragments`` helper."""
         return self._dimension_fragments(
-            dimension_result, accumulator, length_limit
+            dimension_result,
+            accumulator,
+            length_limit,
+            query_terms=query_terms,
         )
 
 
@@ -362,3 +369,43 @@ def test_dimension_fragments_uses_three_digit_doc_id_format() -> None:
         "document 005",
         "document 006",
     ]
+
+
+def test_dimension_fragments_skips_off_topic_documents() -> None:
+    """Biomedical denylist papers never receive a document id."""
+    probe = _PlanningProbe()
+    accumulator = RetrievalAccumulator(raw_docs=[], current_length=0)
+    docs = [
+        {
+            "title": "Baiting proteins with C60",
+            "content": "Fullerene docking in human cells.",
+        },
+        {
+            "title": (
+                "Rice OsGL1-6 is involved in leaf cuticular wax "
+                "accumulation and drought resistance"
+            ),
+            "content": "Antisense plants lost wax.",
+        },
+        {
+            "title": (
+                "Small molecule perturbation of the CAND1-Cullin1 "
+                "cycle triggers Epstein-Barr virus reactivation"
+            ),
+            "content": "Viral latency.",
+        },
+    ]
+    terms = extract_review_query_terms(
+        "ZOS7-MYB60-CER1 pathway in upland rice drought"
+    )
+
+    fragments = probe.dimension_fragments(
+        docs, accumulator, length_limit=10_000, query_terms=terms
+    )
+
+    assert len(fragments) == 1
+    assert len(accumulator.raw_docs) == 1
+    assert accumulator.raw_docs[0]["doc_id"] == "document 001"
+    assert "OsGL1-6" in accumulator.raw_docs[0]["title"]
+    assert "C60" not in " ".join(fragments)
+    assert "Epstein-Barr" not in " ".join(fragments)
