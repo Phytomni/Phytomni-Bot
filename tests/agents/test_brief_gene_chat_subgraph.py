@@ -90,11 +90,6 @@ def _gene_found_state() -> BriefGeneAgentState:
     )
 
 
-# ---------------------------------------------------------------------------
-# Compile-time node registration + xray expansion of the shared chat mount.
-# ---------------------------------------------------------------------------
-
-
 def test_compiled_graph_xray_expands_chat_subgraph() -> None:
     """xray=1 surfaces ``chat:``-prefixed keys under the shared mount."""
     agent = _build_agent()
@@ -109,9 +104,7 @@ def test_compiled_graph_xray_expands_chat_subgraph() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
 # follow_up site: prep + shared chat + post split.
-# ---------------------------------------------------------------------------
 
 
 def _state_post_render() -> BriefGeneAgentState:

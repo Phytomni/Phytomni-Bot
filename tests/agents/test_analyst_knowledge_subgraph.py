@@ -94,14 +94,7 @@ def _build_agent(
     )
 
 
-# ---------------------------------------------------------------------------
 # Direct call: ``method_retrieve_node`` still awaits ``multi_retrieve``.
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Prep node stages ``knowledge_payload`` + ``pending_post_knowledge``.
-# ---------------------------------------------------------------------------
 
 
 async def test_method_retrieve_prep_node_stages_payload(
@@ -122,11 +115,6 @@ async def test_method_retrieve_prep_node_stages_payload(
     assert payload["is_follow_up"] is False
     assert payload["repo_id_dict"] == dict(agent.analyst_config.REPO_ID_DICT)
     assert "obs_file_list" not in payload
-
-
-# ---------------------------------------------------------------------------
-# Post node parses ``knowledge_response`` into ``method_context``.
-# ---------------------------------------------------------------------------
 
 
 async def test_method_retrieve_post_node_parses_knowledge_response(
@@ -191,11 +179,6 @@ async def test_method_retrieve_post_node_accepts_explicit_no_match(
     assert method_context["retrieve_context"] == ""
 
 
-# ---------------------------------------------------------------------------
-# Structural: the method_retrieve site mounts the prep+post pair.
-# ---------------------------------------------------------------------------
-
-
 def test_compiled_graph_xray_expands_knowledge_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -219,11 +202,6 @@ def test_compiled_graph_xray_expands_knowledge_subgraph(
     assert "method_retrieve_prep_node" in node_keys
     assert "method_retrieve_post_node" in node_keys
     assert "method_retrieve_node" not in node_keys
-
-
-# ---------------------------------------------------------------------------
-# Cross-product: both chat AND knowledge subgraphs are mounted.
-# ---------------------------------------------------------------------------
 
 
 def test_compiled_graph_xray_expands_both_subgraphs(

@@ -131,11 +131,6 @@ def _gene_not_found_state() -> BriefGeneAgentState:
     return base
 
 
-# ---------------------------------------------------------------------------
-# prep_tasks_node: per-gene fan-out task count.
-# ---------------------------------------------------------------------------
-
-
 async def test_prep_tasks_node_gene_found_emits_n_plus_one_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -170,11 +165,6 @@ async def test_prep_tasks_node_gene_not_found_emits_single_task(
     assert ki["is_follow_up"] is False
 
 
-# ---------------------------------------------------------------------------
-# route_retrieve_tasks: Send dispatch list shape.
-# ---------------------------------------------------------------------------
-
-
 def test_route_retrieve_tasks_emits_one_send_per_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -192,11 +182,6 @@ def test_route_retrieve_tasks_emits_one_send_per_task(
     # Each Send routes to the worker and carries the per-task index.
     indices = sorted(s.arg["task_index"] for s in sends)
     assert indices == [0, 1, 2]
-
-
-# ---------------------------------------------------------------------------
-# Worker factory: success + exception sentinel paths.
-# ---------------------------------------------------------------------------
 
 
 async def test_retrieve_worker_factory_success_path(
@@ -539,11 +524,6 @@ async def test_retrieve_worker_cleanup_failure_cannot_mask_cancellation(
     assert delta == {"retrieve_cancelled_indices": [1]}
 
 
-# ---------------------------------------------------------------------------
-# reduce_node: sort + merge by score + top_n cap.
-# ---------------------------------------------------------------------------
-
-
 async def test_retrieve_reduce_node_sorts_by_task_index_and_score(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -769,11 +749,6 @@ async def test_retrieve_reduce_rejects_invalid_annotation_failure_ordinals(
 
     with pytest.raises(RetrievalProtocolError):
         await agent.retrieve_reduce_node(state)
-
-
-# ---------------------------------------------------------------------------
-# Compile-time node sets: the Send-dispatch fan-out wire shape.
-# ---------------------------------------------------------------------------
 
 
 def test_compiled_graph_registers_fan_out_triad(

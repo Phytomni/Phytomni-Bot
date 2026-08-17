@@ -73,10 +73,7 @@ CORE_PROPERTIES_XML = (
     "</cp:coreProperties>"
 ).encode()
 
-
-# ---------------------------------------------------------------------------
 # Payload definitions (one per public MCP tool name in mcp/schemas.py)
-# ---------------------------------------------------------------------------
 
 PAYLOADS: dict[str, dict[str, Any]] = {
     "chat_agent.json": {
@@ -175,11 +172,6 @@ PAYLOADS: dict[str, dict[str, Any]] = {
     },
 }
 
-
-# ---------------------------------------------------------------------------
-# Static text assets
-# ---------------------------------------------------------------------------
-
 PLANT_SCIENCE_BRIEF_MD = """# Plant Science Brief: Drought Tolerance in Wheat
 
 Drought is the single largest abiotic constraint on wheat (Triticum
@@ -224,7 +216,6 @@ barley.
 This brief is a synthesised demo summary and not a peer-reviewed source.
 """
 
-
 ARABIDOPSIS_FASTA = """>AT1G01010 NAC001 NAC domain transcription factor
 MEDQVGFGFRPNDEELVGHYLRNKIEGNTSRDVEVAISEVNICSYDPWNL
 >AT1G75370 SLA1 putative SLAC1-family anion channel
@@ -257,7 +248,6 @@ CCGTACCGTACCGTACCGTACCGTACCGTACCGTACCGTACCGTACCGTA
 HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH
 """
 
-
 METADATA_HEADER: list[str] = [
     "sample_id",
     "species",
@@ -273,11 +263,6 @@ METADATA_ROWS: list[list[Any]] = [
     ["S004", "Oryza sativa", "leaf", "drought", 1],
     ["S005", "Triticum aestivum", "leaf", "drought", 1],
 ]
-
-
-# ---------------------------------------------------------------------------
-# Manifest + README templates
-# ---------------------------------------------------------------------------
 
 TOOL_INDEX: tuple[dict[str, str], ...] = (
     {
@@ -414,11 +399,6 @@ point at the per-session upload location (see
 """
 
 
-# ---------------------------------------------------------------------------
-# Writers
-# ---------------------------------------------------------------------------
-
-
 def _ensure_parent(path: Path) -> None:
     """Create the parent directory of *path* if it is missing."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -505,11 +485,6 @@ def write_xlsx(
             else:
                 payload = src.read(name)
             dst.writestr(info, payload)
-
-
-# ---------------------------------------------------------------------------
-# Orchestration
-# ---------------------------------------------------------------------------
 
 
 def _render_readme() -> str:

@@ -292,9 +292,7 @@ def test_map_round_trip_preserves_dispatch_shape() -> None:
     assert state_update["output_dir"] == payload["output_dir"]
 
 
-# ---------------------------------------------------------------------------
 # Fingerprint-threading integration test
-# ---------------------------------------------------------------------------
 
 
 def _dispatch_request() -> dict[str, Any]:

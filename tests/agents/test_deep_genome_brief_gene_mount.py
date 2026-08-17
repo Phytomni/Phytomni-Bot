@@ -34,7 +34,6 @@ from ._subgraph_branch_fakes import failing_async_object
 
 pytestmark = pytest.mark.agent
 
-
 # The fake deliberately keeps an open state mapping: its canned output carries
 # independent BriefGene fields, and mirroring the production TypedDict here
 # would couple the test oracle to the implementation state contract.
@@ -79,11 +78,6 @@ def _build_fake_brief_gene_app(
 def _deep_genome_state(gene_id: str = "AT1G01010") -> dict[str, Any]:
     """Minimal deep_genome state for the mount node input."""
     return {"gene_id": gene_id, "species_code": "ath"}
-
-
-# ---------------------------------------------------------------------------
-# Happy-path IO projection: BriefGeneOutput → deep_genome state delta.
-# ---------------------------------------------------------------------------
 
 
 async def test_brief_gene_mount_projects_gene_annotation_dict_shape() -> None:
@@ -166,11 +160,8 @@ async def test_brief_gene_mount_consumes_preamble_verbatim() -> None:
 async def test_brief_gene_mount_writes_experiment_branch_counter() -> None:
     """Mount writes ``experiment_completed_branches: 1``.
 
-    M11 — the legacy ``part1_node`` LLM aggregator that previously
-    wrote this +1 (after waiting for 4 preamble branches) is
-    deleted; the mount substitutes for it and contributes the +1
-    that experiment_node's 2-source barrier needs (the other +1
-    comes from synthesize_node on the analyst side).
+    The mount contributes the +1 that experiment_node's two-source
+    barrier needs; the other +1 comes from synthesize_node.
     """
     fake_app = _build_fake_brief_gene_app()
     mount = make_brief_gene_mount_node(fake_app)
@@ -179,9 +170,7 @@ async def test_brief_gene_mount_writes_experiment_branch_counter() -> None:
     delta = await mount(cast(Any, state))
 
     assert delta["experiment_completed_branches"] == 1
-    # M5-era part1_completed_branches no longer projected
     assert "part1_completed_branches" not in delta
-    # M5 brief_response prefix path removed
     assert "brief_response" not in delta
 
 
@@ -206,11 +195,6 @@ async def test_brief_gene_mount_runs_post_projection_persistence_hook() -> (
     delta = await mount(cast(Any, state))
 
     assert seen == [(delta, state)]
-
-
-# ---------------------------------------------------------------------------
-# Input synthesis: gene_id → BriefGeneInput user_query.
-# ---------------------------------------------------------------------------
 
 
 async def test_brief_gene_mount_synthesises_user_query_from_gene_id() -> None:
@@ -244,11 +228,6 @@ async def test_brief_gene_mount_synthesises_user_query_from_gene_id() -> None:
     captured = seen[0]
     assert captured["user_query"] == "AT3G18780"
     assert captured["is_follow_up"] is False
-
-
-# ---------------------------------------------------------------------------
-# Required branch: a profile failure aborts before downstream work starts.
-# ---------------------------------------------------------------------------
 
 
 async def test_brief_gene_mount_raises_required_error_on_failure() -> None:
@@ -366,11 +345,6 @@ async def test_mount_success_rolls_up_literature_degraded() -> None:
     assert delta["preamble"].startswith("# Deep Genome Analysis of AT1G01010")
     assert "Literature retrieval" not in delta["preamble"]
     assert "⚠️" not in delta["preamble"]
-
-
-# ---------------------------------------------------------------------------
-# Empty brief_gene_output: missing keys default rather than crash.
-# ---------------------------------------------------------------------------
 
 
 async def test_brief_gene_mount_handles_partial_brief_gene_output() -> None:

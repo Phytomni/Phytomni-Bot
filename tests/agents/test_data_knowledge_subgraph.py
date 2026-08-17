@@ -48,11 +48,6 @@ def _build_agent(
     )
 
 
-# ---------------------------------------------------------------------------
-# Prep node stages ``knowledge_payload`` + ``pending_post_knowledge``.
-# ---------------------------------------------------------------------------
-
-
 async def test_retrieve_prep_node_stages_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -81,11 +76,6 @@ async def test_retrieve_prep_node_stages_payload(
         agent.data_config.DATA_REPO_ID: agent.data_config.DATA_PAGE_SIZE
     }
     assert "obs_file_list" not in payload
-
-
-# ---------------------------------------------------------------------------
-# Post node parses ``knowledge_response`` into ``retrieve_prompt``.
-# ---------------------------------------------------------------------------
 
 
 async def test_retrieve_post_node_parses_knowledge_response(
@@ -144,11 +134,6 @@ async def test_retrieve_post_node_accepts_explicit_no_match(
     assert "scenario" not in result["retrieve_prompt"].lower().split("user")[0]
 
 
-# ---------------------------------------------------------------------------
-# Structural: the retrieve site mounts the prep + post pair.
-# ---------------------------------------------------------------------------
-
-
 def test_compiled_graph_xray_expands_knowledge_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -172,11 +157,6 @@ def test_compiled_graph_xray_expands_knowledge_subgraph(
     assert "retrieve_prep_node" in node_keys
     assert "retrieve_post_node" in node_keys
     assert "retrieve_node" not in node_keys
-
-
-# ---------------------------------------------------------------------------
-# Cross-product: chat AND knowledge subgraphs mounted.
-# ---------------------------------------------------------------------------
 
 
 def test_compiled_graph_xray_expands_both_subgraphs(

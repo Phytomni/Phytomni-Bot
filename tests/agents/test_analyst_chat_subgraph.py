@@ -50,11 +50,6 @@ def test_compiled_graph_preserves_chat_mount_topology() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Prep nodes stage ``chat_payload`` + ``pending_post``.
-# ---------------------------------------------------------------------------
-
-
 async def test_parse_query_prep_node_stages_payload() -> None:
     """Prep node stages ``chat_payload`` + ``pending_post`` for parse_query."""
     agent = _build_agent()
@@ -214,11 +209,6 @@ async def test_tool_extract_prep_node_stages_payload() -> None:
     }
 
 
-# ---------------------------------------------------------------------------
-# Post nodes parse ``state['chat_response']`` into the legacy delta.
-# ---------------------------------------------------------------------------
-
-
 async def test_parse_query_post_node_parses_chat_response() -> None:
     """Post node parses ``chat_response`` into the parse_query delta."""
     agent = _build_agent()
@@ -342,11 +332,6 @@ async def test_tool_extract_post_node_parses_chat_response() -> None:
     assert result == {"extracted_tools": ["trimmomatic", "trinity"]}
 
 
-# ---------------------------------------------------------------------------
-# Structural xray check: shared chat subgraph is mounted into the analyst app.
-# ---------------------------------------------------------------------------
-
-
 def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     """Flag-on graph exposes the shared chat subgraph to ``xray``.
 
@@ -364,11 +349,6 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     agent = _build_agent()
     node_keys = agent.app.get_graph(xray=True).nodes.keys()
     assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)
-
-
-# ---------------------------------------------------------------------------
-# parse_query_post_node: json code-fence branch (lines 126-127)
-# ---------------------------------------------------------------------------
 
 
 async def test_parse_query_post_node_parses_json_code_fence() -> None:
@@ -398,11 +378,6 @@ async def test_parse_query_post_node_parses_json_code_fence() -> None:
     assert result["plan"] == "initial plan"
 
 
-# ---------------------------------------------------------------------------
-# data_select_prep_node: McpError on load_species_data failure (lines 170-171)
-# ---------------------------------------------------------------------------
-
-
 async def test_data_select_prep_node_raises_on_species_load_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -425,10 +400,7 @@ async def test_data_select_prep_node_raises_on_species_load_failure(
         await agent.data_select_prep_node(state)
 
 
-# ---------------------------------------------------------------------------
 # data_select_post_node: no selected_data key → use whole parsed object
-# (lines 245-248)
-# ---------------------------------------------------------------------------
 
 
 async def test_data_select_post_node_uses_whole_response_when_key_absent() -> (
@@ -473,10 +445,7 @@ async def test_data_select_post_node_raises_on_json_decode_error() -> None:
         await agent.data_select_post_node(state)
 
 
-# ---------------------------------------------------------------------------
 # data_select_post_node: empty/missing chat_response → empty selected_data
-# (line 227 branch arm when no choices)
-# ---------------------------------------------------------------------------
 
 
 async def test_data_select_post_node_returns_unchanged_on_empty_response() -> (
@@ -494,11 +463,6 @@ async def test_data_select_post_node_returns_unchanged_on_empty_response() -> (
     result = await agent.data_select_post_node(state)
 
     assert result["data_list"] == {"obs://user.fa": "fasta"}
-
-
-# ---------------------------------------------------------------------------
-# plan_prep_node: plan_feedback present + obs_file_list non-empty (284-301)
-# ---------------------------------------------------------------------------
 
 
 async def test_plan_prep_node_uses_retrieve_file_feedback_template() -> None:
@@ -527,11 +491,6 @@ async def test_plan_prep_node_uses_retrieve_file_feedback_template() -> None:
     assert "upload-ctx" in chat_payload["user_query"]
 
 
-# ---------------------------------------------------------------------------
-# plan_prep_node: no feedback + obs_file_list non-empty (line 315)
-# ---------------------------------------------------------------------------
-
-
 async def test_plan_prep_node_retrieve_file_template_no_feedback() -> None:
     """Prep uses ``analysis_retrieve_file``: obs files present, no feedback."""
     agent = _build_agent()
@@ -556,11 +515,6 @@ async def test_plan_prep_node_retrieve_file_template_no_feedback() -> None:
     assert "upload-ctx" in chat_payload["user_query"]
 
 
-# ---------------------------------------------------------------------------
-# plan_prep_node: feedback present + no obs_file_list (lines 301-312)
-# ---------------------------------------------------------------------------
-
-
 async def test_plan_prep_node_uses_retrieve_feedback_no_obs_files() -> None:
     """Prep uses ``analysis_retrieve_feedback``: feedback present, no files."""
     agent = _build_agent()
@@ -583,11 +537,6 @@ async def test_plan_prep_node_uses_retrieve_feedback_no_obs_files() -> None:
     chat_payload = result["chat_payload"]
     assert chat_payload is not None
     assert "needs more detail" in chat_payload["user_query"]
-
-
-# ---------------------------------------------------------------------------
-# plan_post_node: no content → McpError (lines 382-389)
-# ---------------------------------------------------------------------------
 
 
 async def test_plan_post_node_raises_mcp_error_when_no_content() -> None:
@@ -618,11 +567,6 @@ async def test_plan_post_node_raises_mcp_error_on_empty_content() -> None:
         await agent.plan_post_node(state)
 
 
-# ---------------------------------------------------------------------------
-# check_post_node: json code-fence branch in response (lines 489-491)
-# ---------------------------------------------------------------------------
-
-
 async def test_check_post_node_parses_json_code_fence() -> None:
     """Post node extracts JSON from a fenced critic response."""
     agent = _build_agent()
@@ -645,11 +589,6 @@ async def test_check_post_node_parses_json_code_fence() -> None:
     assert result == {"plan_feedback": "APPROVED"}
 
 
-# ---------------------------------------------------------------------------
-# check_post_node: JSON parse exception → score=0, REJECTED (lines 497-500)
-# ---------------------------------------------------------------------------
-
-
 async def test_check_post_node_handles_json_decode_error_gracefully() -> None:
     """Post node sets score=0/REJECTED when JSON parse fails."""
     agent = _build_agent()
@@ -668,11 +607,6 @@ async def test_check_post_node_handles_json_decode_error_gracefully() -> None:
     result = await agent.check_post_node(state)
 
     assert result == {"plan_feedback": ""}
-
-
-# ---------------------------------------------------------------------------
-# check_post_node: retries exhausted + min_score=0 → APPROVED (lines 511-513)
-# ---------------------------------------------------------------------------
 
 
 async def test_check_post_node_approves_exhausted_retries_zero_min_score() -> (
@@ -707,11 +641,6 @@ async def test_check_post_node_approves_exhausted_retries_zero_min_score() -> (
     assert result == {"plan_feedback": "APPROVED"}
 
 
-# ---------------------------------------------------------------------------
-# check_post_node: retries exhausted + min_score>0 → McpError (lines 514-524)
-# ---------------------------------------------------------------------------
-
-
 async def test_check_post_node_raises_exhausted_retries_with_min_score() -> (
     None
 ):
@@ -743,11 +672,6 @@ async def test_check_post_node_raises_exhausted_retries_with_min_score() -> (
         await agent.check_post_node(state)
 
 
-# ---------------------------------------------------------------------------
-# check_post_node: not exhausted + REJECTED → return feedback (line 525)
-# ---------------------------------------------------------------------------
-
-
 async def test_check_post_node_returns_feedback_rejected_retries_remain() -> (
     None
 ):
@@ -769,11 +693,6 @@ async def test_check_post_node_returns_feedback_rejected_retries_remain() -> (
     result = await agent.check_post_node(state)
 
     assert result == {"plan_feedback": "add more steps"}
-
-
-# ---------------------------------------------------------------------------
-# tool_extract_post_node: json code-fence branch (lines 587-588)
-# ---------------------------------------------------------------------------
 
 
 async def test_tool_extract_post_node_parses_json_code_fence() -> None:
