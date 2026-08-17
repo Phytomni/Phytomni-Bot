@@ -9,10 +9,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-try:
-    from langgraph.errors import NodeCancelledError
-except ImportError:  # pragma: no cover - older langgraph
-    NodeCancelledError = asyncio.CancelledError
+from langgraph.errors import NodeCancelledError
 
 GRAPH_CANCELLATION = (asyncio.CancelledError, NodeCancelledError)
 
