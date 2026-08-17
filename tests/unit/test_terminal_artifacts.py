@@ -321,3 +321,291 @@ async def test_result_archive_manifest_role_fails_closed() -> None:
 
     assert result.artifacts[0].role is ArtifactRole.UNKNOWN
     assert result.warnings[0].code == "artifact_manifest_invalid"
+
+
+def test_artifact_set_to_public_drops_source_path() -> None:
+    """Public projection keeps the download ref and hides the source path."""
+    from mcp_server_phytomni.runtime.artifact_roles import ClassifiedArtifact
+
+    public = TerminalArtifactSet(
+        artifacts=(
+            ClassifiedArtifact(
+                source_path="/private/obsfs/report.md",
+                relative_path="report.md",
+                role=ArtifactRole.SCIENTIFIC_REPORT,
+                media_type="text/markdown",
+                size_bytes=12,
+                download_ref="/obs/phytomni/run/report.md",
+            ),
+        ),
+        warnings=(),
+    ).to_public()
+    assert public[0].name == "report.md"
+    assert public[0].download_ref == "/obs/phytomni/run/report.md"
+
+
+@pytest.mark.asyncio
+async def test_structured_listing_failure_returns_warning() -> None:
+    """A structured listing OSError degrades to one retryable warning."""
+
+    async def boom(_output_dir: str) -> list[ListedArtifactObject]:
+        raise OSError("list failed")
+
+    result = await collect_terminal_artifacts(
+        task_id="task-1", output_dir="owner/out", lister=boom
+    )
+    assert result.artifacts == ()
+    assert result.warnings[0].code == "artifact_listing_failed"
+
+
+@pytest.mark.asyncio
+async def test_structured_listing_truncates_and_sync_manifest_loader() -> None:
+    """Over-cap listings warn and a sync loader is accepted without await."""
+
+    async def many(_output_dir: str) -> list[ListedArtifactObject]:
+        return [
+            _listed_object("b.md"),
+            _listed_object("a.md"),
+            _listed_object("c.md"),
+        ]
+
+    from mcp_server_phytomni.runtime.terminal_artifacts import (
+        collect_terminal_artifact_set,
+    )
+
+    result = await collect_terminal_artifact_set(
+        task_id="task-1",
+        output_dir="owner/out",
+        lister=many,
+        manifest_loader=lambda _path: None,
+        cap=1,
+    )
+    assert result.artifacts[0].relative_path == "a.md"
+    assert any(
+        warning.code == "artifact_listing_truncated"
+        for warning in result.warnings
+    )
+
+
+@pytest.mark.asyncio
+async def test_manifest_loader_exception_fails_closed() -> None:
+    """A loader exception becomes an invalid manifest, not a raised error."""
+
+    async def one(_output_dir: str) -> list[ListedArtifactObject]:
+        return [_listed_object("report.md")]
+
+    async def boom(_output_dir: str) -> None:
+        raise RuntimeError("manifest down")
+
+    result = await collect_terminal_artifacts(
+        task_id="task-1",
+        output_dir="owner/out",
+        lister=one,
+        manifest_loader=boom,
+    )
+    assert result.artifacts[0].role is ArtifactRole.UNKNOWN
+    assert result.warnings[0].code == "artifact_manifest_invalid"
+
+
+def test_structured_collect_requires_task_identity() -> None:
+    """Structured collection without task_id and output_dir fails fast."""
+    with pytest.raises(ValueError, match="task_id and output_dir"):
+        collect_terminal_artifacts(lister=lambda _path: [])
+
+
+@pytest.mark.asyncio
+async def test_default_listers_use_storage_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default path and object listers forward the current OBS runtime."""
+
+    async def fake_paths(output_dir: str, **kwargs: Any) -> list[str]:
+        assert kwargs["obs_runtime"] == "runtime"
+        return [f"{output_dir}/report.md"]
+
+    async def fake_objects(
+        output_dir: str, **kwargs: Any
+    ) -> list[ListedArtifactObject]:
+        del output_dir
+        assert kwargs["obs_runtime"] == "runtime"
+        return [_listed_object("report.md")]
+
+    monkeypatch.setattr(
+        terminal_artifacts, "current_obs_runtime", lambda: "runtime"
+    )
+    monkeypatch.setattr(
+        terminal_artifacts, "list_artifact_paths_with_runtime", fake_paths
+    )
+    monkeypatch.setattr(
+        terminal_artifacts, "list_artifact_objects_with_runtime", fake_objects
+    )
+    live = [
+        {"task_id": "t1", "status": "succeeded", "output_dir": "owner/out"}
+    ]
+    enumerated = await terminal_artifacts.enumerate_artifact_paths(live)
+    assert enumerated[0]["artifact_paths"] == ["owner/out/report.md"]
+    artifact_set = await terminal_artifacts.collect_terminal_artifact_set(
+        task_id="t1",
+        output_dir="owner/out",
+        manifest_loader=lambda _path: None,
+    )
+    assert artifact_set.artifacts[0].relative_path == "report.md"
+
+
+@pytest.mark.asyncio
+async def test_default_manifest_loader_reads_local_file(tmp_path) -> None:
+    """A listed local manifest is parsed when no custom loader is supplied."""
+    payload = {
+        "version": "1.0",
+        "artifacts": [
+            {
+                "path": "report.md",
+                "role": "scientific_report",
+                "media_type": "text/markdown",
+            }
+        ],
+    }
+    manifest_path = tmp_path / ".phytomni-artifacts.json"
+    manifest_path.write_text(
+        terminal_artifacts.json.dumps(payload), encoding="utf-8"
+    )
+
+    async def listed(_output_dir: str) -> list[ListedArtifactObject]:
+        return [
+            ListedArtifactObject(
+                relative_path=".phytomni-artifacts.json",
+                source_path=str(manifest_path),
+                size_bytes=manifest_path.stat().st_size,
+                download_ref="/obs/phytomni/run/.phytomni-artifacts.json",
+            ),
+            ListedArtifactObject(
+                relative_path="report.md",
+                source_path=str(tmp_path / "report.md"),
+                size_bytes=12,
+                download_ref="/obs/phytomni/run/report.md",
+            ),
+        ]
+
+    result = await collect_terminal_artifacts(
+        task_id="task-1", output_dir="owner/out", lister=listed
+    )
+    assert result.artifacts[1].role is ArtifactRole.SCIENTIFIC_REPORT
+
+
+@pytest.mark.asyncio
+async def test_manifest_size_cap_and_download_fallback(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Oversize manifests fail closed and missing local files download."""
+
+    async def oversized(_output_dir: str) -> list[ListedArtifactObject]:
+        return [
+            ListedArtifactObject(
+                relative_path=".phytomni-artifacts.json",
+                source_path=str(tmp_path / "missing.json"),
+                size_bytes=40_000,
+                download_ref="/obs/phytomni/run/.phytomni-artifacts.json",
+            )
+        ]
+
+    result = await collect_terminal_artifacts(
+        task_id="task-1", output_dir="owner/out", lister=oversized
+    )
+    assert result.warnings[0].code == "artifact_manifest_invalid"
+    payload = terminal_artifacts.json.dumps(
+        {
+            "version": "1.0",
+            "artifacts": [
+                {
+                    "path": "report.md",
+                    "role": "scientific_report",
+                    "media_type": "text/markdown",
+                }
+            ],
+        }
+    ).encode()
+    downloaded = tmp_path / "downloaded.json"
+    downloaded.write_bytes(payload)
+
+    async def fake_download(reference: str, dest_dir: str) -> str:
+        assert dest_dir == "terminal-manifest"
+        return str(downloaded)
+
+    monkeypatch.setattr(terminal_artifacts, "download_obs_file", fake_download)
+
+    async def remote(_output_dir: str) -> list[ListedArtifactObject]:
+        return [
+            ListedArtifactObject(
+                relative_path=".phytomni-artifacts.json",
+                source_path=str(tmp_path / "not-mounted.json"),
+                size_bytes=len(payload),
+                download_ref="/obs/phytomni/run/.phytomni-artifacts.json",
+            )
+        ]
+
+    remote_result = await collect_terminal_artifacts(
+        task_id="task-1", output_dir="owner/out", lister=remote
+    )
+    assert remote_result.artifacts[0].role is ArtifactRole.DIAGNOSTIC
+
+
+@pytest.mark.asyncio
+async def test_manifest_download_requires_reference(tmp_path) -> None:
+    """A remote manifest without a download ref fails closed."""
+
+    async def listed(_output_dir: str) -> list[ListedArtifactObject]:
+        return [
+            ListedArtifactObject(
+                relative_path=".phytomni-artifacts.json",
+                source_path=str(tmp_path / "missing.json"),
+                size_bytes=12,
+                download_ref=None,
+            )
+        ]
+
+    result = await collect_terminal_artifacts(
+        task_id="task-1", output_dir="owner/out", lister=listed
+    )
+    assert result.warnings[0].code == "artifact_manifest_invalid"
+
+
+@pytest.mark.asyncio
+async def test_manifest_rejects_duplicate_keys_and_oversize_body(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Duplicate JSON keys and post-read oversize bodies fail closed."""
+    duplicate = tmp_path / "dup.json"
+    duplicate.write_text('{"version":"1.0","version":"2.0"}', encoding="utf-8")
+
+    async def listed(_output_dir: str) -> list[ListedArtifactObject]:
+        return [
+            ListedArtifactObject(
+                relative_path=".phytomni-artifacts.json",
+                source_path=str(duplicate),
+                size_bytes=duplicate.stat().st_size,
+                download_ref="/obs/phytomni/run/.phytomni-artifacts.json",
+            )
+        ]
+
+    result = await collect_terminal_artifacts(
+        task_id="task-1", output_dir="owner/out", lister=listed
+    )
+    assert result.warnings[0].code == "artifact_manifest_invalid"
+    huge = tmp_path / "huge.json"
+    huge.write_bytes(b"x" * 40_000)
+    monkeypatch.setattr(terminal_artifacts, "_MAX_MANIFEST_BYTES", 10)
+
+    async def huge_listed(_output_dir: str) -> list[ListedArtifactObject]:
+        return [
+            ListedArtifactObject(
+                relative_path=".phytomni-artifacts.json",
+                source_path=str(huge),
+                size_bytes=8,
+                download_ref="/obs/phytomni/run/.phytomni-artifacts.json",
+            )
+        ]
+
+    huge_result = await collect_terminal_artifacts(
+        task_id="task-1", output_dir="owner/out", lister=huge_listed
+    )
+    assert huge_result.warnings[0].code == "artifact_manifest_invalid"

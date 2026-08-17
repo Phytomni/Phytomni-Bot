@@ -227,3 +227,254 @@ def test_load_rejects_tampered_digest(
             bucket="phytomni",
             client=object(),
         )
+
+
+def test_persist_fails_when_race_reload_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A create race without a readable inventory stays retryable."""
+
+    def missing(*_args: object, **_kwargs: object) -> bytes:
+        raise storage.ObsObjectNotFoundError("missing")
+
+    def raced(*_args: object, **_kwargs: object) -> str:
+        raise storage.ObsObjectAlreadyExistsError("exists")
+
+    monkeypatch.setattr(storage, "get_object_bytes", missing)
+    monkeypatch.setattr(storage, "put_object_bytes_if_absent", raced)
+    with pytest.raises(
+        ResultArchiveError, match="archive_publish_failed"
+    ) as captured:
+        storage.persist_result_archive_inventory(
+            _inventory(), bucket="phytomni", client=object()
+        )
+    assert captured.value.retryable is True
+
+
+def test_persist_maps_put_oserror(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A transport failure during create becomes retryable publish failure."""
+
+    def missing(*_args: object, **_kwargs: object) -> bytes:
+        raise storage.ObsObjectNotFoundError("missing")
+
+    def denied(*_args: object, **_kwargs: object) -> str:
+        raise OSError("denied")
+
+    monkeypatch.setattr(storage, "get_object_bytes", missing)
+    monkeypatch.setattr(storage, "put_object_bytes_if_absent", denied)
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        storage.persist_result_archive_inventory(
+            _inventory(), bucket="phytomni", client=object()
+        )
+
+
+async def test_persist_runtime_reuses_identical_and_rejects_races(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime persist covers reuse, race reload, and transport failure."""
+    inventory = _inventory()
+    runtime = CountingObsRuntime(object())
+    content = storage._serialize_inventory(inventory)
+    monkeypatch.setattr(
+        storage, "get_object_bytes", lambda *_args, **_kwargs: content
+    )
+    assert (
+        await storage.persist_result_archive_inventory_with_runtime(
+            inventory, bucket="phytomni", obs_runtime=runtime
+        )
+    ).endswith(".phytomni-result-inventory.json")
+
+    def missing(*_args: object, **_kwargs: object) -> bytes:
+        raise storage.ObsObjectNotFoundError("missing")
+
+    def raced(*_args: object, **_kwargs: object) -> str:
+        raise storage.ObsObjectAlreadyExistsError("exists")
+
+    monkeypatch.setattr(storage, "get_object_bytes", missing)
+    monkeypatch.setattr(storage, "put_object_bytes_if_absent", raced)
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        await storage.persist_result_archive_inventory_with_runtime(
+            inventory, bucket="phytomni", obs_runtime=runtime
+        )
+    calls = {"n": 0}
+
+    def get_after_race(*_args: object, **_kwargs: object) -> bytes:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise storage.ObsObjectNotFoundError("missing")
+        return content
+
+    monkeypatch.setattr(storage, "get_object_bytes", get_after_race)
+    assert (
+        await storage.persist_result_archive_inventory_with_runtime(
+            inventory, bucket="phytomni", obs_runtime=runtime
+        )
+    ).endswith(".phytomni-result-inventory.json")
+
+    def denied(*_args: object, **_kwargs: object) -> str:
+        raise OSError("denied")
+
+    monkeypatch.setattr(storage, "get_object_bytes", missing)
+    monkeypatch.setattr(storage, "put_object_bytes_if_absent", denied)
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        await storage.persist_result_archive_inventory_with_runtime(
+            inventory, bucket="phytomni", obs_runtime=runtime
+        )
+
+
+async def test_load_runtime_revalidates_and_rejects_bad_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime load accepts a matching inventory and rejects bad inputs."""
+    inventory = _inventory()
+    runtime = CountingObsRuntime(object())
+    monkeypatch.setattr(
+        storage,
+        "get_object_bytes",
+        lambda *_args, **_kwargs: storage._serialize_inventory(inventory),
+    )
+    loaded = await storage.load_result_archive_inventory_with_runtime(
+        inventory.run_root,
+        inventory.digest,
+        bucket="phytomni",
+        obs_runtime=runtime,
+    )
+    assert loaded == inventory
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        await storage.load_result_archive_inventory_with_runtime(
+            1,  # type: ignore[arg-type]
+            inventory.digest,
+            bucket="phytomni",
+            obs_runtime=runtime,
+        )
+    monkeypatch.setattr(storage, "get_object_bytes", lambda *_a, **_k: b"{")
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        await storage.load_result_archive_inventory_with_runtime(
+            inventory.run_root,
+            inventory.digest,
+            bucket="phytomni",
+            obs_runtime=runtime,
+        )
+    raw = json.loads(storage._serialize_inventory(inventory))
+    raw["run_root"] = "/obs/other"
+    monkeypatch.setattr(
+        storage,
+        "get_object_bytes",
+        lambda *_args, **_kwargs: json.dumps(raw).encode(),
+    )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        await storage.load_result_archive_inventory_with_runtime(
+            inventory.run_root,
+            inventory.digest,
+            bucket="phytomni",
+            obs_runtime=runtime,
+        )
+
+
+def test_load_and_key_and_member_validation_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Load, key, and member parsers reject malformed coordinates."""
+    inventory = _inventory()
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        storage.load_result_archive_inventory(
+            None,  # type: ignore[arg-type]
+            inventory.digest,
+            bucket="phytomni",
+            client=object(),
+        )
+    monkeypatch.setattr(storage, "get_object_bytes", lambda *_a, **_k: b"{")
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        storage.load_result_archive_inventory(
+            inventory.run_root,
+            inventory.digest,
+            bucket="phytomni",
+            client=object(),
+        )
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        storage._inventory_key("/obs/phytomni/runs/r", "md5:abcd")
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        storage._inventory_key("/obs/phytomni/runs/r", "sha256:" + "g" * 64)
+    for payload in (
+        {"digest": "x"},
+        {
+            "digest": "sha256:" + "0" * 64,
+            "members": [],
+            "run_root": "/obs/phytomni/runs/r",
+            "total_size_bytes": 3,
+        },
+        {
+            "digest": "sha256:" + "0" * 64,
+            "members": [{}],
+            "run_root": 1,
+            "total_size_bytes": 3,
+        },
+        {
+            "digest": "sha256:" + "0" * 64,
+            "members": [{}],
+            "run_root": "/obs/phytomni/runs/r",
+            "total_size_bytes": True,
+        },
+    ):
+        with pytest.raises(
+            ResultArchiveError, match="archive_contract_invalid"
+        ):
+            storage._inventory_from_data(payload)
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        storage._member_from_data({"role": "scientific_report"})
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        storage._member_from_data(
+            {
+                "archive_path": "results/part-001/report.md",
+                "child_index": 1,
+                "download_ref": "/obs/x",
+                "media_type": "text/plain",
+                "role": "not-a-role",
+                "size_bytes": 3,
+            }
+        )
+    for fields in (
+        (True, 3, "ref", "path", "text/plain"),
+        (1, True, "ref", "path", "text/plain"),
+        (1, 3, 1, "path", "text/plain"),
+        (1, 3, "ref", 1, "text/plain"),
+        (1, 3, "ref", "path", 1),
+    ):
+        with pytest.raises(
+            ResultArchiveError, match="archive_contract_invalid"
+        ):
+            storage._validate_member_fields(*fields)
+    member = {
+        "archive_path": "results/part-001/report.md",
+        "child_index": 1,
+        "download_ref": "/obs/x",
+        "media_type": "text/plain",
+        "role": "scientific_report",
+        "size_bytes": 3,
+    }
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        storage._inventory_from_data(
+            {
+                "digest": "sha256:" + "0" * 64,
+                "members": [member] * 201,
+                "run_root": "/obs/phytomni/runs/r",
+                "total_size_bytes": 3,
+            }
+        )
+
+
+async def test_runtime_existing_read_maps_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-404 inventory read through the runtime stays retryable."""
+
+    def denied(*_args: object, **_kwargs: object) -> bytes:
+        raise OSError("denied")
+
+    monkeypatch.setattr(storage, "get_object_bytes", denied)
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
+        await storage._read_existing_inventory_with_runtime(
+            "phytomni",
+            "owner/key",
+            obs_runtime=CountingObsRuntime(object()),
+        )
