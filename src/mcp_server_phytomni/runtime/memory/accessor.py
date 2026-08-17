@@ -95,17 +95,19 @@ def memory_policy_from_config(
 class MemoryAccessor:
     """Expose a bounded, user-scoped read-only view of ``MemoryStore``.
 
+    Construct with ``options`` (or the same fields via ``**legacy``).
+    This accessor is the explicit cross-session memory store gated by
+    ``MEMORY_ENABLED``. Conversation-context V1 does not use it.
+
     Args:
         store: Optional already-open store, useful for tests and embedded
-            deployments.  ``store_factory`` is used only when the first
-            enabled read occurs, so flag-off graphs never touch SQLite.
-        enabled: Whether reads are enabled.  Disabled accessors return an
-            empty list without opening a store.
-        store_factory: Lazy factory for a local store.
-        policy: Policy used to cap retrieval count and bytes.  When a store
-            is supplied its policy wins unless an explicit policy is given.
-        max_bytes: Hard per-read UTF-8 byte budget.  ``None`` uses the
-            conservative graph default and is always capped by policy.
+            deployments. ``store_factory`` on ``options`` is used only
+            when the first enabled read occurs, so flag-off graphs never
+            touch SQLite.
+        options: Preferred construction bag (``enabled``,
+            ``store_factory``, ``policy``, ``max_bytes``).
+        **legacy: Same fields as ``MemoryAccessorOptions`` for older
+            call sites. Cannot be combined with ``options``.
     """
 
     def __init__(

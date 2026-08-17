@@ -4,12 +4,15 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Autonomous in-process tool router for the HTTP Expert mode.
 
-Public: ToolSelection, ToolSelectionError, select_agent_tool.
+Public: ``select_expert_tool``, ``select_agent_tool``,
+``complete_expert_routing``, ``ToolSelection``, ``ExpertRoutingOptions``,
+and the typed routing errors in ``__all__``.
 
 Re-implements the client ``PhytomniToolRouter.route_query`` selection
 step in-process: one OpenAI tool-calling completion over the MCP agent
 tool surface using the operator's main model. Dispatch stays with the
 HTTP layer, which maps the tool to a slug and reuses _invoke_agent_run.
+This package is HTTP-only; stdio MCP does not call it.
 """
 
 from __future__ import annotations

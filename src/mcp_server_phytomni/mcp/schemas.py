@@ -688,25 +688,25 @@ class GetTaskStatus(BaseModel):
 
 
 class PhytomniAgents(StrEnum):
-    """Enumeration of specialized AI agents for plant science research support.
+    """Public MCP tool names and their routing descriptions.
 
-    Defines available agent types with domain-specific capabilities for
-    different aspects of botanical studies and computational biology workflows.
+    ``AGENT_TOOL_DEFINITIONS`` is the single list used by MCP
+    ``list_tools`` and the HTTP Expert router. Environment, Evolution,
+    and Expert are not MCP tools: the first two are Analyst-backed
+    subgraphs, and Expert is the HTTP ``/v1/query/route`` selector.
 
     Members:
-        CHAT_AGENT: Core language model interface for fundamental Q&A.
-            Usage: Basic conceptual queries, single-domain problem solving.
-            Limitations: Avoid for multi-factor agricultural optimizations.
-        KNOWLEDGE_AGENT: Evidence-based literature synthesis system.
-            Usage: Cross-referenced answers from curated scientific sources.
-        DATA_AGENT: Structured data query interface.
-            Usage: Precise numerical/statistical retrieval from databases.
-        ANALYST_AGENT: Genomic workflow orchestration system.
-            Usage: Automated execution of bioinformatics pipelines.
-
-    Descriptions provide guidance on appropriate application scenarios and
-    technical constraints for each agent type. All agents implement
-    standardized JSON schema for parameter validation.
+        CHAT_AGENT: Immediate self-contained Q&A or file summary.
+        KNOWLEDGE_AGENT: Retrieval-grounded plant-science answer.
+        DATA_AGENT: Exact database records, not a narrative.
+        ANALYST_AGENT: Submit a bioinformatics analysis workflow.
+        REVIEW_AGENT: Broad multi-study review or report.
+        BRIEF_GENE_AGENT: Concise function report for one gene id.
+        DEEP_GENOME_AGENT: Comprehensive single-gene pipeline.
+        IN_SILICO_RESEARCH_AGENT: Reproduce a named paper's analysis.
+        DIGITAL_DESIGN_AGENT: Promoter and protein design for one gene.
+        GENE_NETWORK_AGENT: Trait-associated gene-network analysis.
+        GET_TASK_STATUS: Non-blocking poll of a prior async submission.
     """
 
     CHAT_AGENT = "ChatAgent"

@@ -64,6 +64,8 @@ class ApiServer(NamedTuple):
             (``/v1/api-keys/*``) and delegated lookups
             (``GET /v1/runs?user_id=``) are exercisable from the same
             fixture without a second boot.
+        upload_api_key: One-time key scoped to ``files:delegate`` for
+            resumable-upload routes.
         log_tail: Read-only bounded subprocess diagnostic lines.
     """
 

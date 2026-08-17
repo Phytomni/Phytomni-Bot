@@ -431,7 +431,13 @@ def _query_from_arguments(arguments: Mapping[str, Any]) -> str | None:
 
 
 class A2ARequestHandler(RequestHandler):
-    """Serve only the Phase 1 non-streaming ``SendMessage`` operation."""
+    """Serve A2A ``SendMessage``, optional streaming, and optional GetTask.
+
+    Blocking ``on_message_send`` is always wired. Streaming
+    ``on_message_send_stream`` and ``on_get_task`` run when the
+    corresponding option is injected. Every other SDK hook raises
+    ``UnsupportedOperationError`` on purpose.
+    """
 
     def __init__(
         self,

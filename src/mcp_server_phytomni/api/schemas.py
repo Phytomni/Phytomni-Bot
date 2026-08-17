@@ -169,18 +169,27 @@ class ChatCompletionRequest(BaseModel):
         messages: Ordered conversation messages.
         stream: Streaming flag. ``True`` is supported by the Chat,
             Knowledge, and BriefGene models, which return
-            ``text/event-stream`` graph or token events. Review uses its
-            A2UI-gated streaming path; other models with ``stream=True``
-            return HTTP 400.
+            ``text/event-stream`` graph or token events. Review uses
+            its dedicated A2UI stream (A2UI is always on). Other models
+            with ``stream=True`` return HTTP 400.
         obs_file_list: Optional OBS document paths for the agent.
+        attachments: Managed upload assets forwarded when the selected
+            capability accepts them.
+        owner_subject: Optional owner identity for attachment lookup.
         resolve_gene_id: When true and the model is BriefGene-shaped,
             resolve the free-form user message into a canonical gene
             id via an LLM call before invoking the tool. Other models
             reject this flag with HTTP 400.
+        dialogue_id: Optional chat-ai conversation id recorded on the
+            run row.
         debug: When true, return the full response payload including
             raw handler data, provider extensions, and doc_list.
             Default mode strips debug-only fields to reduce volume.
             PHYTOMNI_DEBUG=1 overrides this to always return full.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
+        conversation: Optional private V1 conversation-context
+            envelope. When present, the request reuses the
+            conversation-context lifecycle.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -337,15 +346,19 @@ class AgentRunRequest(BaseModel):
 
     Attributes:
         arguments: Tool-specific kwargs forwarded to the agent.
+        attachments: Managed upload assets forwarded when the selected
+            capability accepts them.
+        owner_subject: Optional owner identity for attachment lookup.
         dialogue_id: Optional chat-ai conversation id captured on the
             run row so the history page can group runs into one
             visible thread.
-        conversation: Optional private V1 conversation-context envelope.
-            When present, the URL slug is the only permitted agent
-            selection and the ordinary native lifecycle is reused.
         debug: When true, include the raw handler payload in the
             result block. Default mode strips it to reduce volume.
             PHYTOMNI_DEBUG=1 overrides this to always return full.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
+        conversation: Optional private V1 conversation-context envelope.
+            When present, the URL slug is the only permitted agent
+            selection and the ordinary native lifecycle is reused.
     """
 
     arguments: dict[str, Any] = Field(default_factory=dict)
@@ -418,9 +431,16 @@ class ExpertQueryRequest(BaseModel):
         obs_file_list: OBS paths for uploaded attachments. Expert forwards
             them only when the selected capability explicitly enables Expert
             forwarding.
+        attachments: Managed upload assets forwarded when the selected
+            capability accepts them.
+        owner_subject: Optional owner identity for attachment lookup.
         dialogue_id: Optional chat-ai conversation id recorded on the run.
         allowed_tools: Ordered canonical agent tools available to the router.
         forced_tool: Optional canonical agent tool pinned by the caller.
+        locale: Optional response locale (``en-US`` or ``zh-CN``).
+        conversation: Optional private V1 conversation-context envelope.
+            When present, Expert still selects the agent and the
+            conversation-context lifecycle owns the turn.
     """
 
     model_config = ConfigDict(extra="forbid")
