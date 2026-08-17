@@ -48,6 +48,7 @@ __all__ = [
     "initial_pending_delivery",
     "load_private_inventory",
     "mark_degraded_delivery_failure",
+    "carry_required_delivery",
     "private_delivery_from_result",
     "result_delivery_from_result",
     "run_delivery_worker",
@@ -537,6 +538,48 @@ def _claimable_delivery(
         return False
     assert private is not None
     return not delivery_attempts_exhausted(private.attempts_claimed)
+
+
+def carry_required_delivery(
+    stored_result: object,
+    incoming: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep a submit-time required delivery when the incoming one is absent.
+
+    HTTP background workers replace the reserved run projection with a
+    formatted tool envelope. That envelope serializes ``delivery: null``
+    even after ``submit_recorder`` stamped ``required=true``. Harvest
+    only builds the result archive when the stored marker survives.
+    """
+    if result_delivery_from_result(incoming) is not None:
+        return incoming
+    stored_delivery = result_delivery_from_result(stored_result)
+    if stored_delivery is None:
+        return incoming
+    stored_execution = (
+        stored_result.get("execution")
+        if isinstance(stored_result, Mapping)
+        else None
+    )
+    raw = (
+        stored_execution.get("delivery")
+        if isinstance(stored_execution, Mapping)
+        else None
+    )
+    if not isinstance(raw, Mapping):
+        return incoming
+    updated = dict(incoming)
+    execution = updated.get("execution")
+    next_execution = dict(execution) if isinstance(execution, Mapping) else {}
+    next_execution["delivery"] = dict(raw)
+    updated["execution"] = next_execution
+    if "delivery_internal" not in updated and isinstance(
+        stored_result, Mapping
+    ):
+        private = stored_result.get(_DELIVERY_INTERNAL)
+        if isinstance(private, Mapping):
+            updated[_DELIVERY_INTERNAL] = dict(private)
+    return updated
 
 
 def result_delivery_from_result(result: object) -> ResultDelivery | None:

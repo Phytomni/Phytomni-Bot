@@ -830,6 +830,56 @@ def test_persisted_record_redacts_error_and_result_details(
         assert projected["error"] == expected_error
 
 
+def test_persisted_record_projects_required_delivery() -> None:
+    """Public run reads must keep the archive-delivery marker.
+
+    HTTP Chat polls this projection. Dropping ``delivery`` makes Web treat
+    a packed Analyst run as the legacy download_path path.
+    """
+    marked = empty_agent_result()
+    marked["execution"]["delivery"] = {
+        "schema_version": 1,
+        "required": True,
+        "status": "ready",
+        "revision": 1,
+        "inventory_digest": "sha256:" + ("a" * 64),
+        "archive": {
+            "role": "result_archive",
+            "name": "analyst-results.zip",
+            "media_type": "application/zip",
+            "size_bytes": 1093,
+            "downloadable": True,
+            "report_context_eligible": False,
+            "download_ref": "result-archive:sha256:" + ("a" * 64),
+        },
+        "error_code": None,
+        "retryable": False,
+    }
+    marked["delivery_internal"] = {
+        "inventory_ref": "private-should-not-leak",
+        "attempts_claimed": 1,
+        "last_error_code": None,
+    }
+
+    projected = canonicalize_run_record(
+        {
+            "run_id": "run-delivery",
+            "agent": "analyst",
+            "status": "succeeded",
+            "task_ids": ["task-1"],
+            "result": marked,
+        }
+    )
+
+    delivery = projected["result"]["execution"]["delivery"]
+    assert delivery["required"] is True
+    assert delivery["status"] == "ready"
+    assert delivery["archive"]["name"] == "analyst-results.zip"
+    dumped = str(projected)
+    assert "delivery_internal" not in dumped
+    assert "private-should-not-leak" not in dumped
+
+
 @pytest.mark.parametrize(
     ("options", "message"),
     [

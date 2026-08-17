@@ -28,6 +28,7 @@ from ..runtime.deep_genome_store_projection import (
 )
 from ..runtime.execution_defaults import empty_execution_projection
 from ..runtime.locale import SupportedLocale, message_for
+from ..runtime.run_registry_delivery import result_delivery_from_result
 from ..runtime.run_registry_models import (
     RESEARCH_FAILURE_CODES,
     RESEARCH_FAILURE_MESSAGES,
@@ -939,7 +940,7 @@ def _project_execution(
         else defaults["tracking"]["degraded"]
     )
     report = execution.get("report")
-    return {
+    projected = {
         "tracking": {"degraded": degraded},
         "warnings": _project_record_list(
             execution.get("warnings"),
@@ -975,6 +976,38 @@ def _project_execution(
         "diagnostics": _project_record_list(
             execution.get("diagnostics"), ("code", "stage", "retryable")
         ),
+    }
+    delivery = _project_delivery(execution)
+    if delivery is not None:
+        projected["delivery"] = delivery
+    return projected
+
+
+def _project_delivery(execution: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return the public archive-delivery block, or omit it when absent."""
+    parsed = result_delivery_from_result({"execution": execution})
+    if parsed is None:
+        return None
+    archive = None
+    if parsed.archive is not None:
+        archive = {
+            "role": parsed.archive.role,
+            "name": parsed.archive.name,
+            "media_type": parsed.archive.media_type,
+            "size_bytes": parsed.archive.size_bytes,
+            "downloadable": parsed.archive.downloadable,
+            "report_context_eligible": parsed.archive.report_context_eligible,
+            "download_ref": parsed.archive.download_ref,
+        }
+    return {
+        "schema_version": parsed.schema_version,
+        "required": parsed.required,
+        "status": parsed.status,
+        "revision": parsed.revision,
+        "inventory_digest": parsed.inventory_digest,
+        "archive": archive,
+        "error_code": parsed.error_code,
+        "retryable": parsed.retryable,
     }
 
 

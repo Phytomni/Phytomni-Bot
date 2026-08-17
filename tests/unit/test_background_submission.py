@@ -23,6 +23,9 @@ from mcp_server_phytomni.runtime.background_submission import (
     launch_background_submission,
     reserve_background_submission,
 )
+from mcp_server_phytomni.runtime.execution_defaults import (
+    empty_execution_projection,
+)
 from mcp_server_phytomni.runtime.live_tasks import is_live_running
 from mcp_server_phytomni.runtime.locale import current_effective_locale
 from mcp_server_phytomni.runtime.request_context import (
@@ -362,6 +365,86 @@ async def test_partial_submission_stays_running_with_degraded_warning(
     assert record.task_ids == ("accepted-1",)
     assert record.result is not None
     assert record.result["execution"]["tracking"] == {"degraded": True}
+
+
+@pytest.mark.asyncio
+async def test_worker_projection_keeps_submit_delivery_marker(
+    tmp_path: Path,
+) -> None:
+    """Formatted worker output must not erase the archive-delivery marker."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="analyst",
+        owner="alice",
+        request_info=RunRequestInfo(
+            request_id="req-keep-delivery", locale="en-US"
+        ),
+        db_path=db_path,
+    )
+    marked = empty_execution_projection(result_archive_required=True)
+    marked["execution"]["tasks"] = [
+        {"id": "accepted-1", "accepted": True, "status": "submitted"}
+    ]
+    unmarked = {
+        "formatted": {"answer": ""},
+        "execution": {
+            "tasks": [
+                {"id": "accepted-1", "accepted": True, "status": "submitted"}
+            ],
+            "delivery": None,
+        },
+    }
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        now = datetime.now(UTC).isoformat()
+        assert RunRegistry(db_path).record_reserved_submissions(
+            reservation.run_id,
+            owner="alice",
+            agent="analyst",
+            submissions=(
+                Submission(
+                    task_id="accepted-1",
+                    status="submitted",
+                    output_dir="tenant/out",
+                    run_context=RunContext(
+                        run_id=reservation.run_id,
+                        user_id="alice",
+                        agent="analyst",
+                        origin="remote",
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                ),
+            ),
+            result=marked,
+            now=now,
+        )
+        return BackgroundSubmissionOutcome(
+            accepted_task_ids=("accepted-1",),
+            result=unmarked,
+        )
+
+    launch_background_submission(reservation, operation, db_path=db_path)
+    await _wait_until(
+        lambda: (
+            (
+                record := RunRegistry(db_path).get_run(
+                    reservation.run_id, owner="alice"
+                )
+            )
+            is not None
+            and record.result is not None
+            and record.result.get("execution", {}).get("tasks")
+        )
+    )
+
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "running"
+    assert record.result is not None
+    delivery = record.result["execution"]["delivery"]
+    assert delivery["required"] is True
+    assert delivery["status"] == "pending"
 
 
 @pytest.mark.asyncio
