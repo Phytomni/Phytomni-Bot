@@ -562,7 +562,7 @@ def test_analyst_config_parses_app_id_json_env(monkeypatch):
 
 
 def test_compute_resource_table_and_agent_defaults() -> None:
-    """Compute tiers live on config; Research/Environment override the default."""
+    """Compute tiers live on config; agents override the Analyst default."""
     assert AnalystConfig.model_fields["RESOURCE"].default == {
         "small": {"cpu": 1, "memory": 4},
         "medium": {"cpu": 4, "memory": 16},
