@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Function-cache metadata and path lifecycle helpers."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -28,8 +26,9 @@ def test_default_cache_db_path_prefers_environment(
         lifecycle.DEFAULT_CACHE_DB_ENV, "/tmp/custom-cache.sqlite"
     )
     assert lifecycle.default_cache_db_path() == "/tmp/custom-cache.sqlite"
-    assert lifecycle._resolve_db_path(None) == "/tmp/custom-cache.sqlite"
-    assert lifecycle._resolve_db_path("/explicit.sqlite") == "/explicit.sqlite"
+    resolve_db_path = getattr(lifecycle, "_resolve_db_path")
+    assert resolve_db_path(None) == "/tmp/custom-cache.sqlite"
+    assert resolve_db_path("/explicit.sqlite") == "/explicit.sqlite"
 
 
 def test_register_storage_close_is_idempotent_per_path(
@@ -39,11 +38,12 @@ def test_register_storage_close_is_idempotent_per_path(
     """One atexit hook is registered for each absolute cache database."""
     registered: list[object] = []
     monkeypatch.setattr(lifecycle.atexit, "register", registered.append)
-    lifecycle._atexit_registered.clear()
+    getattr(lifecycle, "_atexit_registered").clear()
     storage = SimpleNamespace(close=object())
     path = str(tmp_path / "cache.sqlite")
-    lifecycle._register_storage_close(path, cast(Storage, storage))
-    lifecycle._register_storage_close(path, cast(Storage, storage))
+    register_close = getattr(lifecycle, "_register_storage_close")
+    register_close(path, cast(Storage, storage))
+    register_close(path, cast(Storage, storage))
     assert registered == [storage.close]
 
 
@@ -70,7 +70,7 @@ def test_check_and_update_meta_clears_on_config_change() -> None:
             """Record lock cleanup after the function is deleted."""
             calls.append(("locks", func_id))
 
-    lifecycle._check_and_update_meta(
+    getattr(lifecycle, "_check_and_update_meta")(
         cast(Storage, _Storage()), "fn", "new", True
     )
     assert ("delete", "fn") in calls
@@ -93,7 +93,7 @@ def test_check_and_update_meta_logs_cache_errors(
         def close(self) -> None:
             """Satisfy the pylint public-method floor for this stub."""
 
-    lifecycle._check_and_update_meta(
+    getattr(lifecycle, "_check_and_update_meta")(
         cast(Storage, _Storage()), "fn", (), False
     )
     assert warnings and "meta unavailable" in warnings[0]

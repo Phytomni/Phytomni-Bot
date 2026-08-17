@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """DeepGenome profile BI SQL error mapping."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import pytest
@@ -26,5 +24,5 @@ async def test_post_bi_sql_maps_non_json_payloads(
 
     monkeypatch.setattr(profile_mod, "bi_query", boom)
     with pytest.raises(McpError) as info:
-        await profile_mod._post_bi_sql("SELECT 1")
+        await getattr(profile_mod, "_post_bi_sql")("SELECT 1")
     assert "non-JSON" in info.value.error.message

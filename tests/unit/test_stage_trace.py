@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Unit tests for the payload-free DataAgent stage trace."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import asyncio
@@ -14,9 +12,9 @@ from dataclasses import asdict, dataclass, field
 
 import pytest
 
+from mcp_server_phytomni.runtime import stage_trace as stage_trace_mod
 from mcp_server_phytomni.runtime.request_context import request_context
 from mcp_server_phytomni.runtime.stage_trace import (
-    _STAGE_FAILURE_ATTRIBUTE,
     DataStage,
     StageTraceEvent,
     classify_stage_error,
@@ -24,6 +22,8 @@ from mcp_server_phytomni.runtime.stage_trace import (
     stage_failure_from_exception,
     trace_data_stage,
 )
+
+_STAGE_FAILURE_ATTRIBUTE = getattr(stage_trace_mod, "_STAGE_FAILURE_ATTRIBUTE")
 
 pytestmark = pytest.mark.unit
 

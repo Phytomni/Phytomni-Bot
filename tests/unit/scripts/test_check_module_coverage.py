@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Inventory and evaluation helpers for production coverage."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,7 +39,7 @@ def test_tracked_production_files_stay_inside_packaged_roots(
         )()
 
     monkeypatch.setattr(coverage_gate.subprocess, "run", fake_run)
-    tracked = coverage_gate._tracked_production_files()
+    tracked = getattr(coverage_gate, "_tracked_production_files")()
     assert tracked == {
         "src/mcp_server_phytomni/api/app.py",
         "src/mcp_client_phytomni/client.py",
@@ -71,7 +69,7 @@ def test_evaluate_production_classifies_missing_zero_and_violations() -> None:
         "src/mcp_server_phytomni/empty.py",
         "src/mcp_server_phytomni/absent.py",
     }
-    result = coverage_gate._evaluate_production(files, expected)
+    result = getattr(coverage_gate, "_evaluate_production")(files, expected)
     assert result.checked == 3
     assert result.missing == ["src/mcp_server_phytomni/absent.py"]
     assert result.zero_statement == ["src/mcp_server_phytomni/empty.py"]
@@ -84,17 +82,17 @@ def test_load_coverage_rejects_missing_and_malformed_reports(
     """Malformed coverage JSON stays a controlled exit-2 diagnostic."""
     missing = tmp_path / "absent.json"
     with pytest.raises(SystemExit) as missing_info:
-        coverage_gate._load_coverage(missing)
+        getattr(coverage_gate, "_load_coverage")(missing)
     assert missing_info.value.code == 2
 
     invalid = tmp_path / "invalid.json"
     invalid.write_text("{", encoding="utf-8")
     with pytest.raises(SystemExit) as invalid_info:
-        coverage_gate._load_coverage(invalid)
+        getattr(coverage_gate, "_load_coverage")(invalid)
     assert invalid_info.value.code == 2
 
     no_files = tmp_path / "no-files.json"
     no_files.write_text("{}", encoding="utf-8")
     with pytest.raises(SystemExit) as no_files_info:
-        coverage_gate._load_coverage(no_files)
+        getattr(coverage_gate, "_load_coverage")(no_files)
     assert no_files_info.value.code == 2

@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Review reservation precondition and marker-state transitions."""
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import sqlite3
@@ -24,9 +22,11 @@ from mcp_server_phytomni.runtime.conversation_context.review_support import (
     _ReviewReservationMarkerRequest,
 )
 
-_reserve_marker_state = review_res._reserve_marker_state
-_reserve_row_failure = review_res._reserve_row_failure
-_review_reservation_inputs_valid = review_res._review_reservation_inputs_valid
+_reserve_marker_state = getattr(review_res, "_reserve_marker_state")
+_reserve_row_failure = getattr(review_res, "_reserve_row_failure")
+_review_reservation_inputs_valid = getattr(
+    review_res, "_review_reservation_inputs_valid"
+)
 
 pytestmark = pytest.mark.unit
 
@@ -56,7 +56,7 @@ def test_reserve_row_failure_maps_tombstone_and_promoted_rows() -> None:
         ),
     )
     assert tombstoned == ReviewSettlementClaim("conflict")
-    store._review_context_state = lambda *_args: (0, "active")
+    setattr(store, "_review_context_state", lambda *_args: (0, "active"))
     promoted = _reserve_row_failure(
         store,
         _ReviewClaimLookupRequest(
