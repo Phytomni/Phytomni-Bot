@@ -12,9 +12,11 @@ from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 
 from mcp_server_phytomni.agents.knowledge.retrieval_result import (
@@ -22,6 +24,11 @@ from mcp_server_phytomni.agents.knowledge.retrieval_result import (
 )
 from mcp_server_phytomni.api.app_support import _ErrorResponseOptions
 from mcp_server_phytomni.api.error_handlers import register_error_handlers
+from mcp_server_phytomni.api.lifecycle_contract import (
+    LifecycleInvariantError,
+    SafeApiError,
+    SafeErrorCode,
+)
 from mcp_server_phytomni.runtime.stage_trace import (
     StageTraceEvent,
     bind_stage_trace,
@@ -118,3 +125,89 @@ async def test_mcp_retrieval_and_traced_failures_keep_safe_envelopes() -> None:
     assert json.loads(other.body)["message"] == "internal server error"
     assert traced.status_code == 502
     assert json.loads(traced.body)["retryable"] is True
+    bind_stage_trace(())
+    untraced = await cast(
+        Awaitable[Any], unhandled(request, RuntimeError("hidden"))
+    )
+    assert untraced.status_code == 500
+    assert json.loads(untraced.body)["message"] == "internal server error"
+
+
+async def test_http_safe_validation_and_lifecycle_envelopes() -> None:
+    """HTTP, SafeApi, validation, and lifecycle handlers stay public-safe."""
+    app = _app()
+    request = _request()
+    http_body = await cast(
+        Awaitable[Any],
+        app.exception_handlers[StarletteHTTPException](
+            request, StarletteHTTPException(status_code=404)
+        ),
+    )
+    assert http_body.status_code == 404
+    safe_body = await cast(
+        Awaitable[Any],
+        app.exception_handlers[SafeApiError](
+            request,
+            SafeApiError(
+                status_code=409,
+                code="conflict",
+                message="busy",
+                stage="resume",
+            ),
+        ),
+    )
+    assert json.loads(safe_body.body)["code"] == "conflict"
+    val_handler = app.exception_handlers[RequestValidationError]
+    locale_body = await cast(
+        Awaitable[Any],
+        val_handler(
+            request,
+            RequestValidationError(
+                [
+                    {
+                        "loc": ("body", "locale"),
+                        "msg": "x",
+                        "type": "value_error",
+                    }
+                ]
+            ),
+        ),
+    )
+    assert json.loads(locale_body.body)["code"] == "unsupported_locale"
+    purpose_body = await cast(
+        Awaitable[Any],
+        val_handler(
+            request,
+            RequestValidationError(
+                [
+                    {
+                        "loc": ("body", "purpose"),
+                        "msg": "x",
+                        "type": "literal_error",
+                    }
+                ]
+            ),
+        ),
+    )
+    assert json.loads(purpose_body.body)["code"] == (
+        "attachment_purpose_invalid"
+    )
+    generic_body = await cast(
+        Awaitable[Any],
+        val_handler(
+            request,
+            RequestValidationError(
+                [{"loc": ("body", "query"), "msg": "x", "type": "missing"}]
+            ),
+        ),
+    )
+    assert json.loads(generic_body.body)["message"] == (
+        "request validation failed"
+    )
+    life_body = await cast(
+        Awaitable[Any],
+        app.exception_handlers[LifecycleInvariantError](
+            request, LifecycleInvariantError(SafeErrorCode.PROJECTION_FAILED)
+        ),
+    )
+    assert life_body.status_code == 500

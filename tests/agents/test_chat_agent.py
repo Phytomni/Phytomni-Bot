@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from httpx2 import Request
+from httpx import Request
 from openai import APIConnectionError
 
 from mcp_server_phytomni.agents.chat import service as chat_agents
