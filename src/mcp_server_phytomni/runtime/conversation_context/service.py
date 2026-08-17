@@ -334,7 +334,12 @@ class ConversationContextDependencies:
 
 
 class ConversationContextService:
-    """Keep transaction work short and serialize only one conversation."""
+    """Apply one V1 envelope and serialize work per conversation key.
+
+    Always on in this process and independent of ``MEMORY_ENABLED``.
+    The Go gateway decides whether to send an envelope. Transactions
+    stay short; the same ``conversation_key`` never overlaps.
+    """
 
     def __init__(
         self,

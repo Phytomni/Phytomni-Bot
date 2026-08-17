@@ -299,7 +299,12 @@ def httpx_client_factory(
     resolver: AsyncDNSResolver = resolve_host,
     delegate_transport: httpx.AsyncBaseTransport | None = None,
 ) -> httpx.AsyncClient:
-    """Build an isolated HTTPX client from an operator target id only."""
+    """Build an Interop-only HTTPX client from an operator target id.
+
+    This is not a process-wide HTTP factory. Concurrency is the
+    ``OutboundPoolName.INTEROP`` lease taken by the Interop runtime
+    before it uses the client.
+    """
     target = _http_target(registry, target_id)
     credentials = SecretStr("{}")
     if target.credential_ref is not None:

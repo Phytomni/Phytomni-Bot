@@ -161,6 +161,8 @@ async def select_agent_tool(
     ``PhytomniToolRouter.route_query`` selection step, but in-process so
     the HTTP Expert route needs no subprocess. The model fills each tool's
     arguments from its JSON schema; the caller forwards them unchanged.
+    Routing takes one ``OutboundPoolName.LLM`` lease; the dispatched
+    agent may take a second lease on the same pool.
 
     Args:
         user_query: The natural-language user turn to route.
@@ -215,6 +217,8 @@ async def select_expert_tool(
     This is the strict HTTP Expert seam. The legacy ``select_agent_tool``
     wrapper deliberately keeps its optional-selection behavior only when no
     allowlist is supplied, which is the compatibility path used by A2A.
+    Stdio MCP never calls this path. The completion takes one LLM pool
+    lease; a later agent turn may take another.
     """
     request = _build_routing_request(
         agent_openai_tool_specs(), options.allowed_tools, options.forced_tool
@@ -245,6 +249,7 @@ async def complete_expert_routing(
 ) -> Any:
     """Run one provider completion for Expert selection.
 
+    Holds one ``OutboundPoolName.LLM`` lease for the routing call.
     Provider exception details are intentionally discarded at this boundary;
     the HTTP layer maps the typed outcome to the public safe error envelope.
 

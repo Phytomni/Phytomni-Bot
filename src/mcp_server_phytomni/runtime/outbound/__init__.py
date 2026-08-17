@@ -1,7 +1,13 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
-"""Logical process-local outbound request pool primitives."""
+"""Process-owned outbound request runtime.
+
+Replaces the removed ``common.httpx_client`` factory. One process owns
+twelve logical pools, two HTTPX profiles (trusted and direct
+upstream), and one ``AsyncOpenAI`` client with ``max_retries=0``.
+Callers lease a named pool; they do not construct shared HTTP clients.
+"""
 
 from .http import (
     BoundAsyncRequestClient,

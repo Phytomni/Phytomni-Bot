@@ -100,7 +100,13 @@ async def find_spa_taxids(
     spa_names: str,
     request_timeout: float | None = None,
 ) -> list[str]:
-    """Return taxonomy ids for a target species name."""
+    """Resolve a Latin species name to NCBI taxids via the SPA FAQ.
+
+    Uses ``OutboundPoolName.SPA_FAQ`` and the direct-upstream HTTP
+    profile (or the relay ``spa-faq`` path). Any lookup failure becomes
+    the fixed public ``McpError`` "Evolution taxonomy lookup temporarily
+    unavailable"; provider details are not surfaced.
+    """
     timeout = request_timeout
     if timeout is None:
         timeout = DEEP_GENOME_CONFIG.TIMEOUT
