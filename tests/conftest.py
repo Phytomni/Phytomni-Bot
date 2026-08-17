@@ -720,7 +720,7 @@ def fake_obs_client() -> Any:
     Yields the fake class so tests can inspect ``.captured`` for
     OBS call arguments. Defined in
     conftest (not the test file) so test parameters of the same name
-    do not trigger pylint W0621 redefined-outer-name.
+    do not redefine this fixture.
 
     Args:
     Returns:

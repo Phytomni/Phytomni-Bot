@@ -91,7 +91,7 @@ def test_check_and_update_meta_logs_cache_errors(
             raise CacheError("meta unavailable")
 
         def close(self) -> None:
-            """Satisfy the pylint public-method floor for this stub."""
+            """Release stub resources."""
 
     getattr(lifecycle, "_check_and_update_meta")(
         cast(Storage, _Storage()), "fn", (), False

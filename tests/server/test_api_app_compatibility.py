@@ -54,15 +54,13 @@ from mcp_server_phytomni.runtime.run_registry import (
 pytestmark = pytest.mark.server
 
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
-# Generated from ``_openapi_hash(create_app())`` after the intentional public
-# schema additions in 7321656 (locale), dd99f82 (dataset uploads), bcf20b6
-# (attachment capabilities), the strict Expert request boundary, the private
-# native conversation envelope, resumable attachment references, the
-# purpose-constrained upload contract in fd19dcbb, the unified attachment
-# contract in 97867888, the always-on conversation-context mutation
-# routes, and the always-on interop capabilities route. The
-# ``_normalized_openapi`` helper removes only unstable version/server
-# fields.
+# Generated from ``_openapi_hash(create_app())`` after the public
+# schema additions (locale, dataset uploads, attachment capabilities,
+# Expert request boundary, private conversation envelope, resumable
+# attachment references, purpose-constrained uploads, unified
+# attachments, always-on conversation-context mutation routes, and
+# the always-on interop capabilities route). ``_normalized_openapi``
+# removes only unstable version/server fields.
 _OPENAPI_HASH = (
     "4904d417b468b97368c992ac334c6f0ef4d3d68566c72aef7d3e51d7e039e883"
 )

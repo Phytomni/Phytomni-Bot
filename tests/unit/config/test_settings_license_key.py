@@ -5,8 +5,8 @@
 """Tests that SensitiveConfig.load picks up file-only license keys.
 
 The previous load() implementation called ``os.getenv(LICENSE_KEY_ENV)``
-directly and missed the Model A delivery path where the key arrives via
-the on-disk ``LICENSE_KEY_PATH`` file instead of the environment. The
+directly and missed the path where the key arrives via the on-disk
+``LICENSE_KEY_PATH`` file instead of the environment. The
 parametrized scenarios below pin end-to-end success for the file-only,
 env-only, and both-set provisioning shapes through
 ``SensitiveConfig.load``.

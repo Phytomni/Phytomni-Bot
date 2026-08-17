@@ -125,7 +125,7 @@ def test_check_and_update_meta_logs_cache_errors(
             raise CacheError("meta unavailable")
 
         def close(self) -> None:
-            """Satisfy the pylint public-method floor for this stub."""
+            """Release stub resources."""
 
     with capture_non_propagating_logger(_LIFECYCLE_LOGGER, caplog.handler):
         getattr(lifecycle, "_check_and_update_meta")(

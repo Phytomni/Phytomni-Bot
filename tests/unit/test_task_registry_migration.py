@@ -338,8 +338,8 @@ def test_legacy_db_migrates_input_fingerprint_column(
     db = str(tmp_path / "tasks.sqlite")
     conn = sqlite3.connect(db)
     # Pre-migration schema (the 10 columns task_manager.py shipped before
-    # the input_fingerprint add-column landed); kept as a list so pylint's
-    # text-similarity check does not mirror the source DDL line-by-line.
+    # the input_fingerprint add-column landed). Listed field-by-field so
+    # this block does not mirror the source DDL line-by-line.
     legacy_columns = [
         "task_id TEXT PRIMARY KEY",
         "status TEXT",

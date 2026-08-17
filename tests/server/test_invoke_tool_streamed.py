@@ -134,10 +134,9 @@ async def test_invoke_tool_streamed_reaches_primitive_with_standard_kwargs(
     (``chat_kwargs`` + ``obs_kwargs`` spread) reach
     ``stream_phyto_chat_chunks`` unchanged.
     """
-    # Literals chosen distinct from tests/agents/test_chat_agent_streaming.py
-    # so the two test files do not register as an R0801 duplicate block —
-    # both tests only need a small chunk sequence with a unique vendor
-    # field; their payload content is otherwise incidental.
+    # Literals chosen distinct from
+    # tests/agents/test_chat_agent_streaming.py so the two files do not
+    # share a duplicate payload block. Content is otherwise incidental.
     payloads = [
         {"id": "seam-c1", "choices": [{"delta": {"content": "A"}}]},
         {
@@ -461,24 +460,18 @@ def test_format_tool_chunk_preserves_payload_verbatim() -> None:
 
     assert isinstance(chunk, FormattedToolChunk)
     assert chunk.payload is payload
-    # Frozen dataclass — assignment routes through __setattr__ and
-    # raises FrozenInstanceError. ``setattr`` is the same dynamic API
-    # so static checkers stay happy without a per-line type: ignore,
-    # mirroring tests/agents/test_brief_gene_pipeline_helpers.py's
-    # TW-C pattern (see commit 9072103).
+    # Frozen dataclass — assignment routes through __setattr__.
+    # ``setattr`` is the same dynamic API so checkers stay happy
+    # without a per-line type ignore.
     with pytest.raises(AttributeError):
         setattr(chunk, "payload", {})
 
 
-# -- Cold-cache BriefGene SSE seam drive --------------------------------
-#
 # Drives ``invoke_tool_streamed("BriefGeneAgent", ...)`` through the
-# full seam (validation → graph branch → ``_stream_graph_agent``) with
-# a fake compiled graph, asserting the RunStarted…RunFinished envelope.
-# The mounted knowledge subgraph's ``.ainvoke`` never fires because the
-# fake ``astream`` yields pre-built ``(ns, mode, chunk)`` tuples
-# directly; ``install_network_escape_guard`` converts any un-mocked
-# escape into a named RuntimeError instead of a 20s hang.
+# full seam with a fake compiled graph. The mounted knowledge
+# subgraph's ``.ainvoke`` never fires because the fake ``astream``
+# yields pre-built tuples; ``install_network_escape_guard`` converts
+# an un-mocked escape into a named RuntimeError instead of a hang.
 
 
 async def test_brief_gene_stream_seam_emits_envelope(
