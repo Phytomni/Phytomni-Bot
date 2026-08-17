@@ -53,7 +53,10 @@ class ReviewSummaryMixin:
             ``pending_post``.
         """
         summary_params: dict[str, str] = {
-            "user_query": state["original_user_query"]
+            "user_query": state["original_user_query"],
+            "thesis": str(state.get("thesis") or ""),
+            "in_scope": str(state.get("in_scope") or ""),
+            "out_of_scope": str(state.get("out_of_scope") or ""),
         }
         for idx in range(4):
             report = (

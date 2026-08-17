@@ -2583,24 +2583,20 @@ user:
 
     ## Skills
     1. Academic Manuscript Assembly
-      - Subheading Generation & Structuring: For each provided sub-section
-      (dimension), accurately use its provided title as a `###` heading.
-      Analyze
-      the content and logically divide it into exactly two sub-topics.
-      Generate a
-      concise, professional `####` subheading for each of the two sub-topics
-      based on the text.
-      - Comprehensive Conclusion Generation: Synthesize the core findings
-      from
-      all provided sequential sub-sections to write a powerful, overarching
-      conclusion that highlights broader implications and future directions.
-      - Title Generation: Formulate a highly professional, overarching title
-      that encapsulates the combined theme of the entire manuscript. You
-      MUST use
-      the `{{user_query}}` as a thematic reference to ensure the title
-      directly
-      addresses the user's original research question, while maintaining a
-      standard, rigorous academic tone.
+      - Title: write a claim-style title from `{{user_query}}` and
+      `{{thesis}}`. Do not write a colon-separated method list.
+      - Front matter: write `### Abstract` (120-180 words) and
+      `### Introduction` that states the bottleneck, defines the
+      object, and uses `{{in_scope}}` / `{{out_of_scope}}` to draw a
+      boundary with a "Here we review..." sentence.
+      - Section assembly: use each provided sub-section title as a
+      `###` heading, in order. Add 0-3 `####` subheadings only when
+      the content splits cleanly. Do not force two subheadings.
+      - Optional table: add one Markdown table when at least three
+      items can be compared (gene, assay, allele, or evidence class).
+      Do not invent figures.
+      - Conclusions: under `### Conclusions`, name two or three
+      testable unknowns. Do not restate the four sections.
 
     2. Absolute Citation Preservation
       - Citation Marker Recognition: Recognize diverse and complex citation
@@ -2640,137 +2636,101 @@ user:
       list at the end of the document.
 
     3. Constraints: Formatting and Scope
-      - Output Integrity: Your response must begin directly with `###
-      Title:`
-      and adhere strictly to the `OutputFormat`. No conversational preamble,
-      explanations, or apologies are permitted. Do NOT output a "Results"
-      heading.
-      - Heading Hierarchy: Use `###` for the overall Title, the provided
-      Sub-section titles, and the Conclusion. Use `####` for your generated
-      subheadings within each section.
+      - Output Integrity: Begin directly with `### Title:`. No
+      preamble. Do NOT output a "Results" heading.
+      - Heading Hierarchy: `###` for Title, Abstract, Introduction,
+      the four provided section titles, and Conclusions. `####` only
+      when a section needs 1-3 content-driven splits.
+      - No Reference List: Do NOT generate References or Bibliography.
 
     ## Workflows
 
-    - Goal: To integrate sequential, rigorously audited sub-sections into a
-    final, well-structured, and comprehensive scientific manuscript.
-    - Step 1: Global Review
-      - Read the `{{user_query}}` and sequentially analyze Sub-sections 1
-      through 4 to understand the overarching scientific narrative and the
-      core
-      topics within each section.
-    - Step 2: Title Generation
-      - Create a concise, academic title referencing the `{{user_query}}`.
-      Format it strictly as `### Title: [Your Generated Title]`.
-    - Step 3: Structuring and Synthesis (The Core Task)
-      - For Sub-section 1: Output the provided title as a `###` heading.
-      Divide
-      its content logically into exactly two distinct parts. Generate an
-      appropriate `####` subheading for each part. Place the corresponding
-      text
-      exactly under these two subheadings.
-      - Repeat this exact structuring process for Sub-section 2, Sub-section
-      3,
-      and Sub-section 4.
-      - Polish the internal sentences of each section for readability while
-      strictly carrying over all facts and their attached exact citation
-      tags.
-    - Step 4: Conclusion Composition
-      - Write a holistic conclusion (1-2 paragraphs) synthesizing the
-      integrated
-      text, formatted under the heading `### Conclusion`.
-    - Expected result: A single, cohesive manuscript that is logically
-    structured
-    with generated subheadings, accurately synthesizes the core findings,
-    preserves every single citation perfectly without modification, and
-    adheres
-    strictly to the specified output format without any extraneous text.
+    - Goal: Assemble the four audited sub-sections into a brief
+    review manuscript without figures or a model-written reference
+    list.
+    - Step 1: Read `{{user_query}}`, `{{thesis}}`, `{{in_scope}}`,
+    `{{out_of_scope}}`, and Sub-sections 1-4.
+    - Step 2: Write a claim-style `### Title:`.
+    - Step 3: Write `### Abstract` then `### Introduction` with an
+    explicit scope sentence.
+    - Step 4: Emit each provided title as `###` and copy the audited
+    sentences with their citation tags unchanged. Add 0-3 `####`
+    headings only if the text already splits.
+    - Step 5: If three or more comparable items exist, add one
+    Markdown table. Otherwise omit the table.
+    - Step 6: Write `### Conclusions` as two or three open questions
+    or missing tests, not a recap.
+    - Expected result: Title, Abstract, Introduction, four provided
+    sections, optional table, Conclusions. Citation tags untouched.
 
     ## OutputFormat
 
     1. Output format type:
       - format: Markdown
-      - structure: A single, continuous text document structured with `###
-      Title:`,
-      the provided `###` section titles, generated `####` subheadings, and a
-      final
-      `### Conclusion`.
-      - style: Academic, formal, professional, and rigidly structured.
-      - special_requirements: The output must begin directly with `###
-      Title:`.
-      NO "Results" heading. NO conversational preamble. NO Reference list at
-      the
-      end. Ensure EXACTLY two `####` subheadings per original sub-section.
+      - structure: `### Title:`, `### Abstract`, `### Introduction`,
+      four provided `###` section titles, optional table,
+      `### Conclusions`.
+      - style: Academic, formal, brief-review prose.
+      - special_requirements: Begin with `### Title:`. NO Results.
+      NO Reference list. Do NOT require two `####` headings per
+      section.
 
     2. Format specifications:
-      - indentation: Standard Markdown indentation.
-      - sections: The main overarching elements and provided sub-section
-      titles
-      use `###`. The generated sub-topics use `####`.
-      - highlighting: Use standard Markdown formatting as needed, but
-      headers
-      must strictly follow the defined hierarchy.
+      - indentation: Standard Markdown for tables.
+      - sections: Title, Abstract, Introduction, provided sections,
+      and Conclusions use `###`. Optional splits use `####`.
 
     3. Validation rules:
-      - validation: The final output must exactly match the specified
-      structure.
-      It must contain one `### Title:`, exactly four `###` [Provided
-      Titles],
-      exactly eight `####` [Generated Subheadings] (two per section), and
-      one
-      `### Conclusion`.
-      - constraints: No content should precede `### Title:`. No content or
-      bibliography should follow the conclusion text. Citation markers must
-      remain completely untouched.
-      - error_handling: If the input is incomplete, process the available
-      sections to the best of your ability while still adhering to the
-      two-subheading
-      rule per provided section and the strict citation preservation.
+      - validation: One Title, one Abstract, one Introduction, the
+      four provided section titles in order, and Conclusions.
+      - constraints: No text before Title. No bibliography after
+      Conclusions. Citation markers remain byte-identical.
+      - error_handling: If a sub-section is empty, keep its heading
+      and a one-sentence gap note. Do not invent evidence.
 
     4. Example descriptions:
       1. Example 1:
-         - Title: Structural Integration Template
+         - Title: Brief-review skeleton
          - Format type: Markdown
-         - Description: This example demonstrates the exact structure,
-         including the specific heading hierarchy, the division into two
-         subheadings per section, and the strict preservation of unmerged,
-         raw citation tags.
+         - Description: Front matter, flexible subheadings, one
+         table, gap-led conclusions, untouched citation tags.
          - Example content: |
-          ### Title: Synergy of CRISPR and AI in Modern Crop Breeding
+          ### Title: A rice wax module is not yet a breeding target
+
+          ### Abstract
+          Non-stomatal water loss limits upland rice. A MYB60-CER1
+          module is directly supported, while ZOS7 remains an
+          interaction node [document 003].
+
+          ### Introduction
+          Historical drought breeding emphasized root QTLs. Here we
+          review the ZOS7-MYB60-CER1 module in upland rice and do
+          not cover Dro1 or human PPI methods.
 
           ### [Provided Title for Section 1]
-          #### [Generated Subheading 1.1: Foundations of Genomic Selection]
-          The integration of AI has transformed genomic selection pipelines,
-          allowing for rapid screening of vast datasets [document 003].
-
-          #### [Generated Subheading 1.2: Efficiency Limitations]
-          However, realizing these traits in the field requires addressing
-          computational limits of current hardware when scaling these
-          algorithms globally [add document S2-005][document 008].
+          OsMYB60 binds the OsCER1 promoter in rice [document 003].
 
           ### [Provided Title for Section 2]
-          #### [Generated Subheading 2.1: Phenotypic Prediction Models]
-          Building on the genetic blueprints, machine learning models have
-          now been adapted to predict plant architecture under varying
-          stress conditions [add document S3-001].
+          #### Direct rice assays
+          Yeast one-hybrid and ChIP support the same direction
+          [add document S2-005][document 008].
 
-          #### [Generated Subheading 2.2: Field Validations]
-          Field trials have consistently demonstrated the accuracy of these
-          neural networks in real-world scenarios [document 012].
+          | Component | Assay | Evidence class |
+          | --- | --- | --- |
+          | OsMYB60 | Y1H, ChIP | Direct in rice |
 
-          *(Continue exactly like this for remaining sections...)*
-
-          ### Conclusion
-          The synthesis of current methodologies demonstrates that the
-          convergence of artificial intelligence and biological breeding
-          is accelerating trait development. Future applications must
-          continue to refine algorithmic accuracy while expanding field
-          validation networks to ensure global food security.
+          ### Conclusions
+          Whether ZOS7 occupies the CER1 promoter in planta remains
+          untested [document 012].
 
     ## Input Data
     *This section centralizes all variables for data injection. All
     substitutions should be made here.*
 
     - **User query**: {{user_query}}
+    - **Thesis**: {{thesis}}
+    - **In scope**: {{in_scope}}
+    - **Out of scope**: {{out_of_scope}}
 
     **Sequential Sub-sections for Integration:**
 
@@ -2796,14 +2756,11 @@ user:
     above Rules, execute tasks according to Workflows, and output according
     to
     the OutputFormat. Use `{{user_query}}` to guide the overarching title,
-    ensure each input sub-section uses its provided title as a `###` heading
-    and
-    is logically divided into exactly two `####` subheadings with
-    self-generated
-    titles. Strictly uphold the "Golden Rule" of Citations. Output the final
-    manuscript starting directly with `### Title:` without any
-    conversational
-    filler or a "Results" heading.
+    ensure each input sub-section uses its provided title as a `###`
+    heading with 0-3 optional `####` splits. Write Abstract and
+    Introduction from the thesis and scope fields. Strictly uphold
+    the "Golden Rule" of Citations. Do not write a Reference list.
+    Output the manuscript starting directly with `### Title:`.
   enrichment_analysis: |-
     You are a bioinformatician specialized in the field of functional
     genomics and you are well versed in gene set enrichment analysis,

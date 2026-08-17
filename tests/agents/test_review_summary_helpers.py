@@ -101,6 +101,9 @@ async def test_summary_prep_node_packs_four_subsections(
     assert params["subsection_1_content"] == "G content"
     assert params["subsection_2_title"] == "Physiology"
     assert params["subsection_2_content"] == "P content"
+    assert params["thesis"] == ""
+    assert params["in_scope"] == ""
+    assert params["out_of_scope"] == ""
 
 
 async def test_summary_prep_node_pads_missing_subsections(
@@ -125,6 +128,32 @@ async def test_summary_prep_node_pads_missing_subsections(
     assert params["subsection_2_title"] == ""
     assert params["subsection_2_content"] == ""
     assert params["subsection_4_content"] == ""
+
+
+async def test_summary_prep_node_forwards_thesis_and_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Planner thesis and scope sentences reach the summary prompt."""
+    captured = _capture_summary_params(monkeypatch)
+    agent = _build_agent()
+    state = cast(
+        DeepResearchState,
+        {
+            "original_user_query": "ZOS7 in upland rice",
+            "research_dimensions": ["Context"],
+            "revised_reports": [{"revised_report": "body"}],
+            "thesis": "A wax module is proposed.",
+            "in_scope": "This rice module only.",
+            "out_of_scope": "Human PPI methods are out of scope.",
+        },
+    )
+
+    await agent.summary_prep_node(state)
+
+    params = captured[0]
+    assert params["thesis"] == "A wax module is proposed."
+    assert params["in_scope"] == "This rice module only."
+    assert params["out_of_scope"] == "Human PPI methods are out of scope."
 
 
 async def test_summary_post_node_strips_backticks() -> None:
