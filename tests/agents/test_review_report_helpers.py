@@ -248,3 +248,203 @@ def test_format_supplementary_results_joins_blocks_with_separator() -> None:
     assert "Supplementary Direction 2: query beta" in block
     assert "\n\n---\n\n" in block
     assert len(add_doc_list) == 2
+
+
+class _MixinSurface(ReviewReportMixin):
+    """Harness that keeps the mixin public wrappers un-overridden."""
+
+    def __init__(self, max_tokens: int = 4000) -> None:
+        self.review_config = SimpleNamespace(
+            MAX_TOKENS=max_tokens, PROMPT_FILE="unused.yaml"
+        )
+        self.chat_prompts: list[str] = []
+
+    async def _chat(self, user_query: str) -> dict[str, Any]:
+        """Record the citation-check prompt and return a rewrite."""
+        self.chat_prompts.append(user_query)
+        return {"choices": [{"message": {"content": "  audited-draft  "}}]}
+
+    async def audit_citations(
+        self,
+        content_to_check: str,
+        raw_doc_list: list[dict[str, Any]],
+        add_doc_list: list[dict[str, Any]],
+    ) -> str:
+        """Public proxy for protected ``_audit_citations``."""
+        return await self._audit_citations(
+            content_to_check=content_to_check,
+            raw_doc_list=raw_doc_list,
+            add_doc_list=add_doc_list,
+        )
+
+
+def test_mixin_format_supplementary_results_public_wrapper() -> None:
+    """The mixin public wrapper forwards to the protected formatter."""
+    docs = [{"title": "Doc", "content": "body"}]
+    add_doc_list: list[dict[str, Any]] = []
+    context = SupplementaryResultContext(
+        subtopic_idx=0,
+        add_queries=["q1"],
+        add_query_results=[docs],
+        add_doc_list=add_doc_list,
+        draft_content="d",
+    )
+
+    block = _MixinSurface(max_tokens=10_000).format_supplementary_results(
+        context
+    )
+
+    assert "Supplementary Direction 1: q1" in block
+    assert len(add_doc_list) == 1
+
+
+async def test_mixin_feedback_rag_public_wrapper_coerces_queries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Public ``feedback_rag`` treats a non-list search_queries as empty."""
+
+    async def _audit_passthrough(
+        self: Any,
+        *,
+        content_to_check: str,
+        raw_doc_list: list[dict[str, Any]],
+        add_doc_list: list[dict[str, Any]],
+    ) -> str:
+        del self, raw_doc_list, add_doc_list
+        return content_to_check
+
+    monkeypatch.setattr(
+        ReviewReportMixin, "_audit_citations", _audit_passthrough
+    )
+    probe = _MixinSurface()
+
+    result = await probe.feedback_rag(
+        0,
+        "draft-orig",
+        '{"has_critical_gaps": true, "search_queries": "not-a-list"}',
+        [],
+    )
+
+    assert result == {"revised_content": "draft-orig", "add_doc_list": []}
+
+
+def test_format_supplementary_query_skips_oversized_fragments() -> None:
+    """A fragment longer than the per-query budget is skipped."""
+    docs = [
+        {"title": "Huge", "content": "x" * 400},
+        {"title": "Fit", "content": "ok"},
+    ]
+    add_doc_list: list[dict[str, Any]] = []
+    context = SupplementaryResultContext(
+        subtopic_idx=0,
+        add_queries=["q1"],
+        add_query_results=[docs],
+        add_doc_list=add_doc_list,
+        draft_content="",
+    )
+    fmt_state = SupplementaryFormatState(
+        query_length=80, counters=SupplementaryCounters()
+    )
+
+    block = _ReportProbe().format_supplementary_query(
+        context, docs, 0, fmt_state
+    )
+
+    assert "Fit" in block
+    assert "Huge" not in block
+    assert len(add_doc_list) == 1
+
+
+def test_format_supplementary_query_stops_when_budget_exhausted() -> None:
+    """Adding another fragment that would exceed the budget ends the loop."""
+    docs = [
+        {"title": "A", "content": "aaa"},
+        {"title": "B", "content": "bbb"},
+    ]
+    add_doc_list: list[dict[str, Any]] = []
+    context = SupplementaryResultContext(
+        subtopic_idx=0,
+        add_queries=["q1"],
+        add_query_results=[docs],
+        add_doc_list=add_doc_list,
+        draft_content="",
+    )
+    fmt_state = SupplementaryFormatState(
+        query_length=80, counters=SupplementaryCounters()
+    )
+
+    block = _ReportProbe().format_supplementary_query(
+        context, docs, 0, fmt_state
+    )
+
+    assert "Supplementary Direction 1: q1" in block
+    assert len(add_doc_list) == 1
+    assert add_doc_list[0]["title"] == "A"
+
+
+def test_format_supplementary_query_empty_when_all_fragments_oversize() -> (
+    None
+):
+    """Every oversized fragment leaves the supplementary block empty."""
+    docs = [{"title": "Huge", "content": "x" * 400}]
+    add_doc_list: list[dict[str, Any]] = []
+    context = SupplementaryResultContext(
+        subtopic_idx=0,
+        add_queries=["q1"],
+        add_query_results=[docs],
+        add_doc_list=add_doc_list,
+        draft_content="",
+    )
+    fmt_state = SupplementaryFormatState(
+        query_length=20, counters=SupplementaryCounters()
+    )
+
+    block = _ReportProbe().format_supplementary_query(
+        context, docs, 0, fmt_state
+    )
+
+    assert block == ""
+    assert add_doc_list == []
+
+
+async def test_audit_citations_returns_unchanged_without_known_tags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unknown tags and docs without ids never open a citation batch."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.review.report.get_prompt",
+        lambda *_args, **_kwargs: "prompt",
+    )
+    probe = _MixinSurface()
+
+    checked = await probe.audit_citations(
+        content_to_check="See [document 999] and plain text.",
+        raw_doc_list=[{"content": "orphan", "title": "no-id"}],
+        add_doc_list=[],
+    )
+
+    assert checked == "See [document 999] and plain text."
+    assert probe.chat_prompts == []
+
+
+async def test_audit_citations_rewrites_and_splits_token_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Long docs truncate, overflow flushes a batch, and chat rewrites."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.review.report.get_prompt",
+        lambda *_args, **_kwargs: "prompt",
+    )
+    probe = _MixinSurface(max_tokens=120)
+    long_body = "L" * 3100
+    checked = await probe.audit_citations(
+        content_to_check="Cite [document 001] then [document 002].",
+        raw_doc_list=[
+            {"doc_id": "document 001", "content": long_body},
+            {"doc_id": "document 002", "content": "short"},
+        ],
+        add_doc_list=[],
+    )
+
+    assert checked == "audited-draft"
+    assert len(probe.chat_prompts) == 2

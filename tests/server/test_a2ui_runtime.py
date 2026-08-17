@@ -3,6 +3,8 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Direct contracts for the extracted A2UI pause/resume runtime."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import asyncio
@@ -143,12 +145,16 @@ async def test_none_terminal_settlement_fails_closed() -> None:
 def _dependencies(
     db_path: str,
     resume_graph: Any,
+    *,
+    checkpoint_present: bool = True,
+    current_user: str | None = "alice",
+    current_request_id: str | None = "runtime-test-request",
 ) -> a2ui_runtime.A2UIRuntimeDependencies:
     """Build explicit fake graph, registry, and stream seams."""
 
     async def has_checkpoint(_app: Any, _thread_id: str) -> bool:
         """Keep direct runtime tests focused on post-claim behavior."""
-        return True
+        return checkpoint_present
 
     def format_review(_state: Any, **_kwargs: Any) -> dict[str, Any]:
         return {"formatted": {"answer": "review"}, "raw": None}
@@ -165,8 +171,8 @@ def _dependencies(
         ),
         persistence=a2ui_runtime.A2UIPersistenceDependencies(
             registry_factory=RunRegistry,
-            current_user=lambda: "alice",
-            current_request_id=lambda: "runtime-test-request",
+            current_user=lambda: current_user,
+            current_request_id=lambda: current_request_id,
             tasks_db_path=lambda: db_path,
             create_stream_run=_noop_create_stream_run,
             settle_stream_run=_successful_stream_settlement,
@@ -436,9 +442,15 @@ async def test_chat_reinterrupt_claimed_and_persist_failures(
     _seed(db, "run-persist")
     _seed(db, "run-false")
     _seed(db, "run-claimed")
+    _seed(db, "run-pause-raise")
+    _seed(db, "run-pause-false")
 
     async def resume_graph(_g, run_id, _p):
-        if run_id == "run-reenter":
+        if run_id in {
+            "run-reenter",
+            "run-pause-raise",
+            "run-pause-false",
+        }:
             return {
                 "__interrupt__": [
                     {"text": "more?", "draft": {"a2ui": _surface("s2")}}
@@ -487,6 +499,16 @@ async def test_chat_reinterrupt_claimed_and_persist_failures(
             return False
         return original(self, *a, **k)
 
+    def raise_pause(self, *a, **k):
+        if k.get("status") == "input_required":
+            raise OSError("disk")
+        return original(self, *a, **k)
+
+    def false_pause(self, *a, **k):
+        if k.get("status") == "input_required":
+            return False
+        return original(self, *a, **k)
+
     monkeypatch.setattr(RunRegistry, "settle_run", raise_settle)
     with pytest.raises(HTTPException) as persist:
         await a2ui_resume.resume_a2ui_run(
@@ -505,6 +527,24 @@ async def test_chat_reinterrupt_claimed_and_persist_failures(
             dependencies=deps,
         )
     assert false_p.value.status_code == 500
+    monkeypatch.setattr(RunRegistry, "settle_run", raise_pause)
+    with pytest.raises(HTTPException) as pause_raise:
+        await a2ui_resume.resume_a2ui_run(
+            run_id="run-pause-raise",
+            body=_action("run-pause-raise"),
+            debug=False,
+            dependencies=deps,
+        )
+    assert pause_raise.value.status_code == 500
+    monkeypatch.setattr(RunRegistry, "settle_run", false_pause)
+    with pytest.raises(HTTPException) as pause_false:
+        await a2ui_resume.resume_a2ui_run(
+            run_id="run-pause-false",
+            body=_action("run-pause-false"),
+            debug=False,
+            dependencies=deps,
+        )
+    assert pause_false.value.status_code == 500
 
 
 async def test_locale_backfill_and_claim_helpers(tmp_path):
@@ -599,6 +639,17 @@ async def test_review_resume_terminal_reinterrupt_and_projection(
     _seed_review(db, "review-pause")
     _seed_review(db, "review-missing-surface", status="succeeded")
     _seed_review(db, "review-project")
+    _seed_review(db, "review-persist")
+    _seed_review(db, "review-false")
+    _seed_review(db, "review-claimed")
+    _seed_review(db, "review-checkpoint")
+    _seed_review(db, "review-mint")
+    _seed_review(db, "review-action-ok")
+    _seed_review(db, "review-action-pause")
+    _seed_review(db, "review-action-project")
+    _seed_review(db, "review-invalid")
+    _seed_review(db, "review-a2ui-checkpoint")
+    _seed_review(db, "review-claim-conflict")
     RunRegistry(db).create_run(
         RunSpec("review-bad-surface", "alice", "review", "local"),
         outcome=RunOutcome(
@@ -606,9 +657,21 @@ async def test_review_resume_terminal_reinterrupt_and_projection(
             result={"interrupt": {"draft": {"a2ui": {"widget": "nope"}}}},
         ),
     )
+    RunRegistry(db).create_run(
+        RunSpec("review-no-a2ui", "alice", "review", "local"),
+        outcome=RunOutcome(
+            status="input_required",
+            result={"interrupt": {"draft": {}}},
+        ),
+    )
 
     async def resume_graph(_g, run_id, _p):
-        if run_id == "review-pause":
+        if run_id in {
+            "review-pause",
+            "review-project",
+            "review-action-pause",
+            "review-action-project",
+        }:
             return {"__interrupt__": [{"draft": "next"}]}
         return {"answer": "approved"}
 
@@ -627,6 +690,20 @@ async def test_review_resume_terminal_reinterrupt_and_projection(
         dependencies=deps,
     )
     assert ps == 200 and paused["status"] == "input_required"
+    action_ok, action_status = await a2ui_resume.resume_a2ui_run(
+        run_id="review-action-ok",
+        body=_action("review-action-ok"),
+        debug=False,
+        dependencies=deps,
+    )
+    assert action_status == 200 and action_ok["status"] == "succeeded"
+    action_paused, action_ps = await a2ui_resume.resume_a2ui_run(
+        run_id="review-action-pause",
+        body=_action("review-action-pause"),
+        debug=False,
+        dependencies=deps,
+    )
+    assert action_ps == 200 and action_paused["status"] == "input_required"
     with pytest.raises(HTTPException) as waiting:
         await a2ui_resume.resume_review_run(
             thread_id="review-missing-surface",
@@ -643,23 +720,130 @@ async def test_review_resume_terminal_reinterrupt_and_projection(
             dependencies=deps,
         )
     assert bad.value.status_code == 409
+    with pytest.raises(SafeApiError) as no_surface:
+        await a2ui_resume.resume_review_run(
+            thread_id="review-no-a2ui",
+            payload=ResumeRequest(approved=True),
+            debug=False,
+            dependencies=deps,
+        )
+    assert no_surface.value.status_code == 409
+    with pytest.raises(SafeApiError) as action_ckpt:
+        await a2ui_resume.resume_a2ui_run(
+            run_id="review-a2ui-checkpoint",
+            body=_action("review-a2ui-checkpoint"),
+            debug=False,
+            dependencies=_dependencies(
+                db, resume_graph, checkpoint_present=False
+            ),
+        )
+    assert action_ckpt.value.status_code == 409
+
+    def raise_claim(self, *a, **k):
+        raise a2ui_resume.A2UIActionConflict("already claimed")
+
+    monkeypatch.setattr(RunRegistry, "claim_a2ui_action", raise_claim)
+    with pytest.raises(SafeApiError) as claim_conflict:
+        await a2ui_resume.resume_review_run(
+            thread_id="review-claim-conflict",
+            payload=ResumeRequest(approved=True),
+            debug=False,
+            dependencies=deps,
+        )
+    assert claim_conflict.value.status_code == 409
+    monkeypatch.undo()
+    original = RunRegistry.settle_run
+
+    def raise_settle(self, *a, **k):
+        if k.get("status") == "succeeded":
+            raise OSError("disk")
+        return original(self, *a, **k)
+
+    def false_settle(self, *a, **k):
+        if k.get("status") == "succeeded":
+            return False
+        return original(self, *a, **k)
+
+    monkeypatch.setattr(RunRegistry, "settle_run", raise_settle)
+    with pytest.raises(HTTPException) as persist:
+        await a2ui_resume.resume_review_run(
+            thread_id="review-persist",
+            payload=ResumeRequest(approved=True),
+            debug=False,
+            dependencies=deps,
+        )
+    assert persist.value.status_code == 500
+    monkeypatch.setattr(RunRegistry, "settle_run", false_settle)
+    with pytest.raises(HTTPException) as false_p:
+        await a2ui_resume.resume_review_run(
+            thread_id="review-false",
+            payload=ResumeRequest(approved=True),
+            debug=False,
+            dependencies=deps,
+        )
+    assert false_p.value.status_code == 500
+    monkeypatch.setattr(RunRegistry, "settle_run", original)
+    claimed_body, claimed_status = await a2ui_resume.resume_review_run(
+        thread_id="review-claimed",
+        payload=ResumeRequest(approved=True),
+        debug=False,
+        dependencies=deps,
+    )
+    assert claimed_status == 200 and claimed_body["status"] == "succeeded"
+    with pytest.raises(SafeApiError) as claimed:
+        await a2ui_resume.resume_review_run(
+            thread_id="review-claimed",
+            payload=ResumeRequest(approved=True),
+            debug=False,
+            dependencies=deps,
+        )
+    assert claimed.value.status_code == 409
+    with pytest.raises(SafeApiError) as missing_ckpt:
+        await a2ui_resume.resume_review_run(
+            thread_id="review-checkpoint",
+            payload=ResumeRequest(approved=True),
+            debug=False,
+            dependencies=_dependencies(
+                db, resume_graph, checkpoint_present=False
+            ),
+        )
+    assert missing_ckpt.value.status_code == 409
+    minted, minted_status = await a2ui_resume.resume_review_run(
+        thread_id="review-mint",
+        payload=ResumeRequest(approved=True),
+        debug=False,
+        dependencies=_dependencies(db, resume_graph, current_request_id=None),
+    )
+    assert minted_status == 200 and minted["status"] == "succeeded"
+    with pytest.raises(HTTPException) as anonymous:
+        await a2ui_resume.resume_review_run(
+            thread_id="review-mint",
+            payload=ResumeRequest(approved=True),
+            debug=False,
+            dependencies=_dependencies(db, resume_graph, current_user=None),
+        )
+    assert anonymous.value.status_code == 404
     monkeypatch.setattr(
         a2ui_resume,
         "project_review_interrupt",
         lambda _i: (_ for _ in ()).throw(ReviewSurfaceProjectionError("bad")),
     )
-
-    async def interrupt_resume(_g, _r, _p):
-        return {"__interrupt__": [{"draft": "next"}]}
-
     with pytest.raises(SafeApiError) as projected:
         await a2ui_resume.resume_review_run(
             thread_id="review-project",
             payload=ResumeRequest(approved=True),
             debug=False,
-            dependencies=_dependencies(db, interrupt_resume),
+            dependencies=deps,
         )
     assert projected.value.status_code == 500
+    with pytest.raises(SafeApiError) as action_projected:
+        await a2ui_resume.resume_a2ui_run(
+            run_id="review-action-project",
+            body=_action("review-action-project"),
+            debug=False,
+            dependencies=deps,
+        )
+    assert action_projected.value.status_code == 500
     with pytest.raises(HTTPException) as missing:
         await a2ui_resume.resume_review_run(
             thread_id="review-absent",
@@ -668,6 +852,20 @@ async def test_review_resume_terminal_reinterrupt_and_projection(
             dependencies=deps,
         )
     assert missing.value.status_code == 404
+    with pytest.raises(HTTPException) as invalid:
+        await a2ui_resume.resume_a2ui_run(
+            run_id="review-invalid",
+            body=A2uiActionRequest(
+                run_id="review-invalid",
+                surface_id="surface-1",
+                widget="confirm",
+                action_id="action-1",
+                payload={},
+            ),
+            debug=False,
+            dependencies=deps,
+        )
+    assert invalid.value.status_code == 400
 
 
 def test_review_run_body_shapes_interrupt_and_debug():
