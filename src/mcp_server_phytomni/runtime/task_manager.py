@@ -63,9 +63,8 @@ class Submission:
     """A full task-row write spec for ``TaskManager.record``.
 
     Bundles the task-grain fields with an optional ``RunContext`` so
-    ``record`` takes a single ``submission`` argument (which keeps the
-    method pylint-clean at the project's two-positional-argument limit
-    while still expressing every column the table now carries).
+    ``record`` takes a single ``submission`` argument while still
+    expressing every column the table now carries.
 
     Attributes:
         task_id: The MCP-facing task id returned to the caller.

@@ -40,11 +40,8 @@ from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 
 ANALYST_CONFIG = AnalystConfig()
-# Bound below the credential constants so this module's init block does
-# not share a contiguous 5+ line shape with the matching credential
-# block in agents/shared/analysis_storage.py (each file's logger sits
-# on opposite sides of the same constants, defusing the pylint R0801
-# false positive without a project-wide threshold change).
+# Logger sits below the credential constants so this init block does
+# not share a 5+ line shape with agents/shared/analysis_storage.py.
 logger = logging.getLogger(__name__)
 
 

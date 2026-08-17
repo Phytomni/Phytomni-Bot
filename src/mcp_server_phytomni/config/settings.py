@@ -26,10 +26,9 @@ PROJECT_ROOT = _current_dir.parent
 ENV_PATH = PROJECT_ROOT / "config/.env"
 ENCRYPTED_ENV_PATH = PROJECT_ROOT / "config/.env.encrypted"
 LICENSE_KEY_ENV = "PHYTOMNI_LICENSE_KEY"
-# Model A delivery: the per-customer key is never baked into the
-# image. The customer drops it here at deploy time (or mounts it as a
-# Docker volume / k8s secret). MUST stay out of git and image build
-# contexts — see .gitignore / .dockerignore.
+# Per-customer key is never baked into the image. Dropped at deploy
+# time (or mounted as a Docker volume / k8s secret). Must stay out of
+# git and image build contexts — see .gitignore / .dockerignore.
 LICENSE_KEY_PATH = PROJECT_ROOT / "config/.license_key"
 
 # In-process, never-persisted memo so the PBKDF2 decrypt runs once
@@ -39,7 +38,7 @@ _ENV_DECRYPT_MEMO = {"done": False}
 
 
 def _resolve_license_key() -> str | None:
-    """Resolve the per-customer license key (Model A delivery).
+    """Resolve the per-customer license key.
 
     Two sources may provide the key: the ``PHYTOMNI_LICENSE_KEY``
     environment variable (operator / ``docker -e``) and the
@@ -334,7 +333,6 @@ def get_sensitive_config() -> SensitiveConfig:
     # the decrypted values are already in os.environ via setdefault;
     # binding _env_file=None keeps a stray plaintext (which does
     # not exist here) from ever shadowing them.
-    #
     # Passing _env_file=ENV_PATH explicitly is load-bearing on dev
     # hosts where .env carries the full production shape (RETRIEVE_URL,
     # REPO_ID_DICT, APP_ID, and the rest of the 19 externalised

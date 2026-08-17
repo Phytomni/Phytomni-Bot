@@ -35,10 +35,10 @@ from .state import EnvironmentState
 class _EnvironmentSubmitInputs(NamedTuple):
     """Narrative inputs the VCI dispatch helpers consume.
 
-    Packed into a NamedTuple so :func:`_submit_vci_via_subgraph` stays
-    under pylint's ``max-args=5`` ceiling. The three remaining helper
-    parameters (``region_codes`` / ``submit_kwargs``) are keyword-only
-    so the call site reads as documentation.
+    Packed into a NamedTuple so the four narrative fields stay
+    together. The remaining helper parameters (``region_codes`` /
+    ``submit_kwargs``) are keyword-only so the call site reads as
+    documentation.
     """
 
     goal_description: str
@@ -147,9 +147,8 @@ async def _submit_vci_via_subgraph(
     Args:
         inputs: ``_EnvironmentSubmitInputs`` carrying the four narrative
             fields (``goal_description`` / ``data_list`` /
-            ``output_dir`` / ``meta``); packed into a NamedTuple so the
-            helper stays under pylint's ``max-args`` ceiling without
-            silently dropping any field.
+            ``output_dir`` / ``meta``); packed into a NamedTuple so no
+            field is dropped at the call site.
         region_codes: 3-tuple of ``(province, city, county)`` codes;
             joined as the dispatch ``target_id`` so the analyst
             thread id includes the analysed region.

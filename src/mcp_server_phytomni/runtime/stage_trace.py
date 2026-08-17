@@ -78,8 +78,8 @@ class StageTraceSink(Protocol):
     def emit(self, event: StageTraceEvent) -> None:
         """Persist or log one safe stage event."""
 
-    # Keep the one-method structural contract while avoiding Pylint's
-    # data-holder heuristic for protocol classes.
+    # Extra runtime attribute so a one-method Protocol is not treated
+    # as a data holder.
     if not TYPE_CHECKING:
 
         @property

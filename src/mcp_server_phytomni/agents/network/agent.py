@@ -104,11 +104,11 @@ class GeneNetworkState(ParallelDispatchState):
     species_code: str  # Three-letter species code (e.g. "osa")
     to_id: str  # Trait Ontology id formatted like "TO:0000207"
     locale: SupportedLocale
-    user_id: str  # User identifier
-    batch: bool  # Whether this is batch processing
+    user_id: str
+    batch: bool
     output_dir: str | None
-    network_task: Annotated[dict[str, Any], operator.or_]  # submit results
-    network_tasks: list[dict[str, Any]]  # List of network analysis tasks
+    network_task: Annotated[dict[str, Any], operator.or_]
+    network_tasks: list[dict[str, Any]]
     submission_rejections: Annotated[list[dict[str, str]], operator.add]
 
 

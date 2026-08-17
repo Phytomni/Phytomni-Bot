@@ -34,10 +34,10 @@ from .state import EvolutionState
 class _EvolutionSubmitInputs(NamedTuple):
     """Narrative inputs the evolution dispatch helpers consume.
 
-    Packed into a NamedTuple so :func:`_submit_evolution_via_subgraph`
-    stays under pylint's ``max-args=5`` ceiling. The three remaining
-    helper parameters (``gene_id`` / ``submit_kwargs`` / ``user_id``)
-    are keyword-only so the call site reads as documentation.
+    Packed into a NamedTuple so the four narrative fields stay
+    together. The three remaining helper parameters (``gene_id`` /
+    ``submit_kwargs`` / ``user_id``) are keyword-only so the call
+    site reads as documentation.
     """
 
     goal_description: str
@@ -150,9 +150,8 @@ async def _submit_evolution_via_subgraph(
     Args:
         inputs: ``_EvolutionSubmitInputs`` carrying the four narrative
             fields (``goal_description`` / ``data_list`` /
-            ``output_dir`` / ``meta``); packed into a NamedTuple so the
-            helper stays under pylint's ``max-args`` ceiling without
-            silently dropping any field.
+            ``output_dir`` / ``meta``); packed into a NamedTuple so no
+            field is dropped at the call site.
         user_id: Resolved user identifier; threaded through the
             cached-agent kwargs to match the legacy ``user_id`` arg
             on ``analyst.submit``.

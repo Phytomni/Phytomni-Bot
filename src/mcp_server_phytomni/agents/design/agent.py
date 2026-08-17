@@ -139,8 +139,7 @@ class _DispatchOptions(NamedTuple):
     """Per-call dispatch options for one design analysis submission.
 
     Bundles the optional output directory and the polling flag so
-    ``_dispatch_and_wait_analysis`` stays within the pylint
-    ``too-many-arguments`` budget while still threading the
+    ``_dispatch_and_wait_analysis`` can still thread the
     consumer-supplied ``is_polling`` (deep_genome mounts pass ``True``;
     the external submit-only flow keeps the ``False`` default).
 

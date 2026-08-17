@@ -46,8 +46,8 @@ def _common_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     Every analyst task wrapper accepts the same five overrides and
     normalizes ``retriable_codes`` to a list copy. Centralizing the
     extraction keeps the four wrappers below from duplicating the
-    boilerplate (pylint R0801) and gives a single seam to update when
-    the override surface changes.
+    boilerplate and gives a single seam to update when the override
+    surface changes.
     """
     retriable_codes = kwargs.get("retriable_codes")
     if retriable_codes is None:

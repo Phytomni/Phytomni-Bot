@@ -17,7 +17,6 @@ from .schemas import (
 )
 from .translate import action_to_resume_payload
 
-# Re-export for callers that import from review.py directly.
 __all__ = [
     "REVIEW_BODY_MAX_CHARS",
     "REVIEW_CONFIRM_TITLE",

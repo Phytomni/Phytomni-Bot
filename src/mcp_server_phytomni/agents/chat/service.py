@@ -375,11 +375,10 @@ def _cached_chat_app() -> Any:
     top-level from-import would close the service → builder → graph
     → service cycle at parse time (graph.py imports this module for
     helpers and late-bound ``phyto_chat`` / ``get_prompt`` lookups).
-    ``importlib`` is opaque to pylint's R0401 cycle detector, which
-    is the correct read since this edge IS dynamic: the import only
-    fires once per process at first call, after every module above
-    has finished loading. ``lru_cache`` makes the compile happen at
-    most once and gives test suites a ``cache_clear()`` hook.
+    The import is dynamic: it fires once per process at first call,
+    after every module above has finished loading. ``lru_cache``
+    makes the compile happen at most once and gives tests a
+    ``cache_clear()`` hook.
     """
     builder_module = importlib.import_module(".builder", package=__package__)
     return builder_module.build_chat_graph()

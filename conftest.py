@@ -60,17 +60,15 @@ _TEST_ENV = {
     "OUTBOUND_INTEROP_CONCURRENCY": "0",
     "OUTBOUND_POOL_WAIT_WARN_SECONDS": "1",
     "GAUSS_DSN": ("postgresql://u:p@db.invalid:8000/test?sslmode=require"),
-    # Deployment-specific endpoints (Phase 14.3.1): empty defaults in
-    # config/defaults.py force operators to set these per-deployment.
-    # Tests use stable example.invalid hosts so a stray real network
-    # call would fail closed instead of leaking to a public endpoint.
+    # Empty defaults in config/defaults.py force operators to set these
+    # per-deployment. Tests use example.invalid hosts so a stray network
+    # call fails closed instead of leaking to a public endpoint.
     "RETRIEVE_URL": "https://example.invalid/retrieve",
     "RERANK_URL": "https://example.invalid/rerank",
     "SPA_FAQ_URL": "https://example.invalid/repos/{repo_id}/faqs",
-    # Deployment-specific UUIDs (Phase 14.3.2): empty defaults in
-    # config/defaults.py force operators to set per-deployment. Tests
-    # use opaque ``pytest-<name>-id`` strings so any accidental
-    # cross-tenant id leak shows up clearly in logs / assertions.
+    # Empty defaults force operators to set per-deployment. Tests use
+    # opaque ``pytest-<name>-id`` strings so a cross-tenant id leak
+    # shows up clearly in logs / assertions.
     # REPO_ID_DICT ships as a JSON string env value; pydantic-settings
     # parses it into Dict[str, int] automatically.
     "REPO_ID": "pytest-repo-id",

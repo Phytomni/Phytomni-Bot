@@ -21,9 +21,8 @@ def default_subgraph_allowlist() -> frozenset[str]:
 
     The set is derived once per call from
     ``build_default_registry().names()`` so updates to the registered
-    subgraph catalog (a new agent landing in Phase 8+ or a removal in
-    a hygiene push) flow into the loader's safety check without a
-    second source of truth to keep in sync.
+    subgraph catalog (a newly registered agent or a removal) flow
+    into the loader's safety check without a second source of truth.
 
     Returns:
         Frozenset of every subgraph id registered in the default

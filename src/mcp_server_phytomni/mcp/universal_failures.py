@@ -9,7 +9,7 @@ in :mod:`result_formatting` can emit one shared ``status`` /
 ``succeeded_count`` / ``failed_count`` / ``failures`` shape across the
 four parallel-dispatch agents (design / network / research / review).
 Lives in its own module so :mod:`result_formatting` stays under the
-1000-line module size budget enforced by pylint C0302.
+1000-line module size budget.
 """
 
 import math
