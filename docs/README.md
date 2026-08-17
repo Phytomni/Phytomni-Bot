@@ -70,6 +70,6 @@ Start from the table below, or browse a category directly.
 
 The generated [static-analysis exemption ledger](development/lint-exemptions.md)
 is the review record for exact, approved findings. The durable workflow is
-documented in `AGENTS.md` and `STYLE.md`: inspect the finding, write the
+documented in `STYLE.md`: inspect the finding, write the
 counterfactual, obtain explicit approval, update the standalone registry, and
 run the scoped gate before committing.
