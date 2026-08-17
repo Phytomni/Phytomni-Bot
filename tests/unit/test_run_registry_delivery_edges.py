@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -132,16 +133,7 @@ def test_retryable_failed_delivery_guards() -> None:
         error_code="archive_publish_failed",
         retryable=True,
     )
-    empty_digest = failed.__class__(
-        schema_version=1,
-        required=True,
-        status="failed",
-        revision=1,
-        inventory_digest="",
-        archive=None,
-        error_code="archive_publish_failed",
-        retryable=False,
-    )
+    empty_digest = replace(failed, inventory_digest="", retryable=False)
     with_archive = object.__new__(failed.__class__)
     object.__setattr__(with_archive, "status", "failed")
     object.__setattr__(with_archive, "retryable", True)
