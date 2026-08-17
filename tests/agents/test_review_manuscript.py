@@ -68,6 +68,35 @@ def test_scrub_drops_verbatim_in_scope_and_snippet_meta() -> None:
     assert "Here we review ." not in out
 
 
+def test_scrub_repairs_here_we_review_the_period() -> None:
+    """A hole left after scope deletion does not stay as 'review the .'."""
+    text = (
+        "### Introduction\n"
+        "Drought remains a bottleneck.\n"
+        "Here we review the .\n"
+        "OsMYB60 binds OsCER1 [document:3].\n"
+    )
+    out = scrub_review_manuscript(text)
+    assert "Here we review the ." not in out
+    assert "Here we review this topic." in out
+    assert "[document:3]" in out
+
+
+def test_scrub_rewrites_snippet_process_talk() -> None:
+    """Dimension leftovers about snippets become scientific wording."""
+    text = (
+        "The supplied knowledge demonstrates that ZOS7 binds OsMYB60 "
+        "[document:3]. Assays are not provided in these snippets. "
+        "No CER1 link is present in the supplied documents.\n"
+    )
+    out = scrub_review_manuscript(text)
+    assert "supplied knowledge" not in out.lower()
+    assert "these snippets" not in out.lower()
+    assert "supplied documents" not in out.lower()
+    assert "ZOS7 binds OsMYB60 [document:3]." in out
+    assert "not reported" in out
+
+
 def test_scrub_drops_orphan_subheading_after_meta_removal() -> None:
     """A #### heading with no remaining body is removed."""
     text = (

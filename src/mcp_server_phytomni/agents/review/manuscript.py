@@ -53,9 +53,11 @@ def scrub_review_manuscript(
     Returns:
         Cleaned manuscript. Citation tags are preserved.
     """
-    cleaned = _META.sub("", text)
+    cleaned = _rewrite_snippet_talk(text)
+    cleaned = _META.sub("", cleaned)
     for blob in (thesis, in_scope, out_of_scope):
         cleaned = _drop_verbatim_blob(cleaned, blob)
+    cleaned = _repair_here_we_review(cleaned)
     cleaned = _soften_overclaim_title(cleaned)
     cleaned = _drop_orphan_subheadings(cleaned)
     return _collapse_blank_lines(cleaned)
@@ -71,21 +73,48 @@ def _drop_verbatim_blob(text: str, blob: str) -> str:
     stripped = re.sub(r"(?i)\s*are examined herein\.?", "", stripped)
     stripped = re.sub(r"[ \t]{2,}", " ", stripped)
     stripped = re.sub(r"(?m)[ \t]+\n", "\n", stripped)
-    stripped = re.sub(
-        r"Here we review\s+([A-Z])", r"Here we review \1", stripped
-    )
-    stripped = re.sub(
-        r"Here we review(?:\s*\.)+",
+    return stripped
+
+
+def _repair_here_we_review(text: str) -> str:
+    """Repair holes left after deleting a pasted scope clause."""
+    repaired = re.sub(r"Here we review\s+([A-Z])", r"Here we review \1", text)
+    repaired = re.sub(
+        r"Here we review(?:\s+\w+){0,2}(?:\s*\.)+",
         "Here we review this topic.",
-        stripped,
+        repaired,
     )
-    stripped = re.sub(
+    repaired = re.sub(
         r"Here we review\s*(?=\n#|$)",
         "Here we review this topic.",
-        stripped,
+        repaired,
     )
-    stripped = re.sub(r"\.\s+\.", ".", stripped)
-    return stripped
+    return re.sub(r"\.\s+\.", ".", repaired)
+
+
+_SNIPPET_TALK = (
+    (
+        re.compile(r"(?i)\bthe supplied knowledge demonstrates that\s+"),
+        "",
+    ),
+    (
+        re.compile(r"(?i)\bnot provided in these snippets\b"),
+        "not reported",
+    ),
+    (
+        re.compile(r"(?i)\bin the supplied documents\b"),
+        "in current evidence",
+    ),
+    (re.compile(r"(?i)\bthese snippets\b"), "current evidence"),
+)
+
+
+def _rewrite_snippet_talk(text: str) -> str:
+    """Replace leftover retrieval-process phrasing with scientific wording."""
+    rewritten = text
+    for pattern, replacement in _SNIPPET_TALK:
+        rewritten = pattern.sub(replacement, rewritten)
+    return rewritten
 
 
 def _soften_overclaim_title(text: str) -> str:
