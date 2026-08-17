@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Behavior contracts for deterministic terminal result archives."""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access, duplicate-code
 
 from __future__ import annotations
 

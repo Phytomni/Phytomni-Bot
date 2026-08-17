@@ -11,7 +11,7 @@ A test-only subclass exposes the protected helpers under public names
 so the assertions stay inside the class hierarchy.
 """
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access, duplicate-code
 
 from __future__ import annotations
 

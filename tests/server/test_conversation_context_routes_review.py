@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Review settlement error edges for conversation-context HTTP routes."""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access, duplicate-code, too-few-public-methods
 
 from __future__ import annotations
 

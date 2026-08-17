@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """HTTP contracts for the feature-gated conversation-context protocol."""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access, duplicate-code
 
 from __future__ import annotations
 

@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Behavior contracts for private result archive inventory persistence."""
 
-# pylint: disable=protected-access, too-few-public-methods
+# pylint: disable=protected-access, too-few-public-methods, duplicate-code
 
 from __future__ import annotations
 

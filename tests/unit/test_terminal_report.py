@@ -3,7 +3,7 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Tests for terminal remote-run final report assembly."""
 
-# pylint: disable=protected-access, too-few-public-methods
+# pylint: disable=protected-access, too-few-public-methods, duplicate-code
 
 from __future__ import annotations
 
