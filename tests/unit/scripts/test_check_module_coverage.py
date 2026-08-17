@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 import scripts.check_module_coverage as coverage_gate
 
 pytestmark = pytest.mark.unit

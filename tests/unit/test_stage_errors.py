@@ -10,11 +10,11 @@ from types import SimpleNamespace
 
 import pytest
 
+import mcp_server_phytomni.api.stage_errors as stage_errors
 from mcp_server_phytomni.api.lifecycle_contract import (
     LifecycleInvariantError,
     SafeErrorCode,
 )
-import mcp_server_phytomni.api.stage_errors as stage_errors
 from mcp_server_phytomni.api.stage_errors import (
     project_data_stage_error,
     safe_api_error_for_lifecycle,

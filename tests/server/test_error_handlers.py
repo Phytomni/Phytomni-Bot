@@ -14,14 +14,13 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
+from starlette.requests import Request
 
 from mcp_server_phytomni.agents.knowledge.retrieval_result import (
     RETRIEVAL_UNAVAILABLE_MESSAGE,
 )
 from mcp_server_phytomni.api.app_support import _ErrorResponseOptions
 from mcp_server_phytomni.api.error_handlers import register_error_handlers
-from starlette.requests import Request
-
 from mcp_server_phytomni.runtime.stage_trace import (
     StageTraceEvent,
     bind_stage_trace,
