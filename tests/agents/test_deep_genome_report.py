@@ -58,7 +58,7 @@ class _ReportProbe(DeepGenomeReportMixin):
     ``_summary_source_content`` helpers are protected because production
     code only calls them from sibling node methods on the same class.
     Tests exercise them through this subclass so the calls stay inside
-    the class hierarchy (no pylint W0212 protected-access escape).
+    the class hierarchy.
     """
 
     def __init__(self) -> None:

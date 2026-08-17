@@ -76,8 +76,7 @@ def _patch_submit_agent(
     The fake returns ``arun_return`` from its ``arun`` coroutine and
     exposes the same 4-tuple ``_build_submit_agent`` produces. The
     agent itself is a ``SimpleNamespace`` carrying just the awaited
-    ``arun`` callable, so there is no one-method class to trip
-    pylint's too-few-public-methods rule.
+    ``arun`` callable.
     """
     calls = {"build": 0, "arun": 0}
 

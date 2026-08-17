@@ -52,8 +52,7 @@ def _build_agent() -> DigitalDesignAgents:
     """Construct a design agent wired to a stub analyst.
 
     Uses ``SimpleNamespace`` for the analyst stand-in (same pattern as
-    ``_analyst_fakes.py``) so pylint's R0903 too-few-public-methods
-    rule does not trip on a single-method stub class.
+    ``_analyst_fakes.py``) instead of a one-method stub class.
     """
     analyst_stub = SimpleNamespace(identifier=lambda: "stub-analyst")
     return DigitalDesignAgents(

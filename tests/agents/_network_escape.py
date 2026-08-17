@@ -7,8 +7,7 @@
 Patches the three async paths the repo-root ``block_external_http``
 fixture leaves open so an un-mocked escape surfaces as a named
 ``RuntimeError`` instead of a 20s hang. Shared by the brief_gene
-preamble fan-in test and the graph astream primitive test; the
-inline duplicate previously tripped pylint R0801 across the two.
+preamble fan-in test and the graph astream primitive test.
 """
 
 from __future__ import annotations

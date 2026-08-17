@@ -101,7 +101,7 @@ class _ReportProbe(ReviewReportMixin):
     ``_format_supplementary_results`` and ``_format_supplementary_query``
     are intentionally protected on the mixin (internal helpers). Tests
     probe through a subclass so protected access stays inside the class
-    hierarchy and does not trip pylint W0212 on the test module.
+    hierarchy.
     """
 
     def __init__(self, max_tokens: int = 4000) -> None:

@@ -7,8 +7,8 @@
 The analyst graph-node tests (test_analyst_plan_gate.py and
 test_analyst_graph_nodes.py) both build a SimpleNamespace stand-in
 for ``SensitiveConfig`` so the bound ``check_node`` / ``plan_node``
-calls reach a SecretStr-shaped ``API_KEY``. Centralising the builder
-keeps the two files from drifting and keeps pylint's R0801 quiet.
+calls reach a SecretStr-shaped ``API_KEY``. Centralising the
+builder keeps the two files from drifting.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def fake_submitting_agent(
     """Return an analyst_agent whose ``app.ainvoke`` scripts a final state.
 
     Shared by the dispatch-seam dedup and adapter tests so the scripted
-    submit result lives in one place (keeps pylint's R0801 quiet).
+    submit result lives in one place.
     """
 
     async def ainvoke(state: Any, config: Any) -> dict[str, Any]:

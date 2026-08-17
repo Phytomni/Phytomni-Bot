@@ -43,8 +43,7 @@ def _build_agent() -> InSilicoResearchAgents:
     """Construct a research agent wired to a no-op analyst stub.
 
     Uses ``SimpleNamespace`` for the analyst stand-in (same pattern as
-    ``_analyst_fakes.py``) so pylint's R0903 too-few-public-methods
-    rule does not trip on a single-method stub class.
+    ``_analyst_fakes.py``) instead of a one-method stub class.
     """
     analyst_stub = SimpleNamespace(identifier=lambda: "stub-analyst")
     return InSilicoResearchAgents(

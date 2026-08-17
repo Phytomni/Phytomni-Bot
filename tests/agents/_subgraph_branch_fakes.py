@@ -6,10 +6,8 @@
 
 Centralises the mock-installation and dispatcher-construction
 boilerplate every ``test_*_analyst_subgraph.py`` and
-``test_*_chat_subgraph.py`` file would otherwise repeat, so the
-per-consumer flag-branch test files stay below pylint's ``R0801``
-``min-similar-lines`` threshold while still exercising each
-consumer's flag branch.
+``test_*_chat_subgraph.py`` file would otherwise repeat, while
+still exercising each consumer's flag branch.
 """
 
 from __future__ import annotations

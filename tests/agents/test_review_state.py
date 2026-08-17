@@ -32,7 +32,7 @@ def test_deep_research_state_inherits_parallel_dispatch_state() -> None:
 
 
 def test_review_state_carries_chat_mount_fields() -> None:
-    """Single-shot chat-mount pattern fields (Step 6.0 lock)."""
+    """Chat-mount fields are declared on ``DeepResearchState``."""
     hints = get_type_hints(DeepResearchState, include_extras=True)
     for key in ["chat_payload", "chat_response", "pending_post"]:
         assert key in hints, f"chat-mount field {key} missing"

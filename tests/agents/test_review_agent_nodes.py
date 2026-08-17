@@ -29,9 +29,8 @@ class _AgentProbe(DeepResearchAgent):
     """Public-named proxy so tests exercise protected ``_chat`` in-class.
 
     Tests probe through a subclass so the protected ``_chat`` access
-    stays inside the class hierarchy and does not trip pylint W0212 on
-    the test module — same pattern the mixin tests use for their own
-    protected helpers.
+    stays inside the class hierarchy — same pattern the mixin tests
+    use for their own protected helpers.
     """
 
     async def chat(

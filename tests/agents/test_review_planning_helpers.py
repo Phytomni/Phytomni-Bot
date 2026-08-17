@@ -145,8 +145,7 @@ class _PlanningProbe(ReviewPlanningMixin):
 
     ``_dimension_fragments`` is intentionally protected on the mixin (it
     is an internal helper, not a workflow node). Tests probe through a
-    subclass so the protected access stays inside the class hierarchy
-    and does not trip pylint W0212 on the test module.
+    subclass so the protected access stays inside the class hierarchy.
     """
 
     def __init__(self, max_tokens: int = 1000) -> None:

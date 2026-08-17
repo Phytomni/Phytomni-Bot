@@ -31,9 +31,8 @@ pytestmark = pytest.mark.agent
 def _fake_chunk(payload: dict[str, Any]) -> SimpleNamespace:
     """Wrap a chunk payload so ``chunk.model_dump()`` returns it unchanged.
 
-    Built as a ``SimpleNamespace`` to dodge pylint R0903 on a
-    single-method stand-in; the foreign refactor at ``6a21961`` made
-    this the codebase norm.
+    Built as a ``SimpleNamespace`` so the stand-in is not a
+    one-method class.
     """
     return SimpleNamespace(model_dump=lambda payload=payload: payload)
 
@@ -69,10 +68,7 @@ def _build_fake_async_openai(
     """Build an ``AsyncOpenAI`` shim routing ``create`` to ``create_fn``.
 
     Returns a plain factory function (not a class) so the test fake
-    stays a single-purpose stand-in without triggering pylint R0903
-    on a single-method test class; foreign ``6a21961`` made
-    ``SimpleNamespace``-based fakes the codebase norm for the same
-    reason.
+    stays a single-purpose stand-in.
 
     Args:
         create_fn: Async callable that backs
