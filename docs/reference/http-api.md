@@ -2585,7 +2585,10 @@ context lifecycle is applied after selection. Explicit native selection
 keeps `route_source=explicit_selection`; autonomous selection keeps the
 router-derived source and reason code. Routing-provider timeout and
 failure use the same SafeApiError mapping as the V0 route
-(`upstream_timeout` / `routing_upstream_failed`). Synchronous selections
+(`upstream_timeout` / `routing_upstream_failed`). Selection-stage logs use
+the stable lines `Expert route outcome` and
+`Expert routing provider completed`; they do not change the public
+codes. Synchronous selections
 stage after the terminal result, while asynchronous selections stage only
 after the existing `202` run is durably accepted. Without the envelope,
 this route retains its V0 behavior. See the native-run contract above

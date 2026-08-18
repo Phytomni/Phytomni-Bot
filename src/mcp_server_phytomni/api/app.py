@@ -25,10 +25,16 @@ from mcp.types import INVALID_PARAMS
 
 from ..agents.expert import (
     ExpertProviderError,
+    ExpertProviderTimeoutError,
     ExpertRoutingContractError,
     ExpertRoutingDeclinedError,
     ToolSelection,
     select_agent_tool,
+)
+from ..agents.expert.routing_observability import (
+    ExpertRouteOutcome,
+    ExpertRoutePath,
+    record_expert_route_outcome,
 )
 from ..common import logging_config as _logging_config
 from ..config.defaults import ApiConfig, ServerConfig
@@ -315,6 +321,23 @@ def _routing_contract_error() -> SafeApiError:
     )
 
 
+def _record_v0_route_outcome(
+    outcome: ExpertRouteOutcome,
+    *,
+    payload: ExpertQueryRequest,
+    http_status: int,
+    error: BaseException | None = None,
+) -> None:
+    """Log one V0 selection-stage outcome without the query body."""
+    record_expert_route_outcome(
+        outcome,
+        path=ExpertRoutePath.V0,
+        forced=payload.forced_tool is not None,
+        error_class=None if error is None else type(error).__name__,
+        http_status=http_status,
+    )
+
+
 async def _route_expert_query(
     payload: ExpertQueryRequest,
     *,
@@ -329,6 +352,7 @@ async def _route_expert_query(
     payload = restrict_expert_payload_for_research(
         payload, ServerConfig().BUCKET_NAME
     )
+    recorded_outcome = False
     try:
         selection = await select_agent_tool(
             payload.user_query,
@@ -342,30 +366,67 @@ async def _route_expert_query(
         if payload.forced_tool is not None or "ChatAgent" not in (
             payload.allowed_tools
         ):
-            _LOGGER.warning(
-                "Expert routing declined without a chat fallback (%s)",
-                exc.__class__.__name__,
+            _record_v0_route_outcome(
+                ExpertRouteOutcome.DECLINED_NO_FALLBACK,
+                payload=payload,
+                http_status=502,
+                error=exc,
             )
             raise _routing_contract_error() from exc
-        _LOGGER.warning("Expert routing declined; falling back to ChatAgent")
+        _record_v0_route_outcome(
+            ExpertRouteOutcome.DECLINED_CHAT_FALLBACK,
+            payload=payload,
+            http_status=200,
+            error=exc,
+        )
+        recorded_outcome = True
         selection = ToolSelection(
             tool_name="ChatAgent",
             arguments={"user_query": payload.user_query},
         )
     except ExpertRoutingContractError as exc:
-        _LOGGER.warning(
-            "Expert routing selection contract failed (%s)",
-            exc.__class__.__name__,
+        _record_v0_route_outcome(
+            ExpertRouteOutcome.SELECTION_CONTRACT,
+            payload=payload,
+            http_status=502,
+            error=exc,
         )
         raise _routing_contract_error() from exc
     except ExpertProviderError as exc:
+        _record_v0_route_outcome(
+            (
+                ExpertRouteOutcome.PROVIDER_TIMEOUT
+                if isinstance(exc, ExpertProviderTimeoutError)
+                else ExpertRouteOutcome.PROVIDER_ERROR
+            ),
+            payload=payload,
+            http_status=(
+                504 if isinstance(exc, ExpertProviderTimeoutError) else 502
+            ),
+            error=exc,
+        )
         raise expert_routing_provider_error(exc) from exc
     if selection is None:
+        _record_v0_route_outcome(
+            ExpertRouteOutcome.SELECTION_CONTRACT,
+            payload=payload,
+            http_status=502,
+        )
         raise _routing_contract_error()
     slug = _TOOL_TO_AGENT_SLUG.get(selection.tool_name)
     if slug is None:
-        _LOGGER.warning("Expert routing selected an unavailable tool")
+        _record_v0_route_outcome(
+            ExpertRouteOutcome.SELECTION_CONTRACT,
+            payload=payload,
+            http_status=502,
+        )
         raise _routing_contract_error()
+    if not recorded_outcome:
+        _record_v0_route_outcome(
+            ExpertRouteOutcome.SELECTED,
+            payload=payload,
+            http_status=200,
+        )
     request_json = json.dumps(
         {
             "agent": slug,

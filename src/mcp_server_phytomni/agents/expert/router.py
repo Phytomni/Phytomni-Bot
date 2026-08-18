@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from random import uniform
@@ -36,6 +37,11 @@ from ...runtime.locale import (
     locale_instruction,
 )
 from ...runtime.outbound import OutboundPoolName, current_outbound_runtime
+from .routing_observability import (
+    ExpertProviderAttemptResult,
+    elapsed_ms,
+    record_expert_provider_attempt,
+)
 
 __all__ = [
     "ExpertCompletion",
@@ -316,20 +322,75 @@ async def _create_with_retries(
 ) -> Any:
     """Run one provider choice with bounded transient-error retries."""
     for attempt in range(_EXPERT_PROVIDER_MAX_RETRIES + 1):
+        started_ns = time.monotonic_ns()
         try:
-            return await create(choice)
+            result = await create(choice)
         except (APITimeoutError, httpx.TimeoutException, TimeoutError) as exc:
             if attempt >= _EXPERT_PROVIDER_MAX_RETRIES:
+                _record_provider_attempt(
+                    ExpertProviderAttemptResult.TIMEOUT,
+                    started_ns,
+                    attempt,
+                )
                 raise ExpertProviderTimeoutError() from exc
+            _record_provider_attempt(
+                ExpertProviderAttemptResult.TRANSIENT_RETRY,
+                started_ns,
+                attempt,
+            )
+        except BadRequestError:
+            _record_provider_attempt(
+                (
+                    ExpertProviderAttemptResult.CONSTRAINED_DOWNGRADE
+                    if _is_constrained_choice(choice)
+                    else ExpertProviderAttemptResult.PROVIDER_ERROR
+                ),
+                started_ns,
+                attempt,
+            )
+            raise
         except APIError as exc:
             if not _is_transient_provider_error(exc):
+                _record_provider_attempt(
+                    ExpertProviderAttemptResult.PROVIDER_ERROR,
+                    started_ns,
+                    attempt,
+                )
                 raise
             if attempt >= _EXPERT_PROVIDER_MAX_RETRIES:
+                _record_provider_attempt(
+                    ExpertProviderAttemptResult.PROVIDER_ERROR,
+                    started_ns,
+                    attempt,
+                )
                 raise ExpertProviderError() from exc
+            _record_provider_attempt(
+                ExpertProviderAttemptResult.TRANSIENT_RETRY,
+                started_ns,
+                attempt,
+            )
+        else:
+            _record_provider_attempt(
+                ExpertProviderAttemptResult.OK, started_ns, attempt
+            )
+            return result
         await asyncio.sleep(
             _EXPERT_PROVIDER_BACKOFF_BASE**attempt + uniform(0, 1)
         )
     raise AssertionError("expert provider retry loop exited unexpectedly")
+
+
+def _record_provider_attempt(
+    result: ExpertProviderAttemptResult,
+    started_ns: int,
+    attempt: int,
+) -> None:
+    """Record one timed Pangu hop without inspecting the exception."""
+    record_expert_provider_attempt(
+        result,
+        duration_ms=elapsed_ms(started_ns),
+        attempt=attempt,
+    )
 
 
 def _is_transient_provider_error(exc: APIError) -> bool:

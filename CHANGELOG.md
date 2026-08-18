@@ -20,6 +20,15 @@ ______________________________________________________________________
 Operator-visible changes on `release/0.1.4` since 0.1.3. The installed
 package version remains `0.1.3` until the release bump.
 
+### Added
+
+- **Expert route logs** — `POST /v1/query/route` writes one
+  `Expert route outcome` line that classifies selected, Chat
+  fallback, decline without fallback, selection-contract, and
+  provider timeout or failure. Each Pangu routing completion writes
+  `Expert routing provider completed` with `duration_ms`. Public
+  HTTP codes are unchanged.
+
 ### Changed
 
 - **Compute tiers** — `AnalystConfig.RESOURCE` medium is now 4C/16G

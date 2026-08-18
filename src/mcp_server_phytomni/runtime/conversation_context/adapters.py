@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
@@ -21,6 +20,11 @@ from ...agents.expert import (
     ExpertRoutingDeclinedError,
     ToolSelection,
     ToolSelectionError,
+)
+from ...agents.expert.routing_observability import (
+    ExpertRouteOutcome,
+    ExpertRoutePath,
+    record_expert_route_outcome,
 )
 from ...agents.knowledge.conversation import (
     KnowledgeClarificationError,
@@ -55,8 +59,6 @@ from .store import (
     ReviewSettlementClaim,
     StoredTurn,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -777,13 +779,23 @@ class ConversationContextExecutor:
         except ExpertRoutingDeclinedError:
             if "ChatAgent" not in allowed_agent_ids:
                 raise
-            _LOGGER.warning(
-                "Expert routing declined; falling back to ChatAgent"
+            record_expert_route_outcome(
+                ExpertRouteOutcome.DECLINED_CHAT_FALLBACK,
+                path=ExpertRoutePath.CONTEXT,
+                forced=False,
+                error_class="ExpertRoutingDeclinedError",
+                http_status=200,
             )
             self._bindings.selected_arguments.set({"user_query": user_query})
             return AgentSelection("ChatAgent", "CHAT_FALLBACK")
         if selection is None:
             raise ToolSelectionError("strict routing returned no selection")
+        record_expert_route_outcome(
+            ExpertRouteOutcome.SELECTED,
+            path=ExpertRoutePath.CONTEXT,
+            forced=False,
+            http_status=200,
+        )
         self._bindings.selected_arguments.set(dict(selection.arguments))
         return AgentSelection(selection.tool_name, "ROUTER_SELECTED")
 

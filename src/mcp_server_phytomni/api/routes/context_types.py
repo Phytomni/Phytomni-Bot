@@ -12,7 +12,17 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from ...agents.expert import ExpertProviderError, ToolSelectionError
+from ...agents.expert import (
+    ExpertProviderError,
+    ExpertProviderTimeoutError,
+    ExpertRoutingDeclinedError,
+    ToolSelectionError,
+)
+from ...agents.expert.routing_observability import (
+    ExpertRouteOutcome,
+    ExpertRoutePath,
+    record_expert_route_outcome,
+)
 from ...runtime.conversation_context.adapters import (
     ConversationContextExecutor,
 )
@@ -111,8 +121,39 @@ async def execute_context_lifecycle_http(
             detail="Review mutation is busy",
         ) from exc
     except ExpertProviderError as exc:
+        timed_out = isinstance(exc, ExpertProviderTimeoutError)
+        record_expert_route_outcome(
+            (
+                ExpertRouteOutcome.PROVIDER_TIMEOUT
+                if timed_out
+                else ExpertRouteOutcome.PROVIDER_ERROR
+            ),
+            path=ExpertRoutePath.CONTEXT,
+            forced=False,
+            error_class=type(exc).__name__,
+            http_status=504 if timed_out else 502,
+        )
         raise expert_routing_provider_error(exc) from exc
+    except ExpertRoutingDeclinedError as exc:
+        record_expert_route_outcome(
+            ExpertRouteOutcome.DECLINED_NO_FALLBACK,
+            path=ExpertRoutePath.CONTEXT,
+            forced=False,
+            error_class=type(exc).__name__,
+            http_status=502,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=request.selection_failure_detail,
+        ) from exc
     except (ToolSelectionError, ValueError) as exc:
+        record_expert_route_outcome(
+            ExpertRouteOutcome.SELECTION_CONTRACT,
+            path=ExpertRoutePath.CONTEXT,
+            forced=False,
+            error_class=type(exc).__name__,
+            http_status=502,
+        )
         raise HTTPException(
             status_code=502,
             detail=request.selection_failure_detail,

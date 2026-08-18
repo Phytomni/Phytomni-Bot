@@ -13,6 +13,7 @@ locks the tool-spec surface ``select_agent_tool`` offers to the model.
 from __future__ import annotations
 
 import asyncio
+import logging
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -781,3 +782,87 @@ async def test_routing_forced_tool_400_empty_pick_still_coerces_to_forced(
         "function": {"name": "KnowledgeAgent"},
     }
     assert calls[1]["tool_choice"] == "auto"
+
+
+_PROVIDER_LOGGER = "mcp_server_phytomni.agents.expert.routing_observability"
+_PROVIDER_SENTINEL = "PROVIDER-PAYLOAD-SENTINEL transient timeout"
+
+
+def _provider_records(
+    caplog: pytest.LogCaptureFixture,
+) -> list[logging.LogRecord]:
+    """Return Pangu attempt records emitted by complete_expert_routing."""
+    return [
+        record
+        for record in caplog.records
+        if record.name == _PROVIDER_LOGGER
+        and record.getMessage().startswith("Expert routing provider completed")
+    ]
+
+
+async def test_complete_expert_routing_logs_ok_duration(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A successful Pangu hop logs result=ok and a non-negative duration."""
+    caplog.set_level(logging.INFO, logger=_PROVIDER_LOGGER)
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+    )
+
+    result = await expert_router.complete_expert_routing(
+        messages=[{"role": "user", "content": _PROVIDER_SENTINEL}],
+        tools=agent_openai_tool_specs(),
+        tool_choice="auto",
+    )
+
+    assert result.choices
+    records = _provider_records(caplog)
+    assert len(records) == 1
+    assert getattr(records[0], "result") == "ok"
+    assert getattr(records[0], "duration_ms") >= 0
+    assert getattr(records[0], "attempt") == 0
+    assert "duration_ms=" in records[0].getMessage()
+    assert _PROVIDER_SENTINEL not in records[0].getMessage()
+    assert _PROVIDER_SENTINEL not in caplog.text
+
+
+async def test_complete_expert_routing_logs_timeout_without_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Retry exhaustion logs result=timeout and never the exception text."""
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    caplog.set_level(logging.INFO, logger=_PROVIDER_LOGGER)
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        side_effects=[
+            httpx.TimeoutException(_PROVIDER_SENTINEL),
+            httpx.TimeoutException(_PROVIDER_SENTINEL),
+            httpx.TimeoutException(_PROVIDER_SENTINEL),
+        ],
+    )
+
+    with pytest.raises(expert_router.ExpertProviderTimeoutError):
+        await expert_router.complete_expert_routing(
+            messages=[{"role": "user", "content": _PROVIDER_SENTINEL}],
+            tools=agent_openai_tool_specs(),
+            tool_choice="auto",
+        )
+
+    records = _provider_records(caplog)
+    assert [getattr(record, "result") for record in records] == [
+        "transient_retry",
+        "transient_retry",
+        "timeout",
+    ]
+    assert all(getattr(record, "duration_ms") >= 0 for record in records)
+    assert _PROVIDER_SENTINEL not in caplog.text
