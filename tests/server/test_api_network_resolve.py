@@ -134,7 +134,6 @@ async def test_native_runs_resolves_when_flag_true(
         issued_api_key,
         "network",
         {
-            "obs_file_list": [],
             "user_query": "rice plant height trait",
             "resolve_to_id": True,
         },
@@ -175,7 +174,6 @@ async def test_native_runs_defaults_bare_to_id_to_rice_without_llm(
         issued_api_key,
         "network",
         {
-            "obs_file_list": [],
             "user_query": "TO:0000227",
             "resolve_to_id": True,
         },
@@ -302,7 +300,6 @@ async def test_native_runs_missing_user_query_settles_failed(
         "network",
         {
             "species_code": "osa",
-            "obs_file_list": [],
             "resolve_to_id": True,
         },
     )
@@ -344,7 +341,6 @@ async def test_native_runs_resolver_failure_settles_failed(
         issued_api_key,
         "network",
         {
-            "obs_file_list": [],
             "user_query": "ambiguous trait",
             "resolve_to_id": True,
         },
@@ -394,7 +390,6 @@ async def test_native_runs_blank_species_code_settles_failed(
         issued_api_key,
         "network",
         {
-            "obs_file_list": [],
             "user_query": "baz",
             "resolve_to_id": True,
         },

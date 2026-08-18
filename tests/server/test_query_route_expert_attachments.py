@@ -264,11 +264,10 @@ _PRESELECTOR_CASES = (
     ),
     _PreselectorCase(
         "mixed",
-        ("AnalystAgent", "InSilicoResearchAgent", "DigitalDesignAgent"),
+        ("AnalystAgent", "InSilicoResearchAgent"),
         (
             "AnalystAgent",
             "InSilicoResearchAgent",
-            "DigitalDesignAgent",
         ),
     ),
     _PreselectorCase(
@@ -302,7 +301,7 @@ _AUTHZ_CASES = (
     _AuthzCase(("DataAgent", "BriefGeneAgent"), None, "dataset"),
     _AuthzCase(("DataAgent", "AnalystAgent"), "DataAgent", "dataset"),
     _AuthzCase(
-        ("AnalystAgent", "DigitalDesignAgent", "BriefGeneAgent"),
+        ("AnalystAgent", "BriefGeneAgent"),
         "BriefGeneAgent",
         "mixed",
     ),

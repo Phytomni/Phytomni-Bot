@@ -698,8 +698,8 @@ async def test_route_singleton_allowlist_skips_routing_model(
         ("BriefGeneAgent", "brief_gene", False),
         ("AnalystAgent", "analyst", True),
         ("DeepGenomeAgent", "deep_genome", False),
-        ("DigitalDesignAgent", "design", True),
-        ("GeneNetworkAgent", "network", True),
+        ("DigitalDesignAgent", "design", False),
+        ("GeneNetworkAgent", "network", False),
     ],
 )
 async def test_route_attachment_forwarding_follows_capability_matrix(

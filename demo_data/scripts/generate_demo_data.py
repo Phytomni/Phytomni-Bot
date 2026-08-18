@@ -159,11 +159,9 @@ PAYLOADS: dict[str, dict[str, Any]] = {
     },
     "digital_design_agent.json": {
         "gene_id": "Os01g0177400",
-        "obs_file_list": [],
         "species_code": "osa",
     },
     "gene_network_agent.json": {
-        "obs_file_list": [],
         "species_code": "osa",
         "to_id": "TO:0000207",
     },

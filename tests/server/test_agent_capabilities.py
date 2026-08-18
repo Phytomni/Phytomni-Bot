@@ -80,8 +80,8 @@ _EXPECTED_ATTACHMENTS = {
     "research": (True, True, False),
     "brief_gene": (False, False, False),
     "deep_genome": (False, False, False),
-    "design": (True, False, False),
-    "network": (True, False, False),
+    "design": (False, False, False),
+    "network": (False, False, False),
 }
 
 _PUBLIC_CHANNEL_KEYS = {
@@ -305,8 +305,6 @@ async def test_agent_catalog_keeps_generic_capabilities_config_independent(
                     "review",
                     "analyst",
                     "research",
-                    "design",
-                    "network",
                 }
             ),
         ),
@@ -361,14 +359,14 @@ def test_expert_attachment_filter_intersects_capability() -> None:
     assert filter_tools_for_expert_attachments(
         allowed_tools=allowed,
         requirement=ExpertAttachmentRequirement(managed_assets=True),
-    ) == ("DigitalDesignAgent", "AnalystAgent", "ChatAgent")
+    ) == ("AnalystAgent", "ChatAgent")
     assert filter_tools_for_expert_attachments(
         allowed_tools=("unknown-tool", *allowed),
         requirement=ExpertAttachmentRequirement(
             managed_assets=True,
             legacy_documents=True,
         ),
-    ) == ("DigitalDesignAgent", "AnalystAgent", "ChatAgent")
+    ) == ("AnalystAgent", "ChatAgent")
 
 
 def test_required_attachment_channels_follow_bundle_partitions() -> None:
@@ -431,7 +429,7 @@ def test_capability_golden_is_byte_stable() -> None:
     assert json.loads(golden) == actual
     assert golden == json.dumps(actual, ensure_ascii=False, indent=2) + "\n"
     assert hashlib.sha256(golden.encode("utf-8")).hexdigest() == (
-        "df66c45577cba256d210945a637fb8eb805feb8550e7e3841b663b2364527a27"
+        "ef5ad3106ebf8669ba2067e5fee6aaac87000542119839de7dfd8983efc48cfb"
     )
 
 
@@ -440,8 +438,6 @@ def test_attachment_limits_are_public_and_exact() -> None:
     for slug, channel in (
         ("chat", "document_context"),
         ("analyst", "datasets"),
-        ("design", "document_context"),
-        ("network", "document_context"),
     ):
         limits = serialize_agent_capability(slug)["attachments"][channel]
         assert limits["max_file_bytes"] == 26_214_400
@@ -450,10 +446,10 @@ def test_attachment_limits_are_public_and_exact() -> None:
 
 
 @pytest.mark.parametrize("slug", ["design", "network"])
-def test_design_and_network_accept_only_document_context(slug: str) -> None:
-    """The two added channels do not enable datasets or Expert forwarding."""
+def test_design_and_network_accept_no_attachment_channels(slug: str) -> None:
+    """Design and Network do not advertise document or dataset inputs."""
     attachments = serialize_agent_capability(slug)["attachments"]
-    assert attachments["document_context"] is not None
+    assert attachments["document_context"] is None
     assert attachments["datasets"] is None
     assert attachments["expert_forwarding"] is False
 

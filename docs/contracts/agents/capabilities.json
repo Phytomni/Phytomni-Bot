@@ -146,12 +146,7 @@
     "artifacts": true,
     "degraded_outcomes": true,
     "attachments": {
-      "document_context": {
-        "argument": "obs_file_list",
-        "max_file_bytes": 26214400,
-        "max_files": 10,
-        "max_total_bytes": 52428800
-      },
+      "document_context": null,
       "datasets": null,
       "expert_forwarding": false
     }
@@ -165,12 +160,7 @@
     "artifacts": true,
     "degraded_outcomes": true,
     "attachments": {
-      "document_context": {
-        "argument": "obs_file_list",
-        "max_file_bytes": 26214400,
-        "max_files": 10,
-        "max_total_bytes": 52428800
-      },
+      "document_context": null,
       "datasets": null,
       "expert_forwarding": false
     }

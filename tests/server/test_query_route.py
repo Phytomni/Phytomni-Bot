@@ -489,12 +489,12 @@ _FORCED_ROUTE_CASES = (
     (
         "DigitalDesignAgent",
         "design",
-        {"species_code": "ath", "gene_id": "AT1G01010", "obs_file_list": []},
+        {"species_code": "ath", "gene_id": "AT1G01010"},
     ),
     (
         "GeneNetworkAgent",
         "network",
-        {"species_code": "ath", "to_id": "TO:0000001", "obs_file_list": []},
+        {"species_code": "ath", "to_id": "TO:0000001"},
     ),
 )
 _BACKGROUND_EXPERT_CASES = (
@@ -532,7 +532,6 @@ _BACKGROUND_EXPERT_CASES = (
             {
                 "species_code": "ath",
                 "gene_id": "AT1G01010",
-                "obs_file_list": [],
                 "resolve_gene_id": False,
             },
             {

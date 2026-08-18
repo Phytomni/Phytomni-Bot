@@ -90,7 +90,6 @@
         "file_fixture_expert_archive_0009"
       ],
       "eligible_tools": [
-        "DigitalDesignAgent",
         "AnalystAgent",
         "ChatAgent"
       ],

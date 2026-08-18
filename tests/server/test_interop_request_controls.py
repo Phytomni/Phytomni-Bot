@@ -43,7 +43,6 @@ def test_research_and_design_default_to_local_only() -> None:
     design = DigitalDesignAgent(
         species_code="ath",
         gene_id="AT1G01010",
-        obs_file_list=[],
     )
 
     assert research.interop_mode == "off"
@@ -71,7 +70,6 @@ def test_interop_mode_is_closed_and_targets_are_explicit(
         base = {
             "species_code": "ath",
             "gene_id": "AT1G01010",
-            "obs_file_list": [],
         }
 
     for mode in ("off", "auto", "required"):

@@ -535,8 +535,8 @@ The current attachment matrix is:
 | `analyst`     | `obs_file_list`  | `data_list`     | no                |
 | `deep_genome` | no               | no              | no                |
 | `research`    | `obs_file_list`  | `data_list`     | no                |
-| `design`      | `obs_file_list`  | no              | no                |
-| `network`     | `obs_file_list`  | no              | no                |
+| `design`      | no               | no              | no                |
+| `network`     | no               | no              | no                |
 
 `agent_context` and `document` / legacy `chat_attachment` uploads are
 document-class managed assets; `dataset` uploads are dataset-class managed
@@ -551,7 +551,7 @@ The complete deterministic golden
 is
 [`docs/contracts/agents/capabilities.json`](../contracts/agents/capabilities.json)
 with SHA256
-`df66c45577cba256d210945a637fb8eb805feb8550e7e3841b663b2364527a27` for the
+`ef5ad3106ebf8669ba2067e5fee6aaac87000542119839de7dfd8983efc48cfb` for the
 current UTF-8 file including its final newline. Consumers must treat this
 object as the capability source of truth and fail closed for an unknown slug;
 it does not grant permission or change the canonical route name.
@@ -1275,9 +1275,8 @@ Stable public failure codes for this contract include:
 Public messages never echo the submitted OBS path, managed reference,
 owner identity, prompt text, or provider body. Request, conversation-
 context, and default/debug projections redact private attachment fields
-and exact managed references. Design and Network retain their legacy
-attachment fields for schema compatibility, but any nonempty value is
-rejected during migration.
+and exact managed references. Design and Network do not accept
+`obs_file_list` or managed attachments.
 
 Shape/projection fixture evidence for the unified managed-attachment request
 and ordered Expert eligibility cases lives under
@@ -1879,7 +1878,7 @@ curl -s http://127.0.0.1:8080/v1/agents/deep_genome/runs \
 curl -s http://127.0.0.1:8080/v1/agents/network/runs \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
-  -d '{"arguments":{"obs_file_list":[],"user_query":"rice plant height trait","resolve_to_id":true}}'
+  -d '{"arguments":{"user_query":"rice plant height trait","resolve_to_id":true}}'
 
 # Native runs — network with a query that resolves to an
 # upstream-deprecated id; the request still succeeds and the
@@ -1888,7 +1887,7 @@ curl -s http://127.0.0.1:8080/v1/agents/network/runs \
 curl -s http://127.0.0.1:8080/v1/agents/network/runs \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
-  -d '{"arguments":{"obs_file_list":[],"user_query":"grains per panicle","resolve_to_id":true}}'
+  -d '{"arguments":{"user_query":"grains per panicle","resolve_to_id":true}}'
 ```
 
 ## Native Agent Runs

@@ -357,12 +357,10 @@ def _native_context_arguments(slug: str) -> dict[str, Any]:
         "design": {
             "species_code": "ath",
             "gene_id": "AT1G01010",
-            "obs_file_list": [],
         },
         "network": {
             "species_code": "ath",
             "to_id": "TO:0000001",
-            "obs_file_list": [],
         },
     }
     return arguments[slug]

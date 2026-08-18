@@ -15,7 +15,6 @@ import httpx
 import pytest
 from tests.server.test_api_agent_runs import (
     _BACKGROUND_CASES,
-    _DESIGN_CASE,
     _RemoteCase,
 )
 from tests.support.http_fakes import (
@@ -44,6 +43,10 @@ from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
+
+_ATTACHMENT_BACKGROUND_CASES = tuple(
+    case for case in _BACKGROUND_CASES if case.id == "analyst"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -132,7 +135,7 @@ async def _post_asset_run(
         )
 
 
-@pytest.mark.parametrize("case", _BACKGROUND_CASES)
+@pytest.mark.parametrize("case", _ATTACHMENT_BACKGROUND_CASES)
 async def test_native_background_run_preserves_empty_obs_file_list(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -140,7 +143,7 @@ async def test_native_background_run_preserves_empty_obs_file_list(
     tasks_db_path: str,
     case: BackgroundAssetCase,
 ) -> None:
-    """An explicit empty attachment list reaches all four typed Agents."""
+    """An explicit empty attachment list reaches document-channel Agents."""
     captured: dict[str, Any] = {}
     install_attachment_capture(monkeypatch, case, captured)
     endpoint = f"/v1/agents/{case.slug}/runs"
@@ -162,7 +165,7 @@ async def test_native_background_run_preserves_empty_obs_file_list(
     assert arguments.obs_file_list == []
 
 
-@pytest.mark.parametrize("case", _BACKGROUND_CASES)
+@pytest.mark.parametrize("case", _ATTACHMENT_BACKGROUND_CASES)
 async def test_native_background_run_resolves_opaque_owner_asset(
     asset_http_context: AssetHttpTestContext,
     case: BackgroundAssetCase,
@@ -374,42 +377,53 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
     )
 
 
-async def test_direct_design_projects_mixed_assets_to_source_ordered_obs(
+@pytest.mark.parametrize(
+    "case",
+    [
+        (
+            "design",
+            server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
+            {"species_code": "ath", "gene_id": "AT1G01010"},
+        ),
+        (
+            "network",
+            server.PhytomniAgents.GENE_NETWORK_AGENT.value,
+            {"species_code": "osa", "to_id": "TO:0000207"},
+        ),
+    ],
+)
+async def test_direct_design_and_network_reject_managed_assets(
     asset_http_context: AssetHttpTestContext,
+    case: tuple[str, str, dict[str, str]],
 ) -> None:
-    """Design accepts every managed class through obs_file_list in order."""
-    resolver, dataset_id, document_id = _install_dataset_assets(
+    """Design and Network reject a resolved bundle before invocation."""
+    slug, tool_name, arguments = case
+    _resolver, dataset_id, document_id = _install_dataset_assets(
         asset_http_context
     )
-    references = [
-        asset.reference
-        for asset in resolver.resolve_bundle(
-            [
-                {"asset_id": dataset_id},
-                {"asset_id": document_id},
-            ],
-            "u1",
-        ).assets
-    ]
-    captured: dict[str, Any] = {}
-    case = _DESIGN_CASE
-    install_attachment_capture(asset_http_context.monkeypatch, case, captured)
+    called = False
 
+    async def forbidden(_args: Any) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        raise AssertionError(f"{slug} must not be invoked")
+
+    install_tool_handler(
+        asset_http_context.monkeypatch,
+        tool_name,
+        forbidden,
+    )
     response = await _post_asset_run(
         asset_http_context,
-        slug="design",
-        arguments=case.arguments,
+        slug=slug,
+        arguments=arguments,
         attachments=[{"asset_id": dataset_id}, {"asset_id": document_id}],
     )
 
-    assert response.status_code == 202, response.text
-    arguments = await wait_for_attachment_submission(
-        captured=captured,
-        db_path=asset_http_context.db_path,
-        run_id=response.json()["run_id"],
-        case=case,
-    )
-    assert arguments.obs_file_list == references
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "attachment_not_supported"
+    assert not called
+    assert not RunRegistry(asset_http_context.db_path).list_runs(owner="u1")
 
 
 async def test_direct_data_rejects_managed_assets_before_invocation(
@@ -817,7 +831,7 @@ _ATTACHMENT_REJECTION_CASES = (
 )
 
 
-@pytest.mark.parametrize("case", _BACKGROUND_CASES)
+@pytest.mark.parametrize("case", _ATTACHMENT_BACKGROUND_CASES)
 @pytest.mark.parametrize("rejection", _ATTACHMENT_REJECTION_CASES)
 async def test_native_background_run_rejects_unsafe_opaque_asset(
     asset_http_context: AssetHttpTestContext,

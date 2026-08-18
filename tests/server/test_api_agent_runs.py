@@ -527,7 +527,6 @@ _DESIGN_CASE = _RemoteCase(
     arguments={
         "species_code": "ath",
         "gene_id": "AT1G01010",
-        "obs_file_list": [],
         "resolve_gene_id": False,
     },
     expected_task_ids={"T-D1", "T-D2"},
@@ -562,7 +561,6 @@ _BACKGROUND_CASES = [
             arguments={
                 "species_code": "osa",
                 "to_id": "TO:0000207",
-                "obs_file_list": [],
                 "resolve_to_id": False,
             },
             expected_task_ids={"T-N"},

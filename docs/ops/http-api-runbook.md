@@ -336,15 +336,15 @@ separate from this metadata.
 
 The attachment channels are exact: Chat, Knowledge, and Review accept
 document context; Analyst and Research accept document context plus a dataset
-channel; Design and Network accept document context only; Data, BriefGene, and
-DeepGenome accept neither. A non-null channel publishes only its native
+channel; Data, BriefGene, DeepGenome, Design, and Network accept
+neither. A non-null channel publishes only its native
 argument (`obs_file_list` or `data_list`) and the three inclusive invocation
 limits; it does not claim managed support for extensions, formats, encoding,
 delimiters, compression, or descriptions. The outer `expert_forwarding` flag
 remains compatibility metadata for the Expert forwarding path.
 The complete deterministic golden is
 `docs/contracts/agents/capabilities.json` (SHA256
-`df66c45577cba256d210945a637fb8eb805feb8550e7e3841b663b2364527a27`). The
+`ef5ad3106ebf8669ba2067e5fee6aaac87000542119839de7dfd8983efc48cfb`). The
 descriptor is a capability preflight, not an authorization grant.
 
 ### Native conversation-context V1 probes (non-production only)
@@ -973,9 +973,8 @@ The stable native/Expert `422` codes are `attachment_not_found`,
 `attachment_not_supported`, `attachment_format_unsupported`,
 `attachment_duplicate`, `attachment_limit_exceeded`,
 `attachment_purpose_mismatch`, and `attachment_description_required`.
-Responses do not echo submitted OBS paths. Design and Network keep their
-legacy attachment fields only for schema compatibility; nonempty values are
-fail-closed during migration.
+Responses do not echo submitted OBS paths. Design and Network do not
+accept `obs_file_list` or managed attachments.
 
 The sanitized unified attachment contract at
 [`docs/contracts/unified-attachments/`](../contracts/unified-attachments/)

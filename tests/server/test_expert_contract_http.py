@@ -278,13 +278,11 @@ _PARITY_CASES = (
             {
                 "species_code": "ath",
                 "gene_id": "AT1G01010",
-                "obs_file_list": [],
                 "resolve_gene_id": False,
             },
             {
                 "species_code": "ath",
                 "gene_id": "AT1G01010",
-                "obs_file_list": [],
                 "resolve_gene_id": False,
             },
         ),
@@ -298,13 +296,11 @@ _PARITY_CASES = (
             {
                 "species_code": "osa",
                 "to_id": "TO:0000207",
-                "obs_file_list": [],
                 "resolve_to_id": False,
             },
             {
                 "species_code": "osa",
                 "to_id": "TO:0000207",
-                "obs_file_list": [],
                 "resolve_to_id": False,
             },
         ),

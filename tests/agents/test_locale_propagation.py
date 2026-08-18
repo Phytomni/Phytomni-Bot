@@ -63,7 +63,6 @@ def _minimal_arguments(tool_name: str) -> dict[str, Any]:
         "GeneNetworkAgent": {
             "species_code": "osa",
             "to_id": "TO:0000207",
-            "obs_file_list": [],
         },
         "BriefGeneAgent": {"user_query": "Os01g0177400"},
         "DeepGenomeAgent": {
@@ -73,7 +72,6 @@ def _minimal_arguments(tool_name: str) -> dict[str, Any]:
         "DigitalDesignAgent": {
             "species_code": "osa",
             "gene_id": "Os01g0177400",
-            "obs_file_list": [],
         },
     }
     return {**payloads[tool_name], **common}

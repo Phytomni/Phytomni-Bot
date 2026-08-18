@@ -55,6 +55,14 @@ package version remains `0.1.3` until the release bump.
   off-domain papers, writes claim-led subsections, and assembles
   Abstract / Introduction / Conclusions. Citation delivery is unchanged.
 
+### Removed
+
+- **Design/Network `obs_file_list`** — `DigitalDesignAgent` and
+  `GeneNetworkAgent` no longer advertise or accept that field.
+  Managed attachments to those slugs return
+  `422 attachment_not_supported`. Chat, Knowledge, Review, Analyst,
+  and Research document channels are unchanged.
+
 ### Fixed
 
 - **Expert structured ids** — After Expert selects DeepGenome, Design,

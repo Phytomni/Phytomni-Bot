@@ -190,12 +190,12 @@ documents](docs/reference/mcp-tools.md#uploading-documents-for-obs_file_list).
 
 - **Tool:** `DigitalDesignAgent`
   **Kind:** async
-  **Required arguments:** `species_code`, `gene_id`, `obs_file_list`
+  **Required arguments:** `species_code`, `gene_id`
   **Purpose:** Protein and promoter design workflows.
 
 - **Tool:** `GeneNetworkAgent`
   **Kind:** async
-  **Required arguments:** `species_code`, `to_id`, `obs_file_list`
+  **Required arguments:** `species_code`, `to_id`
   **Purpose:** Gene network analysis for species and trait ontology IDs.
 
 - **Tool:** `GetTaskStatus`

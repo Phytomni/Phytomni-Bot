@@ -439,8 +439,6 @@ class DigitalDesignAgent(BaseModel):
     Attributes:
         species_code: Three-letter species code for design analysis.
         gene_id: Single target gene identifier.
-        obs_file_list: Legacy compatibility field; nonempty values are
-            unsupported during migration.
         interop_mode: External delegation policy. Defaults to local-only.
         interop_targets: Operator-registered target ids eligible for
             delegation.
@@ -531,19 +529,6 @@ class DigitalDesignAgent(BaseModel):
             "question.",
         ),
     ]
-    obs_file_list: Annotated[
-        list[str],
-        Field(
-            description="Legacy compatibility field. Nonempty values are "
-            "unsupported during migration; pass [] only. Do not invent "
-            "file paths.",
-            json_schema_extra={
-                "example": [],
-                "x-java-default": "new ArrayList<>()",
-                "x-csharp-default": "new List<string>()",
-            },
-        ),
-    ]
     interop_mode: Literal["off", "auto", "required"] = Field(
         default="off",
         description=(
@@ -572,8 +557,6 @@ class GeneNetworkAgent(BaseModel):
     Attributes:
         species_code: Three-letter species code for network analysis.
         to_id: Trait Ontology identifier for the target phenotype.
-        obs_file_list: Legacy compatibility field; nonempty values are
-            unsupported during migration.
         locale: Optional response locale (``en-US`` or ``zh-CN``).
     """
 
@@ -658,19 +641,6 @@ class GeneNetworkAgent(BaseModel):
             "formatted like 'TO:0000207'. Fill this with a TO ID, not a gene "
             "ID or free-text trait name. If the user did not provide a "
             "reliable TO ID, ask for clarification instead of guessing.",
-        ),
-    ]
-    obs_file_list: Annotated[
-        list[str],
-        Field(
-            description="Legacy compatibility field. Nonempty values are "
-            "unsupported during migration; pass [] only. Do not invent "
-            "file paths.",
-            json_schema_extra={
-                "example": [],
-                "x-java-default": "new ArrayList<>()",
-                "x-csharp-default": "new List<string>()",
-            },
         ),
     ]
     locale: Annotated[

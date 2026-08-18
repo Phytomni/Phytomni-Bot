@@ -44,7 +44,6 @@ def network_run_arguments() -> dict[str, Any]:
     return {
         "species_code": "osa",
         "to_id": "TO:0000207",
-        "obs_file_list": [],
         "resolve_to_id": False,
     }
 

@@ -58,28 +58,23 @@ DESIGN_CASE = NativeResolverCase(
     ),
     arguments=ResolverCaseArguments(
         resolved_arguments={
-            "obs_file_list": [],
             "user_query": "design AT1G01010 promoter",
             "resolve_gene_id": True,
         },
         passthrough_arguments={
             "species_code": "ath",
             "gene_id": "AT1G01010",
-            "obs_file_list": [],
             "resolve_gene_id": False,
         },
         missing_arguments={
             "species_code": "ath",
-            "obs_file_list": [],
             "resolve_gene_id": True,
         },
         failure_arguments={
-            "obs_file_list": [],
             "user_query": "ambiguous query",
             "resolve_gene_id": True,
         },
         blank_arguments={
-            "obs_file_list": [],
             "user_query": "bar",
             "resolve_gene_id": True,
         },

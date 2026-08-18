@@ -160,13 +160,13 @@ is explicitly enabled.
 
 - **Tool:** `DigitalDesignAgent`
   **Kind:** async
-  **Required arguments:** `species_code`, `gene_id`, `obs_file_list`
+  **Required arguments:** `species_code`, `gene_id`
   **Demo payload:**
   [digital_design_agent.json](../../demo_data/payloads/digital_design_agent.json)
 
 - **Tool:** `GeneNetworkAgent`
   **Kind:** async
-  **Required arguments:** `species_code`, `to_id`, `obs_file_list`
+  **Required arguments:** `species_code`, `to_id`
   **Demo payload:**
   [gene_network_agent.json](../../demo_data/payloads/gene_network_agent.json)
 

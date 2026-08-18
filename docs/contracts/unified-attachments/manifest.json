@@ -6,7 +6,7 @@
     },
     {
       "path": "expected-channel-projection.json",
-      "sha256": "a1d65b1a4c05e605f3f28a40e3a01f34c3e2941fde9d24bbb5cbf0bb216fe1b4"
+      "sha256": "b3b8b65ca163d3c06f68262504a0862ae6807558057ebf67f6dfd8589d28e876"
     }
   ],
   "protocol": "phytomni-unified-attachments-v1",
