@@ -861,18 +861,18 @@ class ConversationContextExecutor:
                             candidate_thread_id,
                             mutation_lock_held=True,
                         )
-                    if not registered:
-                        review_adapter.mark_failed()
-                        return AgentOutcome(
-                            result={"status": "failed"}, status="failed"
-                        )
-                    return await invoke(
-                        selected_agent_id,
-                        envelope,
-                        dispatch,
-                    )
                 finally:
                     mutation_lock.release()
+                if not registered:
+                    review_adapter.mark_failed()
+                    return AgentOutcome(
+                        result={"status": "failed"}, status="failed"
+                    )
+                return await invoke(
+                    selected_agent_id,
+                    envelope,
+                    dispatch,
+                )
         return await invoke(
             selected_agent_id,
             envelope,

@@ -17,6 +17,9 @@ from ...runtime.conversation_context.adapters import (
     ConversationContextExecutor,
 )
 from ...runtime.conversation_context.models import ConversationEnvelopeV1
+from ...runtime.conversation_context.review_lock import (
+    ReviewMutationLockTimeoutError,
+)
 from ...runtime.conversation_context.service import (
     ContextStoreUnavailableError,
     PreparedTurn,
@@ -101,6 +104,11 @@ async def execute_context_lifecycle_http(
             delegate_async=request.delegate_async,
             selected_arguments=request.selected_arguments,
         )
+    except ReviewMutationLockTimeoutError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Review mutation is busy",
+        ) from exc
     except (ToolSelectionError, ValueError) as exc:
         raise HTTPException(
             status_code=502,

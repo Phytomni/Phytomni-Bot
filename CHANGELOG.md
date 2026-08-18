@@ -34,6 +34,14 @@ package version remains `0.1.3` until the release bump.
   off-domain papers, writes claim-led subsections, and assembles
   Abstract / Introduction / Conclusions. Citation delivery is unchanged.
 
+### Fixed
+
+- **Review mutation lock** — New-review and scope-change turns release
+  the `server_tasks.db` flock after candidate registration, instead of
+  holding it for the whole Review run. A lock wait timeout on
+  `/v1/query/route` is now HTTP 503 `Review mutation is busy`, not an
+  uncaught ASGI 500 that the Web gateway mapped to 502.
+
 ## [0.1.3] — 2026-07-17
 
 Cross-surface capability and lifecycle release. It preserves the 0.1.2
