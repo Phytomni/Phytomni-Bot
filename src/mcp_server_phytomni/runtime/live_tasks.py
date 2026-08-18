@@ -17,12 +17,16 @@ import asyncio
 
 __all__ = [
     "cancel_live_task",
+    "clear_cancel_requested",
     "deregister_live_task",
+    "is_cancel_requested",
     "is_live_running",
     "register_live_task",
+    "request_cancel",
 ]
 
 _LIVE: dict[str, asyncio.Task[object]] = {}
+_CANCEL_REQUESTED: set[str] = set()
 
 
 def register_live_task(task_id: str, task: asyncio.Task[object]) -> None:
@@ -51,3 +55,20 @@ def cancel_live_task(task_id: str) -> bool:
     if task is None or task.done():
         return False
     return task.cancel()
+
+
+def request_cancel(task_id: str) -> bool:
+    """Mark ``task_id`` cancelled and cancel its live worker if present."""
+    if task_id:
+        _CANCEL_REQUESTED.add(task_id)
+    return cancel_live_task(task_id)
+
+
+def is_cancel_requested(task_id: str) -> bool:
+    """Return True when an owner asked to cancel ``task_id``."""
+    return bool(task_id) and task_id in _CANCEL_REQUESTED
+
+
+def clear_cancel_requested(task_id: str) -> None:
+    """Drop a cancel flag after the worker has observed it."""
+    _CANCEL_REQUESTED.discard(task_id)

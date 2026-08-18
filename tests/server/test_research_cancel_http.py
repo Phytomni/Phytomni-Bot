@@ -102,33 +102,65 @@ async def test_cancel_research_run_returns_safe_404_for_foreign_owner(
     assert response.status_code == 404
 
 
-async def test_cancel_research_run_returns_conflict_after_sent(
+async def test_cancel_research_run_cascades_after_sent(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
-    """A sent child is never represented as successfully cancelled."""
+    """A sent child no longer blocks owner cancellation."""
     _seed_research(tasks_db_path, "run-http-sent", outbox_state="sent")
     response = await api_client.post(
         "/v1/runs/run-http-sent/cancel",
         headers={"Authorization": f"Bearer {issued_api_key}"},
     )
-    assert response.status_code == 409
-    assert "research_cancel_conflict" in response.text
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
 
 
-async def test_cancel_non_research_run_uses_unsupported_operation_conflict(
+@pytest.mark.parametrize(
+    "agent",
+    (
+        "chat",
+        "knowledge",
+        "review",
+        "analyst",
+        "network",
+        "design",
+        "deep_genome",
+    ),
+)
+async def test_cancel_owner_run_accepts_every_agent(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    agent: str,
+) -> None:
+    """Any owner-scoped running agent can be cancelled."""
+    run_id = f"run-http-{agent}"
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec(run_id, "u1", agent, "api"),
+        outcome=RunOutcome(status="running"),
+    )
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/cancel",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+
+
+async def test_cancel_owner_run_conflicts_after_success(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
-    """The Research-only endpoint never cancels another agent's run."""
+    """A succeeded run cannot be cancelled."""
     RunRegistry(tasks_db_path).create_run(
-        RunSpec("run-http-chat", "u1", "chat", "api"),
-        outcome=RunOutcome(status="running"),
+        RunSpec("run-http-done", "u1", "analyst", "api"),
+        outcome=RunOutcome(status="succeeded", result={"ok": True}),
     )
     response = await api_client.post(
-        "/v1/runs/run-http-chat/cancel",
+        "/v1/runs/run-http-done/cancel",
         headers={"Authorization": f"Bearer {issued_api_key}"},
     )
     assert response.status_code == 409

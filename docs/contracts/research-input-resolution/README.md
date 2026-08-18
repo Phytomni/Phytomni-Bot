@@ -113,8 +113,8 @@ cancellation conflict. Debug mode does not relax redaction.
 
 `POST /v1/runs/{run_id}/cancel` is owner-scoped. Cancellation wins through a
 durable compare-and-set before in-process task cancellation and grant revoke;
-late callbacks cannot reopen a terminal row. Cancelling an accepted/sent
-child is a control conflict and returns `research_cancel_conflict` (`409`).
+late callbacks cannot reopen a terminal row. Cancelling after a child is
+accepted or sent detaches that child and terminates last-claim EI jobs.
 Revoke failures create private bounded recovery work and never reopen the
 parent run.
 

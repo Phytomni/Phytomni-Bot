@@ -1063,9 +1063,10 @@ the parent. Existing run retention defaults are 24 hours for successful rows
 and 7 days for failed rows; purge never deletes the user's dataset.
 
 Owner-scoped cancellation wins via durable compare-and-set before new work is
-claimed. Cancel before send is terminal success for cancellation; after an
-accepted/sent child it returns `409 research_cancel_conflict`. Late callbacks
-cannot reopen the run. During an incident, capture only counts, digests,
+claimed and applies to every agent. Cancel after a sent Research child
+detaches that child and terminates last-claim EI jobs; it no longer returns
+`409 research_cancel_conflict`. Late callbacks cannot reopen the run. During
+an incident, capture only counts, digests,
 durations, stable codes, sanitized ids, and stage timelines. Do not capture
 keys, cookies, endpoints, buckets, object names, paths, queries, prompts,
 paper text, raw provider output, or local SQLite files.

@@ -34,6 +34,7 @@ from mcp_server_phytomni.runtime.conversation_context.models import (
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
 )
+from mcp_server_phytomni.runtime.live_tasks import request_cancel
 
 pytestmark = pytest.mark.unit
 
@@ -387,6 +388,69 @@ async def test_context_stream_disconnect_before_stage_marks_turn_failed(
     assert stored_turn.state == "failed"
     assert stored_turn.result is None
     assert store.load_context(key) is None
+
+
+async def test_owner_cancel_settles_cancelled_draft(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    """Owner Stop keeps accumulated tokens as a cancelled draft."""
+    db_path = str(tmp_path / "context.sqlite")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", db_path)
+
+    async def staged_events(
+        _tool_name: str,
+        _arguments: dict[str, Any],
+        *,
+        run_id: str,
+        dialogue_id: str | None,
+    ) -> AsyncIterator[AguiEvent]:
+        yield run_started(run_id, dialogue_id)
+        yield text_message_start("msg-cancel")
+        yield text_message_content("msg-cancel", "adapter answer")
+        yield text_message_end("msg-cancel")
+        yield run_finished(run_id)
+
+    settlements: list[tuple[str, str, str, dict[str, Any]]] = []
+    dependencies = _dependencies(settlements)
+    dependencies = streaming.StreamingDependencies(
+        request=streaming.StreamingRequestDependencies(
+            prepare_tool_stream=staged_events,
+            current_user=dependencies.request.current_user,
+            current_request_id=dependencies.request.current_request_id,
+            new_run_id=dependencies.request.new_run_id,
+            agent_slug=dependencies.request.agent_slug,
+        ),
+        a2ui=dependencies.a2ui,
+        persistence=dependencies.persistence,
+    )
+    payload = ChatCompletionRequest(
+        model="phyto-chat",
+        messages=[ChatMessage(role="user", content="adapter query")],
+        stream=True,
+        conversation=_conversation_envelope(turn_id="15"),
+    )
+
+    response = await streaming.stream_chat_completion(
+        tool_name="ChatAgent",
+        arguments={
+            "user_query": "adapter query",
+            "locale": "en-US",
+            "obs_file_list": [],
+        },
+        payload=payload,
+        user_query="adapter query",
+        dependencies=dependencies,
+    )
+    request_cancel("run-direct-contract")
+    rendered, _key, _turn_id, _store = await _consume_disconnect_stream(
+        response, payload, db_path
+    )
+
+    assert "event: RunFinished\n" not in rendered
+    assert settlements[-1][2] == "cancelled"
+    assert settlements[-1][3]["formatted"]["answer"] == "adapter answer"
+    assert settlements[-1][3]["partial"] is True
 
 
 async def test_context_stream_run_error_emits_no_successful_context_event(

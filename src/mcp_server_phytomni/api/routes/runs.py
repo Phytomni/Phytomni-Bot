@@ -232,7 +232,7 @@ def _register_status_routes(
         principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
         expected_revision: int | None = None,
     ) -> JSONResponse:
-        """Cancel an owner-scoped Research run before remote dispatch."""
+        """Cancel an owner-scoped run and last-claim platform jobs."""
         owner = (
             principal.user_id
             or dependencies.context.current_user()
@@ -240,7 +240,7 @@ def _register_status_routes(
         )
         callback = dependencies.projection.cancel_research_run
         if callback is None:
-            body = await run_lifecycle.cancel_research_run(
+            body = await run_lifecycle.cancel_owner_run(
                 run_id,
                 owner=owner,
                 expected_revision=expected_revision,

@@ -13,6 +13,7 @@ bind application-specific registry, graph, and request-context seams through
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from collections.abc import (
     AsyncIterator,
@@ -66,6 +67,12 @@ from ..runtime.conversation_context.store import (
     ConversationContextStore,
     StagedTurn,
     StoredTurn,
+)
+from ..runtime.live_tasks import (
+    clear_cancel_requested,
+    deregister_live_task,
+    is_cancel_requested,
+    register_live_task,
 )
 from ..runtime.run_registry import RunRequestInfo
 from ..runtime.task_manager import (
@@ -777,6 +784,27 @@ async def stream_chat_completion(
             is True
         )
 
+    def _settle_terminal_cancelled() -> bool:
+        snapshot = prepared.accumulator.snapshot
+        return (
+            _settle_stream_run_compat(
+                dependencies.persistence.settle_stream_run,
+                prepared.run_id,
+                prepared.owner,
+                "cancelled",
+                {
+                    "formatted": {"answer": snapshot.answer},
+                    "execution": empty_agent_result()["execution"],
+                    "raw": None,
+                    "stream": True,
+                    "truncated": snapshot.truncated,
+                    "partial": True,
+                },
+                expected_revision=prepared.expected_revision,
+            )
+            is True
+        )
+
     terminal_events = project_terminal_settlement(
         prepared.accumulator,
         state=prepared.lifecycle_state,
@@ -796,6 +824,9 @@ async def stream_chat_completion(
 
     async def _wrapped() -> AsyncIterator[str]:
         """Forward SSE lines and settle the run from typed lifecycle flags."""
+        current = asyncio.current_task()
+        if current is not None and prepared.run_id:
+            register_live_task(prepared.run_id, current)
         try:
             async for line in sse_lines:
                 yield line
@@ -812,7 +843,14 @@ async def stream_chat_completion(
                     prepared.agent_slug is not None
                     and not prepared.lifecycle_state.durably_settled
                 ):
-                    durable_settlement_succeeded(_settle_terminal_failure)
+                    if is_cancel_requested(prepared.run_id):
+                        durable_settlement_succeeded(
+                            _settle_terminal_cancelled
+                        )
+                    else:
+                        durable_settlement_succeeded(_settle_terminal_failure)
+                deregister_live_task(prepared.run_id)
+                clear_cancel_requested(prepared.run_id)
 
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 

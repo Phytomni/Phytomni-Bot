@@ -48,7 +48,6 @@ from mcp_server_phytomni.api.relay.research_grants import (
     ResearchGrantStore,
 )
 from mcp_server_phytomni.runtime.research_input_store import (
-    ResearchCancellationConflict,
     ResearchInputStore,
     cancel_research_run,
 )
@@ -395,22 +394,28 @@ def test_cancel_research_run_cas_marks_private_work_and_parent_terminal(
     assert replay.revision == outcome.revision
 
 
-def test_cancel_research_run_rejects_sent_child_without_mutation(
+def test_cancel_research_run_cascades_sent_child(
     tmp_path: Path,
 ) -> None:
-    """A sent child is potentially accepted and therefore conflicts."""
+    """A sent child is cancelled with the parent instead of conflicting."""
     store, db_path = _seed_research_parent(
-        tmp_path, "run-cancel-too-late", outbox_state="sent"
+        tmp_path, "run-cancel-after-send", outbox_state="sent"
     )
 
-    with pytest.raises(ResearchCancellationConflict):
-        cancel_research_run(store, "run-cancel-too-late", "u1", 0)
+    outcome = cancel_research_run(store, "run-cancel-after-send", "u1", 0)
 
-    assert _run_row(db_path, "run-cancel-too-late") == (
-        "running",
-        "input_resolution",
-        0,
+    assert outcome.status == "cancelled"
+    assert _run_row(db_path, "run-cancel-after-send") == (
+        "cancelled",
+        None,
+        1,
     )
+    with sqlite3.connect(db_path) as connection:
+        outbox = connection.execute(
+            "SELECT state FROM research_dispatch_outbox WHERE run_id = ?",
+            ("run-cancel-after-send",),
+        ).fetchone()
+    assert outbox == ("cancelled",)
 
 
 @pytest.mark.asyncio

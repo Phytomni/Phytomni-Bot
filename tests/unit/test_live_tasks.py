@@ -11,9 +11,12 @@ import pytest
 
 from mcp_server_phytomni.runtime.live_tasks import (
     cancel_live_task,
+    clear_cancel_requested,
     deregister_live_task,
+    is_cancel_requested,
     is_live_running,
     register_live_task,
+    request_cancel,
 )
 
 pytestmark = pytest.mark.unit
@@ -78,3 +81,12 @@ async def test_cancel_live_task_cancels_registered_worker() -> None:
 def test_cancel_live_task_absent_id_is_false() -> None:
     """Cancelling an unknown id is a no-op false."""
     assert cancel_live_task("never-registered") is False
+
+
+def test_request_cancel_flags_and_clears() -> None:
+    """Owner stop is visible until the worker clears the flag."""
+    assert is_cancel_requested("run-flag") is False
+    assert request_cancel("run-flag") is False
+    assert is_cancel_requested("run-flag") is True
+    clear_cancel_requested("run-flag")
+    assert is_cancel_requested("run-flag") is False

@@ -35,6 +35,10 @@ package version remains `0.1.3` until the release bump.
 
 ### Changed
 
+- **Run cancel** — `POST /v1/runs/{id}/cancel` cancels every
+  owner-scoped agent. After a Research child is sent, cancel detaches
+  that child and terminates last-claim EI jobs instead of returning
+  409.
 - **Compute tiers** — `AnalystConfig.RESOURCE` medium is now 4C/16G
   (was 8G). Submit sites resolve `small` / `medium` / `large` through
   `resolve_compute_resource`; InSilicoResearch defaults to `medium`.
@@ -52,6 +56,9 @@ package version remains `0.1.3` until the release bump.
 - **Background cancel settlement** — Cancelling a detached Analyst /
   Network / Design / Research worker settles the umbrella as
   `cancelled`, not `failed`.
+- **Stream owner stop** — Owner cancel of an in-flight stream settles
+  `cancelled` and keeps the accumulated text as a draft. A plain
+  disconnect still settles `failed`.
 - **Analyst completion display** — After the analysis platform marks a
   task succeeded, the run publishes the scientific report before OBS
   harvest. Public-data cache still keys on the input fingerprint, but

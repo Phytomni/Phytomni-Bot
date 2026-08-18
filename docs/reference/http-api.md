@@ -264,7 +264,8 @@ keeps operator probes and does not repeat the full list.
 - **Method:** `POST`
   **Path:** `/v1/runs/{run_id}/cancel`
   **Auth:** yes
-  **Purpose:** Cancels an owner-scoped Research run before remote dispatch.
+  **Purpose:** Cancels an owner-scoped run. Last-claim analysis-platform
+  jobs are terminated; earlier shared claimants stay attached.
 
 - **Method:** `POST`
   **Path:** `/v1/runs/{run_id}/delivery/retry`
@@ -1338,10 +1339,12 @@ a fresh authenticated `research_object_grant_v1` version-1 snapshot with
 stale, incompatible, or lower-capacity capability fails closed with
 `research_input_protocol_unavailable`.
 
-Owner-scoped `POST /v1/runs/{run_id}/cancel` uses a durable compare-and-set.
-Cancellation before the mark-before-send boundary wins and stops new work;
-late callbacks cannot reopen a terminal run. Cancellation after a child is
-accepted/sent returns `409` `research_cancel_conflict`. Relay grants follow
+Owner-scoped `POST /v1/runs/{run_id}/cancel` uses a durable compare-and-set
+for every agent. Cancellation wins and stops new work; a sent Research
+child is detached and last-claim EI jobs are terminated. Late callbacks
+cannot reopen a terminal run. A succeeded or failed run returns `409`
+`run_state_conflict` (Research uses `research_cancel_conflict` when its
+coordinator CAS loses). Relay grants follow
 resolve → verify → use → revoke, are bound to the parent run and execution
 fingerprint, and never authorize list/body/write/delete operations. The
 capability cache TTL is 300 seconds with a 30-second failure cooldown,
@@ -1694,11 +1697,13 @@ from the wrapper
   soft-capped by `STREAM_ANSWER_MAX_BYTES` / `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`
   (default 1 MiB). The SSE wire stream is never truncated.
   `truncated` is true when the stored blob hit the cap; `partial` is
-  true when the run settled `failed` (client disconnect before
-  `RunFinished`, or an observed mid-stream `RunError`). A client
-  cancellation before `RunFinished` settles failed without attempting to
-  write a synthetic frame to the disconnected client; cancellation after
-  `RunFinished` preserves the succeeded settlement.
+  true when the run settled `failed` or `cancelled` (client disconnect
+  or owner Stop before `RunFinished`, or an observed mid-stream
+  `RunError`). A client disconnect before `RunFinished` settles failed
+  without attempting to write a synthetic frame. Owner `POST
+  /v1/runs/{id}/cancel` settles `cancelled` and keeps the accumulated
+  text as a draft. Cancellation after `RunFinished` preserves the
+  succeeded settlement.
   The client cancellation contract is also enforced for A2UI pause streams.
 - **ChatAgent A2UI short-circuit** (`phyto-chat`, heuristic match): when
   `select_chat_a2ui_widget(user_query)` returns

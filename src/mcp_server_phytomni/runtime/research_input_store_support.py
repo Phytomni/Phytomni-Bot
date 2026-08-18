@@ -529,7 +529,7 @@ def cancel_research_run(
     owner: str,
     expected_revision: int,
 ) -> ResearchCancellationOutcome:
-    """CAS-cancel a Research parent before any remote send boundary."""
+    """CAS-cancel a Research parent, including after a remote send."""
     if not _valid_cancel_arguments(run_id, owner, expected_revision):
         raise ResearchCancellationConflict()
     now = _utc_iso(datetime.now(UTC))
@@ -559,21 +559,6 @@ def cancel_research_run(
             )
         if status != "running" or current_revision != expected_revision:
             raise ResearchCancellationConflict()
-        forbidden = (
-            connection.execute(
-                "SELECT 1 FROM research_dispatch_outbox WHERE run_id = ? "
-                "AND state IN ('sent', 'ambiguous', 'accepted') LIMIT 1",
-                (run_id,),
-            ).fetchone()
-            or connection.execute(
-                "SELECT 1 FROM research_work_units WHERE run_id = ? AND ("
-                "state IN ('sent', 'ambiguous') OR (kind = 'dispatch' AND "
-                "state = 'succeeded')) LIMIT 1",
-                (run_id,),
-            ).fetchone()
-        )
-        if forbidden is not None:
-            raise ResearchCancellationConflict()
         connection.execute(
             "UPDATE research_input_resolutions SET cancel_requested = 1, "
             "status = 'cancelled', updated_at = ?, revision = revision + 1 "
@@ -584,14 +569,23 @@ def cancel_research_run(
             "UPDATE research_work_units SET state = 'cancelled', "
             "lease_owner = NULL, lease_expires_at = NULL, completed_at = ?, "
             "updated_at = ?, revision = revision + 1 WHERE run_id = ? "
-            "AND state IN ('pending', 'leased', 'retryable_failed')",
+            "AND state IN ('pending', 'leased', 'retryable_failed', "
+            "'sent', 'ambiguous')",
+            (now, now, run_id),
+        )
+        connection.execute(
+            "UPDATE research_work_units SET state = 'cancelled', "
+            "lease_owner = NULL, lease_expires_at = NULL, completed_at = ?, "
+            "updated_at = ?, revision = revision + 1 WHERE run_id = ? "
+            "AND kind = 'dispatch' AND state = 'succeeded'",
             (now, now, run_id),
         )
         connection.execute(
             "UPDATE research_dispatch_outbox SET state = 'cancelled', "
             "lease_owner = NULL, lease_expires_at = NULL, completed_at = ?, "
             "updated_at = ?, revision = revision + 1 WHERE run_id = ? "
-            "AND state IN ('pending', 'leased')",
+            "AND state IN ('pending', 'leased', 'sent', 'ambiguous', "
+            "'accepted')",
             (now, now, run_id),
         )
         updated = connection.execute(

@@ -438,12 +438,29 @@ def cancel_run_claims(
         _ensure_schema_on(connection)
         connection.execute("BEGIN IMMEDIATE")
         try:
-            claims = connection.execute(
-                "SELECT claimant_task_id, fingerprint, generation "
-                "FROM fingerprint_job_claims "
-                "WHERE run_id = ? AND user_id = ? AND claim_state = ?",
-                (run_id, user_id, ACTIVE_CLAIM),
-            ).fetchall()
+            tables = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            if "tasks" in tables:
+                claims = connection.execute(
+                    "SELECT claimant_task_id, fingerprint, generation "
+                    "FROM fingerprint_job_claims "
+                    "WHERE claim_state = ? AND ("
+                    "(run_id = ? AND user_id = ?) OR claimant_task_id IN ("
+                    "SELECT task_id FROM tasks WHERE run_id = ? "
+                    "AND user_id = ?))",
+                    (ACTIVE_CLAIM, run_id, user_id, run_id, user_id),
+                ).fetchall()
+            else:
+                claims = connection.execute(
+                    "SELECT claimant_task_id, fingerprint, generation "
+                    "FROM fingerprint_job_claims "
+                    "WHERE run_id = ? AND user_id = ? AND claim_state = ?",
+                    (run_id, user_id, ACTIVE_CLAIM),
+                ).fetchall()
             detached: list[str] = []
             touched: set[tuple[str, int]] = set()
             for claimant_task_id, fingerprint, generation in claims:
