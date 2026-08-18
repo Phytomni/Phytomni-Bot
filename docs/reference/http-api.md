@@ -155,6 +155,10 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
 
 ## Endpoints
 
+This inventory is the public GET and POST contract. The
+[HTTP API Operations Runbook](../ops/http-api-runbook.md#endpoint-inventory)
+keeps operator probes and does not repeat the full list.
+
 - **Method:** `GET`
   **Path:** `/healthz`
   **Auth:** no

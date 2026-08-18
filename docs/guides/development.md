@@ -247,9 +247,10 @@ documentation to code-owned surfaces:
 - `README.md` and [MCP Tool Reference](../reference/mcp-tools.md) must list
   every public
   MCP tool from `mcp/schemas.py`.
-- [HTTP API](../reference/http-api.md) and the
-  [HTTP API Operations Runbook](../ops/http-api-runbook.md) must list every
-  public FastAPI route from `api/app.py`.
+- [HTTP API](../reference/http-api.md) must list every public FastAPI
+  route from `api/app.py`. The
+  [HTTP API Operations Runbook](../ops/http-api-runbook.md) keeps
+  operator probes and links to that contract instead of duplicating it.
 - [CLI Reference](../reference/cli.md) must cover every console script in
   `pyproject.toml`.
 

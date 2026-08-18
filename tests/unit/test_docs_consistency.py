@@ -224,17 +224,15 @@ def test_readme_and_mcp_reference_list_public_tools() -> None:
 
 
 def test_http_docs_list_public_fastapi_routes() -> None:
-    """Verify HTTP reference docs list every public FastAPI route."""
+    """HTTP contract lists every public route; the runbook keeps probes."""
     route_pairs = _api_endpoint_pairs()
+    contract = _documented_endpoint_pairs(ROOT / "docs/reference/http-api.md")
+    runbook = _documented_endpoint_pairs(ROOT / "docs/ops/http-api-runbook.md")
+    probes = {("GET", "/healthz"), ("GET", "/readyz")}
 
-    assert (
-        _documented_endpoint_pairs(ROOT / "docs/reference/http-api.md")
-        == route_pairs
-    )
-    assert (
-        _documented_endpoint_pairs(ROOT / "docs/ops/http-api-runbook.md")
-        == route_pairs
-    )
+    assert contract == route_pairs
+    assert probes <= runbook
+    assert runbook < route_pairs
 
 
 def test_async_report_docs_distinguish_ack_status_and_terminal_report() -> (
