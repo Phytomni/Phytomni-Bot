@@ -59,11 +59,12 @@ __all__ = [
 
 _LOGGER = logging.getLogger(__name__)
 
-# Base URLs (empty string when unset) observed to reject
-# ``tool_choice="required"`` with an HTTP 400. Once an endpoint is recorded
-# here, strict routing sends ``"auto"`` up front instead of paying a wasted
-# 400 round-trip. Process-local and non-secret, mirroring how the router
-# already reads ``sensitive.BASE_URL``; never persisted.
+# Base URLs observed to reject a constrained ``tool_choice``
+# (``"required"`` or a named function) with HTTP 400. HTTP Expert
+# autonomous routing already sends ``"auto"``; this set only skips a
+# wasted 400 when a caller still passes a constrained choice into
+# ``complete_expert_routing``. Process-local and non-secret; never
+# persisted.
 _TOOL_CHOICE_REQUIRED_UNSUPPORTED: set[str] = set()
 
 # Expert routing is a small control-plane request. Two retries are enough to
@@ -234,8 +235,8 @@ async def select_expert_tool(
     allowlist is supplied, which is the compatibility path used by A2A.
     Stdio MCP never calls this path. A pinned ``forced_tool`` or a
     one-tool allowlist needs no routing model. Only an unpinned allowlist
-    of two or more tools takes an LLM pool lease; a later agent turn may
-    take another.
+    of two or more tools takes an LLM pool lease, and that call uses
+    ``tool_choice="auto"``; a later agent turn may take another.
     """
     request = _build_routing_request(
         agent_openai_tool_specs(), options.allowed_tools, options.forced_tool
@@ -275,17 +276,18 @@ async def complete_expert_routing(
     Provider exception details are intentionally discarded at this boundary;
     the HTTP layer maps the typed outcome to the public safe error envelope.
 
+    HTTP Expert autonomous routing already sends ``tool_choice="auto"``.
     Some OpenAI-compatible endpoints (e.g. the Huawei pangu ``mastudio``
-    deployment) reject a constrained ``tool_choice`` -- both the bare
-    ``"required"`` sentinel and a named ``{"type": "function", ...}`` choice --
-    with an HTTP 400 while honoring ``"auto"``. The two rejections carry
-    different error bodies (a validation message vs. a generic ``PANGU.3342``),
-    so detection keys off the constrained choice, not the error text: any 400
-    on a constrained choice records the endpoint and retries once with
-    ``"auto"`` over the full tool list. Later constrained calls to a recorded
-    endpoint skip straight to ``"auto"``. The forced-tool guarantee is then
-    enforced by ``_selection_from_completion``, which coerces the final
-    selection to ``forced_tool`` regardless of what the auto retry returned.
+    deployment) still reject a constrained ``tool_choice`` -- both the
+    bare ``"required"`` sentinel and a named
+    ``{"type": "function", ...}`` choice -- with an HTTP 400 while
+    honoring ``"auto"``. The two rejections carry different error bodies
+    (a validation message vs. a generic ``PANGU.3342``), so detection
+    keys off the constrained choice, not the error text: any 400 on a
+    constrained choice records the endpoint and retries once with
+    ``"auto"`` over the full tool list. Later constrained calls to a
+    recorded endpoint skip straight to ``"auto"``. This path is
+    defensive for callers that still pass a constrained choice.
     """
     runtime = current_outbound_runtime()
     sensitive = get_sensitive_config()
@@ -442,7 +444,14 @@ def _build_routing_request(
     allowed_tools: Sequence[str] | None,
     forced_tool: str | None,
 ) -> _RoutingRequest:
-    """Prepare the model tool surface and strict-selection contract."""
+    """Prepare the model tool surface and strict-selection contract.
+
+    Unpinned strict routing sends ``tool_choice="auto"``. Production
+    Pangu rejects ``"required"``, and a model decline is already a
+    Chat fallback rather than a forced pick. A pinned tool still
+    records a named choice on the request object, but
+    ``select_expert_tool`` never sends it.
+    """
     if allowed_tools is None:
         return _RoutingRequest((), all_specs, "auto", False)
     allowed_order = tuple(allowed_tools)
@@ -469,7 +478,7 @@ def _build_routing_request(
             "function": {"name": forced_tool},
         }
         if forced_tool is not None
-        else "required"
+        else "auto"
     )
     return _RoutingRequest(allowed_order, tools, tool_choice, True)
 

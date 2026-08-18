@@ -478,7 +478,7 @@ async def test_route_autonomous_dispatches_one_allowed_tool(
     assert response.status_code == 200
     assert len(invoked) == 1
     assert invoked[0]["agent"] == "chat"
-    assert captured["tool_choice"] == "required"
+    assert captured["tool_choice"] == "auto"
     assert [tool["function"]["name"] for tool in captured["tools"]] == [
         "ReviewAgent",
         "ChatAgent",
@@ -928,7 +928,7 @@ async def test_legacy_a2a_no_selection_cannot_relax_strict_route(
     assert response.status_code == 502
     assert response.json()["error"]["code"] == ("routing_contract_violation")
     assert captured == {
-        "tool_choice": "required",
+        "tool_choice": "auto",
         "allowed_order": ("DataAgent", "KnowledgeAgent"),
     }
     assert legacy_calls == ["legacy question"]

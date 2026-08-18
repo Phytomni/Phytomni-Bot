@@ -105,7 +105,7 @@ async def test_strict_router_offers_allowed_tools_in_request_order(
         "KnowledgeAgent",
         "ChatAgent",
     ]
-    assert captured["tool_choice"] == "required"
+    assert captured["tool_choice"] == "auto"
 
 
 async def test_strict_router_forces_requested_tool(
@@ -154,7 +154,7 @@ async def test_select_expert_tool_scopes_prompt_and_order() -> None:
         "KnowledgeAgent",
         "ChatAgent",
     ]
-    assert captured["tool_choice"] == "required"
+    assert captured["tool_choice"] == "auto"
     assert captured["messages"][0]["role"] == "system"
     assert "Simplified Chinese" in captured["messages"][0]["content"]
     assert captured["messages"][1] == {
@@ -498,16 +498,15 @@ async def test_public_expert_completion_records_only_one_llm_operation() -> (
         assert llm.in_use == llm.waiting == 0
 
 
-async def test_routing_falls_back_to_auto_on_required_rejection(
+async def test_unpinned_strict_routing_sends_auto_without_required_probe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A 400 on 'required' retries once with 'auto' over the full tools."""
+    """The first unpinned ≥2-tool call sends auto; it never probes required."""
     calls: list[dict[str, Any]] = []
     patch_expert_router(
         monkeypatch,
         expert_router,
         _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
-        side_effects=[_bad_request(_REQUIRED_REJECTION)],
         calls=calls,
     )
 
@@ -517,12 +516,39 @@ async def test_routing_falls_back_to_auto_on_required_rejection(
     )
 
     assert result == ToolSelection("ChatAgent", {})
+    assert [call["tool_choice"] for call in calls] == ["auto"]
+
+
+async def test_routing_falls_back_to_auto_on_required_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 400 on 'required' retries once with 'auto' over the same tools."""
+    calls: list[dict[str, Any]] = []
+    tools = [
+        spec
+        for spec in agent_openai_tool_specs()
+        if spec["function"]["name"] in {"KnowledgeAgent", "ChatAgent"}
+    ]
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        side_effects=[_bad_request(_REQUIRED_REJECTION)],
+        calls=calls,
+    )
+
+    result = await expert_router.complete_expert_routing(
+        messages=[{"role": "user", "content": "route this"}],
+        tools=tools,
+        tool_choice="required",
+    )
+
+    assert result.choices
     assert [call["tool_choice"] for call in calls] == ["required", "auto"]
-    # The retry keeps the full allowlist; narrowing to one tool makes the
+    # The retry keeps the offered tools; narrowing to one tool makes the
     # model return an empty tool call on the real endpoint.
     assert [t["function"]["name"] for t in calls[1]["tools"]] == [
-        "KnowledgeAgent",
-        "ChatAgent",
+        tool["function"]["name"] for tool in tools
     ]
 
 
@@ -639,19 +665,20 @@ async def test_routing_falls_back_on_pangu_3342_without_tool_choice_text(
         calls=calls,
     )
 
-    result = await select_agent_tool(
-        "route this",
-        allowed_tools=["KnowledgeAgent", "ChatAgent"],
+    result = await expert_router.complete_expert_routing(
+        messages=[{"role": "user", "content": "route this"}],
+        tools=agent_openai_tool_specs(),
+        tool_choice="required",
     )
 
-    assert result == ToolSelection("ChatAgent", {})
+    assert result.choices
     assert [call["tool_choice"] for call in calls] == ["required", "auto"]
 
 
 async def test_routing_caches_unsupported_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """After one 400 downgrade, later strict calls send 'auto' directly."""
+    """After one 400 downgrade, later constrained calls send 'auto'."""
     first_calls: list[dict[str, Any]] = []
     patch_expert_router(
         monkeypatch,
@@ -660,8 +687,10 @@ async def test_routing_caches_unsupported_endpoint(
         side_effects=[_bad_request(_REQUIRED_REJECTION)],
         calls=first_calls,
     )
-    await select_agent_tool(
-        "first", allowed_tools=["ChatAgent", "KnowledgeAgent"]
+    await expert_router.complete_expert_routing(
+        messages=[{"role": "user", "content": "first"}],
+        tools=agent_openai_tool_specs(),
+        tool_choice="required",
     )
     assert [call["tool_choice"] for call in first_calls] == [
         "required",
@@ -675,8 +704,10 @@ async def test_routing_caches_unsupported_endpoint(
         _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
         calls=second_calls,
     )
-    await select_agent_tool(
-        "second", allowed_tools=["ChatAgent", "KnowledgeAgent"]
+    await expert_router.complete_expert_routing(
+        messages=[{"role": "user", "content": "second"}],
+        tools=agent_openai_tool_specs(),
+        tool_choice="required",
     )
 
     # No wasted 400 round-trip: the single call goes straight to 'auto'.
@@ -703,6 +734,28 @@ async def test_routing_auto_400_is_not_retried(
     with pytest.raises(expert_router.ExpertProviderError):
         # No allowlist -> unconstrained 'auto' request.
         await select_agent_tool("route this", history=[])
+
+    assert [call["tool_choice"] for call in calls] == ["auto"]
+
+
+async def test_unpinned_strict_auto_400_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 400 on the unpinned auto call is a provider error, not a probe."""
+    calls: list[dict[str, Any]] = []
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        side_effects=[_bad_request("context length exceeded")],
+        calls=calls,
+    )
+
+    with pytest.raises(expert_router.ExpertProviderError):
+        await select_agent_tool(
+            "route this",
+            allowed_tools=["KnowledgeAgent", "ChatAgent"],
+        )
 
     assert [call["tool_choice"] for call in calls] == ["auto"]
 

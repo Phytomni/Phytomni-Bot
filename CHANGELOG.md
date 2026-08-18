@@ -62,6 +62,11 @@ package version remains `0.1.3` until the release bump.
   routing model. The model runs only when the caller did not pin a tool
   and the allowlist has two or more agents. Chat fallback on an unforced
   model decline is unchanged.
+- **Expert routing auto** — That unpinned model call sends
+  `tool_choice=auto` on the first request. A process restart no longer
+  probes `required` and pays a 400 before retrying `auto`. The
+  constrained-choice fallback remains for callers that still pass
+  `required` or a named tool.
 - **Context Expert decline envelope** — When `ChatAgent` is not in
   the trusted allowlist, a conversation-context model decline now
   returns the same `502 routing_contract_violation` envelope as V0

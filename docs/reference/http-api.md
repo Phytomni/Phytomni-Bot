@@ -2606,7 +2606,10 @@ canonical names), a non-member `forced_tool`, and unknown body keys are
 rejected with `422`. A pinned `forced_tool` or a one-tool `allowed_tools`
 list dispatches that agent without calling the routing model. The routing
 model runs only when the caller did not pin a tool and the trusted
-allowlist contains two or more agents. Routing is then strict on genuine
+allowlist contains two or more agents, and that call uses
+`tool_choice=auto`. A process restart does not first probe `required`.
+Endpoints that reject a constrained choice, if one is still sent, keep
+the existing one-shot auto retry. Routing is then strict on genuine
 contract violations: multiple calls, a malformed call structure (for
 example, no function), or a tool outside the allowlist fails with `502`
 and dispatches no agent. A model *decline* (no choice or no tool

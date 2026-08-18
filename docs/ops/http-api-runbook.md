@@ -1112,7 +1112,8 @@ expected forced member. Also verify these strict failures before rollout:
 - A pinned `forced_tool`, or a one-tool `allowed_tools` list, dispatches
   that agent without calling the routing model. The model runs only when
   the caller did not pin a tool and the trusted allowlist has two or more
-  agents.
+  agents, and that call uses `tool_choice=auto` without a first-request
+  `required` probe.
 - A genuine contract violation -- multiple calls, a malformed call structure
   (for example, no function), or a call outside `allowed_tools` -- returns
   `502` and invokes no agent.
