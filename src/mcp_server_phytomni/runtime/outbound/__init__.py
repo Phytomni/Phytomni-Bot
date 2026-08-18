@@ -3,10 +3,10 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Process-owned outbound request runtime.
 
-Replaces the removed ``common.httpx_client`` factory. One process owns
-twelve logical pools, two HTTPX profiles (trusted and direct
-upstream), and one ``AsyncOpenAI`` client with ``max_retries=0``.
-Callers lease a named pool; they do not construct shared HTTP clients.
+Replaces the removed common HTTP factory. One process owns twelve
+logical pools, two HTTP profiles (trusted and direct upstream), and
+one OpenAI client with retries disabled. Callers lease a named pool;
+they do not construct shared HTTP clients.
 """
 
 from .http import (

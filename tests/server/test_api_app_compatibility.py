@@ -62,7 +62,7 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # the always-on interop capabilities route). ``_normalized_openapi``
 # removes only unstable version/server fields.
 _OPENAPI_HASH = (
-    "4904d417b468b97368c992ac334c6f0ef4d3d68566c72aef7d3e51d7e039e883"
+    "f77d21f1a139d3e9479e1548ed7b72a74eb919ba044aef5f7a66046335c6bff8"
 )
 
 
