@@ -22,13 +22,19 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from ..agents.analyst.state import AnalystInput
-from ..agents.analyst.task_ops import verified_reuse_task_ids
+from ..agents.analyst.task_ops import task_delete, verified_reuse_task_ids
 from ..agents.shared.analysis import prepare_analyst_dispatch_context
 from ..agents.shared.analysis_requests import (
     build_analyst_analysis_request,
     build_analyst_prompt_parts,
 )
 from ..agents.shared.options import resolve_agent_locale
+from ..runtime.fingerprint_jobs import (
+    FingerprintJobDeadError,
+    attach_reuse_claim,
+    register_submitted_job,
+)
+from ..runtime.request_context import current_request_user, current_run_id
 from ..runtime.result_run_layout import result_run_root_from_child
 from ..runtime.task_dedup import (
     analyst_task_fingerprint,
@@ -38,6 +44,7 @@ from ..runtime.task_dedup import (
 from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
 
 logger = logging.getLogger(__name__)
+_ORPHAN_DELETE_ERRORS: tuple[type[Exception], ...] = (Exception,)
 
 __all__ = [
     "build_analyst_dispatch_request",
@@ -267,9 +274,16 @@ async def submit_analyst_via_subgraph(
     result = map_analyst_output_to_dispatch_state(final_state)
     task_id = result.get("task_id")
     if isinstance(task_id, str) and task_id and fingerprint is not None:
+        output_dir = str(result.get("output_dir") or "")
+        await _record_submitted_fingerprint_job(
+            fingerprint,
+            task_id,
+            output_dir,
+            force_new=is_polling,
+        )
         record_dispatch_submission(
             task_id,
-            str(result.get("output_dir") or ""),
+            output_dir,
             fingerprint,
         )
     logger.info(
@@ -368,9 +382,8 @@ async def _reuse_prior_dispatch(
     Returns:
         The reuse dict on a verified-live hit, otherwise ``None``.
     """
-    prior = TaskManager(resolve_tasks_db_path()).get_task_by_fingerprint(
-        fingerprint
-    )
+    db_path = resolve_tasks_db_path()
+    prior = TaskManager(db_path).get_task_by_fingerprint(fingerprint)
     if prior is None:
         return None
     if not should_reuse_prior_task(prior["status"] or ""):
@@ -382,6 +395,25 @@ async def _reuse_prior_dispatch(
     if reuse_ids is None:
         return None
     caller_task_id, source_task_id = reuse_ids
+    job_status = (
+        "succeeded"
+        if str(prior.get("status") or "").lower()
+        in {"succeeded", "success", "completed", "done"}
+        else "running"
+    )
+    try:
+        attach_reuse_claim(
+            db_path,
+            fingerprint=fingerprint,
+            ei_task_id=str(source_task_id),
+            output_dir=str(prior.get("output_dir") or ""),
+            claimant_task_id=caller_task_id,
+            run_id=_claim_run_id(caller_task_id),
+            user_id=_claim_user_id(),
+            job_status=job_status,
+        )
+    except FingerprintJobDeadError:
+        return None
     return {
         "task_id": caller_task_id,
         "output_dir": prior["output_dir"],
@@ -390,3 +422,47 @@ async def _reuse_prior_dispatch(
         "task_status": prior["status"],
         "source_task_id": source_task_id,
     }
+
+
+def _claim_run_id(claimant_task_id: str) -> str:
+    """Bind a claim to the request run, or the caller-owned task id."""
+    return current_run_id() or claimant_task_id
+
+
+def _claim_user_id() -> str:
+    """Bind a claim to the request user, or the anonymous MCP owner."""
+    return current_request_user() or "anonymous"
+
+
+async def _record_submitted_fingerprint_job(
+    fingerprint: str,
+    task_id: str,
+    output_dir: str,
+    *,
+    force_new: bool,
+) -> None:
+    """Persist a new generation and best-effort drop a raced duplicate."""
+    registered = register_submitted_job(
+        resolve_tasks_db_path(),
+        fingerprint=fingerprint,
+        ei_task_id=task_id,
+        output_dir=output_dir,
+        claimant_task_id=task_id,
+        run_id=_claim_run_id(task_id),
+        user_id=_claim_user_id(),
+        force_new=force_new,
+    )
+    orphan = registered.orphan_ei_task_id
+    if not orphan:
+        return
+    logger.warning(
+        "Dropping duplicate fingerprint job after a lost submit race"
+    )
+    try:
+        await task_delete(orphan)
+    except _ORPHAN_DELETE_ERRORS as exc:
+        logger.warning(
+            "Could not terminate a raced duplicate fingerprint job; "
+            "error_type=%s",
+            type(exc).__name__,
+        )

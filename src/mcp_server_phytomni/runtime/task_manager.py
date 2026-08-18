@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from ..config.defaults import ApiConfig
+from .fingerprint_jobs import ensure_schema
 
 
 def _expires_at_for(status: str, now_iso: str) -> str | None:
@@ -228,6 +229,7 @@ class TaskManager:
                 conn.execute(statement)
         conn.commit()
         conn.close()
+        ensure_schema(self.db_path)
 
     def _get_connection(self):
         """Returns a connection to the SQLite database.

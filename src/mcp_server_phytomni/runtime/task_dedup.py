@@ -167,6 +167,23 @@ def _write_back_dead(prior: dict[str, str]) -> None:
         logger.warning(
             "Failed to write back dead status for %s", prior["task_id"]
         )
+    ei_task_id = prior.get("source_task_id") or prior.get("analysis_id")
+    if not ei_task_id:
+        ei_task_id = prior.get("task_id")
+    if not ei_task_id:
+        return
+    try:
+        from .fingerprint_jobs import mark_job_terminal
+
+        mark_job_terminal(
+            resolve_tasks_db_path(),
+            str(ei_task_id),
+            "failed",
+        )
+    except (sqlite3.Error, OSError, ValueError):
+        logger.warning(
+            "Failed to mark fingerprint job dead for %s", prior["task_id"]
+        )
 
 
 def mint_caller_owned_task_id(agent: str) -> str:

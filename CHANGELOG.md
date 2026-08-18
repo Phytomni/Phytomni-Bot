@@ -22,6 +22,10 @@ package version remains `0.1.3` until the release bump.
 
 ### Added
 
+- **Fingerprint job claims** — Analyst reuse records a first-class
+  fingerprint generation plus per-run claims. Stopping the last live
+  claim marks that EI job for terminate; earlier claims only detach.
+  A cancelled or failed generation can be relaunched as `generation+1`.
 - **Expert route logs** — `POST /v1/query/route` writes one
   `Expert route outcome` line that classifies selected, Chat
   fallback, decline without fallback, selection-contract, and
