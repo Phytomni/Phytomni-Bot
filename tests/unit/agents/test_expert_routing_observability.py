@@ -294,13 +294,16 @@ def _context_fault_request(exc: BaseException) -> ContextLifecycleHttpRequest:
 async def test_context_wrapper_logs_declined_no_fallback(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Context decline without Chat stays HTTP 502 with that outcome."""
+    """Context decline without Chat stays 502 routing_contract_violation."""
     caplog.set_level(logging.WARNING, logger=_ROUTE_LOGGER)
-    with pytest.raises(HTTPException) as caught:
+    with pytest.raises(SafeApiError) as caught:
         await execute_context_lifecycle_http(
             _context_fault_request(ExpertRoutingDeclinedError(_LEAK))
         )
     assert caught.value.status_code == 502
+    assert caught.value.code == "routing_contract_violation"
+    assert caught.value.stage == "routing"
+    assert caught.value.retryable is False
     logged = _route_records(caplog)
     assert [getattr(item, "outcome") for item in logged] == [
         "declined_no_fallback"

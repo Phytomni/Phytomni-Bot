@@ -1115,8 +1115,9 @@ expected forced member. Also verify these strict failures before rollout:
 - A model *decline* (no choice or no tool call) is not a violation: when
   `allowed_tools` includes `ChatAgent` the route degrades to a ChatAgent
   dispatch with the original `user_query` injected; otherwise it returns
-  `502` with no dispatch. The degrade is opt-in and gated on the trusted
-  allowlist.
+  `502 routing_contract_violation` with no dispatch on both the V0 and
+  conversation-context paths. The degrade is opt-in and gated on the
+  trusted allowlist.
 - Malformed or non-object function arguments are extracted arguments, not a
   malformed call structure; selected-agent schema validation of those arguments
   returns `400`. Absent or insufficient `agents` scope returns `401` / `403`.

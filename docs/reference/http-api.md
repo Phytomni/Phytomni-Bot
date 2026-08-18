@@ -2610,9 +2610,11 @@ tool outside the allowlist, or failure to honor `forced_tool` fails with
 call) is treated separately: it means the turn is plain chat, so when the
 caller's `allowed_tools` includes `ChatAgent` the route degrades to a
 ChatAgent dispatch with the original `user_query` injected; when the caller
-did not authorize `ChatAgent` the decline stays a `502` with no dispatch.
-The chat-degrade is opt-in and gated on the trusted allowlist, so a caller
-that scoped chat out never has it dispatched on its behalf. Separately,
+did not authorize `ChatAgent` the decline stays a `502` with
+`error.code=routing_contract_violation` and no dispatch, on both the V0
+and conversation-context paths. The chat-degrade is opt-in and gated on
+the trusted allowlist, so a caller that scoped chat out never has it
+dispatched on its behalf. Separately,
 malformed or non-object function arguments are treated as extracted
 arguments and then validated against the selected agent schema; that
 validation failure returns `400`. Missing or insufficient scope returns

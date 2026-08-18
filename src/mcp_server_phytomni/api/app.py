@@ -90,7 +90,10 @@ from .compat import (
     _stream_chat_completion,
     _stream_review_a2ui_pause,
 )
-from .expert_routing_errors import expert_routing_provider_error
+from .expert_routing_errors import (
+    expert_routing_contract_error,
+    expert_routing_provider_error,
+)
 from .lifecycle_contract import (
     SafeApiError,
     SafeErrorCode,
@@ -312,13 +315,7 @@ _LOGGER = logging.getLogger(__name__)
 
 def _routing_contract_error() -> SafeApiError:
     """Return one sanitized Expert routing contract failure."""
-    return expert_safe_error(
-        SafeErrorCode.ROUTING_CONTRACT_VIOLATION,
-        status_code=502,
-        locale=current_effective_locale(),
-        stage="routing",
-        retryable=False,
-    )
+    return expert_routing_contract_error()
 
 
 def _record_v0_route_outcome(

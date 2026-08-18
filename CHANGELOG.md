@@ -53,6 +53,11 @@ package version remains `0.1.3` until the release bump.
 
 ### Fixed
 
+- **Context Expert decline envelope** — When `ChatAgent` is not in
+  the trusted allowlist, a conversation-context model decline now
+  returns the same `502 routing_contract_violation` envelope as V0
+  instead of a generic `upstream_failed` HTTPException. Unforced
+  declines that include `ChatAgent` still dispatch Chat (`CHAT_FALLBACK`).
 - **Background cancel settlement** — Cancelling a detached Analyst /
   Network / Design / Research worker settles the umbrella as
   `cancelled`, not `failed`.

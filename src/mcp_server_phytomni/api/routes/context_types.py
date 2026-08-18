@@ -35,7 +35,10 @@ from ...runtime.conversation_context.service import (
     PreparedTurn,
 )
 from ..attachments import ManagedAttachmentEvidence
-from ..expert_routing_errors import expert_routing_provider_error
+from ..expert_routing_errors import (
+    expert_routing_contract_error,
+    expert_routing_provider_error,
+)
 from ..lifecycle_contract import conversation_context_unavailable_error
 
 
@@ -142,10 +145,7 @@ async def execute_context_lifecycle_http(
             error_class=type(exc).__name__,
             http_status=502,
         )
-        raise HTTPException(
-            status_code=502,
-            detail=request.selection_failure_detail,
-        ) from exc
+        raise expert_routing_contract_error() from exc
     except (ToolSelectionError, ValueError) as exc:
         record_expert_route_outcome(
             ExpertRouteOutcome.SELECTION_CONTRACT,

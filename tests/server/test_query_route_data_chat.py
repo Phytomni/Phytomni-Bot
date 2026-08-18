@@ -476,4 +476,7 @@ async def test_context_expert_decline_without_chat_returns_502(
     )
 
     assert response.status_code == 502
-    assert response.json()["error"]["code"] == "upstream_failed"
+    body = response.json()["error"]
+    assert body["code"] == "routing_contract_violation"
+    assert body["stage"] == "routing"
+    assert body["retryable"] is False
