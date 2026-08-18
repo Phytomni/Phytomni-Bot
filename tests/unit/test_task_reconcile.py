@@ -171,14 +171,7 @@ def test_snapshot_public_serializer_whitelists_report_fields() -> None:
 async def test_reconcile_task_log_returns_cached_payload_without_remote(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A cache hit short-circuits before touching the analyst platform.
-
-    The reconcile bridge exists specifically to stop a polling client
-    from round-tripping the remote analysis API on every refresh. If a
-    cached row exists, the helper must not call the remote primitive —
-    pinning that with a monkeypatched counter so a future refactor that
-    accidentally re-fetches will fail the assertion immediately.
-    """
+    """A usable ``logs[].content`` cache short-circuits the platform."""
     monkeypatch.setattr(
         "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
         lambda: mgr_path,
@@ -186,8 +179,7 @@ async def test_reconcile_task_log_returns_cached_payload_without_remote(
     mgr = TaskManager(mgr_path)
     task_id = mgr.create_task()
     cached_payload = {
-        "init_info": {"goal": "g"},
-        "steps": [{"round": 1, "logs": ["cached-output"]}],
+        "logs": [{"content": "cached-output\n"}],
     }
     mgr.set_task_log(task_id, cached_payload)
 
@@ -195,15 +187,73 @@ async def test_reconcile_task_log_returns_cached_payload_without_remote(
 
     async def _fake_task_log(t_id: str, **_: Any) -> dict:
         remote_calls.append(t_id)
-        return {"init_info": {}, "steps": []}
+        return {"logs": []}
 
     monkeypatch.setattr(
         "mcp_server_phytomni.runtime.task_reconcile.task_log",
         _fake_task_log,
     )
 
-    assert await reconcile_task_log(task_id) == cached_payload
+    assert await reconcile_task_log(task_id) == {
+        "logs": [{"content": "cached-output\n"}],
+        "text": "cached-output\n",
+    }
     assert not remote_calls
+
+
+@pytest.mark.asyncio
+async def test_reconcile_task_log_refetches_empty_object_cache(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An early ``{}`` cache must not hide later platform ``logs[].content``."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    task_id = mgr.create_task()
+    mgr.update_task(task_id, "succeeded", "analysis-1", "/obs/out")
+    mgr.set_task_log(task_id, {})
+
+    remote_calls: list[str] = []
+
+    async def _fake_task_log(t_id: str, **_: Any) -> dict:
+        remote_calls.append(t_id)
+        return {
+            "count": 2,
+            "logs": [
+                {
+                    "collect_time": "t0",
+                    "content": "Get conda environment finish!\n",
+                },
+                {
+                    "collect_time": "t1",
+                    "content": "[MCP] Loaded 35 tool(s).\n",
+                },
+            ],
+        }
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_log",
+        _fake_task_log,
+    )
+
+    result = await reconcile_task_log(task_id)
+    assert remote_calls == [task_id]
+    assert result == {
+        "count": 2,
+        "logs": [
+            {
+                "collect_time": "t0",
+                "content": "Get conda environment finish!\n",
+            },
+            {"collect_time": "t1", "content": "[MCP] Loaded 35 tool(s).\n"},
+        ],
+        "text": "Get conda environment finish!\n[MCP] Loaded 35 tool(s).\n",
+    }
+    assert mgr.get_task_log(task_id)["logs"][0]["content"].startswith(
+        "Get conda"
+    )
 
 
 @pytest.mark.asyncio
@@ -261,7 +311,9 @@ async def test_reconcile_task_log_fetches_and_caches_on_miss(
     mgr = TaskManager(mgr_path)
     task_id = mgr.create_task()
 
-    fetched = {"init_info": {"goal": "live"}, "steps": [{"round": 1}]}
+    fetched = {
+        "logs": [{"content": "live log\n"}],
+    }
 
     async def _fake_task_log(_t_id: str, **_: Any) -> dict:
         return fetched
@@ -272,7 +324,10 @@ async def test_reconcile_task_log_fetches_and_caches_on_miss(
     )
 
     result = await reconcile_task_log(task_id)
-    assert result == fetched
+    assert result == {
+        "logs": [{"content": "live log\n"}],
+        "text": "live log\n",
+    }
     assert mgr.get_task_log(task_id) == fetched
 
 

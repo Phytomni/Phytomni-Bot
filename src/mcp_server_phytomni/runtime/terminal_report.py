@@ -53,6 +53,15 @@ _FIGURE_EXTENSIONS = frozenset(
 )
 _MAX_TEXT_ARTIFACTS = 8
 _MAX_BYTES_PER_ARTIFACT = 32_768
+_DIRECT_CONCLUSION_MAX_CHARS = 4_096
+_PLAIN_CONCLUSION_ROLES = frozenset(
+    {ArtifactRole.UNKNOWN, ArtifactRole.SCIENTIFIC_DATA}
+)
+_PLAIN_CONCLUSION_MEDIA_PREFIXES = (
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+)
 _MAX_TOTAL_PROMPT_CHARS = 120_000
 _SUMMARY_TIMEOUT_SECONDS = 90.0
 _REPORT_TEMP_DIR = "terminal-report"
@@ -104,6 +113,7 @@ _REPORT_LABELS: dict[SupportedLocale, dict[str, str]] = {
         "degradation": "Report Degradation",
         "no_output_dirs": "No output directories were reported.",
         "no_artifacts": "No artifact files were reported.",
+        "analysis_result": "Analysis result",
     },
     "zh-CN": {
         "summary": "摘要",
@@ -119,6 +129,7 @@ _REPORT_LABELS: dict[SupportedLocale, dict[str, str]] = {
         "degradation": "报告降级",
         "no_output_dirs": "未报告输出目录。",
         "no_artifacts": "未报告工件文件。",
+        "analysis_result": "分析结果",
     },
 }
 
@@ -405,6 +416,45 @@ def _artifact_role(artifact: ReportArtifact) -> ArtifactRole | None:
         return None
 
 
+def _artifact_media_type(artifact: ReportArtifact) -> str:
+    """Return the classified media type, or empty when it is missing."""
+    if isinstance(artifact, ClassifiedArtifact):
+        return artifact.media_type
+    value = artifact.get("media_type")
+    return value if isinstance(value, str) else ""
+
+
+def _artifact_is_plain_conclusion(artifact: ReportArtifact) -> bool:
+    """Return whether an undeclared text file may be the user-facing answer."""
+    if _artifact_role(artifact) not in _PLAIN_CONCLUSION_ROLES:
+        return False
+    media = _artifact_media_type(artifact).strip().lower()
+    return any(
+        media.startswith(prefix) for prefix in _PLAIN_CONCLUSION_MEDIA_PREFIXES
+    )
+
+
+def _format_plain_conclusion(
+    context: TerminalReportContext,
+    snippets: tuple[_ReportArtifactSnippet, ...],
+) -> str:
+    """Build a deterministic official body from small conclusion files."""
+    labels = _REPORT_LABELS.get(context.locale, _REPORT_LABELS["en-US"])
+    parts: list[str] = [labels["analysis_result"]]
+    query = context.query.strip() if isinstance(context.query, str) else ""
+    if query:
+        parts.append(f"{labels['query']}: {query}")
+    for snippet in snippets:
+        body = snippet.content.strip()
+        if snippet.name and body:
+            parts.append(f"{snippet.name}\n{body}")
+        elif body:
+            parts.append(body)
+        elif snippet.name:
+            parts.append(snippet.name)
+    return "\n\n".join(parts).strip()
+
+
 def _artifact_is_report_eligible(artifact: ReportArtifact) -> bool:
     """Return whether one classified artifact may enter report context."""
     role = _artifact_role(artifact)
@@ -488,12 +538,12 @@ async def _admit_report_artifacts(
     artifacts: Iterable[ReportArtifact],
     *,
     reader: ArtifactTextReader,
+    is_eligible: Callable[[ReportArtifact], bool] | None = None,
 ) -> tuple[tuple[_ReportArtifactSnippet, ...], tuple[ExecutionWarning, ...]]:
     """Admit only manifest roles into bounded report context."""
+    eligibility = is_eligible or _artifact_is_report_eligible
     eligible = tuple(
-        artifact
-        for artifact in artifacts
-        if _artifact_is_report_eligible(artifact)
+        artifact for artifact in artifacts if eligibility(artifact)
     )
     warnings: list[ExecutionWarning] = []
     if len(eligible) > _MAX_TEXT_ARTIFACTS:
@@ -666,7 +716,25 @@ async def assemble_terminal_report(
         reader=use_reader,
     )
     if not snippets:
-        return _no_text_assembly(context, warnings)
+        snippets, extra_warnings = await _admit_report_artifacts(
+            artifact_values,
+            reader=use_reader,
+            is_eligible=_artifact_is_plain_conclusion,
+        )
+        warnings = warnings + extra_warnings
+        if not snippets:
+            return _no_text_assembly(context, warnings)
+        total_chars = sum(len(snippet.content) for snippet in snippets)
+        if total_chars <= _DIRECT_CONCLUSION_MAX_CHARS:
+            return TerminalReportAssembly(
+                answer=_format_plain_conclusion(context, snippets),
+                report=ReportExecution(
+                    state="final",
+                    degraded=False,
+                    source_artifact_count=len(snippets),
+                ),
+                warnings=warnings,
+            )
 
     prompt = _build_report_prompt(context, snippets)
     if summarizer is None:

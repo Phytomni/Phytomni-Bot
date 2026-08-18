@@ -112,6 +112,35 @@ async def test_create_output_dir_uses_shared_key_when_fingerprint_given(
     assert captured["key"] == f"agent_data/shared/{'f' * 64}/output/"
 
 
+async def test_create_output_dir_uses_job_key_when_fingerprint_and_job_given(
+    monkeypatch,
+) -> None:
+    """Fingerprint plus job id isolates one public-data EI write root."""
+    captured = {}
+
+    def _fake_obsfs(
+        output_dir: str, bucket_name: str, obsfs_mount_root: str
+    ) -> str:
+        del obsfs_mount_root
+        captured["key"] = output_dir
+        return f"/obs/{bucket_name}/{output_dir}"
+
+    monkeypatch.setattr(st, "_create_output_dir_obsfs", _fake_obsfs)
+    monkeypatch.setattr(st, "relay_mode_enabled", lambda: False)
+
+    await st.create_output_dir(
+        user_id="bob",
+        task="analyst_task",
+        bucket_name="phytomni",
+        fingerprint="f" * 64,
+        job_id="run-job-1",
+    )
+    assert (
+        captured["key"]
+        == f"agent_data/shared/{'f' * 64}/jobs/run-job-1/output/"
+    )
+
+
 def test_obs_error_message_lists_request_id_code_and_message() -> None:
     """The helper renders a 4-line block: header + the 3 OBS error attrs."""
     response = SimpleNamespace(

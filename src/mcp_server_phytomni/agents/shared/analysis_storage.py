@@ -31,6 +31,7 @@ from ...storage.obs_storage import (
 )
 from ...storage.path_policy import (
     RunIdentity,
+    shared_job_output_key,
     shared_output_key,
     task_output_key,
 )
@@ -166,9 +167,9 @@ async def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
         task: Task label used as the output directory scope.
         **kwargs: Optional OBS credentials, endpoint, bucket,
             obsfs_mount_root, run_identity, and fingerprint overrides.
-            When ``fingerprint`` is supplied the output dir routes to the
-            tenant-neutral content-addressed key instead of the
-            user-scoped run path.
+            When ``fingerprint`` and ``job_id`` are supplied the output
+            dir is one isolated public-data job. A fingerprint alone
+            keeps the historical DeepGenome shared dump.
 
     Returns:
         OBS path for the created output directory.
@@ -185,7 +186,10 @@ async def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
     if not isinstance(run_identity, RunIdentity):
         run_identity = RunIdentity.create(user_id=user_id, scope=task)
     fingerprint = kwargs.get("fingerprint")
-    if fingerprint:
+    job_id = kwargs.get("job_id")
+    if fingerprint and job_id:
+        output_dir = shared_job_output_key(str(fingerprint), str(job_id))
+    elif fingerprint:
         output_dir = shared_output_key(fingerprint)
     else:
         output_dir = task_output_key(run_identity, task)
@@ -231,9 +235,10 @@ async def ensure_run_output_dir(
         task: Task label used as the output directory scope.
         run_identity: Run identity used for path construction.
         output_dir: Existing output directory to reuse when provided.
-        **kwargs: Optional ``fingerprint`` override forwarded to
-            ``create_output_dir``; when set it routes the created dir to
-            the tenant-neutral shared key.
+        **kwargs: Optional ``fingerprint`` / ``job_id`` forwarded to
+            ``create_output_dir``. A fingerprint alone keeps the
+            DeepGenome shared dump; fingerprint plus job id isolates
+            one public-data EI job.
 
     Returns:
         Existing ``output_dir`` or a newly created OBS output directory.
@@ -249,6 +254,7 @@ async def ensure_run_output_dir(
         bucket_name=config.BUCKET_NAME,
         run_identity=run_identity,
         fingerprint=kwargs.get("fingerprint"),
+        job_id=kwargs.get("job_id"),
     )
 
 

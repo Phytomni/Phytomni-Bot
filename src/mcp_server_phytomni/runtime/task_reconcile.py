@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import Mapping
 from typing import Any
 
 from mcp.shared.exceptions import McpError
@@ -40,16 +41,41 @@ _NON_TERMINAL_STATUSES = frozenset({"running", "submitted", "pending"})
 _RESTART_ORPHAN_REASON = "workflow interrupted by service restart"
 
 
-def _project_task_log_text(payload: dict[str, Any]) -> dict[str, Any]:
-    """Add ordered public text for the analyst platform's log chunks."""
+def _platform_log_contents(payload: Mapping[str, Any]) -> list[str]:
+    """Return ordered ``logs[].content`` strings from one platform payload."""
     logs = payload.get("logs")
     if not isinstance(logs, list):
-        return payload
-    contents = [
+        return []
+    return [
         item["content"]
         for item in logs
         if isinstance(item, dict) and isinstance(item.get("content"), str)
     ]
+
+
+def _usable_platform_task_log(payload: Mapping[str, Any]) -> bool:
+    """Return whether the payload has at least one non-empty log chunk."""
+    return any(content for content in _platform_log_contents(payload))
+
+
+def _explicit_empty_platform_task_log(payload: Mapping[str, Any]) -> bool:
+    """Return whether the payload is an explicit empty ``logs`` list."""
+    return isinstance(
+        payload.get("logs"), list
+    ) and not _usable_platform_task_log(payload)
+
+
+def _row_is_terminal(row: Mapping[str, Any] | None) -> bool:
+    """Return whether the local task row has left the in-flight statuses."""
+    if row is None:
+        return False
+    status = str(row.get("status") or "").strip().lower()
+    return bool(status) and status not in _NON_TERMINAL_STATUSES
+
+
+def _project_task_log_text(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add ordered public text for the analyst platform's log chunks."""
+    contents = _platform_log_contents(payload)
     if not contents:
         return payload
     return {**payload, "text": "".join(contents)}
@@ -290,11 +316,17 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
 async def reconcile_task_log(task_id: str) -> dict[str, Any] | None:
     """Return cached log or fetch from remote + cache, best-effort.
 
-    Reads ``tasks.task_log`` first. On a miss, calls
-    ``agents.analyst.task_ops.task_log`` with ``source_task_id`` when the
-    caller-owned row points at a deduplicated remote task, writes the raw
-    response via ``TaskManager.set_task_log``, and returns it. Both cached
-    and fresh platform payloads gain an additive ``text`` projection when
+    Reads ``tasks.task_log`` first. A cache hit requires at least one
+    non-empty ``logs[].content`` string — the same join the platform
+    operator uses. An early empty object (``{}``) is a miss so a later
+    completed job can still be fetched. After a terminal status, an
+    explicit empty ``{"logs": []}`` is cached so a job with no log does
+    not refetch forever.
+    On a miss, calls ``agents.analyst.task_ops.task_log`` with
+    ``source_task_id`` when the caller-owned row points at a
+    deduplicated remote task, writes a usable or terminal-empty payload
+    via ``TaskManager.set_task_log``, and returns it. Both cached and
+    fresh platform payloads gain an additive ``text`` projection when
     they contain ordered string values at ``logs[].content``.
     A remote failure (any ``McpError`` from ``task_log``) logs at
     ``warning`` and returns ``None`` — the caller (HTTP route) treats
@@ -310,10 +342,16 @@ async def reconcile_task_log(task_id: str) -> dict[str, Any] | None:
         ``None`` when the task is unknown and the remote is unreachable.
     """
     mgr = TaskManager(resolve_tasks_db_path())
-    cached = mgr.get_task_log(task_id)
-    if cached is not None:
-        return _project_task_log_text(cached)
     row = mgr.get_task(task_id)
+    cached = mgr.get_task_log(task_id)
+    if isinstance(cached, dict) and _usable_platform_task_log(cached):
+        return _project_task_log_text(cached)
+    if (
+        isinstance(cached, dict)
+        and _explicit_empty_platform_task_log(cached)
+        and _row_is_terminal(row)
+    ):
+        return _project_task_log_text(cached)
     probe_id = task_id
     if row is not None and row["source_task_id"]:
         probe_id = row["source_task_id"]
@@ -333,5 +371,14 @@ async def reconcile_task_log(task_id: str) -> dict[str, Any] | None:
             "reconcile_task_log: remote fetch failed for %s", task_id
         )
         return None
-    mgr.set_task_log(task_id, payload)
+    if not isinstance(payload, dict):
+        return None
+    if _usable_platform_task_log(payload):
+        mgr.set_task_log(task_id, payload)
+    elif _row_is_terminal(row):
+        logs = payload.get("logs")
+        mgr.set_task_log(
+            task_id,
+            {"logs": logs if isinstance(logs, list) else []},
+        )
     return _project_task_log_text(payload)

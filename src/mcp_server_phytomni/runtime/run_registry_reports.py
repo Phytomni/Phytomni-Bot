@@ -272,8 +272,55 @@ def persist_report_compatibility(
     )
 
 
+def _persist_running_scientific_report(
+    registry: Any,
+    current: Any,
+    live: list[dict[str, Any]],
+    report: TerminalReportAssembly,
+) -> Any:
+    """Publish the scientific answer before harvest or archive work.
+
+    EI completion is independent of OBS listing and zip delivery. Persist
+    the floor report on the still-running umbrella so Web can leave the
+    submit-ack wait state without downloading the output tree.
+    """
+    current_result = current.result if isinstance(current.result, dict) else {}
+    formatted = dict(current_result.get("formatted") or {})
+    formatted["answer"] = report.answer
+    next_result = {
+        **current_result,
+        "formatted": formatted,
+        "final_report": report.answer,
+    }
+    updated = registry.update_running_result(
+        current.spec.run_id,
+        owner=current.spec.user_id,
+        result=next_result,
+    )
+    if updated:
+        persist_report_compatibility(live, report, registry.db_path)
+        refreshed = registry.get_run(
+            current.spec.run_id, owner=current.spec.user_id
+        )
+        if refreshed is not None:
+            return refreshed
+    return current
+
+
 async def settle_report_terminal(request: _ReportSettlementRequest) -> Any:
     """Assemble and persist one analyst-class terminal report."""
+    current: Any = _persist_running_scientific_report(
+        request.registry,
+        request.current,
+        request.live,
+        await _assemble_report(
+            request.current,
+            request.status,
+            request.live,
+            TerminalArtifactSet(artifacts=(), warnings=()),
+            None,
+        ),
+    )
     groups = await collect_report_artifact_groups(
         request.live,
         lister=request.sources.lister,
@@ -281,7 +328,6 @@ async def settle_report_terminal(request: _ReportSettlementRequest) -> Any:
         manifest_loader=request.sources.manifest_loader,
     )
     artifact_set = merge_report_artifact_groups(groups)
-    current: Any = request.current
     transition = getattr(request.registry, "transition_research_stage", None)
     if callable(transition) and current.spec.agent == "research":
         transitioned: Any = transition(current, "report_assembly")

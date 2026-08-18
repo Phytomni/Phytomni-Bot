@@ -22,6 +22,7 @@ from mcp_server_phytomni.storage.path_policy import (
     RunIdentity,
     resolve_user_id,
     safe_path_segment,
+    shared_job_output_key,
     shared_output_key,
     task_downloads_key,
     task_output_key,
@@ -91,6 +92,18 @@ def test_shared_output_key_is_tenant_neutral():
     assert key == f"{AGENT_DATA_ROOT}/shared/{'a' * 64}/output/"
     assert "user_data" not in key
     assert "/runs/" not in key
+
+
+def test_shared_job_output_key_isolates_one_job():
+    """Each public-data EI job gets its own directory under the digest."""
+    fingerprint = "a" * 64
+    key = shared_job_output_key(fingerprint, "20260818T010203Z-run-analyst")
+    assert key == (
+        f"{AGENT_DATA_ROOT}/shared/{fingerprint}/jobs/"
+        "20260818T010203Z-run-analyst/output/"
+    )
+    assert key.startswith(f"{AGENT_DATA_ROOT}/shared/{fingerprint}/jobs/")
+    assert "/user_data/" not in key
 
 
 def test_id_factory_generates_unique_ids():

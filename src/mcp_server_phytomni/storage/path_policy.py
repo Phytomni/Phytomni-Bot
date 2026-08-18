@@ -6,7 +6,8 @@
 
 Classes: PathPolicyError, IdFactory, RunIdentity.
 Functions: resolve_user_id, safe_path_segment, run_root_key, task_root_key,
-    task_output_key, shared_output_key, task_tmp_key, task_downloads_key.
+    task_output_key, shared_output_key, shared_job_output_key, task_tmp_key,
+    task_downloads_key.
 """
 
 from __future__ import annotations
@@ -311,6 +312,20 @@ def shared_output_key(fingerprint: str) -> str:
         str: ``agent_data/shared/<fingerprint>/output/`` object-key prefix.
     """
     return f"{AGENT_DATA_ROOT}/shared/{fingerprint}/output/"
+
+
+def shared_job_output_key(fingerprint: str, job_id: str) -> str:
+    """Return one isolated job directory under a shared fingerprint.
+
+    Cross-user public-data cache stays keyed by ``fingerprint``. Each
+    new EI submission writes under ``jobs/<job_id>/`` so harvest lists
+    only that job, not leftover objects from earlier hits on the same
+    digest.
+    """
+    return (
+        f"{AGENT_DATA_ROOT}/shared/{safe_path_segment(fingerprint, 'fp')}/"
+        f"jobs/{safe_path_segment(job_id, 'job')}/output/"
+    )
 
 
 def task_tmp_key(

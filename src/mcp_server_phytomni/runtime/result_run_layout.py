@@ -48,3 +48,21 @@ def is_unallocated_default_output_dir(output_dir: str, default: str) -> bool:
     if candidate == default_root:
         return True
     return candidate.startswith(f"{default_root}/")
+
+
+_LEGACY_SHARED_OUTPUT = re.compile(
+    r"/agent_data/shared/[0-9a-f]{64}/output(?:/|$)"
+)
+
+
+def is_legacy_shared_output_dir(output_dir: str) -> bool:
+    """Return True for the old shared fingerprint dump without ``/jobs/``.
+
+    Those prefixes collected every public-data hit on the same digest.
+    Isolated job dirs live at ``shared/<fp>/jobs/<job-id>/`` and stay
+    reusable.
+    """
+    candidate = output_dir.replace("\\", "/").rstrip("/")
+    if not candidate or "/jobs/" in candidate:
+        return False
+    return _LEGACY_SHARED_OUTPUT.search(candidate) is not None

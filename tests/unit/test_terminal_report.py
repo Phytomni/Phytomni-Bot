@@ -470,6 +470,39 @@ async def test_no_scientific_text_returns_safe_degraded_report() -> None:
     assert result.warnings[0].code == "report_no_scientific_text"
 
 
+@pytest.mark.asyncio
+async def test_scientific_data_plain_text_becomes_official_answer() -> None:
+    """A line-count txt declared as scientific_data becomes the official body."""
+
+    async def reader(reference: str) -> str:
+        """Return the producer conclusion file."""
+        assert reference == "fixture://line_count.txt"
+        return "4\n"
+
+    async def summarizer(_prompt: str) -> str:
+        raise AssertionError(
+            "tiny conclusions must not require chat synthesis"
+        )
+
+    result = await assemble_terminal_report(
+        context=_report_context("zh-CN"),
+        artifacts=(
+            _classified_artifact(
+                "line_count.txt", ArtifactRole.SCIENTIFIC_DATA, size_bytes=2
+            ),
+            _classified_artifact("analysis.log", ArtifactRole.EXECUTION_LOG),
+        ),
+        reader=reader,
+        summarizer=summarizer,
+    )
+
+    assert "4" in result.answer
+    assert "line_count.txt" in result.answer
+    assert "分析已到达终态" not in result.answer
+    assert result.report.state == "final"
+    assert result.report.source_artifact_count == 1
+
+
 @pytest.mark.parametrize(
     ("locale", "expected"),
     [

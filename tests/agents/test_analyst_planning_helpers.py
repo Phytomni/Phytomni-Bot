@@ -300,3 +300,44 @@ async def test_dedup_hit_skips_shared_default_output_dir(
     assert captured["arun_kwargs"]["goal_description"] == (
         "Count the rows in the uploaded table"
     )
+
+
+async def test_dedup_hit_skips_legacy_fingerprint_output_dir(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A prior row on the old shared dump must resubmit into a job dir."""
+    fingerprint = "c" * 64
+    _patch_prior(
+        monkeypatch,
+        {
+            "task_id": "prior-legacy-shared",
+            "output_dir": (
+                f"/obs/phytomni/agent_data/shared/{fingerprint}/"
+                "output/children/part-001"
+            ),
+            "status": "succeeded",
+        },
+    )
+    _stub_probe(monkeypatch, "SUCCEEDED")
+    captured = _patch_submit_agent_capturing(
+        monkeypatch,
+        {
+            "task_id": "fresh-job",
+            "output_dir": (
+                f"/obs/phytomni/agent_data/shared/{fingerprint}/"
+                "jobs/run-new/output/children/part-001"
+            ),
+        },
+    )
+
+    result = await retrieve_plan_submit(
+        goal_description="Shared public catalog query",
+        data_list={"/obs/public/ref.tsv": "catalog"},
+    )
+
+    assert result["task_id"] == "fresh-job"
+    assert "/jobs/" in result["output_dir"]
+    assert "source_task_id" not in result
+    assert captured["arun_kwargs"]["goal_description"] == (
+        "Shared public catalog query"
+    )

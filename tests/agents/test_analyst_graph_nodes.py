@@ -454,30 +454,26 @@ async def test_tool_extract_post_node_accepts_object_fragments(
     }
 
 
-async def test_submit_output_dir_forwards_input_fingerprint(
+async def test_submit_output_dir_allocates_public_fingerprint_job(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``_submit_output_dir`` passes ``input_fingerprint`` to
-    ``ensure_run_output_dir`` so the created directory routes to the
-    content-addressed shared key rather than a per-run user-scoped path.
-
-    A fingerprint in state is the integration point between the dedup
-    pipeline (which computes it in ``retrieve_plan_submit``) and the OBS
-    directory creator (which routes on it in ``create_output_dir``).
-    """
+    """Public-data submits pass fingerprint plus the isolated job id."""
     captured: dict[str, Any] = {}
 
     async def _fake_ensure(
         config: Any,
-        sensitive_config: Any,
         task: str,
         run_identity: Any,
         output_dir: str | None = None,
         **kwargs: Any,
     ) -> str:
-        del config, sensitive_config, task, run_identity, output_dir
+        del config, task, output_dir
         captured["fingerprint"] = kwargs.get("fingerprint")
-        return "/obs/phytomni/agent_data/shared/fp/output/"
+        captured["job_id"] = kwargs.get("job_id")
+        return (
+            f"/obs/phytomni/agent_data/shared/{'f' * 64}/"
+            f"jobs/{run_identity.run_id}/output"
+        )
 
     monkeypatch.setattr(analyst_graph, "ensure_run_output_dir", _fake_ensure)
 
@@ -501,3 +497,4 @@ async def test_submit_output_dir_forwards_input_fingerprint(
     )
 
     assert captured["fingerprint"] == "f" * 64
+    assert captured["job_id"] == run_identity.run_id

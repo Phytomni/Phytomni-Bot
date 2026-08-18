@@ -49,6 +49,40 @@ from ..shared.analysis_storage import ensure_run_output_dir
 from .model_yaml import build_model_yaml
 from .storage import upload_analyst_agents_content
 
+_PRIVATE_INPUT_MARKERS = ("/uploads/", "/user_data/")
+
+
+def _has_private_user_inputs(state: Mapping[str, Any]) -> bool:
+    """Return True when the submit references a user-owned upload path."""
+    refs: list[str] = []
+    obs_file_list = state.get("obs_file_list") or []
+    if isinstance(obs_file_list, (list, tuple)):
+        refs.extend(str(item) for item in obs_file_list)
+    data_list = state.get("data_list") or {}
+    if isinstance(data_list, Mapping):
+        refs.extend(str(key) for key in data_list)
+    return any(
+        marker in ref.replace("\\", "/")
+        for ref in refs
+        for marker in _PRIVATE_INPUT_MARKERS
+    )
+
+
+def _public_job_allocation(
+    state: Mapping[str, Any],
+    run_identity: RunIdentity,
+) -> tuple[str | None, str | None]:
+    """Return fingerprint/job ids for a public-data cache write.
+
+    User uploads stay on the caller-owned run path. Public catalog
+    inputs keep the fingerprint cache key but isolate each EI job.
+    """
+    fingerprint = str(state.get("input_fingerprint") or "")
+    if not fingerprint or _has_private_user_inputs(state):
+        return None, None
+    return fingerprint, run_identity.run_id
+
+
 if TYPE_CHECKING:
     from .agent import AnalystAgentsState
 else:
@@ -193,11 +227,11 @@ class AnalystGraphMixin:
             str(getattr(self.analyst_config, "OUTPUT_DIR", "") or ""),
         ):
             output_dir = ""
-        fingerprint = state.get("input_fingerprint") or ""
         run_root = output_dir
         if output_dir:
             with suppress(ValueError):
                 run_root = result_run_root_from_child(output_dir)
+        fingerprint, job_id = _public_job_allocation(state, run_identity)
         return result_child_output_dir(
             await ensure_run_output_dir(
                 self.analyst_config,
@@ -205,6 +239,7 @@ class AnalystGraphMixin:
                 run_identity,
                 run_root,
                 fingerprint=fingerprint,
+                job_id=job_id,
             ),
             0,
         )
@@ -299,11 +334,12 @@ class AnalystGraphMixin:
         preset_plan = state.get("preset_plan")
         plan = preset_plan if preset_plan else state.get("plan", "") or ""
         plan = plan + (
-            "\nnext step, summarize each of the generated result files "
-            "(including images, result files, etc.) into a json file (named "
-            "`result_files.json`) and save it, with the key of the file "
-            "being the absolute path of the generated result and the value "
-            "being a detailed description of the file."
+            "\nWrite only under the given output_dir. Do not zip, tar, or "
+            "package parent directories. Summarize files created in "
+            "output_dir into result_files.json (path to description). "
+            "The numeric or textual answer the user asked for must be a "
+            "file declared as scientific_text or scientific_report in "
+            ".phytomni-artifacts.json."
         )
         return append_artifact_manifest_contract(
             f"  ### EXECUTION PLAN\n{plan}\n\n"

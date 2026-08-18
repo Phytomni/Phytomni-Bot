@@ -148,6 +148,78 @@ async def test_submit_output_dir_clears_shared_default_dump(
     assert output_dir == "/obs/scoped/children/part-001"
 
 
+async def test_standalone_submit_isolates_public_job_under_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Public-data jobs keep the fingerprint cache but isolate each EI job."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.shared.analysis_storage.relay_mode_enabled",
+        lambda: True,
+    )
+    default = "/obs/phytomni/agent_data/test/output"
+    host = _host(
+        CREATE_DIR=True,
+        OUTPUT_DIR=default,
+        USER_ID="alice",
+        BUCKET_NAME="phytomni",
+    )
+    identity = RunIdentity.create(
+        user_id="alice", scope="analysis_agents_task"
+    )
+    submit_output_dir = getattr(AnalystGraphMixin, "_submit_output_dir")
+    fingerprint = "a" * 64
+
+    output_dir = await submit_output_dir(
+        host,
+        {"output_dir": default, "input_fingerprint": fingerprint},
+        identity,
+    )
+
+    assert f"/agent_data/shared/{fingerprint}/jobs/" in output_dir
+    assert identity.run_id in output_dir
+    assert f"/agent_data/shared/{fingerprint}/output/children/" not in (
+        output_dir
+    )
+    assert output_dir.endswith("/children/part-001")
+
+
+async def test_standalone_submit_keeps_user_uploads_off_shared_tree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """User uploads must not land in the cross-tenant fingerprint tree."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.shared.analysis_storage.relay_mode_enabled",
+        lambda: True,
+    )
+    default = "/obs/phytomni/agent_data/test/output"
+    host = _host(
+        CREATE_DIR=True,
+        OUTPUT_DIR=default,
+        USER_ID="alice",
+        BUCKET_NAME="phytomni",
+    )
+    identity = RunIdentity.create(
+        user_id="alice", scope="analysis_agents_task"
+    )
+    submit_output_dir = getattr(AnalystGraphMixin, "_submit_output_dir")
+
+    output_dir = await submit_output_dir(
+        host,
+        {
+            "output_dir": default,
+            "input_fingerprint": "a" * 64,
+            "obs_file_list": [
+                "/obs/phytomni/agent_data/uploads/alice/cell_areas.csv"
+            ],
+        },
+        identity,
+    )
+
+    assert "/agent_data/shared/" not in output_dir
+    assert "/user_data/alice/" in output_dir
+    assert output_dir.endswith("/children/part-001")
+
+
 async def test_submit_output_dir_uses_child_root_when_path_is_valid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

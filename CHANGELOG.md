@@ -36,6 +36,20 @@ package version remains `0.1.3` until the release bump.
 
 ### Fixed
 
+- **Analyst completion display** — After the analysis platform marks a
+  task succeeded, the run publishes the scientific report before OBS
+  harvest. Public-data cache still keys on the input fingerprint, but
+  each new EI job writes under `shared/<fingerprint>/jobs/<job-id>/`.
+  User-upload jobs stay in the caller-owned run directory and never
+  reuse another tenant's files. Legacy shared dumps are not reused.
+- **Analyst official report** — When the producer omitted
+  `scientific_text` / `scientific_report` but left a small `text/plain`
+  conclusion file (for example `line_count.txt`), that file becomes the
+  official report body instead of the "no scientific text" fallback.
+- **Analyst task logs** — `/v1/runs/{id}/logs` only treats a cache hit
+  as complete when `logs[].content` has text. An early empty `{}` no
+  longer blocks a later platform fetch. The public `text` field is the
+  concatenation of those `content` strings.
 - **Review mutation lock** — New-review and scope-change turns release
   the `server_tasks.db` flock after candidate registration, instead of
   holding it for the whole Review run. A lock wait timeout on

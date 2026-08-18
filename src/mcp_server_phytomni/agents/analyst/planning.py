@@ -16,7 +16,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...runtime.result_run_layout import is_unallocated_default_output_dir
+from ...runtime.result_run_layout import (
+    is_legacy_shared_output_dir,
+    is_unallocated_default_output_dir,
+)
 from ...runtime.task_dedup import (
     analyst_task_fingerprint,
     should_reuse_prior_task,
@@ -40,7 +43,7 @@ async def _reuse_live_prior_task(
     if is_unallocated_default_output_dir(
         prior_output,
         ANALYST_CONFIG.OUTPUT_DIR,
-    ):
+    ) or is_legacy_shared_output_dir(prior_output):
         return None
     reuse_ids = await verified_reuse_task_ids(
         prior,

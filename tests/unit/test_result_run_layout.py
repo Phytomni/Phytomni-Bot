@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from mcp_server_phytomni.runtime.result_run_layout import (
+    is_legacy_shared_output_dir,
     is_unallocated_default_output_dir,
     result_child_output_dir,
     result_run_root_from_child,
@@ -70,3 +71,21 @@ def test_unallocated_default_covers_the_shared_dump_and_children() -> None:
     )
     assert is_unallocated_default_output_dir("", default) is False
     assert is_unallocated_default_output_dir(default, "") is False
+
+
+def test_legacy_shared_output_dir_rejects_old_fingerprint_dump() -> None:
+    """The pre-jobs shared dump is not a reusable isolated job root."""
+    fingerprint = "b" * 64
+    dump = f"/obs/phytomni/agent_data/shared/{fingerprint}/output"
+    assert is_legacy_shared_output_dir(dump) is True
+    assert is_legacy_shared_output_dir(f"{dump}/children/part-001") is True
+    assert (
+        is_legacy_shared_output_dir(
+            f"/obs/phytomni/agent_data/shared/{fingerprint}/jobs/"
+            "run-1/output/children/part-001"
+        )
+        is False
+    )
+    assert is_legacy_shared_output_dir(
+        "/obs/phytomni/agent_data/user_data/x"
+    ) is (False)
