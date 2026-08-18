@@ -85,6 +85,51 @@ def _retrieve_query_for_dimension(
     return compose_review_retrieve_query(user_query, heading, planned)
 
 
+def _partition_retrieve_results(
+    state: DeepResearchState,
+) -> tuple[dict[int, list[dict[str, Any]]], set[int]]:
+    """Split indexed hits and failed indices, or raise on a contract break."""
+    dimensions = state["research_dimensions"]
+    expected_indices = set(range(len(dimensions)))
+    indexed_by_index: dict[int, list[dict[str, Any]]] = {}
+    for entry in state["retrieve_indexed_results"]:
+        if not isinstance(entry, tuple) or len(entry) != 2:
+            raise RetrievalProtocolError(
+                "Review retrieval index contract violated"
+            )
+        if (
+            isinstance(entry[0], bool)
+            or not isinstance(entry[0], int)
+            or entry[0] not in expected_indices
+            or entry[0] in indexed_by_index
+            or not isinstance(entry[1], list)
+        ):
+            raise RetrievalProtocolError(
+                "Review retrieval index contract violated"
+            )
+        indexed_by_index[entry[0]] = entry[1]
+
+    failed_set: set[int] = set()
+    for index in state["retrieve_failed_indices"]:
+        if (
+            isinstance(index, bool)
+            or not isinstance(index, int)
+            or index not in expected_indices
+            or index in failed_set
+            or index in indexed_by_index
+        ):
+            raise RetrievalProtocolError(
+                "Review retrieval index contract violated"
+            )
+        failed_set.add(index)
+
+    if (set(indexed_by_index) | failed_set) != expected_indices:
+        raise RetrievalProtocolError(
+            "Review retrieval index contract violated"
+        )
+    return indexed_by_index, failed_set
+
+
 @dataclass
 class RetrievalAccumulator:
     """Mutable counters for bounded document retrieval.
@@ -289,68 +334,45 @@ class ReviewPlanningMixin:
         state["research_dimensions"], and state["total_length"];
         writes all_raw_doc_list, dimension_params, and total_length.
         """
+        indexed_by_index, failed_set = _partition_retrieve_results(state)
         dimensions = state["research_dimensions"]
-        expected_indices = set(range(len(dimensions)))
-        indexed_by_index: dict[int, list[dict[str, Any]]] = {}
-        for entry in state["retrieve_indexed_results"]:
-            if not isinstance(entry, tuple) or len(entry) != 2:
-                raise RetrievalProtocolError(
-                    "Review retrieval index contract violated"
-                )
-            if (
-                isinstance(entry[0], bool)
-                or not isinstance(entry[0], int)
-                or entry[0] not in expected_indices
-                or entry[0] in indexed_by_index
-                or not isinstance(entry[1], list)
-            ):
-                raise RetrievalProtocolError(
-                    "Review retrieval index contract violated"
-                )
-            indexed_by_index[entry[0]] = entry[1]
-
-        failed_set: set[int] = set()
-        for index in state["retrieve_failed_indices"]:
-            if (
-                isinstance(index, bool)
-                or not isinstance(index, int)
-                or index not in expected_indices
-                or index in failed_set
-                or index in indexed_by_index
-            ):
-                raise RetrievalProtocolError(
-                    "Review retrieval index contract violated"
-                )
-            failed_set.add(index)
-
-        if (set(indexed_by_index) | failed_set) != expected_indices:
-            raise RetrievalProtocolError(
-                "Review retrieval index contract violated"
-            )
-
         emit_progress(
             "retrieving",
             len(indexed_by_index) + len(failed_set),
             total=len(dimensions),
             detail="reducing retrieved dimensions",
         )
-
         reliable_doc_count = sum(
             len(docs) for docs in indexed_by_index.values()
         )
         if failed_set and reliable_doc_count == 0:
             raise retrieval_unavailable_error()
-
         accumulator = RetrievalAccumulator(
             raw_docs=[],
             current_length=state["total_length"],
         )
-        dimension_params = []
+        dimension_params = self._dimension_params_from_indexed(
+            state, indexed_by_index, accumulator
+        )
+        return {
+            "all_raw_doc_list": accumulator.raw_docs,
+            "dimension_params": dimension_params,
+            "total_length": accumulator.current_length,
+        }
+
+    def _dimension_params_from_indexed(
+        self: Any,
+        state: DeepResearchState,
+        indexed_by_index: dict[int, list[dict[str, Any]]],
+        accumulator: RetrievalAccumulator,
+    ) -> list[dict[str, str]]:
+        """Build one knowledge block per planned research dimension."""
+        dimensions = state["research_dimensions"]
         dimension_length = (
             self.review_config.MAX_TOKENS - state["total_length"]
         ) / max(1, len(dimensions))
-
         user_query = str(state.get("original_user_query") or "")
+        dimension_params: list[dict[str, str]] = []
         for index, dimension in enumerate(dimensions):
             result = indexed_by_index.get(index, [])
             fragments = self._dimension_fragments(
@@ -367,12 +389,7 @@ class ReviewPlanningMixin:
                     "knowledge": "\n\n".join(fragments),
                 }
             )
-
-        return {
-            "all_raw_doc_list": accumulator.raw_docs,
-            "dimension_params": dimension_params,
-            "total_length": accumulator.current_length,
-        }
+        return dimension_params
 
     def route_retrieve_tasks(
         self: Any, state: DeepResearchState

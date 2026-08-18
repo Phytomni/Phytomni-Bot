@@ -11,6 +11,7 @@ from typing import Literal
 
 import pytest
 
+from mcp_server_phytomni.agents.research import input_contracts
 from mcp_server_phytomni.agents.research.input_contracts import (
     ParsedResearchInput,
     PastedDatasetCandidate,
@@ -20,6 +21,7 @@ from mcp_server_phytomni.agents.research.input_contracts import (
 from mcp_server_phytomni.agents.research.input_inventory import (
     ManagedResearchAssetSnapshot,
     ResearchInventoryRequest,
+    _reference_identity,
     build_research_inventory,
     revalidate_research_inventory,
 )
@@ -510,10 +512,6 @@ async def test_inventory_rejects_malformed_metadata_authorities(
 
 def test_empty_allowlist_accepts_managed_configured_bucket_key() -> None:
     """Managed inventory refs stay allow-all while the whitelist is empty."""
-    from mcp_server_phytomni.agents.research.input_inventory import (
-        _reference_identity,
-    )
-
     identity, basename = _reference_identity(
         "obs://dev-bucket/any/path/file.tsv", "dev-bucket"
     )
@@ -526,11 +524,6 @@ def test_populated_allowlist_rejects_unlisted_managed_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A later whitelist rejects an otherwise valid managed object key."""
-    from mcp_server_phytomni.agents.research import input_contracts
-    from mcp_server_phytomni.agents.research.input_inventory import (
-        _reference_identity,
-    )
-
     monkeypatch.setattr(
         input_contracts,
         "RESEARCH_OBJECT_REF_ALLOWLIST",

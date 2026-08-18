@@ -9,6 +9,7 @@ import hashlib
 
 import pytest
 
+from mcp_server_phytomni.agents.research import input_contracts
 from mcp_server_phytomni.agents.research.input_contracts import (
     ResearchInputFailure,
 )
@@ -18,6 +19,17 @@ from mcp_server_phytomni.agents.research.input_parser import (
 )
 
 pytestmark = pytest.mark.agent
+
+
+def _pin_object_ref_allowlist(
+    monkeypatch: pytest.MonkeyPatch, *keys: str
+) -> None:
+    """Pin the object-ref allowlist for one parser test."""
+    monkeypatch.setattr(
+        input_contracts,
+        "RESEARCH_OBJECT_REF_ALLOWLIST",
+        frozenset(keys),
+    )
 
 
 def test_candidate_span_round_trips_unicode_and_crlf() -> None:
@@ -267,13 +279,7 @@ def test_populated_object_ref_allowlist_rejects_unlisted_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A later whitelist still uses the same invalid-path failure."""
-    from mcp_server_phytomni.agents.research import input_contracts
-
-    monkeypatch.setattr(
-        input_contracts,
-        "RESEARCH_OBJECT_REF_ALLOWLIST",
-        frozenset({"obs://dev-bucket/listed.tsv"}),
-    )
+    _pin_object_ref_allowlist(monkeypatch, "obs://dev-bucket/listed.tsv")
     with pytest.raises(ResearchInputFailure) as caught:
         parse_research_input(
             'data: {"obs://dev-bucket/other.tsv": "hint"}',
@@ -287,13 +293,7 @@ def test_populated_object_ref_allowlist_accepts_listed_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A later whitelist still accepts the listed configured-bucket key."""
-    from mcp_server_phytomni.agents.research import input_contracts
-
-    monkeypatch.setattr(
-        input_contracts,
-        "RESEARCH_OBJECT_REF_ALLOWLIST",
-        frozenset({"obs://dev-bucket/listed.tsv"}),
-    )
+    _pin_object_ref_allowlist(monkeypatch, "obs://dev-bucket/listed.tsv")
     parsed = parse_research_input(
         'data: {"obs://dev-bucket/listed.tsv": "hint"}',
         "dev-bucket",
