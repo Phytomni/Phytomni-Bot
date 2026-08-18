@@ -231,7 +231,13 @@ def collect_terminal_artifacts(
     output_dir: None = None,
     lister: None = None,
     manifest_loader: None = None,
-) -> list[dict[str, Any]]: ...
+) -> list[dict[str, Any]]:
+    """Project legacy artifact dicts from reconciled task rows.
+
+    This positional form stays synchronous for MCP formatting. New
+    terminal assembly should use the keyword ``task_id`` /
+    ``output_dir`` form or ``collect_terminal_artifact_set``.
+    """
 
 
 @overload
@@ -242,7 +248,13 @@ def collect_terminal_artifacts(
     output_dir: str,
     lister: ArtifactObjectLister | None = None,
     manifest_loader: ManifestLoader | None = None,
-) -> Awaitable[TerminalArtifactSet]: ...
+) -> Awaitable[TerminalArtifactSet]:
+    """Return the manifest-backed artifact-set coroutine.
+
+    Supplying ``task_id`` and ``output_dir`` selects the structured
+    path so callers can ``await collect_terminal_artifacts(...)``
+    during gradual migration.
+    """
 
 
 def collect_terminal_artifacts(
