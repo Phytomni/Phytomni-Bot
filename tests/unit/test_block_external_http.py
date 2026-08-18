@@ -2,7 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Offline coverage for the root ``block_external_http`` send guard."""
+"""Offline coverage for the root ``block_external_http`` guard."""
 
 from __future__ import annotations
 
@@ -49,3 +49,23 @@ async def test_mock_transport_send_stays_open() -> None:
         )
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+
+
+async def test_loop_create_connection_is_blocked() -> None:
+    """An unmarked test cannot open a raw async TCP socket."""
+    loop = asyncio.get_running_loop()
+    with pytest.raises(RuntimeError, match="network access is disabled"):
+        await asyncio.wait_for(
+            loop.create_connection(asyncio.Protocol, "example.invalid", 443),
+            timeout=1.0,
+        )
+
+
+async def test_loop_getaddrinfo_is_blocked() -> None:
+    """An unmarked test cannot resolve DNS through the event loop."""
+    loop = asyncio.get_running_loop()
+    with pytest.raises(RuntimeError, match="network access is disabled"):
+        await asyncio.wait_for(
+            loop.getaddrinfo("example.invalid", 443),
+            timeout=1.0,
+        )

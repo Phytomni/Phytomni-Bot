@@ -4,11 +4,12 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Shared network-escape guard for offline agent tests.
 
-Patches the remaining async paths the repo-root
-``block_external_http`` fixture does not cover so an un-mocked
-escape surfaces as a named ``RuntimeError`` instead of a 20s hang.
-Shared by the brief_gene preamble fan-in test and the graph astream
-primitive test.
+The repo-root ``block_external_http`` fixture already blocks live
+``httpx.*.send``, ``loop.create_connection``, and ``getaddrinfo``.
+This helper still re-blocks ``httpx.*.send`` unconditionally and
+re-labels the loop patches so a compiled-graph escape cannot depend
+on the transport-type check. An escape surfaces as a fast, named
+``RuntimeError`` instead of a hang.
 """
 
 from __future__ import annotations
@@ -25,16 +26,16 @@ def install_network_escape_guard(
     *,
     label: str,
 ) -> None:
-    """Patch the async paths ``block_external_http`` still leaves open.
+    """Re-block send and label loop escapes for compiled-graph tests.
 
-    The repo-root ``block_external_http`` autouse fixture now covers
-    ``socket.create_connection``, ``httpx.*.request``, and live
-    ``httpx.*.send``. Two async paths can still reach a real socket
-    and wedge an offline test: the event loop's ``create_connection``
-    and DNS via ``getaddrinfo``. This helper also re-blocks
-    ``httpx.*.send`` unconditionally so a compiled-graph escape
-    cannot depend on the transport-type check. An escape surfaces as
-    a fast, named ``RuntimeError`` instead of a 20s hang that
+    The repo-root ``block_external_http`` autouse fixture already
+    covers ``socket.create_connection``, ``httpx.*.request``, live
+    ``httpx.*.send``, ``loop.create_connection``, and
+    ``getaddrinfo``. This helper still re-blocks ``httpx.*.send``
+    unconditionally so a compiled-graph escape cannot depend on the
+    transport-type check, and keeps labeled loop raisers so the
+    failing suite is identifiable. An escape surfaces as a fast,
+    named ``RuntimeError`` instead of a hang that
     ``asyncio.wait_for`` cannot cancel once a connect blocks the
     loop.
 

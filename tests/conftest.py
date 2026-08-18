@@ -171,10 +171,12 @@ def block_external_http(
 ) -> Iterator[None]:
     """Block accidental HTTP calls unless a test opts into ``network``.
 
-    Covers ``socket.create_connection``, ``httpx.*.request``, and
-    ``httpx.*.send``. In-process transports stay open so ASGI and
-    Mock clients can restore ``request`` without letting outbound
-    ``send`` (used by ``BoundAsyncRequestClient``) hit a live socket.
+    Covers ``socket.create_connection``, ``httpx.*.request``, live
+    ``httpx.*.send``, the event loop's ``create_connection``, and
+    ``getaddrinfo``. In-process transports stay open so ASGI, Mock,
+    and Queue clients can restore ``request`` without letting
+    outbound ``send`` (used by ``BoundAsyncRequestClient``) hit a
+    live socket.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to replace network APIs.
@@ -306,6 +308,47 @@ def block_external_http(
 
     monkeypatch.setattr(httpx.Client, "send", blocked_send)
     monkeypatch.setattr(httpx.AsyncClient, "send", blocked_async_send)
+
+    def blocked_loop_create_connection(*args: Any, **kwargs: Any) -> Any:
+        """Raise for async socket connection attempts in offline tests.
+
+        Args:
+            *args: Ignored positional loop arguments.
+            **kwargs: Ignored keyword loop arguments.
+
+        Returns:
+            Never returns; always raises RuntimeError.
+        """
+        raise RuntimeError(
+            "External network access is disabled for default pytest runs. "
+            "Mark the test with @pytest.mark.network to opt in."
+        )
+
+    def blocked_loop_getaddrinfo(*args: Any, **kwargs: Any) -> Any:
+        """Raise for async DNS resolution attempts in offline tests.
+
+        Args:
+            *args: Ignored positional DNS arguments.
+            **kwargs: Ignored keyword DNS arguments.
+
+        Returns:
+            Never returns; always raises RuntimeError.
+        """
+        raise RuntimeError(
+            "External network access is disabled for default pytest runs. "
+            "Mark the test with @pytest.mark.network to opt in."
+        )
+
+    monkeypatch.setattr(
+        asyncio.base_events.BaseEventLoop,
+        "create_connection",
+        blocked_loop_create_connection,
+    )
+    monkeypatch.setattr(
+        asyncio.base_events.BaseEventLoop,
+        "getaddrinfo",
+        blocked_loop_getaddrinfo,
+    )
 
     yield
 
