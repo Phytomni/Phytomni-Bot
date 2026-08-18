@@ -648,9 +648,19 @@ class DeepGenomeDispatchMixin:
             )
         response = await self._bi_json(
             f"SELECT * FROM id_table WHERE gene_id = "
-            f"{sql_literal(gene_id)} AND species_code = '{species_code}'"
+            f"{sql_literal(gene_id)} AND species_code = "
+            f"{sql_literal(species_code)}"
         )
-        return response["data"][0][column]
+        rows = response.get("data") if isinstance(response, dict) else None
+        if not isinstance(rows, list) or not rows:
+            return gene_id
+        row = rows[0]
+        if not isinstance(row, dict):
+            return gene_id
+        resolved = row.get(column)
+        if resolved is None or str(resolved).strip() == "":
+            return gene_id
+        return str(resolved)
 
     def _seed_analysis_plan(
         self: Any,

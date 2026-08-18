@@ -35,6 +35,10 @@ package version remains `0.1.3` until the release bump.
 
 ### Changed
 
+- **DeepGenome cancel** — An owner cancel no longer lets the
+  background done-callback stamp `failed` before `/cancel` writes
+  `cancelled`. A missing `id_table` row keeps the submitted gene id
+  instead of crashing `prepare_tasks_node`.
 - **Run cancel** — `POST /v1/runs/{id}/cancel` cancels every
   owner-scoped agent. After a Research child is sent, cancel detaches
   that child and terminates last-claim EI jobs instead of returning
@@ -53,11 +57,6 @@ package version remains `0.1.3` until the release bump.
 
 ### Fixed
 
-- **Expert routing skip** — A pinned `@agent` / `forced_tool`, or a
-  one-tool trusted allowlist, dispatches that agent without calling the
-  routing model. The model runs only when the caller did not pin a tool
-  and the allowlist has two or more agents. Chat fallback on an unforced
-  model decline is unchanged.
 - **Context Expert decline envelope** — When `ChatAgent` is not in
   the trusted allowlist, a conversation-context model decline now
   returns the same `502 routing_contract_violation` envelope as V0

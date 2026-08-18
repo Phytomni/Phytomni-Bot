@@ -440,6 +440,26 @@ async def test_prepare_analysis_tasks_escapes_gene_id_and_builds_tasks() -> (
     assert tissue["target_gene"] == "LOC_Os01g012345"
 
 
+async def test_prepare_analysis_tasks_keeps_gene_id_when_id_table_empty() -> (
+    None
+):
+    """A missing id_table hit must not crash prepare_tasks_node."""
+    harness = DispatchHarness("/tmp/deep-out")
+
+    async def _fake_bi_json(_sql: str) -> dict[str, Any]:
+        return {"data": []}
+
+    setattr(harness, "_bi_json", _fake_bi_json)
+    prepare = getattr(harness, "_prepare_analysis_tasks")
+    result = await prepare({"gene_id": "OsHd3a", "species_code": "osa"})
+    tissue = next(
+        task
+        for task in result["analysis_tasks"]
+        if task["analysis_type"] == "gene_expression_tissues"
+    )
+    assert tissue["target_gene"] == "OsHd3a"
+
+
 def test_analyst_node_name_maps_nine_generics_to_distinct_nodes() -> None:
     """The deterministic node-name rule covers all nine generics.
 

@@ -29,6 +29,7 @@ from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.live_tasks import (
     is_live_running,
     register_live_task,
+    request_cancel,
 )
 from mcp_server_phytomni.runtime.task_manager import TaskManager
 
@@ -53,6 +54,11 @@ def _failed_task() -> Any:
     """Return a fake task carrying the all-failed workflow error."""
     error = DeepGenomeWorkflowError("no usable analysis result")
     return SimpleNamespace(cancelled=lambda: False, exception=lambda: error)
+
+
+def _cancelled_task() -> Any:
+    """Return a fake task that was cancelled by the event loop."""
+    return SimpleNamespace(cancelled=lambda: True, exception=lambda: None)
 
 
 class _FinalizeProbe(DeepGenomeAgents):
@@ -141,6 +147,47 @@ def test_finalize_workflow_marks_no_usable_result_failed(
     )
 
     assert updates == [("dg-no-usable", "failed", "", "/obs/o")]
+
+
+def test_finalize_owner_cancel_does_not_fail_umbrella(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Owner cancel must not stamp failed before POST /cancel settles."""
+    updates: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(
+        agent_module,
+        "TaskManager",
+        lambda _p: SimpleNamespace(
+            update_task=lambda *args: updates.append(args)
+        ),
+    )
+    failed: list[str] = []
+    monkeypatch.setattr(
+        agent_module,
+        "DeepGenomeStore",
+        lambda _p: SimpleNamespace(
+            get_snapshot=lambda _id: SimpleNamespace(
+                status="running", final_report=""
+            ),
+            fail_umbrella=lambda _id, **_k: failed.append(_id),
+        ),
+    )
+    request_cancel("dg-owner-cancel")
+    register_live_task(
+        "dg-owner-cancel",
+        cast("asyncio.Task[object]", SimpleNamespace(done=lambda: False)),
+    )
+    agent = _FinalizeProbe(knowledge_agent=None, analyst_agent=None)
+
+    agent.run_finalize(
+        _cancelled_task(),
+        umbrella_id="dg-owner-cancel",
+        output_dir="/obs/o",
+    )
+
+    assert updates == []
+    assert failed == []
+    assert is_live_running("dg-owner-cancel") is False
 
 
 def test_finalize_success_without_report_fails_umbrella(

@@ -514,7 +514,15 @@ def project_deep_genome_run(
             value = existing_result.get(private_key)
             if value is not None:
                 result[private_key] = value
-    payload["status"] = snapshot.status
+    # Owner cancel settles the run row first. A still-running umbrella
+    # snapshot must not hide that terminal so /cancel can return cancelled.
+    if (
+        record.status in {"cancelled", "failed", "succeeded"}
+        and snapshot.status == "running"
+    ):
+        payload["status"] = record.status
+    else:
+        payload["status"] = snapshot.status
     payload["result"] = result
     payload["answer"] = extract_answer(result)
     if _result_tracking_is_degraded(result):

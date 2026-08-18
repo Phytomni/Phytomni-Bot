@@ -46,6 +46,7 @@ from ...runtime.langgraph_runner import (
 )
 from ...runtime.live_tasks import (
     deregister_live_task,
+    is_cancel_requested,
     register_live_task,
 )
 from ...runtime.locale import SupportedLocale
@@ -755,6 +756,15 @@ class DeepGenomeAgents(
                 sync with the caller-visible response.
         """
         if task.cancelled():
+            if is_cancel_requested(umbrella_id):
+                # Owner cancel writes cancelled. Do not stamp failed here or
+                # POST /cancel races into 409 and the Web row stays RUNNING.
+                logger.warning(
+                    "DeepGenome background workflow cancelled for %s",
+                    umbrella_id,
+                )
+                deregister_live_task(umbrella_id)
+                return
             status = "failed"
             failure_reason = _finalization_failure_reason(None, cancelled=True)
             logger.warning(
