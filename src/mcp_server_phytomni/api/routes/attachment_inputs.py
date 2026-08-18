@@ -40,6 +40,7 @@ from ..research_input import (
     ResearchHttpAdmissionInput,
     ResearchRoutePreflight,
 )
+from ..resolvers import apply_expert_structured_resolver_flags
 from ..schemas import ChatCompletionRequest, ExpertQueryRequest
 
 __all__ = [
@@ -407,6 +408,11 @@ def prepare_selected_expert_arguments(
         arguments.setdefault("obs_file_list", [])
     if capability.datasets is not None:
         arguments.setdefault("data_list", {})
+    apply_expert_structured_resolver_flags(
+        agent=agent,
+        arguments=arguments,
+        user_query=payload.user_query,
+    )
     return prepare_native_attachment_arguments(
         agent=agent,
         arguments=arguments,

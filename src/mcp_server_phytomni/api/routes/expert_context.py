@@ -38,6 +38,7 @@ from ..research_input import (
     lookup_research_admission,
     parse_idempotency_identity,
 )
+from ..resolvers import apply_expert_structured_resolver_flags
 from ..schemas import ExpertQueryRequest
 from .agent_dependencies import AgentRouteDependencies
 from .attachment_inputs import (
@@ -425,6 +426,11 @@ def _expert_context_arguments(
         prepared.setdefault("user_query", payload.user_query)
         prepared.pop("goal_description", None)
     prepared["locale"] = current_effective_locale()
+    apply_expert_structured_resolver_flags(
+        agent=agent,
+        arguments=prepared,
+        user_query=payload.user_query,
+    )
     return prepared
 
 

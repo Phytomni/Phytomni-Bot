@@ -57,6 +57,11 @@ package version remains `0.1.3` until the release bump.
 
 ### Fixed
 
+- **Expert structured ids** — After Expert selects DeepGenome, Design,
+  or Network, a missing `gene_id` / `to_id` / `species_code` opens the
+  native `resolve_gene_id` / `resolve_to_id` seam from the user turn.
+  Complete routing extractions are unchanged. BriefGene and Analyst are
+  not opted in. Resolver failure follows the native runs contract.
 - **Expert routing skip** — A pinned `@agent` / `forced_tool`, or a
   one-tool trusted allowlist, dispatches that agent without calling the
   routing model. The model runs only when the caller did not pin a tool

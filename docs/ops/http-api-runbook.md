@@ -1938,6 +1938,14 @@ The resolver adds one shared-cache LLM call per unique free-form query,
 so heavy unsupervised opt-in does add LLM cost; the `~90d` `phyto_chat`
 cache keeps the marginal cost near zero for repeated identical queries.
 
+`POST /v1/query/route` cannot carry those flags. When Expert selects
+`deep_genome`, `design`, or `network` and the structured ids are
+missing, the same native resolver runs from the user turn. A ticket
+that is `@DeepGenome` / `@Design` / `@Network` plus a free-form gene
+or trait mention should therefore look like the native resolver
+failure above, not like a routing-model extraction miss. Complete
+routing extractions and BriefGene Expert turns do not open this hop.
+
 ### Upload Returned 413, 401, 409, Or 422
 
 Triage the resumable protocol by stage:

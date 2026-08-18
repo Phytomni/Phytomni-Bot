@@ -49,9 +49,13 @@ from .openai_mapping import tool_accepts_resolve_gene_id
 
 __all__ = [
     "ResolverDispatch",
+    "apply_expert_structured_resolver_flags",
     "apply_runs_resolver",
     "resolve_chat_query",
 ]
+
+_STRUCTURED_GENE_AGENTS = frozenset({"deep_genome", "design"})
+_STRUCTURED_TRAIT_AGENTS = frozenset({"network"})
 
 type BriefGeneResolver = Callable[..., Awaitable[BriefGeneResolveResult]]
 
@@ -219,6 +223,52 @@ async def _maybe_resolve_network_query(
         "resolved_species_code": result.species_code,
         "resolve_to_id": True,
     }
+
+
+def _blank_structured_id(value: Any) -> bool:
+    """Return True when a gene, species, or Trait-Ontology id is unusable."""
+    return not isinstance(value, str) or not value.strip()
+
+
+def apply_expert_structured_resolver_flags(
+    *,
+    agent: str,
+    arguments: dict[str, Any],
+    user_query: str,
+) -> dict[str, Any]:
+    """Opt into native resolvers when Expert left structured ids blank.
+
+    DeepGenome and Design need ``gene_id`` plus ``species_code``. Network
+    needs ``to_id`` plus ``species_code``. A missing or blank field opens
+    the existing ``resolve_gene_id`` / ``resolve_to_id`` seam so
+    ``apply_runs_resolver`` can fill both values from ``user_query``.
+    Complete extractions are left unchanged. BriefGene is excluded
+    because Expert already forwards ``user_query`` and that agent can
+    run without a pre-resolved locus.
+
+    Args:
+        agent: Canonical native slug selected for this Expert turn.
+        arguments: Mutable dispatch arguments. Updated in place when
+            a resolver flag is required.
+        user_query: The Expert turn text used as resolver input.
+
+    Returns:
+        The same ``arguments`` mapping, possibly with ``user_query`` and
+        one resolver flag added.
+    """
+    if agent in _STRUCTURED_GENE_AGENTS:
+        needed = ("gene_id", "species_code")
+        flag = "resolve_gene_id"
+    elif agent in _STRUCTURED_TRAIT_AGENTS:
+        needed = ("to_id", "species_code")
+        flag = "resolve_to_id"
+    else:
+        return arguments
+    if not any(_blank_structured_id(arguments.get(name)) for name in needed):
+        return arguments
+    arguments["user_query"] = user_query
+    arguments[flag] = True
+    return arguments
 
 
 async def apply_runs_resolver(

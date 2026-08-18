@@ -1847,6 +1847,13 @@ Both flags share the same misuse / failure contract:
 - The native runs path pops `resolve_gene_id` / `resolve_to_id` and
   `user_query` from `arguments` before forwarding so each agent's
   Pydantic schema never sees the resolver-flag keys.
+- `POST /v1/query/route` does not accept those flags on the Expert
+  body. After the router selects `deep_genome` / `design` /
+  `network`, the HTTP layer opens the matching native flag only when
+  `gene_id`+`species_code` or `to_id`+`species_code` are missing.
+  Complete routing extractions are forwarded unchanged. `brief_gene`
+  is not opted in. Resolver success and failure then follow the
+  native runs contract above.
 
 ```bash
 # Chat path — BriefGene only
@@ -2676,14 +2683,17 @@ mention remains message content. Expert activation is owned outside Bot;
 keep Web `bot.expert_enabled=false` until the external paired acceptance
 gate is complete.
 
-Known limitations (v1): the four structured-input agents (`analyst`,
-`deep_genome`, `design`, `network`) receive best-effort arguments
-extracted by the routing model — `data_list` may be incomplete and a
-gene / species / Trait-Ontology id may be guessed — and obs attachments
-reach `chat` / `knowledge` / `review` plus document-capable
-`analyst` / `research` / `design` / `network` targets. `data`, `brief_gene`,
-and `deep_genome` do not expose an attachment channel. Invalid extraction
-surfaces a `400` rather than a silent wrong answer.
+Known limitations (v1): `analyst` `data_list` is still best-effort from
+the routing model and may be empty. After selection, `deep_genome` /
+`design` / `network` open the native `resolve_gene_id` /
+`resolve_to_id` seam when the structured ids are missing (`@` pin,
+one-tool allowlist, or a partial extraction). A complete extraction is
+not rewritten. Resolver failure follows the native runs contract
+(DeepGenome HTTP `400`; Design / Network accept then settle
+`failed`). Obs attachments reach `chat` / `knowledge` / `review` plus
+document-capable `analyst` / `research` / `design` / `network`
+targets. `data`, `brief_gene`, and `deep_genome` do not expose an
+attachment channel.
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/v1/query/route \
