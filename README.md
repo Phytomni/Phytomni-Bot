@@ -102,6 +102,9 @@ matrix are documented on the HTTP API page.
 
 ### Capability Boundary
 
+The installed package version remains `0.1.3`. Branch `release/0.1.4`
+is still in development and is not a tagged release.
+
 A2UI Chat/Review widgets are always on. Graph progress is available on
 HTTP SSE and, for Knowledge / Review / Data / BriefGene, through MCP
 `progressToken`. Review interrupt/resume uses a local SQLite
@@ -115,13 +118,13 @@ scope. Research and Design opt in per call with
 `interop_targets`; the default `"off"` mode stays local.
 
 - **Capability:** A2A Agent Card and `/a2a` server
-  **0.1.3 status:** Opt-in core
+  **Current status:** Opt-in core
 
 - **Capability:** Calls to external MCP tools or A2A agents
-  **0.1.3 status:** Explicit opt-in from Research/Design
+  **Current status:** Explicit opt-in from Research/Design
 
 - **Capability:** User-scoped memory CRUD API
-  **0.1.3 status:** Opt-in; bounded read-only recall
+  **Current status:** Opt-in; bounded read-only recall
 
 Internal `phyto.progress.phase` values are stage labels, not A2A task states.
 The A2A status adapter maps task lifecycle state independently. Outbound

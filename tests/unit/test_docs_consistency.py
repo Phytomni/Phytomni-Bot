@@ -116,7 +116,7 @@ def _capability_status(text: str, capability: str, status: str) -> bool:
     )
     bullet_pattern = re.compile(
         rf"-\s+\*\*Capability:\*\*\s*{re.escape(capability)}\s+"
-        rf"\*\*0\.1\.3 status:\*\*\s*{re.escape(status)}"
+        rf"\*\*Current status:\*\*\s*{re.escape(status)}"
     )
     return bool(table_pattern.search(text) or bullet_pattern.search(text))
 
