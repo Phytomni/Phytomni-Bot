@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.server.test_query_route import _conversation_envelope
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.expert import (
@@ -537,6 +538,48 @@ async def test_expert_routing_failures_are_safe_and_side_effect_free(
     assert error["code"] == case.expected_code
     assert error["stage"] == "routing"
     assert error["retryable"] is case.retryable
+    assert sentinel not in response.text
+    assert sentinel not in caplog.text
+    assert not RunRegistry(api_app.resolve_tasks_db_path()).list_runs(
+        owner="u1"
+    )
+
+
+async def test_context_expert_provider_timeout_uses_v0_safe_envelope(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A context-path provider timeout keeps the V0 SafeApiError envelope."""
+    sentinel = (
+        "ROUTER-PROMPT-SENTINEL RAW-MODEL-SENTINEL "
+        "ALLOWLIST-SENTINEL PROVIDER-PAYLOAD-SENTINEL "
+        "credential-like-sentinel"
+    )
+
+    async def fail_select(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        raise ExpertProviderTimeoutError(sentinel)
+
+    monkeypatch.setattr(api_app, "select_agent_tool", fail_select)
+    caplog.set_level(logging.WARNING)
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["ChatAgent"],
+            "conversation": _conversation_envelope(
+                requested_agent_id=None,
+                allowed_agent_ids=["ChatAgent"],
+            ),
+        },
+    )
+    assert response.status_code == 504
+    error = response.json()["error"]
+    assert error["code"] == "upstream_timeout"
+    assert error["stage"] == "routing"
+    assert error["retryable"] is True
     assert sentinel not in response.text
     assert sentinel not in caplog.text
     assert not RunRegistry(api_app.resolve_tasks_db_path()).list_runs(

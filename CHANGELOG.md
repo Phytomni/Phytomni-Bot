@@ -55,6 +55,12 @@ package version remains `0.1.3` until the release bump.
   holding it for the whole Review run. A lock wait timeout on
   `/v1/query/route` is now HTTP 503 `Review mutation is busy`, not an
   uncaught ASGI 500 that the Web gateway mapped to 502.
+- **Context Expert provider faults** — When `/v1/query/route` carries a
+  conversation envelope, a routing-provider timeout is HTTP 504
+  `upstream_timeout` and a non-timeout provider failure is HTTP 502
+  `routing_upstream_failed`, both `stage=routing` and retryable. The
+  V0 route already used those codes; the context path no longer
+  surfaces them as an uncaught 500.
 
 ## [0.1.3] — 2026-07-17
 

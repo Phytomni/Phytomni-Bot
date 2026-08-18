@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from ...agents.expert import ToolSelectionError
+from ...agents.expert import ExpertProviderError, ToolSelectionError
 from ...runtime.conversation_context.adapters import (
     ConversationContextExecutor,
 )
@@ -25,6 +25,7 @@ from ...runtime.conversation_context.service import (
     PreparedTurn,
 )
 from ..attachments import ManagedAttachmentEvidence
+from ..expert_routing_errors import expert_routing_provider_error
 from ..lifecycle_contract import conversation_context_unavailable_error
 
 
@@ -95,7 +96,7 @@ async def inspect_context_replay(
 async def execute_context_lifecycle_http(
     request: ContextLifecycleHttpRequest,
 ) -> PreparedTurn:
-    """Run one context turn and map selection faults to HTTP 502."""
+    """Run one context turn and map routing faults to public HTTP errors."""
     try:
         return await execute_context_lifecycle(
             executor=request.executor,
@@ -109,6 +110,8 @@ async def execute_context_lifecycle_http(
             status_code=503,
             detail="Review mutation is busy",
         ) from exc
+    except ExpertProviderError as exc:
+        raise expert_routing_provider_error(exc) from exc
     except (ToolSelectionError, ValueError) as exc:
         raise HTTPException(
             status_code=502,

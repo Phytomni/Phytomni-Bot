@@ -2583,12 +2583,15 @@ Request body:
 When the optional private `conversation` envelope is present, the same V1
 context lifecycle is applied after selection. Explicit native selection
 keeps `route_source=explicit_selection`; autonomous selection keeps the
-router-derived source and reason code. Synchronous selections stage after
-the terminal result, while asynchronous selections stage only after the
-existing `202` run is durably accepted. Without the envelope, this route
-retains its V0 behavior. See the native-run contract above and the canonical
-fixture at `tests/fixtures/conversation_context/v1.json` for the bounded
-response shapes.
+router-derived source and reason code. Routing-provider timeout and
+failure use the same SafeApiError mapping as the V0 route
+(`upstream_timeout` / `routing_upstream_failed`). Synchronous selections
+stage after the terminal result, while asynchronous selections stage only
+after the existing `202` run is durably accepted. Without the envelope,
+this route retains its V0 behavior. See the native-run contract above
+and the canonical fixture at
+`tests/fixtures/conversation_context/v1.json` for the bounded response
+shapes.
 
 Invalid allowlists (missing, empty, over ten entries, duplicate, or unknown
 canonical names), a non-member `forced_tool`, and unknown body keys are

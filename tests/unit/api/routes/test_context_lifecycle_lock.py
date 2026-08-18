@@ -2,16 +2,24 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""HTTP mapping for conversation-context lifecycle lock timeouts."""
+"""HTTP mapping for conversation-context lifecycle routing faults."""
 
 from __future__ import annotations
 
+import logging
+from types import SimpleNamespace
 from typing import Any, cast
-from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
+from tests.support.http_fakes import build_instant_chat_context_envelope
 
+from mcp_server_phytomni.agents.expert import (
+    ExpertProviderError,
+    ExpertProviderTimeoutError,
+    ToolSelectionError,
+)
+from mcp_server_phytomni.api.lifecycle_contract import SafeApiError
 from mcp_server_phytomni.api.routes.context_types import (
     ContextLifecycleHttpRequest,
     execute_context_lifecycle_http,
@@ -25,55 +33,105 @@ from mcp_server_phytomni.runtime.conversation_context.store import (
 
 pytestmark = pytest.mark.unit
 
+_SENTINEL = (
+    "ROUTER-PROMPT-SENTINEL RAW-MODEL-SENTINEL "
+    "ALLOWLIST-SENTINEL PROVIDER-PAYLOAD-SENTINEL "
+    "credential-like-sentinel"
+)
+
 
 def _envelope() -> ConversationEnvelopeV1:
-    """Build one Expert envelope for the lifecycle HTTP wrapper."""
+    """Build one envelope for the lifecycle HTTP wrapper."""
     return ConversationEnvelopeV1.model_validate(
-        {
-            "schema_version": 1,
-            "conversation_key": str(
-                UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")
-            ),
-            "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
-            "turn_id": "1",
-            "request_id": "request-1",
-            "operation": "append",
-            "mode": "expert",
-            "current_message": {"content": "review rice", "locale": "en-US"},
-            "requested_agent_id": "ReviewAgent",
-            "allowed_agent_ids": ["ReviewAgent"],
-            "ledger_cursor": 1,
-            "ledger_version": "a" * 64,
-            "base_business_context_version": 0,
-            "history_delta": [],
-            "artifact_refs": [],
-        }
+        build_instant_chat_context_envelope("1")
     )
 
 
-class _BusyExecutor:
-    """Executor that reproduces an uncaught Review lock timeout."""
+def _raising_request(exc: BaseException) -> ContextLifecycleHttpRequest:
+    """Build one wrapper request whose executor raises ``exc``."""
 
-    async def execute(self, **_kwargs: Any) -> Any:
-        """Raise the same timeout /v1/query/route currently surfaces as 500."""
-        raise ReviewMutationLockTimeoutError()
+    async def execute(**_kwargs: Any) -> Any:
+        raise exc
+
+    async def unused(*_args: object, **_kwargs: object) -> Any:
+        raise AssertionError("lifecycle wrapper must not invoke transport")
+
+    return ContextLifecycleHttpRequest(
+        executor=cast(Any, SimpleNamespace(execute=execute)),
+        envelope=_envelope(),
+        invoke=unused,
+        delegate_async=unused,
+        selection_failure_detail="router did not resolve one permitted agent",
+    )
 
 
 @pytest.mark.asyncio
 async def test_lifecycle_http_maps_review_lock_timeout_to_503() -> None:
     """A busy Review mutation lock is retryable, not an ASGI 500."""
-
-    async def _unused(*_args: object, **_kwargs: object) -> Any:
-        raise AssertionError("lifecycle wrapper must not invoke transport")
-
-    request = ContextLifecycleHttpRequest(
-        executor=cast(Any, _BusyExecutor()),
-        envelope=_envelope(),
-        invoke=_unused,
-        delegate_async=_unused,
-        selection_failure_detail="router did not resolve one permitted agent",
-    )
     with pytest.raises(HTTPException) as caught:
-        await execute_context_lifecycle_http(request)
+        await execute_context_lifecycle_http(
+            _raising_request(ReviewMutationLockTimeoutError())
+        )
     assert caught.value.status_code == 503
     assert caught.value.detail == "Review mutation is busy"
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_http_keeps_selection_faults_as_http_502() -> None:
+    """Selector contract faults stay the existing HTTPException 502."""
+    with pytest.raises(HTTPException) as caught:
+        await execute_context_lifecycle_http(
+            _raising_request(ToolSelectionError(_SENTINEL))
+        )
+    assert caught.value.status_code == 502
+    assert caught.value.detail == (
+        "router did not resolve one permitted agent"
+    )
+    assert _SENTINEL not in caught.value.detail
+
+
+@pytest.mark.parametrize(
+    ("exc", "status_code", "code"),
+    (
+        (
+            ExpertProviderTimeoutError(_SENTINEL),
+            504,
+            "upstream_timeout",
+        ),
+        (
+            ExpertProviderError(_SENTINEL),
+            502,
+            "routing_upstream_failed",
+        ),
+    ),
+    ids=("timeout", "provider"),
+)
+@pytest.mark.asyncio
+async def test_lifecycle_http_maps_provider_faults_to_safe_errors(
+    caplog: pytest.LogCaptureFixture,
+    exc: ExpertProviderError,
+    status_code: int,
+    code: str,
+) -> None:
+    """Provider timeout and failure match the V0 SafeApiError envelope."""
+    caplog.set_level(
+        logging.WARNING,
+        logger="mcp_server_phytomni.api.expert_routing_errors",
+    )
+    with pytest.raises(SafeApiError) as caught:
+        await execute_context_lifecycle_http(_raising_request(exc))
+    error = caught.value
+    assert error.status_code == status_code
+    assert error.code == code
+    assert error.stage == "routing"
+    assert error.retryable is True
+    assert _SENTINEL not in error.message
+    records = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "Expert routing provider failed"
+    ]
+    assert len(records) == 1
+    assert getattr(records[0], "error_class") == exc.__class__.__name__
+    assert getattr(records[0], "stage") == "routing"
+    assert _SENTINEL not in caplog.text

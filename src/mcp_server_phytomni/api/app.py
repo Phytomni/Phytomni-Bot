@@ -25,7 +25,6 @@ from mcp.types import INVALID_PARAMS
 
 from ..agents.expert import (
     ExpertProviderError,
-    ExpertProviderTimeoutError,
     ExpertRoutingContractError,
     ExpertRoutingDeclinedError,
     ToolSelection,
@@ -85,6 +84,7 @@ from .compat import (
     _stream_chat_completion,
     _stream_review_a2ui_pause,
 )
+from .expert_routing_errors import expert_routing_provider_error
 from .lifecycle_contract import (
     SafeApiError,
     SafeErrorCode,
@@ -358,22 +358,8 @@ async def _route_expert_query(
             exc.__class__.__name__,
         )
         raise _routing_contract_error() from exc
-    except ExpertProviderTimeoutError as exc:
-        raise expert_safe_error(
-            SafeErrorCode.UPSTREAM_TIMEOUT,
-            status_code=504,
-            locale=current_effective_locale(),
-            stage="routing",
-            retryable=True,
-        ) from exc
     except ExpertProviderError as exc:
-        raise expert_safe_error(
-            SafeErrorCode.ROUTING_UPSTREAM_FAILED,
-            status_code=502,
-            locale=current_effective_locale(),
-            stage="routing",
-            retryable=True,
-        ) from exc
+        raise expert_routing_provider_error(exc) from exc
     if selection is None:
         raise _routing_contract_error()
     slug = _TOOL_TO_AGENT_SLUG.get(selection.tool_name)
