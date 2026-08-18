@@ -73,6 +73,21 @@ _TOOL_CHOICE_REQUIRED_UNSUPPORTED: set[str] = set()
 _EXPERT_PROVIDER_MAX_RETRIES = 2
 _EXPERT_PROVIDER_BACKOFF_BASE = 1.5
 
+# Tools that accept ``user_query`` (Analyst converts it to
+# ``goal_description`` at the HTTP boundary). Structured-input agents
+# stay at ``{}`` when the routing model is skipped.
+_DETERMINISTIC_USER_QUERY_TOOLS = frozenset(
+    {
+        "ChatAgent",
+        "KnowledgeAgent",
+        "DataAgent",
+        "ReviewAgent",
+        "BriefGeneAgent",
+        "InSilicoResearchAgent",
+        "AnalystAgent",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ToolSelection:
@@ -217,12 +232,19 @@ async def select_expert_tool(
     This is the strict HTTP Expert seam. The legacy ``select_agent_tool``
     wrapper deliberately keeps its optional-selection behavior only when no
     allowlist is supplied, which is the compatibility path used by A2A.
-    Stdio MCP never calls this path. The completion takes one LLM pool
-    lease; a later agent turn may take another.
+    Stdio MCP never calls this path. A pinned ``forced_tool`` or a
+    one-tool allowlist needs no routing model. Only an unpinned allowlist
+    of two or more tools takes an LLM pool lease; a later agent turn may
+    take another.
     """
     request = _build_routing_request(
         agent_openai_tool_specs(), options.allowed_tools, options.forced_tool
     )
+    skipped = _deterministic_selection(
+        request, options.forced_tool, user_query
+    )
+    if skipped is not None:
+        return skipped
     messages = [
         {"role": "system", "content": locale_instruction(options.locale)},
         *(dict(turn) for turn in history),
@@ -450,6 +472,33 @@ def _build_routing_request(
         else "required"
     )
     return _RoutingRequest(allowed_order, tools, tool_choice, True)
+
+
+def _deterministic_selection(
+    request: _RoutingRequest,
+    forced_tool: str | None,
+    user_query: str,
+) -> ToolSelection | None:
+    """Return a selection that needs no routing model, or ``None``.
+
+    A caller pin (``forced_tool``) or a one-tool allowlist is already
+    decided. Only an unpinned allowlist of two or more tools needs the
+    routing model.
+    """
+    if not request.strict:
+        return None
+    if forced_tool is not None:
+        tool_name = forced_tool
+    elif len(request.allowed_order) == 1:
+        tool_name = request.allowed_order[0]
+    else:
+        return None
+    arguments = (
+        {"user_query": user_query}
+        if tool_name in _DETERMINISTIC_USER_QUERY_TOOLS
+        else {}
+    )
+    return ToolSelection(tool_name=tool_name, arguments=arguments)
 
 
 def _selection_from_completion(

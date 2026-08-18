@@ -111,25 +111,23 @@ async def test_strict_router_offers_allowed_tools_in_request_order(
 async def test_strict_router_forces_requested_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A forced strict route sends the matching OpenAI tool choice."""
+    """A forced strict route skips the routing model and pins the tool."""
     captured: dict[str, Any] = {}
     patch_expert_router(
         monkeypatch,
         expert_router,
-        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        _completion(tool_calls=[_tool_call("KnowledgeAgent", "{}")]),
         captured,
     )
 
-    await select_agent_tool(
+    result = await select_agent_tool(
         "route this",
         allowed_tools=["KnowledgeAgent", "ChatAgent"],
         forced_tool="ChatAgent",
     )
 
-    assert captured["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "ChatAgent"},
-    }
+    assert result == ToolSelection("ChatAgent", {"user_query": "route this"})
+    assert captured == {}
 
 
 async def test_select_expert_tool_scopes_prompt_and_order() -> None:
@@ -186,7 +184,7 @@ async def test_select_expert_tool_rejects_malformed_arguments(
             user_query="route this",
             history=[],
             options=ExpertRoutingOptions(
-                allowed_tools=("ChatAgent",),
+                allowed_tools=("ChatAgent", "KnowledgeAgent"),
                 forced_tool=None,
                 locale="en-US",
                 completion=fake_completion,
@@ -223,7 +221,7 @@ async def test_select_expert_tool_decline_raises_declined(
             user_query="route this",
             history=[],
             options=ExpertRoutingOptions(
-                allowed_tools=("ChatAgent",),
+                allowed_tools=("ChatAgent", "KnowledgeAgent"),
                 forced_tool=None,
                 locale="en-US",
                 completion=fake_completion,
@@ -247,7 +245,7 @@ async def test_select_expert_tool_genuine_violation_not_declined() -> None:
             user_query="route this",
             history=[],
             options=ExpertRoutingOptions(
-                allowed_tools=("ChatAgent",),
+                allowed_tools=("ChatAgent", "KnowledgeAgent"),
                 forced_tool=None,
                 locale="en-US",
                 completion=fake_completion,
@@ -304,11 +302,15 @@ async def test_strict_router_forces_every_canonical_tool(
 
     assert result is not None
     assert result.tool_name == tool_name
-    assert result.arguments
-    assert captured["tool_choice"] == {
-        "type": "function",
-        "function": {"name": tool_name},
-    }
+    if tool_name in {
+        "DeepGenomeAgent",
+        "DigitalDesignAgent",
+        "GeneNetworkAgent",
+    }:
+        assert result.arguments == {}
+    else:
+        assert result.arguments == {"user_query": "route this"}
+    assert captured == {}
 
 
 @pytest.mark.parametrize(
@@ -336,7 +338,7 @@ async def test_strict_router_rejects_invalid_model_selection(
     with pytest.raises(ToolSelectionError):
         await select_agent_tool(
             "route this",
-            allowed_tools=["ChatAgent"],
+            allowed_tools=["ChatAgent", "KnowledgeAgent"],
         )
 
 
@@ -658,7 +660,9 @@ async def test_routing_caches_unsupported_endpoint(
         side_effects=[_bad_request(_REQUIRED_REJECTION)],
         calls=first_calls,
     )
-    await select_agent_tool("first", allowed_tools=["ChatAgent"])
+    await select_agent_tool(
+        "first", allowed_tools=["ChatAgent", "KnowledgeAgent"]
+    )
     assert [call["tool_choice"] for call in first_calls] == [
         "required",
         "auto",
@@ -671,7 +675,9 @@ async def test_routing_caches_unsupported_endpoint(
         _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
         calls=second_calls,
     )
-    await select_agent_tool("second", allowed_tools=["ChatAgent"])
+    await select_agent_tool(
+        "second", allowed_tools=["ChatAgent", "KnowledgeAgent"]
+    )
 
     # No wasted 400 round-trip: the single call goes straight to 'auto'.
     assert [call["tool_choice"] for call in second_calls] == ["auto"]
@@ -701,25 +707,17 @@ async def test_routing_auto_400_is_not_retried(
     assert [call["tool_choice"] for call in calls] == ["auto"]
 
 
-async def test_routing_forced_tool_400_coerces_auto_pick_to_forced(
+async def test_routing_forced_tool_skips_the_routing_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A forced route that 400s downgrades to auto and coerces the pick.
-
-    The real endpoint rejects a named ``tool_choice`` and, once retried with
-    ``"auto"`` over the full allowlist, may autonomously pick a *different*
-    tool. Because the caller pinned ``forced_tool``, the final selection is
-    coerced back to it -- the user's explicit ``@agent`` wins.
-    """
+    """A pinned tool never calls the routing model, even with two peers."""
     calls: list[dict[str, Any]] = []
     patch_expert_router(
         monkeypatch,
         expert_router,
-        # On the auto retry the model autonomously picks ChatAgent.
         _completion(
             tool_calls=[_tool_call("ChatAgent", '{"user_query": "q"}')]
         ),
-        side_effects=[_bad_request(_PANGU_3342)],
         calls=calls,
     )
 
@@ -729,59 +727,33 @@ async def test_routing_forced_tool_400_coerces_auto_pick_to_forced(
         forced_tool="KnowledgeAgent",
     )
 
-    # The user forced KnowledgeAgent, so that is the final selection even
-    # though the model picked ChatAgent under the degraded auto retry.
-    assert result is not None
-    assert result.tool_name == "KnowledgeAgent"
-    # First attempt: the named forced choice over the full allowlist.
-    assert calls[0]["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "KnowledgeAgent"},
-    }
-    # Retry: 'auto' over the FULL allowlist (narrowing makes the model
-    # return an empty tool call on the real endpoint).
-    assert calls[1]["tool_choice"] == "auto"
-    assert [t["function"]["name"] for t in calls[1]["tools"]] == [
-        "ChatAgent",
-        "KnowledgeAgent",
-        "DataAgent",
-    ]
+    assert result == ToolSelection(
+        "KnowledgeAgent", {"user_query": "route this"}
+    )
+    assert calls == []
 
 
-async def test_routing_forced_tool_400_empty_pick_still_coerces_to_forced(
+async def test_routing_singleton_allowlist_skips_the_routing_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A forced route survives an empty auto retry by minting the forced pick.
-
-    On the real endpoint ``"auto"`` over a single narrowed tool can return no
-    tool call at all; over the full allowlist the model may still decline. A
-    forced route must not 502 in that case -- it mints the forced selection.
-    """
+    """One authorized tool is already decided, so the model is not called."""
     calls: list[dict[str, Any]] = []
     patch_expert_router(
         monkeypatch,
         expert_router,
-        # The auto retry returns a content-only completion (no tool call).
         _completion(content="no tool needed"),
-        side_effects=[_bad_request(_PANGU_3342)],
         calls=calls,
     )
 
     result = await select_agent_tool(
         "route this",
-        allowed_tools=["KnowledgeAgent", "ChatAgent"],
-        forced_tool="KnowledgeAgent",
+        allowed_tools=["KnowledgeAgent"],
     )
 
-    assert result is not None
-    assert result.tool_name == "KnowledgeAgent"
-    assert result.arguments == {}
-    # Forced first attempt is the named dict; then the auto retry.
-    assert calls[0]["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "KnowledgeAgent"},
-    }
-    assert calls[1]["tool_choice"] == "auto"
+    assert result == ToolSelection(
+        "KnowledgeAgent", {"user_query": "route this"}
+    )
+    assert calls == []
 
 
 _PROVIDER_LOGGER = "mcp_server_phytomni.agents.expert.routing_observability"

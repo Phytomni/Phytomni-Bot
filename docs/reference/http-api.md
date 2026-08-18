@@ -2603,10 +2603,13 @@ shapes.
 
 Invalid allowlists (missing, empty, over ten entries, duplicate, or unknown
 canonical names), a non-member `forced_tool`, and unknown body keys are
-rejected with `422`. Routing is strict on genuine contract violations:
-multiple calls, a malformed call structure (for example, no function), a
-tool outside the allowlist, or failure to honor `forced_tool` fails with
-`502` and dispatches no agent. A model *decline* (no choice or no tool
+rejected with `422`. A pinned `forced_tool` or a one-tool `allowed_tools`
+list dispatches that agent without calling the routing model. The routing
+model runs only when the caller did not pin a tool and the trusted
+allowlist contains two or more agents. Routing is then strict on genuine
+contract violations: multiple calls, a malformed call structure (for
+example, no function), or a tool outside the allowlist fails with `502`
+and dispatches no agent. A model *decline* (no choice or no tool
 call) is treated separately: it means the turn is plain chat, so when the
 caller's `allowed_tools` includes `ChatAgent` the route degrades to a
 ChatAgent dispatch with the original `user_query` injected; when the caller

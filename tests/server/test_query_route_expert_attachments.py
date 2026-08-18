@@ -524,7 +524,7 @@ async def test_expert_rejects_authorized_zero_channel_selection(
 async def test_expert_supported_forced_tool_stays_forced(
     asset_http_context: AssetHttpTestContext,
 ) -> None:
-    """A supported forced tool reaches the strict router without fallback."""
+    """A supported forced tool dispatches without calling the routing model."""
     assets = _install_expert_purpose_assets(asset_http_context)
     captured: dict[str, Any] = {}
     patch_expert_router(
@@ -548,10 +548,7 @@ async def test_expert_supported_forced_tool_stays_forced(
         base_url="http://api.expert-forced.test",
     )
     assert response.status_code == 202, response.text
-    assert captured["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "AnalystAgent"},
-    }
+    assert captured == {}
 
 
 async def test_expert_rejects_stale_dataset_description_field(

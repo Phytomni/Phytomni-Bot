@@ -1109,9 +1109,13 @@ expected forced member. Also verify these strict failures before rollout:
 
 - Missing, empty, duplicate, unknown, or over-ten `allowed_tools`, and a
   non-member `forced_tool`, return `422`.
+- A pinned `forced_tool`, or a one-tool `allowed_tools` list, dispatches
+  that agent without calling the routing model. The model runs only when
+  the caller did not pin a tool and the trusted allowlist has two or more
+  agents.
 - A genuine contract violation -- multiple calls, a malformed call structure
-  (for example, no function), a call outside `allowed_tools`, or a call that
-  disobeys `forced_tool` -- returns `502` and invokes no agent.
+  (for example, no function), or a call outside `allowed_tools` -- returns
+  `502` and invokes no agent.
 - A model *decline* (no choice or no tool call) is not a violation: when
   `allowed_tools` includes `ChatAgent` the route degrades to a ChatAgent
   dispatch with the original `user_query` injected; otherwise it returns

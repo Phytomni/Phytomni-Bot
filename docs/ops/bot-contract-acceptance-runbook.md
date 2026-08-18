@@ -184,7 +184,8 @@ the acceptance vocabulary:
 1. **Review pause, classic resume, and A2UI action**: exercise both resume
    paths and verify first-uplink-wins behavior.
 1. **Expert autonomous and forced**: compare autonomous selection with an
-   explicitly forced, granted route.
+   explicitly forced, granted route. Forced pins and one-tool allowlists
+   must not call the routing model.
 1. **Expert attachment whitelist**: verify an allowed attachment reaches the
    selected route and an unsupported one is rejected.
 1. **Forced ungranted tool rejected before upload/dispatch**: verify the
