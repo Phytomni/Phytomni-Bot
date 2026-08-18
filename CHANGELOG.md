@@ -49,6 +49,9 @@ package version remains `0.1.3` until the release bump.
 
 ### Fixed
 
+- **Background cancel settlement** — Cancelling a detached Analyst /
+  Network / Design / Research worker settles the umbrella as
+  `cancelled`, not `failed`.
 - **Analyst completion display** — After the analysis platform marks a
   task succeeded, the run publishes the scientific report before OBS
   harvest. Public-data cache still keys on the input fingerprint, but

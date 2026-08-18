@@ -10,6 +10,7 @@ import asyncio
 import pytest
 
 from mcp_server_phytomni.runtime.live_tasks import (
+    cancel_live_task,
     deregister_live_task,
     is_live_running,
     register_live_task,
@@ -56,3 +57,24 @@ async def test_done_task_is_not_live() -> None:
 def test_deregister_absent_id_is_noop() -> None:
     """Deregistering an unknown id does not raise."""
     deregister_live_task("never-registered")
+
+
+async def test_cancel_live_task_cancels_registered_worker() -> None:
+    """A registered unfinished worker accepts cancel_live_task."""
+
+    async def _hang() -> None:
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(_hang())
+    register_live_task("u-cancel", task)
+    try:
+        assert cancel_live_task("u-cancel") is True
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    finally:
+        deregister_live_task("u-cancel")
+
+
+def test_cancel_live_task_absent_id_is_false() -> None:
+    """Cancelling an unknown id is a no-op false."""
+    assert cancel_live_task("never-registered") is False

@@ -16,9 +16,10 @@ from __future__ import annotations
 import asyncio
 
 __all__ = [
-    "register_live_task",
+    "cancel_live_task",
     "deregister_live_task",
     "is_live_running",
+    "register_live_task",
 ]
 
 _LIVE: dict[str, asyncio.Task[object]] = {}
@@ -38,3 +39,15 @@ def is_live_running(task_id: str) -> bool:
     """Return True iff ``task_id`` is registered and not yet done."""
     task = _LIVE.get(task_id)
     return task is not None and not task.done()
+
+
+def cancel_live_task(task_id: str) -> bool:
+    """Request cancellation of one registered in-process worker.
+
+    Returns True only when a live task accepted ``Task.cancel()``.
+    A missing or already-done id is a no-op.
+    """
+    task = _LIVE.get(task_id)
+    if task is None or task.done():
+        return False
+    return task.cancel()

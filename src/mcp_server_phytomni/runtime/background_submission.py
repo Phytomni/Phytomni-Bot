@@ -125,6 +125,9 @@ def reserve_background_submission(
     raise BackgroundSubmissionLaunchError("unable to reserve background run")
 
 
+_TERMINAL_WORKER_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+
+
 def _settle_failed(
     db_path: str,
     reservation: BackgroundSubmissionReservation,
@@ -149,6 +152,36 @@ def _settle_failed(
                 "run_id": reservation.run_id,
                 "agent": reservation.agent,
                 "stage": "settle_failed",
+                "error_type": type(exc).__name__,
+            },
+        )
+        return False
+
+
+def _settle_cancelled(
+    db_path: str,
+    reservation: BackgroundSubmissionReservation,
+    *,
+    result: dict[str, Any] | None = None,
+) -> bool:
+    """Settle an owned worker as cancelled, not failed."""
+    try:
+        registry = RunRegistry(db_path)
+        return registry.settle_run(
+            reservation.run_id,
+            owner=reservation.owner,
+            status="cancelled",
+            result=result or empty_execution_projection(degraded=True),
+            error="background_submission_cancelled",
+            expected_revision=reservation.revision,
+        )
+    except BACKGROUND_RUNTIME_ERRORS as exc:
+        _LOGGER.error(
+            "Background submission settlement failed",
+            extra={
+                "run_id": reservation.run_id,
+                "agent": reservation.agent,
+                "stage": "settle_cancelled",
                 "error_type": type(exc).__name__,
             },
         )
@@ -203,10 +236,9 @@ async def _run_background_submission(
                 reservation.run_id,
                 owner=reservation.owner,
             )
-            if current is not None and current.status in {
-                "succeeded",
-                "failed",
-            }:
+            if current is not None and current.status in (
+                _TERMINAL_WORKER_STATUSES
+            ):
                 return
             if current is None or not set(
                 outcome.accepted_task_ids
@@ -224,20 +256,15 @@ async def _run_background_submission(
                     reservation.run_id,
                     owner=reservation.owner,
                 )
-                if current is not None and current.status in {
-                    "succeeded",
-                    "failed",
-                }:
+                if current is not None and current.status in (
+                    _TERMINAL_WORKER_STATUSES
+                ):
                     return
                 raise BackgroundSubmissionExecutionError(
                     "unable to update running projection"
                 )
     except asyncio.CancelledError:
-        _settle_failed(
-            db_path,
-            reservation,
-            error="background_submission_cancelled",
-        )
+        _settle_cancelled(db_path, reservation)
         raise
     except BACKGROUND_RUNTIME_ERRORS as exc:
         _LOGGER.error(
@@ -266,11 +293,7 @@ def _observe_background_task(
 ) -> None:
     """Retrieve one task result and contain an unexpected escaped failure."""
     if task.cancelled():
-        _settle_failed(
-            db_path,
-            reservation,
-            error="background_submission_cancelled",
-        )
+        _settle_cancelled(db_path, reservation)
         return
     escaped = task.exception()
     if escaped is None:

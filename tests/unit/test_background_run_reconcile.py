@@ -385,7 +385,7 @@ async def test_post_child_worker_cancellation_persists_cancellation(
     record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
     assert task.cancelled()
     assert record is not None
-    assert record.status == "failed"
+    assert record.status == "cancelled"
     assert record.error == "background_submission_cancelled"
     assert record.task_ids == ("task-before-cancel",)
 

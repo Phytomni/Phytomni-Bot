@@ -534,11 +534,11 @@ async def test_terminal_reconciliation_owns_projection_race(
 
 
 @pytest.mark.asyncio
-async def test_cancelled_worker_settles_run_failed(
+async def test_cancelled_worker_settles_run_cancelled(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Cancelled workers stay cancelled and settle their owned run failed."""
+    """Cancelled workers settle their owned run as cancelled, not failed."""
     db_path = str(tmp_path / "tasks.db")
     reservation = reserve_background_submission(
         agent="network",
@@ -574,7 +574,7 @@ async def test_cancelled_worker_settles_run_failed(
 
     record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
     assert record is not None
-    assert record.status == "failed"
+    assert record.status == "cancelled"
     assert record.error == "background_submission_cancelled"
 
 
