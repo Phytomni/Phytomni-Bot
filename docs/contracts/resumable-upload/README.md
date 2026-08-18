@@ -3,7 +3,8 @@
 Copyable golden JSON for the Bot `obs-multipart-v2` biological-file upload
 protocol. Web and Go consumers can vendor the files and verify the exact
 fixture bytes through [`manifest.json`](manifest.json) without live OBS
-credentials.
+credentials. The fixtures are not `Accepted` evidence; see
+[Bot Ready versus Accepted](../../ops/bot-ready-versus-accepted.md).
 
 ## Bot of record
 

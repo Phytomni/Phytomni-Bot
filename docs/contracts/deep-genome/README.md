@@ -4,6 +4,7 @@ These four JSON files are synthetic shape goldens for the public DeepGenome
 snapshot returned by `GetTaskStatus` and `GET /v1/runs/{run_id}`. They contain
 demo identifiers, text, and timestamps only; they are not live backend
 acceptance evidence and do not prove Web/Go or production integration.
+See [Bot Ready versus Accepted](../../ops/bot-ready-versus-accepted.md).
 
 Clients submit one DeepGenome request and retain the owner-scoped umbrella run
 ID. They read the persisted snapshot by that ID and never poll concrete remote

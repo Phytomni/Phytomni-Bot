@@ -15,7 +15,8 @@ defines the current-SHA focused packet, the nine A2UI fixture hashes, and the
 boundary between Bot-local readiness and external acceptance. HTTP response
 goldens for the same packet live under [`../http/`](../http/). These files are
 synthetic and redacted; gateway forwarding, live streams, Web/Go behavior,
-and staging acceptance remain owner evidence.
+and staging acceptance remain owner evidence. See
+[Bot Ready versus Accepted](../../ops/bot-ready-versus-accepted.md).
 
 ## Web provisional
 

@@ -69,7 +69,9 @@ Start from the table below, or browse a category directly.
 
 - **I want to…:** Read the Bot acceptance boundary
   **Read:**
-  [ops/bot-contract-acceptance-runbook.md](ops/bot-contract-acceptance-runbook.md)
+  [ops/bot-ready-versus-accepted.md](ops/bot-ready-versus-accepted.md)
+  and the
+  [acceptance runbook](ops/bot-contract-acceptance-runbook.md)
 
 - **I want to…:** Upgrade 0.1.3 → current
   **Read:** [ops/upgrading.md](ops/upgrading.md)

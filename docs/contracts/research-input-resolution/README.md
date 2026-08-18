@@ -2,7 +2,9 @@
 
 This directory is the Bot-owned, tracked contract packet for
 `research_input_resolution_v1` version `1`. The JSON files are sanitized
-copyable goldens for Web/Go consumers. Generate them with:
+copyable goldens for Web/Go consumers. They are not `Accepted` evidence;
+see [Bot Ready versus Accepted](../../ops/bot-ready-versus-accepted.md).
+Generate them with:
 
 ```bash
 uv run --no-sync python scripts/generate_research_input_contracts.py \

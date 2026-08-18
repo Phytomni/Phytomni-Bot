@@ -24,9 +24,11 @@ Use only these statuses in evidence packets and disposition records:
 
 ### Bot Ready != Accepted
 
-Bot Ready is a repository readiness result. It does not authorize feature
-flags, Web or Go cutover, production rollout, or migration cleanup. Any
-missing paired consumer or staging evidence remains `External Pending`.
+The shared wording lives in
+[Bot Ready versus Accepted](bot-ready-versus-accepted.md). Bot Ready is
+a repository readiness result. It does not authorize feature flags, Web
+or Go cutover, production rollout, or migration cleanup. Any missing
+paired consumer or staging evidence remains `External Pending`.
 
 ## Evidence boundary
 
