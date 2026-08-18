@@ -13,29 +13,33 @@ Allowed statuses: `Unknown`, `Needs Verification`, `Bot Ready`,
 
 ## Current-SHA local reconciliation
 
-The following evidence was captured on the clean source candidate immediately
-before this documentation-only reconciliation commit:
+Refreshed 2026-08-18 after the HTTP-inventory split and the shared
+[Bot Ready versus Accepted](bot-ready-versus-accepted.md) fragment.
+This is a documentation snapshot, not a new acceptance packet.
 
-- Branch: `release/0.1.4`.
-- Source candidate: `cdb3a29b77bdfa7f75f75d32339d6cff3fcd9803`.
-- Tracked worktree: clean; the branch was ahead of its remote by 16 commits;
-  no push, merge, rebase, or production action was performed.
-- Acceptance focused packet: `380 passed in 19.95s`.
-- Convergence packet: `436 passed, 8 deselected` in 18.96s.
-- Scoped gate: `254 passed, 8 deselected`, with exact cross-file Pylint
-  `0 records`.
-- Full local gate: `4133 passed, 9 deselected`, total coverage `87.78%`.
-- Conversation-context fixture SHA-256:
-  `8d432c8ebd6c4912667566b211177c4f5ee2f19bf4f8df935861ccf016a89633`.
-- The Bot-local implementation is ready for review. Python 3.13/3.14 matrix,
-  Web/Go forwarding and settlement, browser, real backend/operator, staging,
-  production, CI, and feature activation remain `Needs Verification` or
-  `External Pending` according to the relevant owner boundary.
+- Branch: `release/0.1.4`. The installed package version remains
+  `0.1.3`; this branch is still in development and is not a tagged
+  release.
+- Source candidate immediately before this ledger commit:
+  `0a3a3535b219d513e80dd2e17cf49084e20da9cf`.
+- Tracked worktree: clean except an untracked pytest sqlite leftover
+  that is not staged. The branch matches `origin/release/0.1.4` plus
+  the two preceding documentation commits in this tranche.
+- Last full local gate on ancestor
+  `76d82c3785b2cd6077b8792e18f5e7943fbacbbe`.
+- That ancestor gate was `6807 passed, 9 deselected`, coverage
+  `91.29%`, and 418 production files at or above 80%. That receipt
+  belongs to `76d82c37`, not this SHA.
+- This SHA did not re-run the focused acceptance packet, the
+  supported-version matrix, or `scripts/capture_contract_evidence.py`.
+- Python 3.13/3.14 matrix, Web/Go forwarding, browser, real
+  backend/operator, staging, production, CI, and feature activation
+  remain `Needs Verification` or `External Pending`.
 
-This section is a pre-commit evidence snapshot. The documentation commit that
-follows changes `HEAD`; any final acceptance packet must bind its own logs to
-that post-commit SHA. It must not reuse this snapshot as final current-SHA
-proof.
+This section is a pre-commit evidence snapshot. The documentation
+commit that follows changes `HEAD`; any final acceptance packet must
+bind its own logs to that post-commit SHA. It must not reuse this
+snapshot or the `76d82c37` full-gate log as final current-SHA proof.
 
 ## Historical packet snapshot
 
@@ -777,13 +781,13 @@ acceptance remain pending; feature flags stay dark.
 
 ## Local reconciliation note
 
-The current source contains the stream capability gate, accumulated HTTP
-stream-answer persistence, analyst-class report assembly, native agent-run
-conversation context, curated gene-example OBS reads, and resumable upload
-runtime corrections. Focused/scoped/full local evidence is green for the
-source candidate above. The final packet and supported-version matrix remain
-separate acceptance evidence; no missing external evidence is upgraded to
-`Accepted` here.
+The current source still contains the stream capability, accumulated
+HTTP stream-answer persistence, analyst-class report assembly, native
+agent-run conversation context, curated gene-example OBS reads, and
+resumable upload runtime. The `76d82c37` full local gate is ancestor
+evidence only. The final packet and supported-version matrix remain
+separate acceptance evidence; no missing external evidence is upgraded
+to `Accepted` here.
 
 ## 2026-08-02 five-item Bot evidence refresh
 
