@@ -4,10 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Shared network-escape guard for offline agent tests.
 
-Patches the three async paths the repo-root ``block_external_http``
-fixture leaves open so an un-mocked escape surfaces as a named
-``RuntimeError`` instead of a 20s hang. Shared by the brief_gene
-preamble fan-in test and the graph astream primitive test.
+Patches the remaining async paths the repo-root
+``block_external_http`` fixture does not cover so an un-mocked
+escape surfaces as a named ``RuntimeError`` instead of a 20s hang.
+Shared by the brief_gene preamble fan-in test and the graph astream
+primitive test.
 """
 
 from __future__ import annotations
@@ -24,16 +25,18 @@ def install_network_escape_guard(
     *,
     label: str,
 ) -> None:
-    """Patch the three async paths ``block_external_http`` leaves open.
+    """Patch the async paths ``block_external_http`` still leaves open.
 
-    The repo-root ``block_external_http`` autouse fixture covers only
-    ``socket.create_connection`` (sync) and ``httpx.*.request``, so
-    three async paths can still reach a real socket and wedge an
-    offline test: ``httpx.*.send`` (the low-level send under
-    ``request``), the event loop's ``create_connection``, and DNS via
-    ``getaddrinfo``. An escape surfaces as a fast, named
-    ``RuntimeError`` instead of a 20s hang that ``asyncio.wait_for``
-    cannot cancel once a connect blocks the loop.
+    The repo-root ``block_external_http`` autouse fixture now covers
+    ``socket.create_connection``, ``httpx.*.request``, and live
+    ``httpx.*.send``. Two async paths can still reach a real socket
+    and wedge an offline test: the event loop's ``create_connection``
+    and DNS via ``getaddrinfo``. This helper also re-blocks
+    ``httpx.*.send`` unconditionally so a compiled-graph escape
+    cannot depend on the transport-type check. An escape surfaces as
+    a fast, named ``RuntimeError`` instead of a 20s hang that
+    ``asyncio.wait_for`` cannot cancel once a connect blocks the
+    loop.
 
     Args:
         monkeypatch: The test's ``MonkeyPatch`` fixture.

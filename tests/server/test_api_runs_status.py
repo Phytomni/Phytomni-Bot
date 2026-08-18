@@ -417,6 +417,42 @@ async def test_get_run_preserves_request_and_task_identity(
     assert body["task_ids"] == [task_id]
 
 
+async def test_get_nonterminal_run_does_not_hang_through_send(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    outbound_runtime: Any,
+) -> None:
+    """A running child must not hang GET /v1/runs via live send.
+
+    ``api_client`` restores ``httpx.AsyncClient.request`` for ASGI.
+    Outbound ``BoundAsyncRequestClient`` talks through ``send``.
+    Swapping the trusted profile onto a default HTTPX client
+    reproduces the old hang: ``task_status`` would open a real
+    socket. The offline send guard must fail that path quickly.
+    """
+    run_id = "run-nonterminal-send"
+    seed_remote_run_with_task(
+        tasks_db_path,
+        remote_analyst_seed(run_id, "task-nonterminal-send", "running"),
+    )
+    live_client = httpx.AsyncClient()
+    original = outbound_runtime.runtime.http.trusted
+    outbound_runtime.runtime.http.trusted = live_client
+    try:
+        with pytest.raises(RuntimeError, match="HTTP requests are disabled"):
+            await asyncio.wait_for(
+                api_client.get(
+                    f"/v1/runs/{run_id}",
+                    headers={"Authorization": f"Bearer {issued_api_key}"},
+                ),
+                timeout=2.0,
+            )
+    finally:
+        outbound_runtime.runtime.http.trusted = original
+        await live_client.aclose()
+
+
 async def test_get_run_does_not_fuzzy_match_task_metadata(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

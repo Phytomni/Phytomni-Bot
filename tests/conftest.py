@@ -55,6 +55,8 @@ TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
 TEST_ROOT = Path(__file__).resolve().parent
 DEMO_DATA_DIR = (TEST_ROOT.parent / "demo_data").resolve()
+_REAL_SYNC_SEND = httpx.Client.send
+_REAL_ASYNC_SEND = httpx.AsyncClient.send
 TEST_LAYER_MARKERS = {
     "unit": "unit",
     "server": "server",
@@ -169,6 +171,11 @@ def block_external_http(
 ) -> Iterator[None]:
     """Block accidental HTTP calls unless a test opts into ``network``.
 
+    Covers ``socket.create_connection``, ``httpx.*.request``, and
+    ``httpx.*.send``. In-process transports stay open so ASGI and
+    Mock clients can restore ``request`` without letting outbound
+    ``send`` (used by ``BoundAsyncRequestClient``) hit a live socket.
+
     Args:
         monkeypatch: Pytest monkeypatch fixture used to replace network APIs.
         request: Current pytest fixture request.
@@ -233,6 +240,72 @@ def block_external_http(
         "request",
         blocked_async_request,
     )
+
+    def _uses_live_http_transport(client: Any, http_request: Any) -> bool:
+        """Return True when send would open a real HTTP socket."""
+        transport = getattr(client, "_transport", None)
+        lookup = getattr(client, "_transport_for_url", None)
+        if callable(lookup):
+            try:
+                transport = lookup(http_request)
+            except (AttributeError, TypeError, ValueError):
+                return True
+        return isinstance(
+            transport, (httpx.HTTPTransport, httpx.AsyncHTTPTransport)
+        )
+
+    def blocked_send(client: Any, *args: Any, **kwargs: Any) -> Any:
+        """Raise for sync HTTP send in offline tests.
+
+        Args:
+            client: The HTTPX client whose send is intercepted.
+            *args: Positional send arguments; first item is the request.
+            **kwargs: Keyword send arguments, including ``request=``.
+
+        Returns:
+            The real send result for in-process transports.
+
+        Raises:
+            RuntimeError: If send would use a live HTTP transport.
+        """
+        http_request = args[0] if args else kwargs.get("request")
+        if http_request is None or _uses_live_http_transport(
+            client, http_request
+        ):
+            raise RuntimeError(
+                "HTTP requests are disabled for default pytest runs. "
+                "Mark the test with @pytest.mark.network to opt in."
+            )
+        return _REAL_SYNC_SEND(client, *args, **kwargs)
+
+    async def blocked_async_send(
+        client: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        """Raise for async HTTP send in offline tests.
+
+        Args:
+            client: The HTTPX client whose send is intercepted.
+            *args: Positional send arguments; first item is the request.
+            **kwargs: Keyword send arguments, including ``request=``.
+
+        Returns:
+            The real send result for in-process transports.
+
+        Raises:
+            RuntimeError: If send would use a live HTTP transport.
+        """
+        http_request = args[0] if args else kwargs.get("request")
+        if http_request is None or _uses_live_http_transport(
+            client, http_request
+        ):
+            raise RuntimeError(
+                "HTTP requests are disabled for default pytest runs. "
+                "Mark the test with @pytest.mark.network to opt in."
+            )
+        return await _REAL_ASYNC_SEND(client, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "send", blocked_send)
+    monkeypatch.setattr(httpx.AsyncClient, "send", blocked_async_send)
 
     yield
 

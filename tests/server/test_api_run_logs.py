@@ -50,12 +50,10 @@ async def test_get_run_logs_returns_reconciled_task_logs(
     """A run with tasks returns reconciled logs for each task."""
     registry = RunRegistry(tasks_db_path)
     # Use a terminal status so ``RunRegistry.reconcile`` short-circuits
-    # at the terminal-status guard and never probes live task status —
-    # a non-terminal run would call ``reconcile_task`` per child, which
-    # escapes to a real ``task_status`` HTTP call and hangs the offline
-    # test (``block_external_http`` covers ``request`` but the
-    # ``api_client`` fixture restores it for ASGI transport, leaving
-    # the low-level ``send`` unguarded).
+    # at the terminal-status guard and never probes live task status.
+    # A non-terminal run still calls ``reconcile_task`` per child; the
+    # offline ``send`` guard now fails that probe closed instead of
+    # hanging after ``api_client`` restores ``request`` for ASGI.
     registry.create_run(
         RunSpec(
             run_id="run-logs-1",
