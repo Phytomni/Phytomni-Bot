@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -44,17 +43,6 @@ pytestmark = pytest.mark.unit
 
 _LEAK = "query-body-must-not-appear allowlist-must-not-appear"
 _ROUTE_LOGGER = "mcp_server_phytomni.agents.expert.routing_observability"
-
-
-@pytest.fixture(autouse=True)
-def _capture_route_logs(caplog: pytest.LogCaptureFixture) -> Iterator[None]:
-    """Attach caplog when package logging has already disabled propagate."""
-    target = logging.getLogger(_ROUTE_LOGGER)
-    target.addHandler(caplog.handler)
-    try:
-        yield
-    finally:
-        target.removeHandler(caplog.handler)
 
 
 def _route_records(

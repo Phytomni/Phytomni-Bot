@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -39,18 +38,6 @@ _SENTINEL = (
     "ALLOWLIST-SENTINEL PROVIDER-PAYLOAD-SENTINEL "
     "credential-like-sentinel"
 )
-_ERROR_LOGGER = "mcp_server_phytomni.api.expert_routing_errors"
-
-
-@pytest.fixture(autouse=True)
-def _capture_provider_logs(caplog: pytest.LogCaptureFixture) -> Iterator[None]:
-    """Attach caplog when package logging has already disabled propagate."""
-    target = logging.getLogger(_ERROR_LOGGER)
-    target.addHandler(caplog.handler)
-    try:
-        yield
-    finally:
-        target.removeHandler(caplog.handler)
 
 
 def _envelope() -> ConversationEnvelopeV1:
