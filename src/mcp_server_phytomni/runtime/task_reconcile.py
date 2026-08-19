@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 from mcp.shared.exceptions import McpError
 
@@ -24,6 +24,7 @@ from .deep_genome_store import (
     DeepGenomeTransitionError,
     snapshot_to_public_dict,
 )
+from .fingerprint_jobs import mark_job_terminal
 from .live_tasks import is_live_running
 from .task_manager import TaskManager, resolve_tasks_db_path
 from .terminal_report import (
@@ -205,6 +206,35 @@ def _persist_live_terminal_row(
         )
 
 
+def _fingerprint_ei_id(row: Mapping[str, Any], probe_id: str) -> str:
+    """Return the remote EI id used as the fingerprint job key."""
+    for key in ("source_task_id", "analysis_id"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return probe_id
+
+
+def _mark_fingerprint_from_live(
+    db_path: str, ei_task_id: str, remote_status: str
+) -> None:
+    """Settle a fingerprint job from a confirmed live terminal verdict."""
+    mapped_by_live: dict[str, Literal["succeeded", "failed", "cancelled"]] = {
+        "SUCCEEDED": "succeeded",
+        "FAILED": "failed",
+        "CANCELLED": "cancelled",
+    }
+    mapped = mapped_by_live.get(remote_status)
+    if mapped is None or not ei_task_id:
+        return
+    try:
+        mark_job_terminal(db_path, ei_task_id, mapped)
+    except (sqlite3.Error, OSError, ValueError):
+        logger.warning(
+            "reconcile: failed to mark fingerprint job terminal"
+        )
+
+
 async def reconcile_task(task_id: str) -> dict[str, Any]:
     """Return one task's locally recorded + live-bridged status.
 
@@ -304,6 +334,11 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
         analysis_id=str(row["analysis_id"] or ""),
         output_dir=str(result["output_dir"] or ""),
         remote_status=cleaned.upper(),
+    )
+    _mark_fingerprint_from_live(
+        manager.db_path,
+        _fingerprint_ei_id(row, probe_id),
+        cleaned.upper(),
     )
     return await _ensure_report_agent_final_report(
         manager,
