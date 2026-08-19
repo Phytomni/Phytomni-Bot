@@ -42,7 +42,7 @@ package version remains `0.1.3` until the release bump.
 - **Run cancel** — `POST /v1/runs/{id}/cancel` cancels every
   owner-scoped agent. After a Research child is sent, cancel detaches
   that child and terminates last-claim EI jobs instead of returning
-  409.
+  409\.
 - **Compute tiers** — `AnalystConfig.RESOURCE` medium is now 4C/16G
   (was 8G). Submit sites resolve `small` / `medium` / `large` through
   `resolve_compute_resource`; InSilicoResearch defaults to `medium`.

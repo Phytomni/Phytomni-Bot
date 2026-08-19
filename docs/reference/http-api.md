@@ -1699,10 +1699,10 @@ from the wrapper
   true when the run settled `failed` or `cancelled` (client disconnect
   or owner Stop before `RunFinished`, or an observed mid-stream
   `RunError`). A client disconnect before `RunFinished` settles failed
-  without attempting to write a synthetic frame. Owner `POST
-  /v1/runs/{id}/cancel` settles `cancelled` and keeps the accumulated
-  text as a draft. Cancellation after `RunFinished` preserves the
-  succeeded settlement.
+  without attempting to write a synthetic frame. Owner
+  `POST /v1/runs/{id}/cancel` settles `cancelled` and keeps the
+  accumulated text as a draft. Cancellation after `RunFinished`
+  preserves the succeeded settlement.
   The client cancellation contract is also enforced for A2UI pause streams.
 - **ChatAgent A2UI short-circuit** (`phyto-chat`, heuristic match): when
   `select_chat_a2ui_widget(user_query)` returns
