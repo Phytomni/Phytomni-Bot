@@ -487,10 +487,10 @@ async def test_dispatch_coordinator_receives_effective_poll_id(
     download.assert_awaited_once()
 
 
-async def test_default_analyst_adapter_still_polls(
+async def test_default_analyst_adapter_submit_return(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The standalone adapter default keeps its historical polling mode."""
+    """The standalone adapter default is submit-return (GetRun waits)."""
     captured: list[bool] = []
 
     async def prepare_context(*_args: Any) -> SimpleNamespace:
@@ -515,7 +515,7 @@ async def test_default_analyst_adapter_still_polls(
         analyst_dispatch_adapters, "_reuse_prior_dispatch", no_reuse
     )
 
-    def capture_input(payload: Any, *, is_polling: bool = True) -> dict:
+    def capture_input(payload: Any, *, is_polling: bool = False) -> dict:
         """Record the adapter's default polling argument."""
         del payload
         captured.append(is_polling)
@@ -554,7 +554,7 @@ async def test_default_analyst_adapter_still_polls(
         },
     )
 
-    assert captured == [True]
+    assert captured == [False]
 
 
 async def test_prepare_tasks_includes_protein_structure() -> None:

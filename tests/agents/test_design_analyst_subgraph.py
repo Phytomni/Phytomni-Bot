@@ -108,8 +108,8 @@ async def test_dispatch_uses_subgraph_submit(
     )
 
     assert_branch_taken(result, legacy_mock, subgraph_mock, subgraph=True)
-    # Design preserves its current fire-and-poll-elsewhere semantics:
-    # must override the producer-side default of True.
+    # Design keeps fire-and-poll-elsewhere semantics: the helper is
+    # called with is_polling=False (the submit-return default).
     call_args = subgraph_mock.await_args
     assert call_args is not None
     assert call_args.kwargs["is_polling"] is False

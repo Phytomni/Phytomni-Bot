@@ -105,8 +105,8 @@ async def test_submit_task_uses_subgraph(
     assert request.data_list == {"sample_a.tsv": "expression matrix"}
     assert request.output_dir == "/tmp/research-out"
     assert request.compute_resource == "medium"
-    # Research preserves its current fire-and-poll-elsewhere
-    # semantics: must override the producer-side default of True.
+    # Research keeps fire-and-poll-elsewhere semantics: the helper
+    # is called with is_polling=False (the submit-return default).
     assert call_args.kwargs["is_polling"] is False
 
 
