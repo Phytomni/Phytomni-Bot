@@ -150,7 +150,11 @@ def _network_submission_outcome(
     """Classify the one Network submission represented by a result."""
     accepted: list[AcceptedSubmission] = []
     task = result.get("network_task")
-    if isinstance(task, Mapping):
+    doomed = isinstance(task, Mapping) and (
+        task.get("accepted") is False
+        or isinstance(task.get("_submission_rejected"), Mapping)
+    )
+    if isinstance(task, Mapping) and not doomed:
         task_id = task.get("task_id")
         if isinstance(task_id, str) and task_id.strip():
             accepted.append(accepted_submission(task))

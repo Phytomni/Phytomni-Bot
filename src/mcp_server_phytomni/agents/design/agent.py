@@ -253,6 +253,10 @@ def _design_submission_outcome(
         for item in task_results:
             if not isinstance(item, Mapping):
                 continue
+            if item.get("accepted") is False:
+                continue
+            if isinstance(item.get("_submission_rejected"), Mapping):
+                continue
             task_id = item.get("task_id")
             if isinstance(task_id, str) and task_id.strip():
                 accepted.append(

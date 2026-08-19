@@ -308,6 +308,8 @@ def _doomed_child_rows(
                 "error_code": _bounded_error_code(error_code),
             }
         )
+    if rows:
+        return tuple(rows)
     for index, item in enumerate(_rejection_records(result)):
         code = item.get("code")
         goal = item.get("goal")

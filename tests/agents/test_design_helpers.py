@@ -27,7 +27,9 @@ from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.agents.design.agent import (
     DigitalDesignAgents,
     DigitalDesignConfig,
+    _design_submission_outcome,
     _DispatchOptions,
+    _project_design_submission_updates,
 )
 from mcp_server_phytomni.agents.shared.remote_analysis import (
     RemoteAnalysisRequest,
@@ -229,6 +231,73 @@ async def test_arun_rejects_when_all_design_submissions_fail(
                 "phytomni_state": {
                     "submission_rejections": [
                         {"goal": "AT1G01010", "code": "upstream_timeout"}
+                    ]
+                },
+            }
+        ),
+    )
+
+    with pytest.raises(
+        RemoteAnalysisSubmissionError,
+        match="no remote task was accepted",
+    ):
+        await agent.arun("ath", "AT1G01010")
+
+
+def test_design_outcome_skips_projector_doomed_task_ids() -> None:
+    """Synthetic rejected-* ids must not count as accepted submissions."""
+    updates = _project_design_submission_updates(
+        {
+            "design_task_result": [
+                {
+                    "analysis_type": "protein_design_analysis",
+                    "_submission_rejected": {
+                        "goal": "AT1G01010",
+                        "code": "upstream_rejected",
+                    },
+                }
+            ]
+        }
+    )
+    outcome = _design_submission_outcome(
+        {
+            **updates,
+            "phytomni_state": {
+                "submission_rejections": updates.get("submission_rejections")
+            },
+        }
+    )
+    assert outcome.kind == "rejected"
+    assert outcome.task_ids == ()
+    doomed = updates["design_task_result"][0]
+    assert doomed["accepted"] is False
+    assert str(doomed["task_id"]).startswith("rejected-")
+
+
+async def test_arun_rejects_projector_doomed_task_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Native MCP must still raise when only unpollable rejected ids exist."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        design_agent_module,
+        "run_analysis_graph",
+        AsyncMock(
+            return_value={
+                "design_task_result": [
+                    {
+                        "task_id": "rejected-protein_design_analysis",
+                        "accepted": False,
+                        "status": "failed",
+                        "analysis_type": "protein_design_analysis",
+                        "error_code": "upstream_rejected",
+                    }
+                ],
+                "error": None,
+                "failures": [],
+                "phytomni_state": {
+                    "submission_rejections": [
+                        {"goal": "AT1G01010", "code": "upstream_rejected"}
                     ]
                 },
             }

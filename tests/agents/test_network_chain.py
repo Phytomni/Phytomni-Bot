@@ -31,6 +31,8 @@ from mcp_server_phytomni.agents.network import chain
 from mcp_server_phytomni.agents.network.agent import (
     GeneNetworkAgents,
     GeneNetworkConfig,
+    _network_submission_outcome,
+    _project_network_submission_update,
 )
 from mcp_server_phytomni.agents.shared.remote_analysis import (
     RemoteAnalysisSubmissionError,
@@ -536,6 +538,72 @@ async def test_network_arun_rejects_blank_id_in_final_result(
             return_value={
                 "network_task": {"task_id": "   "},
                 "phytomni_state": {},
+            }
+        ),
+    )
+
+    with pytest.raises(
+        RemoteAnalysisSubmissionError,
+        match="no remote task was accepted",
+    ):
+        await agent.arun("osa", "TO:0000207")
+
+
+def test_network_outcome_skips_projector_doomed_task_ids() -> None:
+    """Synthetic rejected-* network ids must not count as accepted."""
+    updates = _project_network_submission_update(
+        {
+            "network_task": {
+                "analysis_type": "gene_network_analysis",
+                "_submission_rejected": {
+                    "goal": "TO:0000207",
+                    "code": "upstream_rejected",
+                },
+            }
+        }
+    )
+    outcome = _network_submission_outcome(
+        {
+            **updates,
+            "phytomni_state": {
+                "submission_rejections": updates.get("submission_rejections")
+            },
+        }
+    )
+    assert outcome.kind == "rejected"
+    assert outcome.task_ids == ()
+    doomed = updates["network_task"]
+    assert doomed["accepted"] is False
+    assert str(doomed["task_id"]).startswith("rejected-")
+
+
+async def test_network_arun_rejects_projector_doomed_task_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Native MCP must not return unpollable rejected-* as accepted ids."""
+    analyst_stub = SimpleNamespace(identifier=lambda: "stub-analyst")
+    agent = GeneNetworkAgents(
+        gene_network_config=GeneNetworkConfig(),
+        sensitive_config=SensitiveConfig.load(),
+        analyst_agent=cast(AnalystAgent, analyst_stub),
+    )
+    monkeypatch.setattr(
+        network_agent,
+        "run_analysis_graph",
+        AsyncMock(
+            return_value={
+                "network_task": {
+                    "task_id": "rejected-gene_network_analysis",
+                    "accepted": False,
+                    "status": "failed",
+                    "analysis_type": "gene_network_analysis",
+                    "error_code": "upstream_rejected",
+                },
+                "phytomni_state": {
+                    "submission_rejections": [
+                        {"goal": "TO:0000207", "code": "upstream_rejected"}
+                    ]
+                },
             }
         ),
     )

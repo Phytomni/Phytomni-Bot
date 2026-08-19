@@ -415,6 +415,55 @@ def test_reserved_submissions_include_kind_and_error_code(
     assert stored.task_ids == ("design-protein",)
 
 
+def test_one_rejection_records_one_doomed_child(
+    tasks_db_path: str,
+) -> None:
+    """Nested doomed rows must not be duplicated from submission_rejections."""
+    registry = RunRegistry(tasks_db_path)
+    registry.reserve_run(
+        RunSpec(
+            run_id="run-one-doomed",
+            user_id="alice",
+            agent="design",
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id="req-one-doomed"),
+        result=empty_execution_projection(),
+    )
+    with request_context("alice", "req-one-doomed", "run-one-doomed"):
+        record_submitted_task(
+            {
+                "design_task_result": [
+                    {
+                        "task_id": "rejected-protein_structure_analysis",
+                        "accepted": False,
+                        "status": "failed",
+                        "analysis_type": "protein_structure_analysis",
+                        "error_code": "input_rejected",
+                    }
+                ],
+                "phytomni_state": {
+                    "submission_rejections": [
+                        {"goal": "AT1G01010", "code": "input_rejected"}
+                    ]
+                },
+            },
+            agent="design",
+        )
+
+    stored = registry.get_run("run-one-doomed", owner="alice")
+    assert stored is not None
+    result = stored.result
+    assert result is not None
+    tasks = result["execution"]["tasks"]
+    assert len(tasks) == 1
+    assert tasks[0]["id"] == "rejected-protein_structure_analysis"
+    assert tasks[0]["accepted"] is False
+    assert tasks[0]["kind"] == "protein_structure_analysis"
+    assert tasks[0]["error_code"] == "input_rejected"
+    assert stored.task_ids == ()
+
+
 def test_running_result_update_then_canonicalize_keeps_kind(
     tasks_db_path: str,
 ) -> None:
