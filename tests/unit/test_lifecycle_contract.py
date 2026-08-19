@@ -905,7 +905,9 @@ def test_canonical_execution_tasks_keep_kind_and_error_code() -> None:
                             "status": "failed",
                             "kind": "promoter_analysis",
                             "error_code": "input_rejected",
-                            "error_detail": "Traceback (most recent call last)",
+                            "error_detail": (
+                                "Traceback (most recent call last)"
+                            ),
                         },
                     ]
                 }

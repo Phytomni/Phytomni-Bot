@@ -88,7 +88,7 @@ async def test_failure_state_writes_both_error_and_failures() -> None:
 
 @pytest.mark.asyncio
 async def test_capture_analysis_result_stamps_analysis_type() -> None:
-    """Design/Network capture copies the producer analysis_type onto the child."""
+    """Copy producer analysis_type onto Design/Network capture children."""
 
     async def submit() -> dict[str, Any]:
         return {"task_id": "child-1", "output_dir": "/obs/out"}
