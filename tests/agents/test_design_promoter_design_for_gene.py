@@ -80,4 +80,4 @@ async def test_request_shape_targets_promoter_analysis(
     assert request.meta == "prompt-stub"
     assert request.data_list == {"obs://data/promoter-input": "fixture"}
     assert request.compute_resource == "small"
-    assert request_kwargs["is_polling"] is True
+    assert request_kwargs["is_polling"] is False

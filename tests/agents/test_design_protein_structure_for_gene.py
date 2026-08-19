@@ -83,7 +83,7 @@ async def test_request_shape_targets_protein_structure_analysis(
     assert request.meta == "prompt-stub"
     assert request.data_list == {"obs://data/structure-input": "fixture"}
     assert request.compute_resource == "medium"
-    assert request_kwargs["is_polling"] is True
+    assert request_kwargs["is_polling"] is False
 
 
 async def test_resolves_real_structure_data_list_for_real_species(

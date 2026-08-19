@@ -167,11 +167,10 @@ async def test_via_subgraph_invokes_app_ainvoke_with_input() -> None:
     assert analyst_input["data_list"] == {"sample_a.tsv": "expression matrix"}
     assert analyst_input["compute_resource"] == "medium"
     assert analyst_input["is_preset_plan"] is True
-    # The producer-side default is now True (forward-looking for the
-    # deep_genome polling consumer). Existing dispatch consumers must
-    # pass is_polling=False explicitly — that branch is exercised by
-    # test_dispatch_uses_subgraph_submit_when_flag_on above.
-    assert analyst_input["is_polling"] is True
+    # The producer-side default is False so chat/HTTP callers submit
+    # and let GetRun wait. Callers that opt in pass is_polling=True
+    # — that branch is exercised by explicit True-polling tests.
+    assert analyst_input["is_polling"] is False
     assert analyst_input["is_auto_select"] is False
 
 
