@@ -457,7 +457,7 @@ async def test_get_run_logs_cache_reuse(
     )
     manager.set_task_log(
         "task-cached",
-        {"formatted": {"answer": "cached"}, "raw": {"internal": "data"}},
+        {"logs": [{"content": "cached line\n"}]},
     )
 
     remote_calls = []
@@ -465,10 +465,10 @@ async def test_get_run_logs_cache_reuse(
     async def fake_remote(task_id: str, **_: Any) -> dict[str, Any]:
         """Track remote calls (should not happen for cached logs)."""
         remote_calls.append(task_id)
-        return {"formatted": {"answer": "fresh"}, "raw": {}}
+        return {"logs": [{"content": "fresh line\n"}]}
 
     monkeypatch.setattr(
-        "mcp_server_phytomni.agents.analyst.task_ops.task_log",
+        "mcp_server_phytomni.runtime.task_reconcile.task_log",
         fake_remote,
     )
 
