@@ -22,6 +22,7 @@ from unittest.mock import Mock
 import pytest
 from tests.support.sqlite import closed_sqlite_connection
 
+from mcp_server_phytomni.api.lifecycle_contract import canonicalize_run_record
 from mcp_server_phytomni.mcp.handlers import (
     handle_analyst_agent,
     handle_deep_genome_agent,
@@ -412,6 +413,71 @@ def test_reserved_submissions_include_kind_and_error_code(
     assert tasks[1]["error_code"] == "input_rejected"
     assert "Traceback" not in json.dumps(result)
     assert stored.task_ids == ("design-protein",)
+
+
+def test_running_result_update_then_canonicalize_keeps_kind(
+    tasks_db_path: str,
+) -> None:
+    """GetRun still has five-key rows after a formatted worker update."""
+    registry = RunRegistry(tasks_db_path)
+    registry.reserve_run(
+        RunSpec(
+            run_id="run-kind-update",
+            user_id="alice",
+            agent="design",
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id="req-kind-update"),
+        result=empty_execution_projection(),
+    )
+    envelope = {
+        "design_task_result": [
+            {
+                "task_id": "design-protein",
+                "output_dir": "/safe/protein",
+                "analysis_type": "protein_structure_analysis",
+            },
+            {
+                "task_id": "design-promoter",
+                "output_dir": "/safe/promoter",
+                "analysis_type": "promoter_analysis",
+                "accepted": False,
+                "status": "failed",
+                "error_code": "input_rejected",
+            },
+        ]
+    }
+    with request_context("alice", "req-kind-update", "run-kind-update"):
+        record_submitted_task(envelope, agent="design")
+
+    thin = empty_execution_projection()
+    thin["execution"]["tasks"] = [{"id": "design-protein", "accepted": True}]
+    assert registry.update_running_result(
+        "run-kind-update",
+        owner="alice",
+        result=thin,
+    )
+    stored = registry.get_run("run-kind-update", owner="alice")
+    assert stored is not None
+    canonical = canonicalize_run_record(
+        {
+            "run_id": "run-kind-update",
+            "agent": "design",
+            "status": stored.status,
+            "task_ids": list(stored.task_ids),
+            "result": stored.result,
+        }
+    )
+    tasks = canonical["result"]["execution"]["tasks"]
+    assert tasks[0]["id"] == "design-protein"
+    assert tasks[0]["accepted"] is True
+    assert tasks[0]["kind"] == "protein_structure_analysis"
+    assert tasks[0]["error_code"] is None
+    assert tasks[1]["id"] == "design-promoter"
+    assert tasks[1]["accepted"] is False
+    assert tasks[1]["status"] == "failed"
+    assert tasks[1]["kind"] == "promoter_analysis"
+    assert tasks[1]["error_code"] == "input_rejected"
 
 
 def test_recorder_rejects_reserved_run_agent_mismatch(

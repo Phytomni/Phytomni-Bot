@@ -42,7 +42,10 @@ from tests.support.resumable_asset_fakes import (
 from mcp_server_phytomni import server
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
-from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
+from mcp_server_phytomni.api.lifecycle_contract import (
+    canonicalize_run_record,
+    empty_agent_result,
+)
 from mcp_server_phytomni.mcp.result_formatting import FormattedToolResult
 from mcp_server_phytomni.mcp.schemas import (
     AGENT_TOOL_DEFINITIONS,
@@ -54,6 +57,7 @@ from mcp_server_phytomni.runtime import (
 from mcp_server_phytomni.runtime.background_submission import (
     BackgroundSubmissionLaunchError,
 )
+from mcp_server_phytomni.runtime.live_tasks import is_live_running
 from mcp_server_phytomni.runtime.run_registry import (
     RunRegistry,
 )
@@ -520,8 +524,16 @@ _DESIGN_CASE = _RemoteCase(
     tool_name=server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
     stub_return={
         "design_task_result": [
-            {"task_id": "T-D1", "output_dir": "/obs/d1"},
-            {"task_id": "T-D2", "output_dir": "/obs/d2"},
+            {
+                "task_id": "T-D1",
+                "output_dir": "/obs/d1",
+                "analysis_type": "protein_structure_analysis",
+            },
+            {
+                "task_id": "T-D2",
+                "output_dir": "/obs/d2",
+                "analysis_type": "promoter_analysis",
+            },
         ]
     },
     arguments={
@@ -646,6 +658,65 @@ async def test_background_agent_returns_reserved_run_before_handler_finishes(
     assert record.spec.run_id == body["run_id"]
     assert record.spec.agent == case.slug
     assert record.status == "running"
+
+
+async def test_background_design_getrun_keeps_kind_after_worker(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """After the worker's formatted update, GetRun still has five-key rows."""
+    case = _DESIGN_CASE
+
+    async def handler(_args: Any) -> dict[str, Any]:
+        return case.stub_return
+
+    install_tool_handler(
+        monkeypatch,
+        case.tool_name,
+        records_submission(case.slug)(handler),
+    )
+    response = await api_client.post(
+        f"/v1/agents/{case.slug}/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={"arguments": case.arguments},
+    )
+    assert response.status_code == 202
+    run_id = response.json()["run_id"]
+    registry = RunRegistry(tasks_db_path)
+    for _ in range(200):
+        record = registry.get_run(run_id, owner="u1")
+        if (
+            record is not None
+            and set(record.task_ids) == case.expected_task_ids
+            and not is_live_running(run_id)
+        ):
+            break
+        await asyncio.sleep(0)
+    else:
+        pytest.fail("background worker did not finish with children")
+
+    assert record is not None
+    canonical = canonicalize_run_record(
+        {
+            "run_id": run_id,
+            "agent": "design",
+            "status": record.status,
+            "task_ids": list(record.task_ids),
+            "result": record.result,
+        }
+    )
+    kinds = [
+        task.get("kind") for task in canonical["result"]["execution"]["tasks"]
+    ]
+    assert "protein_structure_analysis" in kinds
+    assert "promoter_analysis" in kinds
+    for task in canonical["result"]["execution"]["tasks"]:
+        assert "error_code" in task
+        assert "id" in task
+        assert "accepted" in task
+        assert "status" in task
 
 
 @pytest.mark.parametrize("case", _REMOTE_CASES)

@@ -22,6 +22,7 @@ from .live_tasks import (
 from .request_context import request_context
 from .result_run_layout import RESULT_DELIVERY_AGENTS
 from .run_registry import RunRegistry, RunRequestInfo, RunSpec
+from .run_registry_delivery import carry_execution_tasks
 
 _LOGGER = logging.getLogger(__name__)
 _RUN_ID_ATTEMPTS = 3
@@ -225,26 +226,28 @@ async def _run_background_submission(
                 raise BackgroundSubmissionExecutionError(
                     "no accepted child tasks"
                 )
+            registry = RunRegistry(db_path)
+            current = registry.get_run(
+                reservation.run_id,
+                owner=reservation.owner,
+            )
+            projection = outcome.result or empty_execution_projection()
+            if current is not None:
+                projection = carry_execution_tasks(current.result, projection)
             if not outcome.accepted_task_ids:
                 _settle_failed(
                     db_path,
                     reservation,
                     error="background_submission_children_failed",
-                    result=outcome.result or empty_execution_projection(),
+                    result=projection,
                 )
                 return
-            projection = outcome.result or empty_execution_projection()
             execution = projection.get("execution")
             if not isinstance(execution, dict):
                 execution = {}
                 projection["execution"] = execution
             if execution.get("warnings"):
                 execution["tracking"] = {"degraded": True}
-            registry = RunRegistry(db_path)
-            current = registry.get_run(
-                reservation.run_id,
-                owner=reservation.owner,
-            )
             if current is not None and current.status in (
                 _TERMINAL_WORKER_STATUSES
             ):

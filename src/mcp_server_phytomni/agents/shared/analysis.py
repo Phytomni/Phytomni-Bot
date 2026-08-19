@@ -30,7 +30,10 @@ from ...runtime.langgraph_runner import (
     ainvoke_graph,
     capture_workflow_boundary,
 )
-from ...runtime.request_context import bind_accepted_task_ids
+from ...runtime.request_context import (
+    bind_accepted_task_ids,
+    current_run_id,
+)
 from ...runtime.result_run_layout import (
     result_child_output_dir,
     result_run_root_from_child,
@@ -106,7 +109,9 @@ def finalize_analysis_submission(
     pending: bool = False,
 ) -> dict[str, Any]:
     """Project a typed Analyst outcome onto the public agent result."""
-    if outcome.kind == "rejected" or pending:
+    if pending:
+        raise RemoteAnalysisSubmissionError("no remote task was accepted")
+    if outcome.kind == "rejected" and current_run_id() is None:
         raise RemoteAnalysisSubmissionError("no remote task was accepted")
     bind_accepted_task_ids(outcome.task_ids)
     return {
@@ -395,6 +400,13 @@ async def capture_analysis_result(
             State updates containing merged task ids and result payloads.
         """
         task_result = await submit_call()
+        if isinstance(task_result, dict) and analysis_type:
+            task_result = {
+                **task_result,
+                "analysis_type": (
+                    task_result.get("analysis_type") or analysis_type
+                ),
+            }
         existing_task_ids = dict(state.get("task_ids", {}))
         task_id = task_result.get("task_id")
         if task_id is not None:

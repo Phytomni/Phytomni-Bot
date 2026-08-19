@@ -183,6 +183,15 @@ def map_analyst_output_to_dispatch_state(
     }
 
 
+def _stamp_analysis_type(
+    result: dict[str, Any], analysis_type: str
+) -> dict[str, Any]:
+    """Copy the producer analysis_type onto one Analyst submit dict."""
+    if not analysis_type or result.get("analysis_type"):
+        return result
+    return {**result, "analysis_type": analysis_type}
+
+
 async def submit_analyst_via_subgraph(
     analyst_agent: Any,
     config: Any,
@@ -258,7 +267,7 @@ async def submit_analyst_via_subgraph(
                 fingerprint,
                 source_task_id=reused["source_task_id"],
             )
-            return reused
+            return _stamp_analysis_type(reused, context.analysis_type)
     enriched_request = {
         **request,
         "output_dir": context.output_dir,
@@ -276,7 +285,10 @@ async def submit_analyst_via_subgraph(
     final_state = await analyst_agent.app.ainvoke(
         analyst_input, config=runnable_config
     )
-    result = map_analyst_output_to_dispatch_state(final_state)
+    result = _stamp_analysis_type(
+        map_analyst_output_to_dispatch_state(final_state),
+        context.analysis_type,
+    )
     await _persist_subgraph_fingerprint(result, fingerprint, is_polling)
     logger.info(
         "%s task completed via subgraph (task_id: %s)",

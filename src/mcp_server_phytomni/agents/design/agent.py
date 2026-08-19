@@ -217,6 +217,24 @@ def _project_design_submission_updates(
             code = rejected.get("code")
             if isinstance(goal, str) and isinstance(code, str):
                 rejections.append({"goal": goal, "code": code})
+            kind = item.get("analysis_type") or item.get("kind")
+            task_id = item.get("task_id")
+            if not isinstance(task_id, str) or not task_id:
+                task_id = (
+                    f"rejected-{kind}"
+                    if isinstance(kind, str) and kind
+                    else None
+                )
+            if isinstance(task_id, str) and task_id:
+                accepted_results.append(
+                    {
+                        "task_id": task_id,
+                        "accepted": False,
+                        "status": "failed",
+                        "analysis_type": kind,
+                        "error_code": code,
+                    }
+                )
             continue
         accepted_results.append(dict(item))
     updates["design_task_result"] = accepted_results

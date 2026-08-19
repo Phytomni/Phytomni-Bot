@@ -16,6 +16,7 @@ from typing import Any, NoReturn
 
 import pytest
 
+from mcp_server_phytomni.api.lifecycle_contract import canonicalize_run_record
 from mcp_server_phytomni.runtime import background_submission
 from mcp_server_phytomni.runtime.background_submission import (
     BackgroundSubmissionLaunchError,
@@ -366,6 +367,105 @@ async def test_worker_with_only_failed_children_settles_failed(
     assert (
         record.result["execution"]["tasks"] == projection["execution"]["tasks"]
     )
+
+
+@pytest.mark.asyncio
+async def test_worker_update_after_record_keeps_kind_on_getrun(
+    tmp_path: Path,
+) -> None:
+    """A thin formatted envelope must not wipe recorder kinds after submit."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="design",
+        owner="alice",
+        request_info=RunRequestInfo(
+            request_id="req-kind-merge", locale="en-US"
+        ),
+        db_path=db_path,
+    )
+    recorded = empty_execution_projection()
+    recorded["execution"]["tasks"] = [
+        {
+            "id": "design-protein",
+            "accepted": True,
+            "status": "submitted",
+            "kind": "protein_structure_analysis",
+            "error_code": None,
+        },
+        {
+            "id": "design-promoter",
+            "accepted": False,
+            "status": "failed",
+            "kind": "promoter_analysis",
+            "error_code": "input_rejected",
+        },
+    ]
+    thin = empty_execution_projection()
+    thin["execution"]["tasks"] = [{"id": "design-protein", "accepted": True}]
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        now = datetime.now(UTC).isoformat()
+        assert RunRegistry(db_path).record_reserved_submissions(
+            reservation.run_id,
+            owner="alice",
+            agent="design",
+            submissions=(
+                Submission(
+                    task_id="design-protein",
+                    status="submitted",
+                    output_dir="tenant/out",
+                    run_context=RunContext(
+                        run_id=reservation.run_id,
+                        user_id="alice",
+                        agent="design",
+                        origin="remote",
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                ),
+            ),
+            result=recorded,
+            now=now,
+        )
+        return BackgroundSubmissionOutcome(
+            accepted_task_ids=("design-protein",),
+            failed_task_ids=("design-promoter",),
+            result=thin,
+        )
+
+    launch_background_submission(reservation, operation, db_path=db_path)
+    await _wait_until(
+        lambda: (
+            (
+                record := RunRegistry(db_path).get_run(
+                    reservation.run_id, owner="alice"
+                )
+            )
+            is not None
+            and record.result is not None
+            and any(
+                task.get("kind") == "protein_structure_analysis"
+                for task in record.result.get("execution", {}).get("tasks", [])
+            )
+            and not is_live_running(reservation.run_id)
+        )
+    )
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    canonical = canonicalize_run_record(
+        {
+            "run_id": reservation.run_id,
+            "agent": "design",
+            "status": record.status,
+            "task_ids": list(record.task_ids),
+            "result": record.result,
+        }
+    )
+    tasks = canonical["result"]["execution"]["tasks"]
+    assert tasks[0]["kind"] == "protein_structure_analysis"
+    assert tasks[0]["error_code"] is None
+    assert tasks[1]["kind"] == "promoter_analysis"
+    assert tasks[1]["error_code"] == "input_rejected"
 
 
 @pytest.mark.asyncio

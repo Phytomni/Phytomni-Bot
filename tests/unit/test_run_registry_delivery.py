@@ -635,3 +635,55 @@ def test_update_running_result_keeps_submit_delivery_marker(
     assert delivery["required"] is True
     assert delivery["status"] == "pending"
     assert record.result["execution"]["tasks"][0]["id"] == "task-1"
+
+
+def test_update_running_result_keeps_recorder_task_kinds(
+    tmp_path: Path,
+) -> None:
+    """A formatted envelope must not drop submit-time kind/error_code rows."""
+    db_path = str(tmp_path / "tasks.db")
+    registry = RunRegistry(db_path)
+    reserved = empty_execution_projection(result_archive_required=True)
+    reserved["execution"]["tasks"] = [
+        {
+            "id": "child-accepted",
+            "accepted": True,
+            "status": "submitted",
+            "kind": "protein_structure_analysis",
+            "error_code": None,
+        },
+        {
+            "id": "child-failed",
+            "accepted": False,
+            "status": "failed",
+            "kind": "promoter_analysis",
+            "error_code": "input_rejected",
+        },
+    ]
+    registry.reserve_run(
+        RunSpec(
+            run_id="run-keep-kinds",
+            user_id="alice",
+            agent="design",
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id="req-keep-kinds"),
+        result=reserved,
+    )
+    incoming = empty_execution_projection()
+    incoming["execution"]["tasks"] = [
+        {"id": "child-accepted", "accepted": True}
+    ]
+    incoming["execution"]["delivery"] = None
+
+    assert registry.update_running_result(
+        "run-keep-kinds",
+        owner="alice",
+        result=incoming,
+    )
+    record = registry.get_run("run-keep-kinds", owner="alice")
+    assert record is not None
+    assert record.result is not None
+    assert (
+        record.result["execution"]["tasks"] == reserved["execution"]["tasks"]
+    )

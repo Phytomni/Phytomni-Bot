@@ -87,6 +87,26 @@ async def test_failure_state_writes_both_error_and_failures() -> None:
 
 
 @pytest.mark.asyncio
+async def test_capture_analysis_result_stamps_analysis_type() -> None:
+    """Design/Network capture copies the producer analysis_type onto the child."""
+
+    async def submit() -> dict[str, Any]:
+        return {"task_id": "child-1", "output_dir": "/obs/out"}
+
+    result = await capture_analysis_result(
+        {"task_ids": {}},
+        "protein_structure_analysis",
+        submit,
+        AnalysisCaptureSpec(result_list_key="design_task_result"),
+    )
+
+    assert result["design_task_result"][0]["analysis_type"] == (
+        "protein_structure_analysis"
+    )
+    assert result["design_task_result"][0]["task_id"] == "child-1"
+
+
+@pytest.mark.asyncio
 async def test_capture_analysis_result_failure_path_writes_record() -> None:
     """The production ``capture_analysis_result`` closure (not a
     hand-rolled facsimile) records ``error`` and a single FailureRecord

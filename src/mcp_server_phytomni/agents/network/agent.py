@@ -123,7 +123,22 @@ def _project_network_submission_update(
         return updates
     goal = rejected.get("goal")
     code = rejected.get("code")
-    updates["network_task"] = {}
+    kind = result.get("analysis_type") or result.get("kind")
+    task_id = result.get("task_id")
+    if not isinstance(task_id, str) or not task_id:
+        task_id = (
+            f"rejected-{kind}" if isinstance(kind, str) and kind else None
+        )
+    if isinstance(task_id, str) and task_id:
+        updates["network_task"] = {
+            "task_id": task_id,
+            "accepted": False,
+            "status": "failed",
+            "analysis_type": kind,
+            "error_code": code,
+        }
+    else:
+        updates["network_task"] = {}
     if isinstance(goal, str) and isinstance(code, str):
         updates["submission_rejections"] = [{"goal": goal, "code": code}]
     return updates

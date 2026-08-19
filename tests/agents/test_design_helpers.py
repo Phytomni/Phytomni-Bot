@@ -242,6 +242,40 @@ async def test_arun_rejects_when_all_design_submissions_fail(
         await agent.arun("ath", "AT1G01010")
 
 
+async def test_arun_rejected_returns_when_run_is_reserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reserved umbrella can persist doomed children instead of raising."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        design_agent_module,
+        "run_analysis_graph",
+        AsyncMock(
+            return_value={
+                "design_task_result": [],
+                "error": None,
+                "failures": [],
+                "phytomni_state": {
+                    "submission_rejections": [
+                        {
+                            "goal": "protein_structure_analysis",
+                            "code": "input_rejected",
+                        }
+                    ]
+                },
+            }
+        ),
+    )
+
+    with request_context("alice", "req-rejected", "run-reserved"):
+        result = await agent.arun("ath", "AT1G01010")
+        assert current_accepted_task_ids() == ()
+
+    assert result["task_ids"] == []
+    rejections = result["phytomni_state"]["submission_rejections"]
+    assert rejections[0]["code"] == "input_rejected"
+
+
 async def test_arun_rejects_unpersistable_design_a2a_pause(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

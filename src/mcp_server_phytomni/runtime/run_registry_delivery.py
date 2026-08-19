@@ -10,7 +10,7 @@ import asyncio
 import inspect
 import json
 import sqlite3
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -50,6 +50,7 @@ __all__ = [
     "load_private_inventory",
     "mark_degraded_delivery_failure",
     "attach_public_delivery",
+    "carry_execution_tasks",
     "carry_required_delivery",
     "private_delivery_from_result",
     "replace_running_result",
@@ -591,12 +592,71 @@ def replace_running_result(
         return False
     stored = json.loads(row[0]) if row[0] else None
     merged = carry_required_delivery(stored, result)
+    merged = carry_execution_tasks(stored, merged)
     cursor = conn.execute(
         "UPDATE runs SET result_json = ?, updated_at = ? "
         "WHERE run_id = ? AND user_id = ? AND status = 'running'",
         (json.dumps(merged), _now_iso(), run_id, owner),
     )
     return cursor.rowcount == 1
+
+
+def _execution_task_rows(result: object) -> list[dict[str, Any]]:
+    """Return mutable copies of persisted execution.tasks mappings."""
+    if not isinstance(result, Mapping):
+        return []
+    execution = result.get("execution")
+    if not isinstance(execution, Mapping):
+        return []
+    tasks = execution.get("tasks")
+    if not isinstance(tasks, Sequence) or isinstance(tasks, (str, bytes)):
+        return []
+    return [dict(item) for item in tasks if isinstance(item, Mapping)]
+
+
+def carry_execution_tasks(
+    stored_result: object,
+    incoming: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep recorder five-key task rows when a formatted envelope is thinner.
+
+    HTTP background workers replace the reserved projection with
+    ``strip_agent_result`` of a formatted envelope whose ``execution.tasks``
+    are often ``{id, accepted: True}`` rebuilt from ``task_ids``. Submit
+    recording already stamped ``kind`` / ``error_code`` / doomed children;
+    those rows must survive GetRun.
+    """
+    stored_tasks = _execution_task_rows(stored_result)
+    if not stored_tasks:
+        return incoming
+    incoming_tasks = _execution_task_rows(incoming)
+    incoming_by_id: dict[str, Mapping[str, Any]] = {}
+    for item in incoming_tasks:
+        task_id = item.get("id")
+        if isinstance(task_id, str) and task_id:
+            incoming_by_id[task_id] = item
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for stored in stored_tasks:
+        row = dict(stored)
+        task_id = row.get("id")
+        if isinstance(task_id, str) and task_id in incoming_by_id:
+            overlay = incoming_by_id[task_id]
+            status = overlay.get("status")
+            if isinstance(status, str) and status:
+                row["status"] = status
+            seen.add(task_id)
+        merged.append(row)
+    for item in incoming_tasks:
+        task_id = item.get("id")
+        if isinstance(task_id, str) and task_id and task_id not in seen:
+            merged.append(dict(item))
+    updated = dict(incoming)
+    execution = updated.get("execution")
+    next_execution = dict(execution) if isinstance(execution, Mapping) else {}
+    next_execution["tasks"] = merged
+    updated["execution"] = next_execution
+    return updated
 
 
 def carry_required_delivery(

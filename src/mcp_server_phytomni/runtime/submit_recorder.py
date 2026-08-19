@@ -253,8 +253,26 @@ def _is_doomed_mapping(item: Mapping[str, Any]) -> bool:
     """Return whether one nested child is destined to fail locally."""
     if item.get("accepted") is False:
         return True
+    if isinstance(item.get("_submission_rejected"), Mapping):
+        return True
     status = item.get("status")
     return isinstance(status, str) and status.lower() in {"failed", "error"}
+
+
+def _rejection_records(
+    result: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], ...]:
+    """Return safe rejection records from the wrapper or phytomni_state."""
+    records: list[Mapping[str, Any]] = []
+    sources = [result.get("submission_rejections")]
+    state = result.get("phytomni_state")
+    if isinstance(state, Mapping):
+        sources.append(state.get("submission_rejections"))
+    for source in sources:
+        if not isinstance(source, list):
+            continue
+        records.extend(item for item in source if isinstance(item, Mapping))
+    return tuple(records)
 
 
 def _doomed_child_rows(
@@ -262,21 +280,51 @@ def _doomed_child_rows(
 ) -> tuple[dict[str, Any], ...]:
     """Project doomed children into execution.tasks without pollable ids."""
     rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for item in _nested_submission_items(result, agent):
         if not _is_doomed_mapping(item):
             continue
         task_id = item.get("task_id")
         if not isinstance(task_id, str) or not task_id:
             task_id = item.get("id")
+        rejected = item.get("_submission_rejected")
+        error_code = item.get("error_code")
+        if isinstance(rejected, Mapping):
+            nested_code = rejected.get("code")
+            if error_code is None:
+                error_code = nested_code
         if not isinstance(task_id, str) or not task_id:
+            kind = _kind_from_item(item, fallback=agent)
+            task_id = f"rejected-{kind}"
+        if task_id in seen:
             continue
+        seen.add(task_id)
         rows.append(
             {
                 "id": task_id,
                 "accepted": False,
                 "status": "failed",
                 "kind": _kind_from_item(item, fallback=agent),
-                "error_code": _bounded_error_code(item.get("error_code")),
+                "error_code": _bounded_error_code(error_code),
+            }
+        )
+    for index, item in enumerate(_rejection_records(result)):
+        code = item.get("code")
+        goal = item.get("goal")
+        kind = _bounded_kind(goal, fallback=agent)
+        task_id = item.get("task_id")
+        if not isinstance(task_id, str) or not task_id:
+            task_id = f"rejected-{kind}-{index}"
+        if task_id in seen:
+            continue
+        seen.add(task_id)
+        rows.append(
+            {
+                "id": task_id,
+                "accepted": False,
+                "status": "failed",
+                "kind": kind,
+                "error_code": _bounded_error_code(code),
             }
         )
     return tuple(rows)

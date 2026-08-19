@@ -248,7 +248,9 @@ async def test_via_subgraph_returns_mapped_dispatch_state() -> None:
     )
 
     expected_keys = set(map_analyst_output_to_dispatch_state({}).keys())
+    expected_keys.add("analysis_type")
     assert set(result.keys()) == expected_keys
     assert result["task_id"] == "task-roundtrip"
     assert result["task_status"] == "SUCCEEDED"
+    assert result["analysis_type"] == "protein_design_analysis"
     assert "internal_scratch" not in result
