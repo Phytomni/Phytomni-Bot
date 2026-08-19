@@ -133,9 +133,9 @@ def managed_evidence(
         ("data", "datasets", False),
         ("brief_gene", "documents", False),
         ("deep_genome", "documents", False),
-        ("design", "documents", True),
+        ("design", "documents", False),
         ("design", "datasets", False),
-        ("network", "documents", True),
+        ("network", "documents", False),
         ("network", "datasets", False),
     ],
 )
@@ -794,12 +794,12 @@ def test_unregistered_design_and_network_paths_are_rejected(
     tasks_db_path: str,
     agent: str,
 ) -> None:
-    """Raw paths reach owner validation but remain unregistered."""
+    """Leftover document attachments are unsupported on those slugs."""
     assert_attachment_error(
         UploadRegistry(tasks_db_path),
         agent=agent,
         arguments={"obs_file_list": ["/obs/phytomni/legacy.pdf"]},
-        code="attachment_not_found",
+        code="attachment_not_supported",
     )
 
 
