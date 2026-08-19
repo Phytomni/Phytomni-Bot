@@ -218,6 +218,52 @@ def test_execution_projection_uses_safe_structured_fields() -> None:
     assert "provider_payload" not in dumps(asdict(execution))
 
 
+def test_execution_projection_keeps_kind_and_error_code() -> None:
+    """MCP task descriptors retain bounded kind and error_code."""
+    execution = build_execution_projection(
+        "DigitalDesignAgent",
+        {
+            "execution": {
+                "tasks": [
+                    {
+                        "id": "child-accepted",
+                        "accepted": True,
+                        "status": "submitted",
+                        "kind": "protein_structure_analysis",
+                        "error_code": None,
+                        "provider_payload": "drop",
+                    },
+                    {
+                        "id": "child-failed",
+                        "accepted": False,
+                        "status": "failed",
+                        "kind": "promoter_analysis",
+                        "error_code": "input_rejected",
+                    },
+                ]
+            }
+        },
+    )
+
+    assert execution.tasks == (
+        {
+            "id": "child-accepted",
+            "accepted": True,
+            "status": "submitted",
+            "kind": "protein_structure_analysis",
+            "error_code": None,
+        },
+        {
+            "id": "child-failed",
+            "accepted": False,
+            "status": "failed",
+            "kind": "promoter_analysis",
+            "error_code": "input_rejected",
+        },
+    )
+    assert "provider_payload" not in dumps(asdict(execution))
+
+
 def test_formatter_matrix_rejects_malformed_task_payload() -> None:
     """Malformed task responses stay explicit failures, never false success."""
     result = format_tool_result("AnalystAgent", {"extension_field": 3})

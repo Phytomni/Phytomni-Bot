@@ -954,7 +954,14 @@ def _project_execution(
         ),
         "tasks": _project_record_list(
             execution.get("tasks"),
-            ("id", "accepted", "status", "output_dir"),
+            (
+                "id",
+                "accepted",
+                "status",
+                "kind",
+                "error_code",
+                "output_dir",
+            ),
         ),
         "artifacts": _project_record_list(
             execution.get("artifacts"),

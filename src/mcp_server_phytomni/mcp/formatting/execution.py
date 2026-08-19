@@ -36,7 +36,7 @@ _OPERATIONAL_METADATA_KEYS = frozenset(
         "task_ids",
     }
 )
-_TASK_KEYS = frozenset({"accepted", "id", "status"})
+_TASK_KEYS = frozenset({"accepted", "id", "status", "kind", "error_code"})
 PUBLIC_ARTIFACT_KEYS = (
     "id",
     "role",
@@ -187,6 +187,14 @@ def _safe_tasks(
         }
         if status is not None:
             descriptor["status"] = status
+        if "kind" in item:
+            kind = item.get("kind")
+            descriptor["kind"] = kind if isinstance(kind, str) else ""
+        if "error_code" in item:
+            error_code = item.get("error_code")
+            descriptor["error_code"] = (
+                error_code if isinstance(error_code, str) else None
+            )
         tasks.append(
             {key: descriptor[key] for key in _TASK_KEYS if key in descriptor}
         )

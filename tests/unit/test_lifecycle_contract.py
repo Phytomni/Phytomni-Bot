@@ -880,6 +880,61 @@ def test_persisted_record_projects_required_delivery() -> None:
     assert "private-should-not-leak" not in dumped
 
 
+def test_canonical_execution_tasks_keep_kind_and_error_code() -> None:
+    """GetRun must forward child kind and error_code for Web lifecycle."""
+    projected = canonicalize_run_record(
+        {
+            "run_id": "run-kind",
+            "agent": "design",
+            "status": "running",
+            "task_ids": ["child-accepted"],
+            "result": {
+                "execution": {
+                    "tasks": [
+                        {
+                            "id": "child-accepted",
+                            "accepted": True,
+                            "status": "submitted",
+                            "kind": "protein_structure_analysis",
+                            "error_code": None,
+                            "traceback": "must-not-leak",
+                        },
+                        {
+                            "id": "child-failed",
+                            "accepted": False,
+                            "status": "failed",
+                            "kind": "promoter_analysis",
+                            "error_code": "input_rejected",
+                            "error_detail": "Traceback (most recent call last)",
+                        },
+                    ]
+                }
+            },
+        }
+    )
+
+    assert projected["result"]["execution"]["tasks"] == [
+        {
+            "id": "child-accepted",
+            "accepted": True,
+            "status": "submitted",
+            "kind": "protein_structure_analysis",
+            "error_code": None,
+        },
+        {
+            "id": "child-failed",
+            "accepted": False,
+            "status": "failed",
+            "kind": "promoter_analysis",
+            "error_code": "input_rejected",
+        },
+    ]
+    dumped = str(projected)
+    assert "traceback" not in dumped
+    assert "error_detail" not in dumped
+    assert "Traceback" not in dumped
+
+
 @pytest.mark.parametrize(
     ("options", "message"),
     [
