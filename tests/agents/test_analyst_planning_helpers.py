@@ -14,6 +14,7 @@ arun-returned key of the same name.
 
 from __future__ import annotations
 
+import sqlite3
 from types import SimpleNamespace
 from typing import Any
 
@@ -341,3 +342,26 @@ async def test_dedup_hit_skips_legacy_fingerprint_output_dir(
     assert captured["arun_kwargs"]["goal_description"] == (
         "Shared public catalog query"
     )
+
+
+async def test_submit_keeps_result_when_fingerprint_persist_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A local claim write error must not drop a successful submit."""
+    _patch_prior(monkeypatch, None)
+    _patch_submit_agent_capturing(
+        monkeypatch,
+        {"task_id": "fresh-ok", "output_dir": "/out/fresh"},
+    )
+
+    def boom(*_args: Any, **_kwargs: Any) -> None:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(analyst_planning, "register_submitted_job", boom)
+
+    result = await retrieve_plan_submit(
+        goal_description="E",
+        data_list={},
+    )
+
+    assert result["task_id"] == "fresh-ok"

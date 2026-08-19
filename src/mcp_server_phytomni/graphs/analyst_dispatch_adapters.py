@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import sqlite3
 from collections.abc import Mapping
 from typing import Any
 
@@ -45,6 +46,10 @@ from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
 
 logger = logging.getLogger(__name__)
 _ORPHAN_DELETE_ERRORS: tuple[type[Exception], ...] = (Exception,)
+_FINGERPRINT_PERSIST_ERRORS: tuple[type[Exception], ...] = (
+    sqlite3.Error,
+    OSError,
+)
 
 __all__ = [
     "build_analyst_dispatch_request",
@@ -422,12 +427,15 @@ async def _persist_subgraph_fingerprint(
     if not (isinstance(task_id, str) and task_id and fingerprint is not None):
         return
     output_dir = str(result.get("output_dir") or "")
-    await _record_submitted_fingerprint_job(
-        fingerprint,
-        task_id,
-        output_dir,
-        force_new=force_new,
-    )
+    try:
+        await _record_submitted_fingerprint_job(
+            fingerprint,
+            task_id,
+            output_dir,
+            force_new=force_new,
+        )
+    except _FINGERPRINT_PERSIST_ERRORS:
+        logger.warning("Failed to persist fingerprint job for %s", task_id)
     record_dispatch_submission(task_id, output_dir, fingerprint)
 
 

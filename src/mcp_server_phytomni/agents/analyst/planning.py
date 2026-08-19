@@ -14,6 +14,8 @@ duplicate 30min-3h job collapses into a constant-time reuse hit. The
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 from typing import Any
 
 from ...runtime.fingerprint_jobs import (
@@ -35,6 +37,37 @@ from ..shared.options import resolve_agent_locale
 from .defaults import ANALYST_CONFIG
 from .submission import _build_submit_agent, _shared_arun_kwargs
 from .task_ops import verified_reuse_task_ids
+
+logger = logging.getLogger(__name__)
+_FINGERPRINT_PERSIST_ERRORS: tuple[type[Exception], ...] = (
+    sqlite3.Error,
+    OSError,
+)
+
+
+def _record_submitted_fingerprint_job(
+    fingerprint: str, result: dict[str, Any]
+) -> None:
+    """Best-effort claim write after a successful Analyst submit."""
+    submitted_id = result.get("task_id")
+    if not (isinstance(submitted_id, str) and submitted_id):
+        return
+    try:
+        register_submitted_job(
+            resolve_tasks_db_path(),
+            FingerprintClaim(
+                fingerprint=fingerprint,
+                ei_task_id=submitted_id,
+                output_dir=str(result.get("output_dir") or ""),
+                claimant_task_id=submitted_id,
+                run_id=current_run_id() or submitted_id,
+                user_id=current_request_user() or "anonymous",
+            ),
+        )
+    except _FINGERPRINT_PERSIST_ERRORS:
+        logger.warning(
+            "Failed to persist fingerprint job for %s", submitted_id
+        )
 
 
 async def _reuse_live_prior_task(
@@ -161,17 +194,5 @@ async def retrieve_plan_submit(
     if kwargs.get("meta_meta"):
         result["meta_meta"] = kwargs["meta_meta"]
     result["input_fingerprint"] = fingerprint
-    submitted_id = result.get("task_id")
-    if isinstance(submitted_id, str) and submitted_id:
-        register_submitted_job(
-            resolve_tasks_db_path(),
-            FingerprintClaim(
-                fingerprint=fingerprint,
-                ei_task_id=submitted_id,
-                output_dir=str(result.get("output_dir") or ""),
-                claimant_task_id=submitted_id,
-                run_id=current_run_id() or submitted_id,
-                user_id=current_request_user() or "anonymous",
-            ),
-        )
+    _record_submitted_fingerprint_job(fingerprint, result)
     return result

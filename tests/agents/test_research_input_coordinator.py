@@ -50,6 +50,12 @@ from tests.support.research_fakes import research_callbacks_through
 pytestmark = pytest.mark.agent
 
 
+@pytest.fixture(autouse=True)
+def _isolate_tasks_db(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep fingerprint job writes out of the shared tasks database."""
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
+
+
 def _runtime_resolution() -> dict[str, Any]:
     """Return the durable resolution fields for runtime fixtures."""
     return {

@@ -65,6 +65,9 @@ package version remains `0.1.3` until the release bump.
 
 ### Fixed
 
+- **Fingerprint persist** — A local claim write after a successful
+  Analyst submit is best-effort. A SQLite unique or I/O error no
+  longer marks the Research child `ambiguous`.
 - **Expert structured ids** — After Expert selects DeepGenome, Design,
   or Network, a missing `gene_id` / `to_id` / `species_code` opens the
   native `resolve_gene_id` / `resolve_to_id` seam from the user turn.

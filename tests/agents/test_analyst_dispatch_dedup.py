@@ -22,6 +22,10 @@ import pytest
 from mcp_server_phytomni.agents.analyst import task_ops as analyst_task_ops
 from mcp_server_phytomni.graphs import analyst_dispatch_adapters as ada
 from mcp_server_phytomni.runtime import task_dedup
+from mcp_server_phytomni.runtime.fingerprint_jobs import (
+    FingerprintClaim,
+    register_submitted_job,
+)
 from mcp_server_phytomni.runtime.task_manager import Submission, TaskManager
 
 from ._analyst_fakes import fake_submitting_agent
@@ -93,6 +97,36 @@ async def test_seam_miss_submits_and_writes_fingerprint(
     found = TaskManager(db).get_task_by_fingerprint(_fingerprint())
     assert found is not None
     assert found["task_id"] == "T-new"
+
+
+async def test_seam_unique_job_collision_keeps_submitted_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A local ei_task_id unique collision must not fail the submit."""
+    db = str(tmp_path / "tasks.sqlite")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", db)
+    _patch_context(monkeypatch)
+    register_submitted_job(
+        db,
+        FingerprintClaim(
+            fingerprint="b" * 64,
+            ei_task_id="T-new",
+            output_dir="/obs/other",
+            claimant_task_id="T-new",
+            run_id="other-run",
+            user_id="other",
+        ),
+    )
+
+    result = await ada.submit_analyst_via_subgraph(
+        fake_submitting_agent("T-new"),
+        object(),
+        object(),
+        _request(),
+        is_polling=False,
+    )
+
+    assert result["task_id"] == "T-new"
 
 
 def _seed(db: str, task_id: str, status: str, fingerprint: str) -> None:
