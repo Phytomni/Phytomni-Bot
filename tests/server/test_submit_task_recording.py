@@ -13,6 +13,7 @@ are decorated with their canonical agent slug.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from types import SimpleNamespace
 from typing import Any
@@ -115,7 +116,13 @@ async def test_decorator_records_task_run_and_passes_result_through(
     # /v1/runs/{id} during running sees the same field ownership as terminal.
     expected = empty_execution_projection(result_archive_required=True)
     expected["execution"]["tasks"] = [
-        {"id": "T-1", "accepted": True, "status": "submitted"}
+        {
+            "id": "T-1",
+            "accepted": True,
+            "status": "submitted",
+            "kind": "analyst",
+            "error_code": None,
+        }
     ]
     expected["execution"]["output_dirs"] = ["/obs/run"]
     assert listing[0].result == expected
@@ -317,7 +324,13 @@ def test_recorder_attaches_children_to_reserved_run(
     assert tuple(stored.task_ids) == expected_ids
     assert stored.result is not None
     assert stored.result["execution"]["tasks"] == [
-        {"id": task_id, "accepted": True, "status": "submitted"}
+        {
+            "id": task_id,
+            "accepted": True,
+            "status": "submitted",
+            "kind": agent,
+            "error_code": None,
+        }
         for task_id in expected_ids
     ]
     if agent == "design":
@@ -345,6 +358,60 @@ def test_recorder_attaches_children_to_reserved_run(
         ("run-reserved", "alice", agent)
     }
     assert len(registry.list_runs(owner="alice", limit=10, offset=0)) == 1
+
+
+def test_reserved_submissions_include_kind_and_error_code(
+    tasks_db_path: str,
+) -> None:
+    """A Design envelope stores per-child kind and a bounded error code."""
+    registry = RunRegistry(tasks_db_path)
+    registry.reserve_run(
+        RunSpec(
+            run_id="run-kind",
+            user_id="alice",
+            agent="design",
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id="req-kind"),
+        result=empty_execution_projection(),
+    )
+
+    with request_context("alice", "req-kind", "run-kind"):
+        record_submitted_task(
+            {
+                "design_task_result": [
+                    {
+                        "task_id": "design-protein",
+                        "output_dir": "/safe/protein",
+                        "analysis_type": "protein_structure_analysis",
+                    },
+                    {
+                        "task_id": "design-promoter",
+                        "output_dir": "/safe/promoter",
+                        "analysis_type": "promoter_analysis",
+                        "accepted": False,
+                        "status": "failed",
+                        "error_code": "input_rejected",
+                    },
+                ]
+            },
+            agent="design",
+        )
+
+    stored = registry.get_run("run-kind", owner="alice")
+    assert stored is not None
+    result = stored.result
+    assert result is not None
+    tasks = result["execution"]["tasks"]
+    assert tasks[0]["kind"] == "protein_structure_analysis"
+    assert tasks[0]["accepted"] is True
+    assert tasks[0]["error_code"] is None
+    assert tasks[1]["kind"] == "promoter_analysis"
+    assert tasks[1]["accepted"] is False
+    assert tasks[1]["status"] == "failed"
+    assert tasks[1]["error_code"] == "input_rejected"
+    assert "Traceback" not in json.dumps(result)
+    assert stored.task_ids == ("design-protein",)
 
 
 def test_recorder_rejects_reserved_run_agent_mismatch(

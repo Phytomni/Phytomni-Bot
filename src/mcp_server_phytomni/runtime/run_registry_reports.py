@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import PurePosixPath
@@ -52,6 +53,7 @@ from .terminal_report import (
 )
 
 _SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
+_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -610,6 +612,68 @@ def _terminal_error(
     return f"one or more tasks failed: {', '.join(failed)}"
 
 
+def stored_execution_tasks(
+    result: Mapping[str, Any] | None,
+) -> list[Mapping[str, Any]]:
+    """Return persisted execution.tasks mappings from one run result."""
+    if not isinstance(result, Mapping):
+        return []
+    execution = result.get("execution")
+    if not isinstance(execution, Mapping):
+        return []
+    tasks = execution.get("tasks")
+    if not isinstance(tasks, list):
+        return []
+    return [item for item in tasks if isinstance(item, Mapping)]
+
+
+def annotate_live_with_stored_tasks(
+    live: list[dict[str, Any]],
+    result: Mapping[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Copy kind, error_code, and doomed children onto live task rows."""
+    stored = stored_execution_tasks(result)
+    by_id: dict[str, Mapping[str, Any]] = {}
+    for item in stored:
+        task_id = item.get("id")
+        if isinstance(task_id, str) and task_id:
+            by_id[task_id] = item
+    annotated: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in live:
+        item = dict(row)
+        task_id = item.get("task_id")
+        if isinstance(task_id, str) and task_id in by_id:
+            previous = by_id[task_id]
+            if "kind" not in item and "kind" in previous:
+                item["kind"] = previous.get("kind")
+            if "error_code" not in item and "error_code" in previous:
+                item["error_code"] = previous.get("error_code")
+            if "accepted" not in item and "accepted" in previous:
+                item["accepted"] = previous.get("accepted")
+            seen.add(task_id)
+        annotated.append(item)
+    for previous in stored:
+        task_id = previous.get("id")
+        if not isinstance(task_id, str) or task_id in seen:
+            continue
+        if previous.get("accepted") is False:
+            annotated.append(
+                {
+                    "task_id": task_id,
+                    "status": (
+                        previous["status"]
+                        if isinstance(previous.get("status"), str)
+                        else "failed"
+                    ),
+                    "accepted": False,
+                    "kind": previous.get("kind"),
+                    "error_code": previous.get("error_code"),
+                }
+            )
+    return annotated
+
+
 def _public_task_row(row: Mapping[str, Any]) -> dict[str, Any]:
     """Project one reconciled task into the execution-only task shape."""
     task_id = row.get("task_id")
@@ -622,6 +686,21 @@ def _public_task_row(row: Mapping[str, Any]) -> dict[str, Any]:
     status = row.get("status")
     if isinstance(status, str) and status:
         projected["status"] = status
+    if "kind" in row:
+        kind = row.get("kind")
+        projected["kind"] = (
+            kind
+            if isinstance(kind, str) and _KIND_PATTERN.fullmatch(kind)
+            else ""
+        )
+    if "error_code" in row:
+        error_code = row.get("error_code")
+        projected["error_code"] = (
+            error_code
+            if isinstance(error_code, str)
+            and _KIND_PATTERN.fullmatch(error_code)
+            else None
+        )
     return projected
 
 

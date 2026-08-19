@@ -80,6 +80,7 @@ from .run_registry_protocols import (
 from .run_registry_reports import (
     ReportArtifactSources,
     _ReportSettlementRequest,
+    annotate_live_with_stored_tasks,
     settle_report_terminal,
     stored_submission_warnings,
 )
@@ -793,6 +794,7 @@ class RunRegistry(RunRegistryViewsMixin):
         new_status = _aggregate_status([row["status"] for row in live])
         if new_status not in _TERMINAL_RUN_STATUSES:
             return self._touch_running(current, new_status)
+        live = annotate_live_with_stored_tasks(live, current.result)
         if is_terminal_report_agent(current.spec.agent):
             return await settle_report_terminal(
                 _ReportSettlementRequest(

@@ -319,6 +319,56 @@ async def test_degraded_tracking_fails_with_safe_accepted_projection(
 
 
 @pytest.mark.asyncio
+async def test_worker_with_only_failed_children_settles_failed(
+    tmp_path: Path,
+) -> None:
+    """A destined-to-fail query still leaves a failed child on the umbrella."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="design",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="req-fail", locale="en-US"),
+        db_path=db_path,
+    )
+    projection = empty_execution_projection()
+    projection["execution"]["tasks"] = [
+        {
+            "id": "child-failed",
+            "accepted": False,
+            "status": "failed",
+            "kind": "protein_structure_analysis",
+            "error_code": "input_rejected",
+        }
+    ]
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        return BackgroundSubmissionOutcome(
+            failed_task_ids=("child-failed",),
+            result=projection,
+        )
+
+    launch_background_submission(reservation, operation, db_path=db_path)
+    await _wait_until(
+        lambda: (
+            (
+                record := RunRegistry(db_path).get_run(
+                    reservation.run_id, owner="alice"
+                )
+            )
+            is not None
+            and record.status == "failed"
+        )
+    )
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "failed"
+    assert record.result is not None
+    assert (
+        record.result["execution"]["tasks"] == projection["execution"]["tasks"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_partial_submission_stays_running_with_degraded_warning(
     tmp_path: Path,
 ) -> None:

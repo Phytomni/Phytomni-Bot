@@ -53,6 +53,7 @@ class BackgroundSubmissionOutcome:
     """Bounded result returned by one detached submission operation."""
 
     accepted_task_ids: tuple[str, ...] = ()
+    failed_task_ids: tuple[str, ...] = ()
     result: dict[str, Any] | None = None
     degraded: bool = False
 
@@ -220,10 +221,18 @@ async def _run_background_submission(
                     result=degraded_result,
                 )
                 return
-            if not outcome.accepted_task_ids:
+            if not outcome.accepted_task_ids and not outcome.failed_task_ids:
                 raise BackgroundSubmissionExecutionError(
                     "no accepted child tasks"
                 )
+            if not outcome.accepted_task_ids:
+                _settle_failed(
+                    db_path,
+                    reservation,
+                    error="background_submission_children_failed",
+                    result=outcome.result or empty_execution_projection(),
+                )
+                return
             projection = outcome.result or empty_execution_projection()
             execution = projection.get("execution")
             if not isinstance(execution, dict):
