@@ -45,24 +45,27 @@ _DIALOGUE_ID = UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")
 
 def _envelope() -> ConversationEnvelopeV1:
     """Build one Expert Review envelope for the executor invoke seam."""
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "conversation_key": str(_CONVERSATION_KEY),
+        "dialogue_id": str(_DIALOGUE_ID),
+    }
+    payload["turn_id"] = "1"
+    payload["request_id"] = "request-1"
+    payload["operation"] = "append"
+    payload["mode"] = "expert"
+    payload["current_message"] = {
+        "content": "review rice drought genes",
+        "locale": "en-US",
+    }
+    payload["requested_agent_id"] = "ReviewAgent"
+    payload["allowed_agent_ids"] = ["ReviewAgent"]
+    payload["ledger_cursor"] = 1
+    payload["ledger_version"] = "a" * 64
+    payload["base_business_context_version"] = 0
     return ConversationEnvelopeV1.model_validate(
         {
-            "schema_version": 1,
-            "conversation_key": str(_CONVERSATION_KEY),
-            "dialogue_id": str(_DIALOGUE_ID),
-            "turn_id": "1",
-            "request_id": "request-1",
-            "operation": "append",
-            "mode": "expert",
-            "current_message": {
-                "content": "review rice drought genes",
-                "locale": "en-US",
-            },
-            "requested_agent_id": "ReviewAgent",
-            "allowed_agent_ids": ["ReviewAgent"],
-            "ledger_cursor": 1,
-            "ledger_version": "a" * 64,
-            "base_business_context_version": 0,
+            **payload,
             "history_delta": [
                 {
                     "turn_id": "1",
@@ -145,8 +148,10 @@ async def test_new_review_releases_mutation_lock_before_invoke(
         events.append("invoke")
         return AgentOutcome(result={"answer": "ok"}, status="succeeded")
 
-    executor._bindings.sync_invoker.set(invoke)
-    outcome = await executor._invoke(
+    bindings = object.__getattribute__(executor, "_bindings")
+    bindings.sync_invoker.set(invoke)
+    invoke_bound = object.__getattribute__(executor, "_invoke")
+    outcome = await invoke_bound(
         "ReviewAgent",
         _envelope(),
         cast(Any, None),

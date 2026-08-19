@@ -649,63 +649,75 @@ async def cancel_owner_run(
     if current is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
     if current.status != "cancelled":
-        revision = (
-            current.revision
-            if expected_revision is None
-            else expected_revision
+        await _settle_owner_cancel(
+            registry,
+            current,
+            identity=(run_id, owner, path),
+            expected_revision=expected_revision,
         )
-        if current.spec.agent == "research":
-            try:
-                ResearchInputStore(path).cancel_research_run(
-                    run_id, owner, revision
-                )
-            except ResearchCancellationNotFound as exc:
-                raise HTTPException(
-                    status_code=404, detail=f"run not found: {run_id}"
-                ) from exc
-            except ResearchCancellationUnsupported as exc:
-                raise HTTPException(status_code=409, detail=str(exc)) from exc
-            except ResearchCancellationConflict as exc:
-                raise SafeApiError(
-                    status_code=409,
-                    code="research_cancel_conflict",
-                    message=(
-                        "Research run cancellation is no longer available."
-                    ),
-                    stage="execution",
-                    retryable=False,
-                ) from exc
-            cancel_registered_research_tasks(run_id)
-            await revoke_registered_research_run(run_id)
-        else:
-            settled = registry.settle_run(
-                run_id,
-                owner=owner,
-                status="cancelled",
-                result=current.result,
-                error=None,
-                expected_revision=revision,
-            )
-            if not settled:
-                latest = registry.get_run(run_id, owner=owner)
-                if latest is None:
-                    raise HTTPException(
-                        status_code=404, detail=f"run not found: {run_id}"
-                    )
-                if latest.status != "cancelled":
-                    raise SafeApiError(
-                        status_code=409,
-                        code="run_state_conflict",
-                        message="Run cancellation is no longer available.",
-                        stage="execution",
-                        retryable=False,
-                    )
     claims = cancel_run_claims(path, run_id=run_id, user_id=owner)
     await _terminate_last_claim_jobs(path, claims.terminate_ei_ids)
     updated = registry.get_run(run_id, owner=owner)
     if updated is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
     return project_public_run_record(updated, db_path=path)
+
+
+async def _settle_owner_cancel(
+    registry: RunRegistry,
+    current: Any,
+    *,
+    identity: tuple[str, str, str],
+    expected_revision: int | None,
+) -> None:
+    """Settle a non-cancelled owner run after workers have been signalled."""
+    run_id, owner, path = identity
+    revision = (
+        current.revision if expected_revision is None else expected_revision
+    )
+    if current.spec.agent == "research":
+        try:
+            ResearchInputStore(path).cancel_research_run(
+                run_id, owner, revision
+            )
+        except ResearchCancellationNotFound as exc:
+            raise HTTPException(
+                status_code=404, detail=f"run not found: {run_id}"
+            ) from exc
+        except ResearchCancellationUnsupported as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ResearchCancellationConflict as exc:
+            raise SafeApiError(
+                status_code=409,
+                code="research_cancel_conflict",
+                message="Research run cancellation is no longer available.",
+                stage="execution",
+                retryable=False,
+            ) from exc
+        cancel_registered_research_tasks(run_id)
+        await revoke_registered_research_run(run_id)
+        return
+    settled = registry.settle_run(
+        run_id,
+        owner=owner,
+        status="cancelled",
+        result=current.result,
+        error=None,
+        expected_revision=revision,
+    )
+    if settled:
+        return
+    latest = registry.get_run(run_id, owner=owner)
+    if latest is None:
+        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+    if latest.status != "cancelled":
+        raise SafeApiError(
+            status_code=409,
+            code="run_state_conflict",
+            message="Run cancellation is no longer available.",
+            stage="execution",
+            retryable=False,
+        )
 
 
 async def cancel_research_run(

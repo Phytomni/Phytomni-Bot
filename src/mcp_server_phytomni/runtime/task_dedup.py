@@ -20,6 +20,7 @@ import logging
 import sqlite3
 
 from ..storage.path_policy import IdFactory
+from .fingerprint_jobs import mark_job_terminal
 from .task_manager import Submission, TaskManager, resolve_tasks_db_path
 
 __all__ = [
@@ -173,8 +174,6 @@ def _write_back_dead(prior: dict[str, str]) -> None:
     if not ei_task_id:
         return
     try:
-        from .fingerprint_jobs import mark_job_terminal
-
         mark_job_terminal(
             resolve_tasks_db_path(),
             str(ei_task_id),

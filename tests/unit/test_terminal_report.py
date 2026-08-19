@@ -3,6 +3,8 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Tests for terminal remote-run final report assembly."""
 
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 from typing import Any, cast

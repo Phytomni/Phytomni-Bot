@@ -3,6 +3,8 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Reconciliation and report-synthesis contracts for the run registry."""
 
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 import asyncio
@@ -977,7 +979,7 @@ async def test_settle_publishes_report_before_listing_output_dir(
         )
 
     settled = await run_registry_reports.settle_report_terminal(
-        run_registry_reports._ReportSettlementRequest(
+        run_registry_reports.ReportSettlementRequest(
             registry=registry,
             current=current,
             status="succeeded",

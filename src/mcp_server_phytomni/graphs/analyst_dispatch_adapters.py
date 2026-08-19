@@ -30,9 +30,9 @@ from ..agents.shared.analysis_requests import (
 )
 from ..agents.shared.options import resolve_agent_locale
 from ..runtime.fingerprint_jobs import (
-    FingerprintJobDeadError,
-    attach_reuse_claim,
+    FingerprintClaim,
     register_submitted_job,
+    try_attach_reuse_claim,
 )
 from ..runtime.request_context import current_request_user, current_run_id
 from ..runtime.result_run_layout import result_run_root_from_child
@@ -272,20 +272,7 @@ async def submit_analyst_via_subgraph(
         analyst_input, config=runnable_config
     )
     result = map_analyst_output_to_dispatch_state(final_state)
-    task_id = result.get("task_id")
-    if isinstance(task_id, str) and task_id and fingerprint is not None:
-        output_dir = str(result.get("output_dir") or "")
-        await _record_submitted_fingerprint_job(
-            fingerprint,
-            task_id,
-            output_dir,
-            force_new=is_polling,
-        )
-        record_dispatch_submission(
-            task_id,
-            output_dir,
-            fingerprint,
-        )
+    await _persist_subgraph_fingerprint(result, fingerprint, is_polling)
     logger.info(
         "%s task completed via subgraph (task_id: %s)",
         context.analysis_type,
@@ -392,28 +379,19 @@ async def _reuse_prior_dispatch(
         prior,
         require_terminal_success=require_terminal_success,
     )
-    if reuse_ids is None:
-        return None
-    caller_task_id, source_task_id = reuse_ids
-    job_status = (
-        "succeeded"
-        if str(prior.get("status") or "").lower()
-        in {"succeeded", "success", "completed", "done"}
-        else "running"
+    claim = try_attach_reuse_claim(
+        db_path,
+        fingerprint=fingerprint,
+        prior=prior,
+        reuse_ids=reuse_ids,
+        identity=(
+            _claim_run_id(reuse_ids[0] if reuse_ids else ""),
+            _claim_user_id(),
+        ),
     )
-    try:
-        attach_reuse_claim(
-            db_path,
-            fingerprint=fingerprint,
-            ei_task_id=str(source_task_id),
-            output_dir=str(prior.get("output_dir") or ""),
-            claimant_task_id=caller_task_id,
-            run_id=_claim_run_id(caller_task_id),
-            user_id=_claim_user_id(),
-            job_status=job_status,
-        )
-    except FingerprintJobDeadError:
+    if claim is None:
         return None
+    caller_task_id, source_task_id = claim
     return {
         "task_id": caller_task_id,
         "output_dir": prior["output_dir"],
@@ -434,6 +412,25 @@ def _claim_user_id() -> str:
     return current_request_user() or "anonymous"
 
 
+async def _persist_subgraph_fingerprint(
+    result: Mapping[str, Any],
+    fingerprint: str | None,
+    force_new: bool,
+) -> None:
+    """Record a new fingerprint job when the subgraph minted a task id."""
+    task_id = result.get("task_id")
+    if not (isinstance(task_id, str) and task_id and fingerprint is not None):
+        return
+    output_dir = str(result.get("output_dir") or "")
+    await _record_submitted_fingerprint_job(
+        fingerprint,
+        task_id,
+        output_dir,
+        force_new=force_new,
+    )
+    record_dispatch_submission(task_id, output_dir, fingerprint)
+
+
 async def _record_submitted_fingerprint_job(
     fingerprint: str,
     task_id: str,
@@ -444,12 +441,14 @@ async def _record_submitted_fingerprint_job(
     """Persist a new generation and best-effort drop a raced duplicate."""
     registered = register_submitted_job(
         resolve_tasks_db_path(),
-        fingerprint=fingerprint,
-        ei_task_id=task_id,
-        output_dir=output_dir,
-        claimant_task_id=task_id,
-        run_id=_claim_run_id(task_id),
-        user_id=_claim_user_id(),
+        FingerprintClaim(
+            fingerprint=fingerprint,
+            ei_task_id=task_id,
+            output_dir=output_dir,
+            claimant_task_id=task_id,
+            run_id=_claim_run_id(task_id),
+            user_id=_claim_user_id(),
+        ),
         force_new=force_new,
     )
     orphan = registered.orphan_ei_task_id

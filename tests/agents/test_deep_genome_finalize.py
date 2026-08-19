@@ -185,8 +185,8 @@ def test_finalize_owner_cancel_does_not_fail_umbrella(
         output_dir="/obs/o",
     )
 
-    assert updates == []
-    assert failed == []
+    assert not updates
+    assert not failed
     assert is_live_running("dg-owner-cancel") is False
 
 

@@ -79,13 +79,13 @@ _EXPERT_PROVIDER_BACKOFF_BASE = 1.5
 # stay at ``{}`` when the routing model is skipped.
 _DETERMINISTIC_USER_QUERY_TOOLS = frozenset(
     {
-        "ChatAgent",
-        "KnowledgeAgent",
-        "DataAgent",
-        "ReviewAgent",
-        "BriefGeneAgent",
-        "InSilicoResearchAgent",
         "AnalystAgent",
+        "BriefGeneAgent",
+        "ChatAgent",
+        "DataAgent",
+        "InSilicoResearchAgent",
+        "KnowledgeAgent",
+        "ReviewAgent",
     }
 )
 

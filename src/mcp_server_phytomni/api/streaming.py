@@ -520,6 +520,24 @@ def _replay_stream_events(result: dict[str, Any]) -> list[AguiEvent]:
     return events
 
 
+def _replay_stream_response(prepared: Any, payload: Any) -> StreamingResponse:
+    """Return a stored conversation replay as a chat-completion stream."""
+    if prepared.result is None:
+        raise HTTPException(
+            status_code=500, detail="conversation context replay failed"
+        )
+    replay_events = _replay_stream_events(prepared.result)
+
+    async def _replayed_events() -> AsyncIterator[AguiEvent]:
+        for event in replay_events:
+            yield event
+
+    return StreamingResponse(
+        to_chat_completion_chunks(_replayed_events(), payload.model),
+        media_type="text/event-stream",
+    )
+
+
 def _record_replay_event(
     events: list[dict[str, Any]], event: AguiEvent
 ) -> None:
@@ -692,20 +710,7 @@ async def stream_chat_completion(
         payload=payload,
     )
     if replay_prepared is not None:
-        if replay_prepared.result is None:
-            raise HTTPException(
-                status_code=500, detail="conversation context replay failed"
-            )
-        replay_events = _replay_stream_events(replay_prepared.result)
-
-        async def _replayed_events() -> AsyncIterator[AguiEvent]:
-            for event in replay_events:
-                yield event
-
-        return StreamingResponse(
-            to_chat_completion_chunks(_replayed_events(), payload.model),
-            media_type="text/event-stream",
-        )
+        return _replay_stream_response(replay_prepared, payload)
 
     try:
         prepared = await _prepare_stream(

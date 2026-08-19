@@ -10,7 +10,9 @@ from pathlib import Path
 import pytest
 
 from mcp_server_phytomni.runtime.fingerprint_jobs import (
+    FingerprintClaim,
     FingerprintJobDeadError,
+    RegisterResult,
     attach_reuse_claim,
     cancel_run_claims,
     get_latest_job,
@@ -24,7 +26,24 @@ pytestmark = pytest.mark.unit
 _FP = "a" * 64
 
 
-def _register(
+def _claim(
+    ei_task_id: str,
+    claimant: str,
+    run_id: str,
+    user_id: str,
+) -> FingerprintClaim:
+    """Build one test claim on the shared fingerprint."""
+    return FingerprintClaim(
+        fingerprint=_FP,
+        ei_task_id=ei_task_id,
+        output_dir="/obs/out",
+        claimant_task_id=claimant,
+        run_id=run_id,
+        user_id=user_id,
+    )
+
+
+def _register(  # pylint: disable=too-many-arguments
     db: str,
     *,
     ei_task_id: str,
@@ -32,16 +51,11 @@ def _register(
     run_id: str,
     user_id: str,
     force_new: bool = False,
-) -> object:
+) -> RegisterResult:
     """Register one submitted job/claim on the shared fingerprint."""
     return register_submitted_job(
         db,
-        fingerprint=_FP,
-        ei_task_id=ei_task_id,
-        output_dir="/obs/out",
-        claimant_task_id=claimant,
-        run_id=run_id,
-        user_id=user_id,
+        _claim(ei_task_id, claimant, run_id, user_id),
         force_new=force_new,
     )
 
@@ -85,20 +99,12 @@ def test_n_to_one_first_cancel_does_not_terminate(tmp_path: Path) -> None:
         run_id="run-alice",
         user_id="alice",
     )
-    attach_reuse_claim(
-        db,
-        fingerprint=_FP,
-        ei_task_id="EI-1",
-        output_dir="/obs/out",
-        claimant_task_id="T-bob",
-        run_id="run-bob",
-        user_id="bob",
-    )
+    attach_reuse_claim(db, _claim("EI-1", "T-bob", "run-bob", "bob"))
 
     first = cancel_run_claims(db, run_id="run-alice", user_id="alice")
 
     assert first.detached_claimants == ("T-alice",)
-    assert first.terminate_ei_ids == ()
+    assert not first.terminate_ei_ids
     job = get_latest_job(db, _FP)
     assert job is not None
     assert job.status == "running"
@@ -115,15 +121,7 @@ def test_n_to_one_last_cancel_terminates(tmp_path: Path) -> None:
         run_id="run-alice",
         user_id="alice",
     )
-    attach_reuse_claim(
-        db,
-        fingerprint=_FP,
-        ei_task_id="EI-1",
-        output_dir="/obs/out",
-        claimant_task_id="T-bob",
-        run_id="run-bob",
-        user_id="bob",
-    )
+    attach_reuse_claim(db, _claim("EI-1", "T-bob", "run-bob", "bob"))
     cancel_run_claims(db, run_id="run-alice", user_id="alice")
 
     last = cancel_run_claims(db, run_id="run-bob", user_id="bob")
@@ -148,15 +146,7 @@ def test_cancelled_generation_relaunches_next_submit(tmp_path: Path) -> None:
     mark_job_terminal(db, "EI-1", "cancelled")
 
     with pytest.raises(FingerprintJobDeadError):
-        attach_reuse_claim(
-            db,
-            fingerprint=_FP,
-            ei_task_id="EI-1",
-            output_dir="/obs/out",
-            claimant_task_id="T-carol",
-            run_id="run-carol",
-            user_id="carol",
-        )
+        attach_reuse_claim(db, _claim("EI-1", "T-carol", "run-carol", "carol"))
 
     registered = _register(
         db,
@@ -207,29 +197,19 @@ def test_succeeded_job_survives_one_user_cancel(tmp_path: Path) -> None:
     )
     attach_reuse_claim(
         db,
-        fingerprint=_FP,
-        ei_task_id="EI-1",
-        output_dir="/obs/out",
-        claimant_task_id="T-bob",
-        run_id="run-bob",
-        user_id="bob",
+        _claim("EI-1", "T-bob", "run-bob", "bob"),
         job_status="succeeded",
     )
 
     result = cancel_run_claims(db, run_id="run-alice", user_id="alice")
 
-    assert result.terminate_ei_ids == ()
+    assert not result.terminate_ei_ids
     job = get_latest_job(db, _FP)
     assert job is not None
     assert job.status == "succeeded"
     later = attach_reuse_claim(
         db,
-        fingerprint=_FP,
-        ei_task_id="EI-1",
-        output_dir="/obs/out",
-        claimant_task_id="T-dave",
-        run_id="run-dave",
-        user_id="dave",
+        _claim("EI-1", "T-dave", "run-dave", "dave"),
         job_status="succeeded",
     )
     assert later.generation == 1
@@ -250,15 +230,7 @@ def test_new_claim_during_last_cancel_relaunches(tmp_path: Path) -> None:
     assert last.terminate_ei_ids == ("EI-old",)
 
     with pytest.raises(FingerprintJobDeadError):
-        attach_reuse_claim(
-            db,
-            fingerprint=_FP,
-            ei_task_id="EI-old",
-            output_dir="/obs/out",
-            claimant_task_id="T-bob",
-            run_id="run-bob",
-            user_id="bob",
-        )
+        attach_reuse_claim(db, _claim("EI-old", "T-bob", "run-bob", "bob"))
 
     registered = _register(
         db,
@@ -331,12 +303,14 @@ def test_private_upload_path_is_one_to_one(tmp_path: Path) -> None:
     private_fp = "b" * 64
     register_submitted_job(
         db,
-        fingerprint=private_fp,
-        ei_task_id="EI-private",
-        output_dir="/obs/user/out",
-        claimant_task_id="T-private",
-        run_id="run-private",
-        user_id="alice",
+        FingerprintClaim(
+            fingerprint=private_fp,
+            ei_task_id="EI-private",
+            output_dir="/obs/user/out",
+            claimant_task_id="T-private",
+            run_id="run-private",
+            user_id="alice",
+        ),
     )
 
     result = cancel_run_claims(db, run_id="run-private", user_id="alice")

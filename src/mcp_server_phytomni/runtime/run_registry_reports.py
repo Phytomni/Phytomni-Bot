@@ -64,7 +64,7 @@ class ReportArtifactSources:
 
 
 @dataclass(frozen=True, slots=True)
-class _ReportSettlementRequest:
+class ReportSettlementRequest:
     """Inputs for one report settlement pass."""
 
     registry: Any
@@ -73,6 +73,9 @@ class _ReportSettlementRequest:
     live: list[dict[str, Any]]
     sources: ReportArtifactSources
     assembler: Any = None
+
+
+_ReportSettlementRequest = ReportSettlementRequest
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,7 +310,7 @@ def _persist_running_scientific_report(
     return current
 
 
-async def settle_report_terminal(request: _ReportSettlementRequest) -> Any:
+async def settle_report_terminal(request: ReportSettlementRequest) -> Any:
     """Assemble and persist one analyst-class terminal report."""
     current: Any = _persist_running_scientific_report(
         request.registry,

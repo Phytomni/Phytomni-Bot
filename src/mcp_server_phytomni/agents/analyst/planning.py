@@ -17,9 +17,9 @@ from __future__ import annotations
 from typing import Any
 
 from ...runtime.fingerprint_jobs import (
-    FingerprintJobDeadError,
-    attach_reuse_claim,
+    FingerprintClaim,
     register_submitted_job,
+    try_attach_reuse_claim,
 )
 from ...runtime.request_context import current_request_user, current_run_id
 from ...runtime.result_run_layout import (
@@ -55,28 +55,19 @@ async def _reuse_live_prior_task(
         prior,
         require_terminal_success=False,
     )
-    if reuse_ids is None:
-        return None
-    caller_task_id, source_task_id = reuse_ids
-    job_status = (
-        "succeeded"
-        if str(prior.get("status") or "").lower()
-        in {"succeeded", "success", "completed", "done"}
-        else "running"
+    attached = try_attach_reuse_claim(
+        resolve_tasks_db_path(),
+        fingerprint=fingerprint,
+        prior=prior,
+        reuse_ids=reuse_ids,
+        identity=(
+            current_run_id() or (reuse_ids[0] if reuse_ids else ""),
+            current_request_user() or "anonymous",
+        ),
     )
-    try:
-        attach_reuse_claim(
-            resolve_tasks_db_path(),
-            fingerprint=fingerprint,
-            ei_task_id=str(source_task_id),
-            output_dir=str(prior.get("output_dir") or ""),
-            claimant_task_id=caller_task_id,
-            run_id=current_run_id() or caller_task_id,
-            user_id=current_request_user() or "anonymous",
-            job_status=job_status,
-        )
-    except FingerprintJobDeadError:
+    if attached is None:
         return None
+    caller_task_id, source_task_id = attached
     reused: dict[str, Any] = {
         "task_id": caller_task_id,
         "output_dir": prior["output_dir"],
@@ -174,12 +165,13 @@ async def retrieve_plan_submit(
     if isinstance(submitted_id, str) and submitted_id:
         register_submitted_job(
             resolve_tasks_db_path(),
-            fingerprint=fingerprint,
-            ei_task_id=submitted_id,
-            output_dir=str(result.get("output_dir") or ""),
-            claimant_task_id=submitted_id,
-            run_id=current_run_id() or submitted_id,
-            user_id=current_request_user() or "anonymous",
-            force_new=False,
+            FingerprintClaim(
+                fingerprint=fingerprint,
+                ei_task_id=submitted_id,
+                output_dir=str(result.get("output_dir") or ""),
+                claimant_task_id=submitted_id,
+                run_id=current_run_id() or submitted_id,
+                user_id=current_request_user() or "anonymous",
+            ),
         )
     return result

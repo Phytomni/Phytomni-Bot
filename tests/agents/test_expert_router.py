@@ -127,7 +127,7 @@ async def test_strict_router_forces_requested_tool(
     )
 
     assert result == ToolSelection("ChatAgent", {"user_query": "route this"})
-    assert captured == {}
+    assert not captured
 
 
 async def test_select_expert_tool_scopes_prompt_and_order() -> None:
@@ -310,7 +310,7 @@ async def test_strict_router_forces_every_canonical_tool(
         assert result.arguments == {}
     else:
         assert result.arguments == {"user_query": "route this"}
-    assert captured == {}
+    assert not captured
 
 
 @pytest.mark.parametrize(
@@ -783,7 +783,7 @@ async def test_routing_forced_tool_skips_the_routing_model(
     assert result == ToolSelection(
         "KnowledgeAgent", {"user_query": "route this"}
     )
-    assert calls == []
+    assert not calls
 
 
 async def test_routing_singleton_allowlist_skips_the_routing_model(
@@ -806,7 +806,7 @@ async def test_routing_singleton_allowlist_skips_the_routing_model(
     assert result == ToolSelection(
         "KnowledgeAgent", {"user_query": "route this"}
     )
-    assert calls == []
+    assert not calls
 
 
 _PROVIDER_LOGGER = "mcp_server_phytomni.agents.expert.routing_observability"

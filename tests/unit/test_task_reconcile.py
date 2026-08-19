@@ -252,9 +252,9 @@ async def test_reconcile_task_log_refetches_empty_object_cache(
         ],
         "text": "Get conda environment finish!\n[MCP] Loaded 35 tool(s).\n",
     }
-    assert mgr.get_task_log(task_id)["logs"][0]["content"].startswith(
-        "Get conda"
-    )
+    cached = mgr.get_task_log(task_id)
+    assert cached is not None
+    assert cached["logs"][0]["content"].startswith("Get conda")
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Synchronous, remote, background, and failure route tests."""
 
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence

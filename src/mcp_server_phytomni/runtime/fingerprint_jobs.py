@@ -12,15 +12,17 @@ failed generation is skipped so the next submit relaunches.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal, cast
 
 from .sqlite import sqlite_connection, sqlite_transaction
 
 __all__ = [
     "ACTIVE_CLAIM",
     "DEAD_JOB_STATUSES",
+    "FingerprintClaim",
     "FingerprintJob",
     "FingerprintJobDeadError",
     "RegisterResult",
@@ -31,6 +33,8 @@ __all__ = [
     "get_latest_job",
     "mark_job_terminal",
     "register_submitted_job",
+    "reusable_job_status",
+    "try_attach_reuse_claim",
 ]
 
 _JOB_RUNNING = "running"
@@ -88,6 +92,18 @@ class FingerprintJobDeadError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class FingerprintClaim:
+    """Caller identity attached to one fingerprint generation."""
+
+    fingerprint: str
+    ei_task_id: str
+    output_dir: str
+    claimant_task_id: str
+    run_id: str
+    user_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class FingerprintJob:
     """One analysis-platform job keyed by fingerprint generation."""
 
@@ -119,6 +135,51 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def reusable_job_status(
+    prior_status: object,
+) -> Literal["running", "succeeded"]:
+    """Map a platform or cache status onto a reusable fingerprint job."""
+    if str(prior_status or "").lower() in {
+        "succeeded",
+        "success",
+        "completed",
+        "done",
+    }:
+        return "succeeded"
+    return "running"
+
+
+def try_attach_reuse_claim(
+    db_path: str,
+    *,
+    fingerprint: str,
+    prior: Mapping[str, Any],
+    reuse_ids: tuple[str, str] | None,
+    identity: tuple[str, str],
+) -> tuple[str, str] | None:
+    """Attach a reuse claim, or return None when the generation is dead."""
+    if reuse_ids is None:
+        return None
+    caller_task_id, source_task_id = reuse_ids
+    run_id, user_id = identity
+    try:
+        attach_reuse_claim(
+            db_path,
+            FingerprintClaim(
+                fingerprint=fingerprint,
+                ei_task_id=str(source_task_id),
+                output_dir=str(prior.get("output_dir") or ""),
+                claimant_task_id=caller_task_id,
+                run_id=run_id,
+                user_id=user_id,
+            ),
+            job_status=reusable_job_status(prior.get("status")),
+        )
+    except FingerprintJobDeadError:
+        return None
+    return reuse_ids
+
+
 def ensure_schema(db_path: str) -> None:
     """Create fingerprint job tables and indexes when missing."""
     with sqlite_transaction(db_path) as connection:
@@ -139,13 +200,10 @@ def _ensure_schema_on(connection: object) -> None:
 
 def _row_to_job(row: object) -> FingerprintJob:
     """Project one SELECT row into a job value."""
-    (
-        fingerprint,
-        generation,
-        ei_task_id,
-        status,
-        output_dir,
-    ) = row  # type: ignore[misc]
+    fingerprint, generation, ei_task_id, status, output_dir = cast(
+        tuple[Any, Any, Any, Any, Any],
+        row,
+    )
     return FingerprintJob(
         fingerprint=str(fingerprint),
         generation=int(generation),
@@ -179,11 +237,7 @@ def get_latest_job(db_path: str, fingerprint: str) -> FingerprintJob | None:
 
 def _insert_claim(
     connection: object,
-    *,
-    claimant_task_id: str,
-    run_id: str,
-    user_id: str,
-    fingerprint: str,
+    claim: FingerprintClaim,
     generation: int,
     now: str,
 ) -> None:
@@ -201,10 +255,10 @@ def _insert_claim(
         "claim_state = excluded.claim_state, "
         "updated_at = excluded.updated_at",
         (
-            claimant_task_id,
-            run_id,
-            user_id,
-            fingerprint,
+            claim.claimant_task_id,
+            claim.run_id,
+            claim.user_id,
+            claim.fingerprint,
             generation,
             ACTIVE_CLAIM,
             now,
@@ -215,13 +269,7 @@ def _insert_claim(
 
 def attach_reuse_claim(
     db_path: str,
-    *,
-    fingerprint: str,
-    ei_task_id: str,
-    output_dir: str,
-    claimant_task_id: str,
-    run_id: str,
-    user_id: str,
+    claim: FingerprintClaim,
     job_status: Literal["running", "succeeded"] = "running",
 ) -> FingerprintJob:
     """Attach a caller-owned task to a live generation, promoting if needed.
@@ -237,11 +285,12 @@ def attach_reuse_claim(
         _ensure_schema_on(connection)
         connection.execute("BEGIN IMMEDIATE")
         try:
-            latest = _select_latest(connection, fingerprint)
+            latest = _select_latest(connection, claim.fingerprint)
             if latest is not None and latest.status in DEAD_JOB_STATUSES:
                 raise FingerprintJobDeadError(
                     "fingerprint generation is no longer reusable"
                 )
+            status: str
             if latest is None:
                 connection.execute(
                     "INSERT INTO fingerprint_jobs ("
@@ -249,10 +298,10 @@ def attach_reuse_claim(
                     "output_dir, created_at, updated_at"
                     ") VALUES (?, 1, ?, ?, ?, ?, ?)",
                     (
-                        fingerprint,
-                        ei_task_id,
+                        claim.fingerprint,
+                        claim.ei_task_id,
                         job_status,
-                        output_dir,
+                        claim.output_dir,
                         now,
                         now,
                     ),
@@ -260,7 +309,7 @@ def attach_reuse_claim(
                 generation = 1
                 status = job_status
             else:
-                if latest.ei_task_id != ei_task_id:
+                if latest.ei_task_id != claim.ei_task_id:
                     raise FingerprintJobDeadError(
                         "reuse ei_task_id does not match the live generation"
                     )
@@ -272,43 +321,35 @@ def attach_reuse_claim(
                         "UPDATE fingerprint_jobs SET status = ?, "
                         "updated_at = ? WHERE fingerprint = ? "
                         "AND generation = ?",
-                        (job_status, now, fingerprint, latest.generation),
+                        (
+                            job_status,
+                            now,
+                            claim.fingerprint,
+                            latest.generation,
+                        ),
                     )
                     status = job_status
                 else:
                     status = latest.status
                 generation = latest.generation
-            _insert_claim(
-                connection,
-                claimant_task_id=claimant_task_id,
-                run_id=run_id,
-                user_id=user_id,
-                fingerprint=fingerprint,
-                generation=generation,
-                now=now,
-            )
+            _insert_claim(connection, claim, generation, now)
             connection.execute("COMMIT")
         except Exception:
             connection.execute("ROLLBACK")
             raise
         return FingerprintJob(
-            fingerprint=fingerprint,
+            fingerprint=claim.fingerprint,
             generation=generation,
-            ei_task_id=ei_task_id,
+            ei_task_id=claim.ei_task_id,
             status=status,
-            output_dir=output_dir,
+            output_dir=claim.output_dir,
         )
 
 
 def register_submitted_job(
     db_path: str,
+    claim: FingerprintClaim,
     *,
-    fingerprint: str,
-    ei_task_id: str,
-    output_dir: str,
-    claimant_task_id: str,
-    run_id: str,
-    user_id: str,
     force_new: bool = False,
 ) -> RegisterResult:
     """Record a newly submitted EI job or attach after a lost race.
@@ -324,24 +365,18 @@ def register_submitted_job(
         _ensure_schema_on(connection)
         connection.execute("BEGIN IMMEDIATE")
         try:
-            latest = _select_latest(connection, fingerprint)
+            latest = _select_latest(connection, claim.fingerprint)
             open_new = (
                 force_new
                 or latest is None
                 or latest.status in DEAD_JOB_STATUSES
             )
             if not open_new and latest is not None:
-                _insert_claim(
-                    connection,
-                    claimant_task_id=claimant_task_id,
-                    run_id=run_id,
-                    user_id=user_id,
-                    fingerprint=fingerprint,
-                    generation=latest.generation,
-                    now=now,
-                )
+                _insert_claim(connection, claim, latest.generation, now)
                 orphan = (
-                    ei_task_id if ei_task_id != latest.ei_task_id else None
+                    claim.ei_task_id
+                    if claim.ei_task_id != latest.ei_task_id
+                    else None
                 )
                 connection.execute("COMMIT")
                 return RegisterResult(latest, orphan)
@@ -352,35 +387,27 @@ def register_submitted_job(
                 "output_dir, created_at, updated_at"
                 ") VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
-                    fingerprint,
+                    claim.fingerprint,
                     generation,
-                    ei_task_id,
+                    claim.ei_task_id,
                     _JOB_RUNNING,
-                    output_dir,
+                    claim.output_dir,
                     now,
                     now,
                 ),
             )
-            _insert_claim(
-                connection,
-                claimant_task_id=claimant_task_id,
-                run_id=run_id,
-                user_id=user_id,
-                fingerprint=fingerprint,
-                generation=generation,
-                now=now,
-            )
+            _insert_claim(connection, claim, generation, now)
             connection.execute("COMMIT")
         except Exception:
             connection.execute("ROLLBACK")
             raise
         return RegisterResult(
             FingerprintJob(
-                fingerprint=fingerprint,
+                fingerprint=claim.fingerprint,
                 generation=generation,
-                ei_task_id=ei_task_id,
+                ei_task_id=claim.ei_task_id,
                 status=_JOB_RUNNING,
-                output_dir=output_dir,
+                output_dir=claim.output_dir,
             ),
             None,
         )
@@ -411,6 +438,38 @@ def mark_job_terminal(
         return int(cursor.rowcount) == 1
 
 
+def _fetch_active_run_claims(
+    connection: object, run_id: str, user_id: str
+) -> list[tuple[object, object, object]]:
+    """Return active claims for one owner run, joining tasks when present."""
+    tables = {
+        str(row[0])
+        for row in getattr(connection, "execute")(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    if "tasks" in tables:
+        return list(
+            getattr(connection, "execute")(
+                "SELECT claimant_task_id, fingerprint, generation "
+                "FROM fingerprint_job_claims "
+                "WHERE claim_state = ? AND ("
+                "(run_id = ? AND user_id = ?) OR claimant_task_id IN ("
+                "SELECT task_id FROM tasks WHERE run_id = ? "
+                "AND user_id = ?))",
+                (ACTIVE_CLAIM, run_id, user_id, run_id, user_id),
+            ).fetchall()
+        )
+    return list(
+        getattr(connection, "execute")(
+            "SELECT claimant_task_id, fingerprint, generation "
+            "FROM fingerprint_job_claims "
+            "WHERE run_id = ? AND user_id = ? AND claim_state = ?",
+            (run_id, user_id, ACTIVE_CLAIM),
+        ).fetchall()
+    )
+
+
 def _active_claim_count(
     connection: object, fingerprint: str, generation: int
 ) -> int:
@@ -423,6 +482,80 @@ def _active_claim_count(
     if row is None:
         return 0
     return int(row[0])
+
+
+def _detach_active_claims(
+    connection: object,
+    claims: list[tuple[object, object, object]],
+    now: str,
+) -> tuple[list[str], set[tuple[str, int]]]:
+    """Mark the given claims cancelled and return touched generations."""
+    detached: list[str] = []
+    touched: set[tuple[str, int]] = set()
+    execute = getattr(connection, "execute")
+    for claimant_task_id, fingerprint, generation in claims:
+        execute(
+            "UPDATE fingerprint_job_claims SET claim_state = ?, "
+            "updated_at = ? WHERE claimant_task_id = ? "
+            "AND claim_state = ?",
+            (
+                _CLAIM_CANCELLED,
+                now,
+                claimant_task_id,
+                ACTIVE_CLAIM,
+            ),
+        )
+        detached.append(str(claimant_task_id))
+        touched.add((str(fingerprint), int(cast(Any, generation))))
+    return detached, touched
+
+
+def _mark_zero_claim_jobs_cancelling(
+    connection: object,
+    touched: set[tuple[str, int]],
+    now: str,
+) -> list[str]:
+    """Mark last-claim running jobs cancelling and return their EI ids."""
+    terminate: list[str] = []
+    execute = getattr(connection, "execute")
+    for fingerprint, generation in touched:
+        if _active_claim_count(connection, fingerprint, generation) > 0:
+            continue
+        job = execute(
+            "SELECT ei_task_id, status FROM fingerprint_jobs "
+            "WHERE fingerprint = ? AND generation = ?",
+            (fingerprint, generation),
+        ).fetchone()
+        if job is None:
+            continue
+        ei_task_id, status = str(job[0]), str(job[1])
+        if status != _JOB_RUNNING:
+            continue
+        updated = execute(
+            "UPDATE fingerprint_jobs SET status = ?, "
+            "updated_at = ? WHERE fingerprint = ? "
+            "AND generation = ? AND status = ?",
+            (
+                _JOB_CANCELLING,
+                now,
+                fingerprint,
+                generation,
+                _JOB_RUNNING,
+            ),
+        )
+        if int(updated.rowcount) == 1:
+            terminate.append(ei_task_id)
+    return terminate
+
+
+def _apply_run_claim_cancel(
+    connection: object, run_id: str, user_id: str, now: str
+) -> RunCancelResult:
+    """Detach one run's claims and mark last-claim jobs for terminate."""
+    claims = _fetch_active_run_claims(connection, run_id, user_id)
+    detached, touched = _detach_active_claims(connection, claims, now)
+    terminate = _mark_zero_claim_jobs_cancelling(connection, touched, now)
+    return RunCancelResult(tuple(detached), tuple(terminate))
 
 
 def cancel_run_claims(
@@ -444,78 +577,9 @@ def cancel_run_claims(
         _ensure_schema_on(connection)
         connection.execute("BEGIN IMMEDIATE")
         try:
-            tables = {
-                str(row[0])
-                for row in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type = 'table'"
-                )
-            }
-            if "tasks" in tables:
-                claims = connection.execute(
-                    "SELECT claimant_task_id, fingerprint, generation "
-                    "FROM fingerprint_job_claims "
-                    "WHERE claim_state = ? AND ("
-                    "(run_id = ? AND user_id = ?) OR claimant_task_id IN ("
-                    "SELECT task_id FROM tasks WHERE run_id = ? "
-                    "AND user_id = ?))",
-                    (ACTIVE_CLAIM, run_id, user_id, run_id, user_id),
-                ).fetchall()
-            else:
-                claims = connection.execute(
-                    "SELECT claimant_task_id, fingerprint, generation "
-                    "FROM fingerprint_job_claims "
-                    "WHERE run_id = ? AND user_id = ? AND claim_state = ?",
-                    (run_id, user_id, ACTIVE_CLAIM),
-                ).fetchall()
-            detached: list[str] = []
-            touched: set[tuple[str, int]] = set()
-            for claimant_task_id, fingerprint, generation in claims:
-                connection.execute(
-                    "UPDATE fingerprint_job_claims SET claim_state = ?, "
-                    "updated_at = ? WHERE claimant_task_id = ? "
-                    "AND claim_state = ?",
-                    (
-                        _CLAIM_CANCELLED,
-                        now,
-                        claimant_task_id,
-                        ACTIVE_CLAIM,
-                    ),
-                )
-                detached.append(str(claimant_task_id))
-                touched.add((str(fingerprint), int(generation)))
-            terminate: list[str] = []
-            for fingerprint, generation in touched:
-                if (
-                    _active_claim_count(connection, fingerprint, generation)
-                    > 0
-                ):
-                    continue
-                job = connection.execute(
-                    "SELECT ei_task_id, status FROM fingerprint_jobs "
-                    "WHERE fingerprint = ? AND generation = ?",
-                    (fingerprint, generation),
-                ).fetchone()
-                if job is None:
-                    continue
-                ei_task_id, status = str(job[0]), str(job[1])
-                if status != _JOB_RUNNING:
-                    continue
-                updated = connection.execute(
-                    "UPDATE fingerprint_jobs SET status = ?, "
-                    "updated_at = ? WHERE fingerprint = ? "
-                    "AND generation = ? AND status = ?",
-                    (
-                        _JOB_CANCELLING,
-                        now,
-                        fingerprint,
-                        generation,
-                        _JOB_RUNNING,
-                    ),
-                )
-                if int(updated.rowcount) == 1:
-                    terminate.append(ei_task_id)
+            result = _apply_run_claim_cancel(connection, run_id, user_id, now)
             connection.execute("COMMIT")
         except Exception:
             connection.execute("ROLLBACK")
             raise
-        return RunCancelResult(tuple(detached), tuple(terminate))
+        return result

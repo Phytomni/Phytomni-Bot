@@ -547,7 +547,7 @@ async def test_expert_supported_forced_tool_stays_forced(
         base_url="http://api.expert-forced.test",
     )
     assert response.status_code == 202, response.text
-    assert captured == {}
+    assert not captured
 
 
 async def test_expert_rejects_stale_dataset_description_field(
