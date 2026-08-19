@@ -119,17 +119,11 @@ def test_map_send_payload_pins_auto_select_and_preset_plan_constants() -> None:
     assert result["is_preset_plan"] is True
 
 
-def test_map_send_payload_is_polling_defaults_to_true() -> None:
-    """Default ``is_polling=True`` is forward-looking for deep_genome.
-
-    Pins the producer-side default so a deep_genome caller that
-    omits ``is_polling`` inherits the polling semantics its current
-    ``dispatch.py:_submit_analysis_task`` already uses (``arun(...,
-    is_polling=True)``).
-    """
+def test_map_send_payload_is_polling_defaults_to_false() -> None:
+    """Chat/HTTP agents submit and let GetRun wait."""
     payload = _sample_payload()
     result = dict(map_send_payload_to_analyst_input(payload))
-    assert result["is_polling"] is True
+    assert result["is_polling"] is False
 
 
 def test_map_send_payload_is_polling_false_when_explicit() -> None:

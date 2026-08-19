@@ -569,7 +569,7 @@ class AnalystAgent(
             "job_name": None,
             "task_id": None,
             "task_status": None,
-            "is_polling": kwargs.get("is_polling", True),
+            "is_polling": kwargs.get("is_polling", False),
             "is_auto_select": kwargs.get("is_auto_select", True),
             "is_preset_plan": kwargs.get("is_preset_plan", False),
             "input_fingerprint": input_fingerprint,

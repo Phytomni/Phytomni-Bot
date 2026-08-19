@@ -343,6 +343,40 @@ async def test_analyst_agent_arun_invokes_graph_with_initial_state():
     assert fake_graph.config == _thread_config("analyst-thread")
 
 
+async def test_arun_defaults_is_polling_false():
+    """Omitted is_polling must submit-return instead of in-graph EI waits."""
+    agent = AnalystAgent(
+        analyst_config=AnalystConfig(),
+        sensitive_config=_sensitive_config(),
+    )
+    fake_graph = FakeCompiledGraph(
+        {
+            "task_id": "task-1",
+            "output_dir": "/tmp/analysis",
+            "job_name": "pytest-job",
+            "compute_resource": "small",
+        }
+    )
+    object.__setattr__(agent, "app", fake_graph)
+
+    result = await agent.arun(
+        query="run differential expression",
+        goal_description="Compare treated and control samples.",
+        user_id="user-1",
+        output_dir="/tmp/analysis",
+        compute_resource="small",
+        preset_data_list={"obs://counts.tsv": "count matrix"},
+        obs_file_list=["obs://metadata.tsv"],
+        preset_plan="Use DESeq2.",
+        thread_id="analyst-thread",
+        is_auto_select=False,
+    )
+
+    assert result["task_id"] == "task-1"
+    assert fake_graph.state is not None
+    assert fake_graph.state["is_polling"] is False
+
+
 async def test_deep_genome_agent_arun_invokes_graph_with_initial_state():
     """Verify deep genome agent arun invokes graph with initial state."""
     agent = DeepGenomeAgents(

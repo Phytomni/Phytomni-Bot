@@ -902,7 +902,7 @@ async def protein_structure_for_gene(
     gene_id: str,
     output_dir: str | None = None,
     *,
-    is_polling: bool = True,
+    is_polling: bool = False,
 ) -> dict[str, Any]:
     """Submit a protein_structure_analysis task via the analyst subgraph."""
     return await submit_design_analysis(
@@ -926,7 +926,7 @@ async def promoter_design_for_gene(
     gene_id: str,
     output_dir: str | None = None,
     *,
-    is_polling: bool = True,
+    is_polling: bool = False,
 ) -> dict[str, Any]:
     """Submit a promoter_analysis task via the analyst subgraph."""
     return await submit_design_analysis(

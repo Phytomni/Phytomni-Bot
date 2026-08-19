@@ -81,7 +81,7 @@ def build_analyst_dispatch_request(
 def map_send_payload_to_analyst_input(
     payload: Mapping[str, Any],
     *,
-    is_polling: bool = True,
+    is_polling: bool = False,
 ) -> AnalystInput:
     """Project a dispatch request payload into ``AnalystInput`` shape.
 
@@ -93,10 +93,10 @@ def map_send_payload_to_analyst_input(
     constants ``submit_analyst_analysis`` hard-codes). ``query`` is
     set to the empty string because the preset-plan path inside the
     analyst graph never reads ``query`` once ``is_preset_plan`` is
-    True. ``is_polling`` is parameterised: DeepGenome passes
-    ``is_polling=False`` so its coordinator owns remote waiting, while
-    standalone and legacy dispatch callers retain the default ``True``
-    polling behavior.
+    True. ``is_polling`` is parameterised: the default is ``False`` so
+    standalone and chat/HTTP callers submit and let GetRun wait.
+    DeepGenome mounts pass an explicit value so its coordinator owns
+    remote waiting. Callers that opt in pass ``True``.
 
     Args:
         payload: Request mapping with ``analysis_type`` / ``target_id``
@@ -105,8 +105,8 @@ def map_send_payload_to_analyst_input(
             / optional ``output_dir``.
         is_polling: Whether the analyst graph should block until the
             submitted task reaches a terminal state. Defaults to
-            ``True`` for standalone and legacy callers. DeepGenome passes
-            ``False`` because its coordinator owns remote polling.
+            ``False`` so GetRun owns remote waiting. Callers that opt
+            in pass ``True`` to enter ``pooling_node``.
 
     Returns:
         An ``AnalystInput`` dict suitable for ``ainvoke`` on the
@@ -189,7 +189,7 @@ async def submit_analyst_via_subgraph(
     sensitive_config: Any,
     request: Mapping[str, Any],
     *,
-    is_polling: bool = True,
+    is_polling: bool = False,
 ) -> dict[str, Any]:
     """Dispatch one analysis through the analyst's compiled subgraph.
 
@@ -219,8 +219,8 @@ async def submit_analyst_via_subgraph(
             dict) / ``compute_resource`` / optional ``output_dir``.
         is_polling: Whether the analyst graph should block until the
             submitted task reaches a terminal state. Defaults to
-            ``True`` for standalone and legacy callers. DeepGenome
-            passes ``False`` so its coordinator can own polling.
+            ``False`` so GetRun owns remote waiting. Callers that
+            opt in pass ``True`` to enter ``pooling_node``.
 
     Returns:
         Dict containing ``task_id`` / ``output_dir`` / ``plan`` /
