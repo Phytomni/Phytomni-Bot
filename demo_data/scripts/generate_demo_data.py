@@ -291,7 +291,9 @@ TOOL_INDEX: tuple[dict[str, str], ...] = (
         "name": "ReviewAgent",
         "payload": "payloads/review_agent.json",
         "kind": "sync",
-        "summary": "Multi-section scRNA-seq plant-stress heterogeneity review.",
+        "summary": (
+            "Multi-section scRNA-seq plant-stress heterogeneity review."
+        ),
     },
     {
         "name": "BriefGeneAgent",
