@@ -153,7 +153,8 @@ async def test_standalone_submit_isolates_public_job_under_fingerprint(
 ) -> None:
     """Public-data jobs keep the fingerprint cache but isolate each EI job."""
     monkeypatch.setattr(
-        "mcp_server_phytomni.agents.shared.analysis_storage.relay_mode_enabled",
+        "mcp_server_phytomni.agents.shared.analysis_storage"
+        ".relay_mode_enabled",
         lambda: True,
     )
     default = "/obs/phytomni/agent_data/test/output"
@@ -188,7 +189,8 @@ async def test_standalone_submit_keeps_user_uploads_off_shared_tree(
 ) -> None:
     """User uploads must not land in the cross-tenant fingerprint tree."""
     monkeypatch.setattr(
-        "mcp_server_phytomni.agents.shared.analysis_storage.relay_mode_enabled",
+        "mcp_server_phytomni.agents.shared.analysis_storage"
+        ".relay_mode_enabled",
         lambda: True,
     )
     default = "/obs/phytomni/agent_data/test/output"

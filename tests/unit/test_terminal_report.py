@@ -472,7 +472,8 @@ async def test_no_scientific_text_returns_safe_degraded_report() -> None:
 
 @pytest.mark.asyncio
 async def test_scientific_data_plain_text_becomes_official_answer() -> None:
-    """A line-count txt declared as scientific_data becomes the official body."""
+    """A line-count txt declared as scientific_data becomes the official
+    body."""
 
     async def reader(reference: str) -> str:
         """Return the producer conclusion file."""

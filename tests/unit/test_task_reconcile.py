@@ -205,7 +205,8 @@ async def test_reconcile_task_log_returns_cached_payload_without_remote(
 async def test_reconcile_task_log_refetches_empty_object_cache(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An early ``{}`` cache must not hide later platform ``logs[].content``."""
+    """An early ``{}`` cache must not hide later platform
+    ``logs[].content``."""
     monkeypatch.setattr(
         "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
         lambda: mgr_path,

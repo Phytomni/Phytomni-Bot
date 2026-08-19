@@ -325,7 +325,8 @@ def test_force_new_opens_generation_while_running(tmp_path: Path) -> None:
 
 
 def test_private_upload_path_is_one_to_one(tmp_path: Path) -> None:
-    """A unique private-input fingerprint still terminates on the only claim."""
+    """A unique private-input fingerprint still terminates on the only
+    claim."""
     db = str(tmp_path / "tasks.sqlite")
     private_fp = "b" * 64
     register_submitted_job(

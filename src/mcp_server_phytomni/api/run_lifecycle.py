@@ -669,7 +669,9 @@ async def cancel_owner_run(
                 raise SafeApiError(
                     status_code=409,
                     code="research_cancel_conflict",
-                    message="Research run cancellation is no longer available.",
+                    message=(
+                        "Research run cancellation is no longer available."
+                    ),
                     stage="execution",
                     retryable=False,
                 ) from exc

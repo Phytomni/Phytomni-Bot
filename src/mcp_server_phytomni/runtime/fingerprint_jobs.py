@@ -139,7 +139,13 @@ def _ensure_schema_on(connection: object) -> None:
 
 def _row_to_job(row: object) -> FingerprintJob:
     """Project one SELECT row into a job value."""
-    fingerprint, generation, ei_task_id, status, output_dir = row  # type: ignore[misc]
+    (
+        fingerprint,
+        generation,
+        ei_task_id,
+        status,
+        output_dir,
+    ) = row  # type: ignore[misc]
     return FingerprintJob(
         fingerprint=str(fingerprint),
         generation=int(generation),
