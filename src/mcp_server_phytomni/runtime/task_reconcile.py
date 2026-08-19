@@ -230,9 +230,7 @@ def _mark_fingerprint_from_live(
     try:
         mark_job_terminal(db_path, ei_task_id, mapped)
     except (sqlite3.Error, OSError, ValueError):
-        logger.warning(
-            "reconcile: failed to mark fingerprint job terminal"
-        )
+        logger.warning("reconcile: failed to mark fingerprint job terminal")
 
 
 async def reconcile_task(task_id: str) -> dict[str, Any]:

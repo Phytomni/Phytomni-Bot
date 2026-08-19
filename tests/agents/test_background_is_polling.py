@@ -22,20 +22,14 @@ pytestmark = pytest.mark.agent
 def test_subgraph_and_design_helpers_default_is_polling_false() -> None:
     """Forgotten kwargs must not reintroduce in-graph EI waits."""
     assert (
-        signature(submit_analyst_via_subgraph)
-        .parameters["is_polling"]
-        .default
+        signature(submit_analyst_via_subgraph).parameters["is_polling"].default
         is False
     )
     assert (
-        signature(protein_structure_for_gene)
-        .parameters["is_polling"]
-        .default
+        signature(protein_structure_for_gene).parameters["is_polling"].default
         is False
     )
     assert (
-        signature(promoter_design_for_gene)
-        .parameters["is_polling"]
-        .default
+        signature(promoter_design_for_gene).parameters["is_polling"].default
         is False
     )
