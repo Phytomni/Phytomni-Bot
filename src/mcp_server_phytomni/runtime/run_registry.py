@@ -77,10 +77,12 @@ from .run_registry_protocols import (
 from .run_registry_reports import (
     ReportArtifactSources,
     _ReportSettlementRequest,
+    annotate_live_with_stored_tasks,
     attach_partial_child_degraded,
     mark_partial_child_failure,
     settle_report_terminal,
     stored_submission_warnings,
+    touch_running_run,
 )
 from .run_registry_reports import legacy_terminal_payload as _terminal_payload
 from .run_registry_views import RunRegistryViewsMixin
@@ -776,7 +778,7 @@ class RunRegistry(RunRegistryViewsMixin):
         ):
             return current
         if is_live_running(current.spec.run_id):
-            return self._touch_running(current, "running")
+            return touch_running_run(self, current, "running")
         recovered = self._settle_orphaned_run(current)
         if recovered is None or recovered.status != "running":
             return recovered
@@ -787,9 +789,12 @@ class RunRegistry(RunRegistryViewsMixin):
     ) -> RunRecord | None:
         """Poll children once and settle the resulting aggregate status."""
         live = [await reconcile_task(task_id) for task_id in current.task_ids]
-        new_status = _aggregate_status([row["status"] for row in live])
+        live = annotate_live_with_stored_tasks(live, current.result)
+        new_status = _aggregate_status(
+            [str(row.get("status") or "") for row in live]
+        )
         if new_status not in _TERMINAL_RUN_STATUSES:
-            return self._touch_running(current, new_status)
+            return touch_running_run(self, current, new_status, live)
         current, live, partial = mark_partial_child_failure(
             current, live, new_status
         )
@@ -904,19 +909,6 @@ class RunRegistry(RunRegistryViewsMixin):
                 return 0
             purge_run_children(conn, expired)
         return len(expired)
-
-    def _touch_running(
-        self, current: RunRecord, status: str
-    ) -> RunRecord | None:
-        """Refresh only the still-running owner row, then return its winner."""
-        now = _now_iso()
-        with sqlite_transaction(self.db_path) as conn:
-            conn.execute(
-                "UPDATE runs SET status = ?, updated_at = ? "
-                "WHERE run_id = ? AND user_id = ? AND status = 'running'",
-                (status, now, current.spec.run_id, current.spec.user_id),
-            )
-        return self.get_run(current.spec.run_id, owner=current.spec.user_id)
 
     def _settle_orphaned_run(self, current: RunRecord) -> RunRecord | None:
         """Fail only an owned running row that still has no owned child."""

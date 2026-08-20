@@ -40,7 +40,9 @@ from .run_registry_models import (
     RunOutcome,
     RunRecord,
     _has_partial_child_failure,
+    _now_iso,
 )
+from .sqlite import sqlite_transaction
 from .submission_outcome import project_submission_warnings
 from .task_manager import TaskManager
 from .terminal_artifacts import (
@@ -678,6 +680,74 @@ def annotate_live_with_stored_tasks(
                 }
             )
     return annotated
+
+
+def overlay_live_status_on_stored_tasks(
+    result: Mapping[str, Any] | None,
+    live: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """Copy live child status onto stored five-key execution.tasks."""
+    if live is None or not isinstance(result, Mapping):
+        return None
+    stored = stored_execution_tasks(result)
+    if not stored:
+        return None
+    by_id: dict[str, str] = {}
+    for row in live:
+        task_id = row.get("task_id")
+        status = row.get("status")
+        if (
+            isinstance(task_id, str)
+            and task_id
+            and isinstance(status, str)
+            and status
+        ):
+            by_id[task_id] = status
+    if not by_id:
+        return None
+    payload = dict(result)
+    execution = dict(payload.get("execution") or {})
+    tasks: list[dict[str, Any]] = []
+    for item in stored:
+        row = dict(item)
+        task_id = row.get("id")
+        if isinstance(task_id, str) and task_id in by_id:
+            row["status"] = by_id[task_id]
+        tasks.append(row)
+    execution["tasks"] = tasks
+    payload["execution"] = execution
+    return payload
+
+
+def touch_running_run(
+    registry: Any,
+    current: RunRecord,
+    status: str,
+    live: list[dict[str, Any]] | None = None,
+) -> RunRecord | None:
+    """Refresh a still-running owner row and overlay live child statuses."""
+    now = _now_iso()
+    overlay = overlay_live_status_on_stored_tasks(current.result, live)
+    with sqlite_transaction(registry.db_path) as conn:
+        if overlay is None:
+            conn.execute(
+                "UPDATE runs SET status = ?, updated_at = ? "
+                "WHERE run_id = ? AND user_id = ? AND status = 'running'",
+                (status, now, current.spec.run_id, current.spec.user_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE runs SET status = ?, result_json = ?, updated_at = ? "
+                "WHERE run_id = ? AND user_id = ? AND status = 'running'",
+                (
+                    status,
+                    json.dumps(overlay),
+                    now,
+                    current.spec.run_id,
+                    current.spec.user_id,
+                ),
+            )
+    return registry.get_run(current.spec.run_id, owner=current.spec.user_id)
 
 
 def attach_partial_child_degraded(

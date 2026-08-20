@@ -130,9 +130,9 @@ def test_map_send_payload_is_polling_false_when_explicit() -> None:
     """Existing five consumers pass ``is_polling=False`` explicitly.
 
     Design / network / research / environment / evolution all keep
-    fire-and-poll-elsewhere semantics; an explicit ``False`` kwarg
-    must override the producer-side default so their
-    ``submit_analyst_analysis`` / ``analyst.submit`` paths stay
+    fire-and-poll-elsewhere semantics. The mapper default is already
+    ``False``; passing it explicitly keeps their
+    ``submit_analyst_analysis`` / ``analyst.submit`` paths
     behaviour-preserved when routed through the subgraph.
     """
     payload = _sample_payload()

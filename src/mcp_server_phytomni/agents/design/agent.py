@@ -143,8 +143,8 @@ class _DispatchOptions(NamedTuple):
 
     Bundles the optional output directory and the polling flag so
     ``_dispatch_and_wait_analysis`` can still thread the
-    consumer-supplied ``is_polling`` (deep_genome mounts pass ``True``;
-    the external submit-only flow keeps the ``False`` default).
+    consumer-supplied ``is_polling`` (deep_genome mounts pass ``False``;
+    callers that wait in-graph can still pass ``True``).
 
     Attributes:
         output_dir: Optional pre-allocated output directory path.
