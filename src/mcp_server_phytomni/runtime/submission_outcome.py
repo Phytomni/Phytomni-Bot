@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 __all__ = [
     "AcceptedSubmission",
@@ -16,10 +16,27 @@ __all__ = [
     "SubmissionOutcome",
     "classify_submissions",
     "has_pending_a2a",
-    "rejected_submissions_from_state",
     "project_submission_warnings",
+    "rejected_child_record",
+    "rejected_submissions_from_state",
     "task_output_pairs_from_records",
 ]
+
+
+def rejected_child_record(
+    *,
+    task_id: str,
+    kind: object,
+    code: object,
+) -> dict[str, Any]:
+    """Return one doomed child payload after a projector rejection."""
+    return {
+        "task_id": task_id,
+        "accepted": False,
+        "status": "failed",
+        "analysis_type": kind,
+        "error_code": code,
+    }
 
 
 @dataclass(frozen=True, slots=True)

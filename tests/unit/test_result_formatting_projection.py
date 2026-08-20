@@ -15,6 +15,7 @@ from dataclasses import asdict, make_dataclass
 from json import dumps
 
 import pytest
+from tests.support.execution_tasks import protein_promoter_children
 
 from mcp_server_phytomni.mcp.formatting import models as formatting_models
 from mcp_server_phytomni.mcp.formatting import (
@@ -224,43 +225,14 @@ def test_execution_projection_keeps_kind_and_error_code() -> None:
         "DigitalDesignAgent",
         {
             "execution": {
-                "tasks": [
-                    {
-                        "id": "child-accepted",
-                        "accepted": True,
-                        "status": "submitted",
-                        "kind": "protein_structure_analysis",
-                        "error_code": None,
-                        "provider_payload": "drop",
-                    },
-                    {
-                        "id": "child-failed",
-                        "accepted": False,
-                        "status": "failed",
-                        "kind": "promoter_analysis",
-                        "error_code": "input_rejected",
-                    },
-                ]
+                "tasks": protein_promoter_children(
+                    accepted_extra={"provider_payload": "drop"}
+                )
             }
         },
     )
 
-    assert execution.tasks == (
-        {
-            "id": "child-accepted",
-            "accepted": True,
-            "status": "submitted",
-            "kind": "protein_structure_analysis",
-            "error_code": None,
-        },
-        {
-            "id": "child-failed",
-            "accepted": False,
-            "status": "failed",
-            "kind": "promoter_analysis",
-            "error_code": "input_rejected",
-        },
-    )
+    assert execution.tasks == tuple(protein_promoter_children())
     assert "provider_payload" not in dumps(asdict(execution))
 
 

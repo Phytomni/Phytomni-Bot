@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from tests.support.execution_tasks import protein_promoter_children
 
 from mcp_server_phytomni.mcp.formatting.models import (
     ExecutionProjection,
@@ -644,22 +645,7 @@ def test_update_running_result_keeps_recorder_task_kinds(
     db_path = str(tmp_path / "tasks.db")
     registry = RunRegistry(db_path)
     reserved = empty_execution_projection(result_archive_required=True)
-    reserved["execution"]["tasks"] = [
-        {
-            "id": "child-accepted",
-            "accepted": True,
-            "status": "submitted",
-            "kind": "protein_structure_analysis",
-            "error_code": None,
-        },
-        {
-            "id": "child-failed",
-            "accepted": False,
-            "status": "failed",
-            "kind": "promoter_analysis",
-            "error_code": "input_rejected",
-        },
-    ]
+    reserved["execution"]["tasks"] = protein_promoter_children()
     registry.reserve_run(
         RunSpec(
             run_id="run-keep-kinds",

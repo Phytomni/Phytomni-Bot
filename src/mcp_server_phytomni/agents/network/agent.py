@@ -32,6 +32,7 @@ from ...runtime.submission_outcome import (
     RejectedSubmission,
     SubmissionOutcome,
     classify_submissions,
+    rejected_child_record,
     rejected_submissions_from_state,
 )
 from ...storage.path_policy import RunIdentity
@@ -130,13 +131,9 @@ def _project_network_submission_update(
             f"rejected-{kind}" if isinstance(kind, str) and kind else None
         )
     if isinstance(task_id, str) and task_id:
-        updates["network_task"] = {
-            "task_id": task_id,
-            "accepted": False,
-            "status": "failed",
-            "analysis_type": kind,
-            "error_code": code,
-        }
+        updates["network_task"] = rejected_child_record(
+            task_id=task_id, kind=kind, code=code
+        )
     else:
         updates["network_task"] = {}
     if isinstance(goal, str) and isinstance(code, str):

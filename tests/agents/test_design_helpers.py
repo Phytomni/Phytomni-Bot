@@ -268,7 +268,7 @@ def test_design_outcome_skips_projector_doomed_task_ids() -> None:
         }
     )
     assert outcome.kind == "rejected"
-    assert outcome.task_ids == ()
+    assert not outcome.task_ids
     doomed = updates["design_task_result"][0]
     assert doomed["accepted"] is False
     assert str(doomed["task_id"]).startswith("rejected-")
@@ -350,6 +350,7 @@ async def test_arun_rejects_unpersistable_design_a2a_pause(
 ) -> None:
     """A2A pending work cannot escape as zero-task native running work."""
     agent = _build_agent()
+    pending = {"a2a_pending": [{"task_id": "peer-task"}]}
     monkeypatch.setattr(
         design_agent_module,
         "run_analysis_graph",
@@ -358,16 +359,14 @@ async def test_arun_rejects_unpersistable_design_a2a_pause(
                 "design_task_result": [{"task_id": "local-task"}],
                 "error": None,
                 "failures": [],
-                "phytomni_state": {"a2a_pending": [{"task_id": "peer-task"}]},
+                "phytomni_state": pending,
             }
         ),
     )
 
-    with pytest.raises(
-        RemoteAnalysisSubmissionError,
-        match="no remote task was accepted",
-    ):
+    with pytest.raises(RemoteAnalysisSubmissionError) as caught:
         await agent.arun("ath", "AT1G01010")
+    assert "no remote task was accepted" in str(caught.value)
 
 
 async def test_design_dispatch_propagates_missing_task_id(

@@ -43,11 +43,11 @@ from ..runtime.background_submission import (
     BackgroundSubmissionExecutionError,
     BackgroundSubmissionLaunchError,
     BackgroundSubmissionOutcome,
+    failed_child_ids,
     launch_background_submission,
     reserve_background_submission,
 )
 from ..runtime.locale import current_effective_locale
-from ..runtime.request_context import current_run_id
 from ..runtime.research_input_store import ResearchInputStore
 from ..runtime.run_registry import RunRegistry, RunRequestInfo
 from ..runtime.stage_trace import DataStage
@@ -638,35 +638,14 @@ async def _execute_background_agent_run(
         result = redact_managed_attachment_values(result, attachment_evidence)
     return BackgroundSubmissionOutcome(
         accepted_task_ids=_app_attr("current_accepted_task_ids")(),
-        failed_task_ids=_failed_child_ids(owner=preflight.owner),
+        failed_task_ids=failed_child_ids(
+            owner=preflight.owner,
+            db_path=_app_attr("resolve_tasks_db_path")(),
+        ),
         # The detached worker persists this projection.  Debug is a public
         # response option, never an authorization to retain raw agent output.
         result=strip_agent_result(result),
         degraded=_app_attr("current_recorder_degraded")(),
-    )
-
-
-def _failed_child_ids(*, owner: str) -> tuple[str, ...]:
-    """Return doomed child ids already recorded on the reserved umbrella."""
-    run_id = current_run_id()
-    if not isinstance(run_id, str) or not run_id:
-        return ()
-    record = RunRegistry(_app_attr("resolve_tasks_db_path")()).get_run(
-        run_id, owner=owner
-    )
-    if record is None or not isinstance(record.result, Mapping):
-        return ()
-    execution = record.result.get("execution")
-    tasks = execution.get("tasks") if isinstance(execution, Mapping) else None
-    if not isinstance(tasks, list):
-        return ()
-    return tuple(
-        item["id"]
-        for item in tasks
-        if isinstance(item, Mapping)
-        and item.get("accepted") is False
-        and isinstance(item.get("id"), str)
-        and item["id"]
     )
 
 

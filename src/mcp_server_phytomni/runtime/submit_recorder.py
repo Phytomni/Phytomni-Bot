@@ -74,6 +74,18 @@ class _ChildSubmissionRecordRequest:
     now: str
 
 
+@dataclass(frozen=True, slots=True)
+class _SubmittedTaskPersistRequest:
+    """Inputs needed to persist one submit-handler registry write."""
+
+    result: dict[str, Any]
+    agent: str
+    accepted_submissions: tuple[SubmissionTuple, ...]
+    submissions: tuple[SubmissionTuple, ...]
+    bound_run_id: str | None
+    user_id: str
+
+
 def _extract_single_submission(
     result: Mapping[str, Any],
 ) -> tuple[SubmissionTuple, ...]:
@@ -216,25 +228,24 @@ def _bounded_error_code(value: object) -> str | None:
     return None
 
 
+def _list_mapping_items(value: object) -> tuple[Mapping[str, Any], ...]:
+    """Return mapping rows from a list payload, else empty."""
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, Mapping))
+
+
 def _nested_submission_items(
     result: Mapping[str, Any], agent: str
 ) -> tuple[Mapping[str, Any], ...]:
     """Return per-child payload mappings used to recover kind/error_code."""
     if agent == "design":
-        items = result.get("design_task_result")
-        if isinstance(items, list):
-            return tuple(item for item in items if isinstance(item, Mapping))
-        return ()
+        return _list_mapping_items(result.get("design_task_result"))
     if agent == "network":
         nested = result.get("network_task")
-        if isinstance(nested, Mapping):
-            return (nested,)
-        return ()
+        return (nested,) if isinstance(nested, Mapping) else ()
     if agent == "research":
-        items = result.get("research_submissions")
-        if isinstance(items, list):
-            return tuple(item for item in items if isinstance(item, Mapping))
-        return ()
+        return _list_mapping_items(result.get("research_submissions"))
     if agent in {"analyst", "deep_genome"}:
         return (result,)
     return ()
@@ -503,6 +514,79 @@ def _build_child_submissions(
     )
 
 
+def _persist_submitted_task(request: _SubmittedTaskPersistRequest) -> None:
+    """Write one submit-handler envelope into the local run registry."""
+    now = datetime.now(UTC).isoformat()
+    db_path = resolve_tasks_db_path()
+    try:
+        initial_result = _initial_submission_result(
+            request.result, request.accepted_submissions, request.agent
+        )
+        registry = RunRegistry(db_path)
+        bound_run_id = request.bound_run_id
+        if bound_run_id is not None:
+            child_submissions = _build_child_submissions(
+                submissions=request.accepted_submissions,
+                run_id=bound_run_id,
+                user_id=request.user_id,
+                agent=request.agent,
+                now=now,
+            )
+            if not registry.record_reserved_submissions(
+                bound_run_id,
+                owner=request.user_id,
+                agent=request.agent,
+                submissions=child_submissions,
+                result=initial_result,
+                now=now,
+            ):
+                bind_recorder_degraded(True)
+            return
+
+        run_id = IdFactory().new_id("run", request.agent)
+        registry.create_run(
+            RunSpec(
+                run_id=run_id,
+                user_id=request.user_id,
+                agent=request.agent,
+                origin="remote",
+            ),
+            outcome=RunOutcome(result=initial_result),
+            request_info=RunRequestInfo(request_id=current_request_id()),
+        )
+        _record_child_submissions(
+            _ChildSubmissionRecordRequest(
+                manager=TaskManager(db_path),
+                submissions=request.accepted_submissions,
+                run_id=run_id,
+                user_id=request.user_id,
+                agent=request.agent,
+                now=now,
+            )
+        )
+        bind_run_id(run_id)
+        logger.info(
+            "Analyst run correlated",
+            extra={
+                "request_id": current_request_id(),
+                "run_id": run_id,
+                "task_count": len(request.submissions),
+                "agent": request.agent,
+            },
+        )
+    except (sqlite3.Error, OSError, ValueError) as exc:
+        logger.error(
+            "Failed to persist remote submission",
+            extra={
+                "agent": request.agent,
+                "run_id": request.bound_run_id,
+                "task_count": len(request.submissions),
+                "error_type": type(exc).__name__,
+            },
+        )
+        bind_recorder_degraded(True)
+
+
 def record_submitted_task(result: Any, *, agent: str) -> None:
     """Persist submitted tasks plus their owning run row.
 
@@ -568,81 +652,16 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
         and accepted_submissions[0][0] == current_pre_recorded_task_id()
     ):
         return
-    user_id = current_request_user() or "anonymous"
-    bound_run_id = current_run_id()
-    now = datetime.now(UTC).isoformat()
-    db_path = resolve_tasks_db_path()
-    # Seed the run row with the same canonical envelope shape reconciliation
-    # writes later so a client polling ``GET /v1/runs/{id}`` while the run is
-    # still in flight sees empty scientific content and submitted execution
-    # rows without a field-ownership transition at terminal settlement.
-    try:
-        initial_result = _initial_submission_result(
-            result, accepted_submissions, agent
+    _persist_submitted_task(
+        _SubmittedTaskPersistRequest(
+            result=result,
+            agent=agent,
+            accepted_submissions=accepted_submissions,
+            submissions=submissions,
+            bound_run_id=current_run_id(),
+            user_id=current_request_user() or "anonymous",
         )
-        registry = RunRegistry(db_path)
-        if bound_run_id is not None:
-            child_submissions = _build_child_submissions(
-                submissions=accepted_submissions,
-                run_id=bound_run_id,
-                user_id=user_id,
-                agent=agent,
-                now=now,
-            )
-            if not registry.record_reserved_submissions(
-                bound_run_id,
-                owner=user_id,
-                agent=agent,
-                submissions=child_submissions,
-                result=initial_result,
-                now=now,
-            ):
-                bind_recorder_degraded(True)
-            return
-
-        run_id = IdFactory().new_id("run", agent)
-        registry.create_run(
-            RunSpec(
-                run_id=run_id,
-                user_id=user_id,
-                agent=agent,
-                origin="remote",
-            ),
-            outcome=RunOutcome(result=initial_result),
-            request_info=RunRequestInfo(request_id=current_request_id()),
-        )
-        _record_child_submissions(
-            _ChildSubmissionRecordRequest(
-                manager=TaskManager(db_path),
-                submissions=accepted_submissions,
-                run_id=run_id,
-                user_id=user_id,
-                agent=agent,
-                now=now,
-            )
-        )
-        bind_run_id(run_id)
-        logger.info(
-            "Analyst run correlated",
-            extra={
-                "request_id": current_request_id(),
-                "run_id": run_id,
-                "task_count": len(submissions),
-                "agent": agent,
-            },
-        )
-    except (sqlite3.Error, OSError, ValueError) as exc:
-        logger.error(
-            "Failed to persist remote submission",
-            extra={
-                "agent": agent,
-                "run_id": bound_run_id,
-                "task_count": len(submissions),
-                "error_type": type(exc).__name__,
-            },
-        )
-        bind_recorder_degraded(True)
-        return
+    )
 
 
 def records_submission(

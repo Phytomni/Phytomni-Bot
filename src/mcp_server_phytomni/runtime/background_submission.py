@@ -19,10 +19,13 @@ from .live_tasks import (
     is_live_running,
     register_live_task,
 )
-from .request_context import request_context
+from .request_context import current_run_id, request_context
 from .result_run_layout import RESULT_DELIVERY_AGENTS
 from .run_registry import RunRegistry, RunRequestInfo, RunSpec
-from .run_registry_delivery import carry_execution_tasks
+from .run_registry_delivery import (
+    carry_execution_tasks,
+    failed_child_ids_from_result,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _RUN_ID_ATTEMPTS = 3
@@ -33,6 +36,7 @@ __all__ = [
     "BackgroundSubmissionOutcome",
     "BackgroundSubmissionReservation",
     "BACKGROUND_RUNTIME_ERRORS",
+    "failed_child_ids",
     "launch_background_submission",
     "reserve_background_submission",
 ]
@@ -130,6 +134,22 @@ def reserve_background_submission(
 _TERMINAL_WORKER_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 
 
+def failed_child_ids(*, owner: str, db_path: str) -> tuple[str, ...]:
+    """Return doomed child ids already recorded on the reserved umbrella."""
+    run_id = current_run_id()
+    if not isinstance(run_id, str) or not run_id:
+        return ()
+    record = RunRegistry(db_path).get_run(run_id, owner=owner)
+    if record is None:
+        return ()
+    return failed_child_ids_from_result(record.result)
+
+
+def _is_terminal_worker(record: object) -> bool:
+    """Return whether a stored run is already past the worker window."""
+    return getattr(record, "status", None) in _TERMINAL_WORKER_STATUSES
+
+
 def _settle_failed(
     db_path: str,
     reservation: BackgroundSubmissionReservation,
@@ -190,6 +210,73 @@ def _settle_cancelled(
         return False
 
 
+def _apply_background_outcome(
+    reservation: BackgroundSubmissionReservation,
+    outcome: BackgroundSubmissionOutcome,
+    *,
+    db_path: str,
+) -> None:
+    """Settle or persist one detached worker outcome onto the umbrella."""
+    if outcome.degraded:
+        degraded_result = empty_execution_projection(degraded=True)
+        degraded_result["execution"]["tasks"] = [
+            {
+                "id": task_id,
+                "accepted": True,
+                "status": "submitted",
+            }
+            for task_id in outcome.accepted_task_ids
+        ]
+        _settle_failed(
+            db_path,
+            reservation,
+            error="background_submission_tracking_failed",
+            result=degraded_result,
+        )
+        return
+    if not outcome.accepted_task_ids and not outcome.failed_task_ids:
+        raise BackgroundSubmissionExecutionError("no accepted child tasks")
+    registry = RunRegistry(db_path)
+    current = registry.get_run(reservation.run_id, owner=reservation.owner)
+    projection = outcome.result or empty_execution_projection()
+    if current is not None:
+        projection = carry_execution_tasks(current.result, projection)
+    if not outcome.accepted_task_ids:
+        _settle_failed(
+            db_path,
+            reservation,
+            error="background_submission_children_failed",
+            result=projection,
+        )
+        return
+    execution = projection.get("execution")
+    if not isinstance(execution, dict):
+        execution = {}
+        projection["execution"] = execution
+    if execution.get("warnings"):
+        execution["tracking"] = {"degraded": True}
+    if _is_terminal_worker(current):
+        return
+    if current is None or not set(outcome.accepted_task_ids).intersection(
+        current.task_ids
+    ):
+        raise BackgroundSubmissionExecutionError(
+            "accepted child tasks are not queryable"
+        )
+    if registry.update_running_result(
+        reservation.run_id,
+        owner=reservation.owner,
+        result=projection,
+    ):
+        return
+    current = registry.get_run(reservation.run_id, owner=reservation.owner)
+    if _is_terminal_worker(current):
+        return
+    raise BackgroundSubmissionExecutionError(
+        "unable to update running projection"
+    )
+
+
 async def _run_background_submission(
     reservation: BackgroundSubmissionReservation,
     operation: Callable[[], Awaitable[BackgroundSubmissionOutcome]],
@@ -205,76 +292,7 @@ async def _run_background_submission(
             locale=reservation.request_info.locale,
         ):
             outcome = await operation()
-            if outcome.degraded:
-                degraded_result = empty_execution_projection(degraded=True)
-                degraded_result["execution"]["tasks"] = [
-                    {
-                        "id": task_id,
-                        "accepted": True,
-                        "status": "submitted",
-                    }
-                    for task_id in outcome.accepted_task_ids
-                ]
-                _settle_failed(
-                    db_path,
-                    reservation,
-                    error="background_submission_tracking_failed",
-                    result=degraded_result,
-                )
-                return
-            if not outcome.accepted_task_ids and not outcome.failed_task_ids:
-                raise BackgroundSubmissionExecutionError(
-                    "no accepted child tasks"
-                )
-            registry = RunRegistry(db_path)
-            current = registry.get_run(
-                reservation.run_id,
-                owner=reservation.owner,
-            )
-            projection = outcome.result or empty_execution_projection()
-            if current is not None:
-                projection = carry_execution_tasks(current.result, projection)
-            if not outcome.accepted_task_ids:
-                _settle_failed(
-                    db_path,
-                    reservation,
-                    error="background_submission_children_failed",
-                    result=projection,
-                )
-                return
-            execution = projection.get("execution")
-            if not isinstance(execution, dict):
-                execution = {}
-                projection["execution"] = execution
-            if execution.get("warnings"):
-                execution["tracking"] = {"degraded": True}
-            if current is not None and current.status in (
-                _TERMINAL_WORKER_STATUSES
-            ):
-                return
-            if current is None or not set(
-                outcome.accepted_task_ids
-            ).intersection(current.task_ids):
-                raise BackgroundSubmissionExecutionError(
-                    "accepted child tasks are not queryable"
-                )
-            updated = registry.update_running_result(
-                reservation.run_id,
-                owner=reservation.owner,
-                result=projection,
-            )
-            if not updated:
-                current = registry.get_run(
-                    reservation.run_id,
-                    owner=reservation.owner,
-                )
-                if current is not None and current.status in (
-                    _TERMINAL_WORKER_STATUSES
-                ):
-                    return
-                raise BackgroundSubmissionExecutionError(
-                    "unable to update running projection"
-                )
+            _apply_background_outcome(reservation, outcome, db_path=db_path)
     except asyncio.CancelledError:
         _settle_cancelled(db_path, reservation)
         raise

@@ -16,6 +16,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from tests.support.execution_tasks import protein_promoter_children
 from tests.support.resume_graph import build_resume_app
 from tests.support.terminal_results import (
     SensitiveTerminalResultSpec,
@@ -890,47 +891,23 @@ def test_canonical_execution_tasks_keep_kind_and_error_code() -> None:
             "task_ids": ["child-accepted"],
             "result": {
                 "execution": {
-                    "tasks": [
-                        {
-                            "id": "child-accepted",
-                            "accepted": True,
-                            "status": "submitted",
-                            "kind": "protein_structure_analysis",
-                            "error_code": None,
-                            "traceback": "must-not-leak",
-                        },
-                        {
-                            "id": "child-failed",
-                            "accepted": False,
-                            "status": "failed",
-                            "kind": "promoter_analysis",
-                            "error_code": "input_rejected",
+                    "tasks": protein_promoter_children(
+                        accepted_extra={"traceback": "must-not-leak"},
+                        failed_extra={
                             "error_detail": (
                                 "Traceback (most recent call last)"
-                            ),
+                            )
                         },
-                    ]
+                    )
                 }
             },
         }
     )
 
-    assert projected["result"]["execution"]["tasks"] == [
-        {
-            "id": "child-accepted",
-            "accepted": True,
-            "status": "submitted",
-            "kind": "protein_structure_analysis",
-            "error_code": None,
-        },
-        {
-            "id": "child-failed",
-            "accepted": False,
-            "status": "failed",
-            "kind": "promoter_analysis",
-            "error_code": "input_rejected",
-        },
-    ]
+    assert (
+        projected["result"]["execution"]["tasks"]
+        == protein_promoter_children()
+    )
     dumped = str(projected)
     assert "traceback" not in dumped
     assert "error_detail" not in dumped

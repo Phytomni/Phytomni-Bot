@@ -2,21 +2,40 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Asyncio helpers for synchronous CLI-entry-point tests."""
+"""Asyncio helpers for tests that own or poll an event loop."""
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import Any
 
 import langgraph.errors as langgraph_errors
+import pytest
 
 GRAPH_CANCELLATION = (
     asyncio.CancelledError,
     getattr(langgraph_errors, "NodeCancelledError", asyncio.CancelledError),
 )
 
-__all__ = ["GRAPH_CANCELLATION", "run_coroutine_on_owned_loop"]
+__all__ = [
+    "GRAPH_CANCELLATION",
+    "run_coroutine_on_owned_loop",
+    "wait_until",
+]
+
+
+async def wait_until(
+    predicate: Callable[[], bool],
+    *,
+    attempts: int = 100,
+) -> None:
+    """Poll until ``predicate`` is true or fail the test."""
+    for _ in range(attempts):
+        if predicate():
+            return
+        await asyncio.sleep(0)
+    pytest.fail("background condition was not reached")
 
 
 def run_coroutine_on_owned_loop(coro: Any) -> Any:

@@ -9,12 +9,14 @@ import asyncio
 import json
 import logging
 import sqlite3
-from collections.abc import Callable, Coroutine
+from collections.abc import Coroutine
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NoReturn
 
 import pytest
+from tests.support.asyncio_helpers import wait_until as _wait_until
+from tests.support.execution_tasks import execution_child
 
 from mcp_server_phytomni.api.lifecycle_contract import canonicalize_run_record
 from mcp_server_phytomni.runtime import background_submission
@@ -48,18 +50,6 @@ class _SyntheticProviderFailureError(Exception):
 
 class _SyntheticEscapedSignal(BaseException):
     """Non-cancellation escape used to exercise the done observer."""
-
-
-async def _wait_until(
-    predicate: Callable[[], bool],
-    *,
-    attempts: int = 100,
-) -> None:
-    for _ in range(attempts):
-        if predicate():
-            return
-        await asyncio.sleep(0)
-    pytest.fail("background condition was not reached")
 
 
 @pytest.mark.asyncio
@@ -306,17 +296,11 @@ async def test_degraded_tracking_fails_with_safe_accepted_projection(
     assert record.error == "background_submission_tracking_failed"
     assert not record.task_ids
     assert record.result is not None
-    assert record.result["execution"] == {
-        "tracking": {"degraded": True},
-        "warnings": [],
-        "tasks": [
-            {"id": "accepted-1", "accepted": True, "status": "submitted"}
-        ],
-        "artifacts": [],
-        "output_dirs": [],
-        "report": None,
-        "diagnostics": [],
-    }
+    expected = empty_execution_projection(degraded=True)
+    expected["execution"]["tasks"] = [
+        {"id": "accepted-1", "accepted": True, "status": "submitted"}
+    ]
+    assert record.result["execution"] == expected["execution"]
 
 
 @pytest.mark.asyncio
@@ -333,13 +317,13 @@ async def test_worker_with_only_failed_children_settles_failed(
     )
     projection = empty_execution_projection()
     projection["execution"]["tasks"] = [
-        {
-            "id": "child-failed",
-            "accepted": False,
-            "status": "failed",
-            "kind": "protein_structure_analysis",
-            "error_code": "input_rejected",
-        }
+        execution_child(
+            "child-failed",
+            accepted=False,
+            status="failed",
+            kind="protein_structure_analysis",
+            error_code="input_rejected",
+        )
     ]
 
     async def operation() -> BackgroundSubmissionOutcome:
@@ -348,25 +332,19 @@ async def test_worker_with_only_failed_children_settles_failed(
             result=projection,
         )
 
-    launch_background_submission(reservation, operation, db_path=db_path)
-    await _wait_until(
-        lambda: (
-            (
-                record := RunRegistry(db_path).get_run(
-                    reservation.run_id, owner="alice"
-                )
-            )
-            is not None
-            and record.status == "failed"
+    def _failed() -> bool:
+        stored = RunRegistry(db_path).get_run(
+            reservation.run_id, owner="alice"
         )
-    )
+        return stored is not None and stored.status == "failed"
+
+    launch_background_submission(reservation, operation, db_path=db_path)
+    await _wait_until(_failed)
     record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
-    assert record is not None
-    assert record.status == "failed"
+    assert record is not None and record.status == "failed"
     assert record.result is not None
-    assert (
-        record.result["execution"]["tasks"] == projection["execution"]["tasks"]
-    )
+    tasks = record.result["execution"]["tasks"]
+    assert tasks == projection["execution"]["tasks"]
 
 
 @pytest.mark.asyncio
@@ -385,20 +363,14 @@ async def test_worker_update_after_record_keeps_kind_on_getrun(
     )
     recorded = empty_execution_projection()
     recorded["execution"]["tasks"] = [
-        {
-            "id": "design-protein",
-            "accepted": True,
-            "status": "submitted",
-            "kind": "protein_structure_analysis",
-            "error_code": None,
-        },
-        {
-            "id": "design-promoter",
-            "accepted": False,
-            "status": "failed",
-            "kind": "promoter_analysis",
-            "error_code": "input_rejected",
-        },
+        execution_child("design-protein", kind="protein_structure_analysis"),
+        execution_child(
+            "design-promoter",
+            accepted=False,
+            status="failed",
+            kind="promoter_analysis",
+            error_code="input_rejected",
+        ),
     ]
     thin = empty_execution_projection()
     thin["execution"]["tasks"] = [{"id": "design-protein", "accepted": True}]

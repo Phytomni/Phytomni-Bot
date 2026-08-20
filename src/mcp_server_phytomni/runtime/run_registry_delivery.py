@@ -52,6 +52,7 @@ __all__ = [
     "attach_public_delivery",
     "carry_execution_tasks",
     "carry_required_delivery",
+    "failed_child_ids_from_result",
     "private_delivery_from_result",
     "replace_running_result",
     "result_delivery_from_result",
@@ -603,33 +604,31 @@ def replace_running_result(
 
 def _execution_task_rows(result: object) -> list[dict[str, Any]]:
     """Return mutable copies of persisted execution.tasks mappings."""
-    if not isinstance(result, Mapping):
-        return []
-    execution = result.get("execution")
-    if not isinstance(execution, Mapping):
-        return []
-    tasks = execution.get("tasks")
+    execution = (
+        result.get("execution") if isinstance(result, Mapping) else None
+    )
+    tasks = execution.get("tasks") if isinstance(execution, Mapping) else None
     if not isinstance(tasks, Sequence) or isinstance(tasks, (str, bytes)):
         return []
     return [dict(item) for item in tasks if isinstance(item, Mapping)]
 
 
-def carry_execution_tasks(
-    stored_result: object,
-    incoming: dict[str, Any],
-) -> dict[str, Any]:
-    """Keep recorder five-key task rows when a formatted envelope is thinner.
+def failed_child_ids_from_result(result: object) -> tuple[str, ...]:
+    """Return doomed child ids from a stored execution projection."""
+    return tuple(
+        item["id"]
+        for item in _execution_task_rows(result)
+        if item.get("accepted") is False
+        and isinstance(item.get("id"), str)
+        and item["id"]
+    )
 
-    HTTP background workers replace the reserved projection with
-    ``strip_agent_result`` of a formatted envelope whose ``execution.tasks``
-    are often ``{id, accepted: True}`` rebuilt from ``task_ids``. Submit
-    recording already stamped ``kind`` / ``error_code`` / doomed children;
-    those rows must survive GetRun.
-    """
-    stored_tasks = _execution_task_rows(stored_result)
-    if not stored_tasks:
-        return incoming
-    incoming_tasks = _execution_task_rows(incoming)
+
+def _merge_execution_task_rows(
+    stored_tasks: list[dict[str, Any]],
+    incoming_tasks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Overlay live status onto stored five-key rows, then append unseen."""
     incoming_by_id: dict[str, Mapping[str, Any]] = {}
     for item in incoming_tasks:
         task_id = item.get("id")
@@ -651,6 +650,27 @@ def carry_execution_tasks(
         task_id = item.get("id")
         if isinstance(task_id, str) and task_id and task_id not in seen:
             merged.append(dict(item))
+    return merged
+
+
+def carry_execution_tasks(
+    stored_result: object,
+    incoming: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep recorder five-key task rows when a formatted envelope is thinner.
+
+    HTTP background workers replace the reserved projection with
+    ``strip_agent_result`` of a formatted envelope whose ``execution.tasks``
+    are often ``{id, accepted: True}`` rebuilt from ``task_ids``. Submit
+    recording already stamped ``kind`` / ``error_code`` / doomed children;
+    those rows must survive GetRun.
+    """
+    stored_tasks = _execution_task_rows(stored_result)
+    if not stored_tasks:
+        return incoming
+    merged = _merge_execution_task_rows(
+        stored_tasks, _execution_task_rows(incoming)
+    )
     updated = dict(incoming)
     execution = updated.get("execution")
     next_execution = dict(execution) if isinstance(execution, Mapping) else {}

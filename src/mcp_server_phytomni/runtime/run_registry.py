@@ -3,11 +3,8 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Run-scoped registry over the shared task database.
 
-Owns the ``runs`` table in the same SQLite file as ``tasks`` so the
-API and MCP paths read one source of truth. Child task ids are derived
-from ``tasks.run_id`` on read (no denormalised column to drift).
-
-Public dataclasses: RunSpec, RunFilter, Timestamps, RunRecord, RunRegistry.
+Owns the ``runs`` table in the same SQLite file as ``tasks``. Child
+task ids are derived from ``tasks.run_id`` on read.
 """
 
 from __future__ import annotations
@@ -16,7 +13,6 @@ import asyncio
 import json
 import sqlite3
 from collections.abc import Sequence
-from dataclasses import replace
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ..mcp.formatting.models import ResultDelivery
@@ -52,7 +48,6 @@ from .run_registry_models import (
     _CREATE_RUNS_USER_INDEX,
     _CREATE_TASKS_RUN_INDEX,
     _NON_POLLABLE_RUN_STATUSES,
-    _PARTIAL_CHILDREN_FAILED,
     _REQUEST_INFO_COLUMNS,
     _RESEARCH_COORDINATOR_COLUMNS,
     _TERMINAL_RUN_STATUSES,
@@ -69,7 +64,6 @@ from .run_registry_models import (
     RunSpec,
     Timestamps,
     _aggregate_status,
-    _has_partial_child_failure,
     _now_iso,
     local_run_spec,
 )
@@ -83,13 +77,12 @@ from .run_registry_protocols import (
 from .run_registry_reports import (
     ReportArtifactSources,
     _ReportSettlementRequest,
-    annotate_live_with_stored_tasks,
+    attach_partial_child_degraded,
+    mark_partial_child_failure,
     settle_report_terminal,
     stored_submission_warnings,
 )
-from .run_registry_reports import (
-    legacy_terminal_payload as _terminal_payload,
-)
+from .run_registry_reports import legacy_terminal_payload as _terminal_payload
 from .run_registry_views import RunRegistryViewsMixin
 from .sqlite import sqlite_transaction
 from .task_manager import (
@@ -117,29 +110,6 @@ _RESEARCH_STAGE_RANK = {
     "execution": 2,
     "report_assembly": 3,
 }
-
-
-def _attach_partial_child_degraded(
-    result: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """Mark tracking degraded and append a bounded partial-child warning."""
-    payload = dict(result or {})
-    execution = dict(payload.get("execution") or {})
-    warnings = [
-        dict(item) if isinstance(item, dict) else item
-        for item in (execution.get("warnings") or [])
-    ]
-    if not any(
-        isinstance(item, dict) and item.get("code") == _PARTIAL_CHILDREN_FAILED
-        for item in warnings
-    ):
-        warnings.append({"code": _PARTIAL_CHILDREN_FAILED, "retryable": False})
-    tracking = dict(execution.get("tracking") or {})
-    tracking["degraded"] = True
-    execution["warnings"] = warnings
-    execution["tracking"] = tracking
-    payload["execution"] = execution
-    return payload
 
 
 class _SettleRunRequest(NamedTuple):
@@ -820,16 +790,9 @@ class RunRegistry(RunRegistryViewsMixin):
         new_status = _aggregate_status([row["status"] for row in live])
         if new_status not in _TERMINAL_RUN_STATUSES:
             return self._touch_running(current, new_status)
-        live = annotate_live_with_stored_tasks(live, current.result)
-        child_statuses = [str(row.get("status") or "") for row in live]
-        partial = new_status == "succeeded" and _has_partial_child_failure(
-            child_statuses
+        current, live, partial = mark_partial_child_failure(
+            current, live, new_status
         )
-        if partial:
-            current = replace(
-                current,
-                result=_attach_partial_child_degraded(current.result),
-            )
         if is_terminal_report_agent(current.spec.agent):
             return await settle_report_terminal(
                 _ReportSettlementRequest(
@@ -869,7 +832,7 @@ class RunRegistry(RunRegistryViewsMixin):
             warnings=stored_submission_warnings(current.result),
         )
         if partial:
-            result_payload = _attach_partial_child_degraded(result_payload)
+            result_payload = attach_partial_child_degraded(result_payload)
         return self._settle_terminal(
             current, RunOutcome(new_status, result_payload, error)
         )

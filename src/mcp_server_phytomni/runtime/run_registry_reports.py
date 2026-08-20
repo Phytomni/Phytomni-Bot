@@ -34,7 +34,13 @@ from .run_registry_delivery import (
     mark_degraded_delivery_failure,
     result_delivery_from_result,
 )
-from .run_registry_models import _FAILURE_STATUSES, RunOutcome
+from .run_registry_models import (
+    _FAILURE_STATUSES,
+    _PARTIAL_CHILDREN_FAILED,
+    RunOutcome,
+    RunRecord,
+    _has_partial_child_failure,
+)
 from .submission_outcome import project_submission_warnings
 from .task_manager import TaskManager
 from .terminal_artifacts import (
@@ -672,6 +678,48 @@ def annotate_live_with_stored_tasks(
                 }
             )
     return annotated
+
+
+def attach_partial_child_degraded(
+    result: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Mark tracking degraded and append a bounded partial-child warning."""
+    payload = dict(result or {})
+    execution = dict(payload.get("execution") or {})
+    warnings = [
+        dict(item) if isinstance(item, dict) else item
+        for item in (execution.get("warnings") or [])
+    ]
+    if not any(
+        isinstance(item, dict) and item.get("code") == _PARTIAL_CHILDREN_FAILED
+        for item in warnings
+    ):
+        warnings.append({"code": _PARTIAL_CHILDREN_FAILED, "retryable": False})
+    tracking = dict(execution.get("tracking") or {})
+    tracking["degraded"] = True
+    execution["warnings"] = warnings
+    execution["tracking"] = tracking
+    payload["execution"] = execution
+    return payload
+
+
+def mark_partial_child_failure(
+    current: RunRecord,
+    live: list[dict[str, Any]],
+    new_status: str,
+) -> tuple[RunRecord, list[dict[str, Any]], bool]:
+    """Annotate stored doomed children and mark partial success degraded."""
+    live = annotate_live_with_stored_tasks(live, current.result)
+    partial = new_status == "succeeded" and _has_partial_child_failure(
+        [str(row.get("status") or "") for row in live]
+    )
+    if not partial:
+        return current, live, False
+    current = replace(
+        current,
+        result=attach_partial_child_degraded(current.result),
+    )
+    return current, live, True
 
 
 def _public_task_row(row: Mapping[str, Any]) -> dict[str, Any]:

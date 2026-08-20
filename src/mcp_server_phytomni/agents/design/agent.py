@@ -40,6 +40,7 @@ from ...runtime.submission_outcome import (
     SubmissionOutcome,
     classify_submissions,
     has_pending_a2a,
+    rejected_child_record,
     rejected_submissions_from_state,
 )
 from ...storage.path_policy import RunIdentity
@@ -227,13 +228,9 @@ def _project_design_submission_updates(
                 )
             if isinstance(task_id, str) and task_id:
                 accepted_results.append(
-                    {
-                        "task_id": task_id,
-                        "accepted": False,
-                        "status": "failed",
-                        "analysis_type": kind,
-                        "error_code": code,
-                    }
+                    rejected_child_record(
+                        task_id=task_id, kind=kind, code=code
+                    )
                 )
             continue
         accepted_results.append(dict(item))

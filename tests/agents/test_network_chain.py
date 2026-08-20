@@ -562,16 +562,13 @@ def test_network_outcome_skips_projector_doomed_task_ids() -> None:
             }
         }
     )
-    outcome = _network_submission_outcome(
-        {
-            **updates,
-            "phytomni_state": {
-                "submission_rejections": updates.get("submission_rejections")
-            },
-        }
-    )
+    payload = dict(updates)
+    payload["phytomni_state"] = {
+        "submission_rejections": updates.get("submission_rejections")
+    }
+    outcome = _network_submission_outcome(payload)
     assert outcome.kind == "rejected"
-    assert outcome.task_ids == ()
+    assert not outcome.task_ids
     doomed = updates["network_task"]
     assert doomed["accepted"] is False
     assert str(doomed["task_id"]).startswith("rejected-")
