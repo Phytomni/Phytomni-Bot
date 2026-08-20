@@ -307,6 +307,96 @@ async def test_reconcile_aggregates_all_succeeded_into_terminal(
 
 
 @pytest.mark.asyncio
+async def test_reconcile_partial_success_stays_succeeded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A successful child keeps the run succeeded when a sibling failed."""
+    registry, manager, _ = _make_registry(tmp_path)
+    _seed_async_run(
+        registry,
+        manager,
+        RunSpec("run-partial", "alice", "design", "remote"),
+        ("t-ok", "t-bad"),
+    )
+
+    async def fake(task_id: str) -> dict[str, Any]:
+        if task_id == "t-ok":
+            return {
+                "task_id": task_id,
+                "status": "succeeded",
+                "output_dir": "/obs/a",
+            }
+        return {"task_id": task_id, "status": "failed", "output_dir": ""}
+
+    monkeypatch.setattr(run_registry, "reconcile_task", fake)
+    record = await registry.reconcile(
+        "run-partial", owner="alice", lister=_empty_lister
+    )
+    assert record is not None
+    assert record.status == "succeeded"
+    assert record.result is not None
+    assert record.result["execution"]["tracking"]["degraded"] is True
+    statuses = {
+        row["id"]: row["status"] for row in record.result["execution"]["tasks"]
+    }
+    assert statuses == {"t-ok": "succeeded", "t-bad": "failed"}
+
+
+@pytest.mark.asyncio
+async def test_reconcile_all_cancelled_children_is_cancelled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every cancelled child settles the umbrella as cancelled."""
+    registry, manager, _ = _make_registry(tmp_path)
+    _seed_async_run(
+        registry,
+        manager,
+        RunSpec("run-can", "alice", "analyst", "remote"),
+        ("t-1",),
+    )
+
+    async def fake(task_id: str) -> dict[str, Any]:
+        return {"task_id": task_id, "status": "cancelled", "output_dir": ""}
+
+    monkeypatch.setattr(run_registry, "reconcile_task", fake)
+    record = await registry.reconcile(
+        "run-can", owner="alice", lister=_empty_lister
+    )
+    assert record is not None
+    assert record.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_mixed_cancelled_and_running_stays_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A still-running sibling keeps the umbrella running."""
+    registry, manager, _ = _make_registry(tmp_path)
+    _seed_async_run(
+        registry,
+        manager,
+        RunSpec("run-mix", "alice", "research", "remote"),
+        ("t-1", "t-2"),
+    )
+
+    async def fake(task_id: str) -> dict[str, Any]:
+        if task_id == "t-1":
+            return {
+                "task_id": task_id,
+                "status": "cancelled",
+                "output_dir": "",
+            }
+        return {"task_id": task_id, "status": "submitted", "output_dir": ""}
+
+    monkeypatch.setattr(run_registry, "reconcile_task", fake)
+    record = await registry.reconcile(
+        "run-mix", owner="alice", lister=_empty_lister
+    )
+    assert record is not None
+    assert record.status == "running"
+
+
+@pytest.mark.asyncio
 async def test_reconcile_surfaces_deep_genome_final_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -391,7 +481,7 @@ async def test_reconcile_final_report_none_without_report(
 async def test_reconcile_propagates_failure_status(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One failed child marks the run failed and records the error."""
+    """Failed children with no successful sibling settle the run as failed."""
     registry, manager, _ = _make_registry(tmp_path)
     _seed_async_run(
         registry,
@@ -399,10 +489,10 @@ async def test_reconcile_propagates_failure_status(
         RunSpec("run-f", "alice", "analyst", "remote"),
         ("t-1", "t-2"),
     )
-    statuses = {"t-1": "succeeded", "t-2": "failed"}
+    statuses = {"t-1": "failed", "t-2": "error"}
 
     async def fake(task_id: str) -> dict[str, Any]:
-        """Return mixed terminal statuses to trigger failure aggregation."""
+        """Return only failure-like child statuses."""
         return {"task_id": task_id, "status": statuses[task_id]}
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake)
@@ -412,12 +502,13 @@ async def test_reconcile_propagates_failure_status(
     assert record is not None
     assert record.status == "failed"
     assert record.error is not None
+    assert "t-1" in record.error
     assert "t-2" in record.error
     assert record.result is not None
     assert set(record.result) == {"formatted", "execution"}
     assert record.result["execution"]["tasks"] == [
-        {"id": "t-1", "accepted": True, "status": "succeeded"},
-        {"id": "t-2", "accepted": True, "status": "failed"},
+        {"id": "t-1", "accepted": True, "status": "failed"},
+        {"id": "t-2", "accepted": True, "status": "error"},
     ]
     assert not record.result["execution"]["artifacts"]
     assert record.result["execution"]["diagnostics"] == [
@@ -733,8 +824,9 @@ async def test_losing_report_reader_does_not_replace_compatibility_report(
     assert cached is not None and cached.result is not None
     assert first_record == cached
     assert second_record == cached
-    assert manager.get_task_final_report("report-1") == (
-        cached.result["formatted"]["answer"]
+    assert (
+        manager.get_task_final_report("report-1")
+        == (cached.result["formatted"]["answer"])
     )
 
 
@@ -796,11 +888,13 @@ async def test_report_agents_have_manifest_backed_final_reports(
     assert result["execution"]["report"]["state"] == "final"
     assert result["execution"]["report"]["degraded"] is False
     assert result["execution"]["artifacts"][0]["role"] == ("scientific_report")
-    assert result["formatted"]["metadata"]["report"] == (
-        result["execution"]["report"]
+    assert (
+        result["formatted"]["metadata"]["report"]
+        == (result["execution"]["report"])
     )
-    assert manager.get_task_final_report(f"task-{agent}") == (
-        result["formatted"]["answer"]
+    assert (
+        manager.get_task_final_report(f"task-{agent}")
+        == (result["formatted"]["answer"])
     )
 
 

@@ -25,8 +25,13 @@ from .research_failure_codes import (
 
 _SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
 _FAILURE_STATUSES = frozenset({"failed", "error"})
+_CANCELLED_STATUSES = frozenset({"cancelled", "canceled"})
+_TERMINAL_CHILD_STATUSES = (
+    _SUCCESS_STATUSES | _FAILURE_STATUSES | _CANCELLED_STATUSES
+)
 _TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 _NON_POLLABLE_RUN_STATUSES = _TERMINAL_RUN_STATUSES | {"input_required"}
+_PARTIAL_CHILDREN_FAILED = "partial_children_failed"
 ResearchFailureCode = _ResearchFailureCode
 RESEARCH_FAILURE_MESSAGES = {
     code: "Research request could not be completed."
@@ -218,11 +223,27 @@ def _surface_identity_from_result(
 def _aggregate_status(task_statuses: list[str]) -> str:
     """Aggregate child task statuses into one run status."""
     lowered = [status.lower() for status in task_statuses if status]
-    if any(status in _FAILURE_STATUSES for status in lowered):
-        return "failed"
-    if lowered and all(status in _SUCCESS_STATUSES for status in lowered):
+    if not lowered:
+        return "running"
+    if any(status not in _TERMINAL_CHILD_STATUSES for status in lowered):
+        return "running"
+    if all(status in _SUCCESS_STATUSES for status in lowered):
         return "succeeded"
-    return "running"
+    if all(status in _CANCELLED_STATUSES for status in lowered):
+        return "cancelled"
+    if any(status in _SUCCESS_STATUSES for status in lowered):
+        return "succeeded"
+    return "failed"
+
+
+def _has_partial_child_failure(task_statuses: list[str]) -> bool:
+    """Return whether any child is failed or cancelled."""
+    return any(
+        status.lower() in _FAILURE_STATUSES
+        or status.lower() in _CANCELLED_STATUSES
+        for status in task_statuses
+        if status
+    )
 
 
 @dataclass(frozen=True)
@@ -372,8 +393,7 @@ class RunRequestInfo:
                 )
             if name in values:
                 raise TypeError(
-                    f"RunRequestInfo got multiple values for argument "
-                    f"{name!r}"
+                    f"RunRequestInfo got multiple values for argument {name!r}"
                 )
             values[name] = value
         if identity is None:

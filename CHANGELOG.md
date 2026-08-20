@@ -35,6 +35,8 @@ package version remains `0.1.3` until the release bump.
 
 ### Changed
 
+- **Submit-return defaults** — Analyst, the analyst subgraph helper, and
+  Design MCP helpers default `is_polling` to false.
 - **DeepGenome cancel** — An owner cancel no longer lets the
   background done-callback stamp `failed` before `/cancel` writes
   `cancelled`. A missing `id_table` row keeps the submitted gene id
@@ -65,6 +67,11 @@ package version remains `0.1.3` until the release bump.
 
 ### Fixed
 
+- **Fingerprint settlement** — A live SUCCEEDED, FAILED, or CANCELLED
+  child probe marks the fingerprint job terminal.
+- **Partial children** — One failed child no longer fails a run that
+  still has a successful child. Destined-to-fail work is stored as a
+  failed child with a bounded error code.
 - **Fingerprint persist** — A local claim write after a successful
   Analyst submit is best-effort. A SQLite unique or I/O error no
   longer marks the Research child `ambiguous`.
