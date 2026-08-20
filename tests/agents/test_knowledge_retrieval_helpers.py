@@ -233,10 +233,21 @@ def test_rerank_docs_dedupes_by_chunk_id_and_uses_big_content_fallback() -> (
     assert "c1" in id_doc_dict
 
 
-def test_rerank_docs_rejects_missing_content() -> None:
-    """Malformed source documents fail instead of disappearing silently."""
-    with pytest.raises(ValueError, match="Invalid retrieval response"):
-        _rerank_docs([{"chunk_id": "c3", "title": "Paper C"}])
+def test_rerank_docs_skips_missing_content() -> None:
+    """Slices without content or big_content are dropped before rerank."""
+    docs, id_doc_dict = _rerank_docs(
+        [
+            {"chunk_id": "c3", "title": "Paper C"},
+            {
+                "chunk_id": "c4",
+                "title": "Paper D",
+                "content": "kept",
+            },
+        ]
+    )
+
+    assert [doc["id"] for doc in docs] == ["c4"]
+    assert id_doc_dict["c4"]["content"] == "kept"
 
 
 def test_sorted_merged_docs_is_stable_and_trims_to_top_n() -> None:

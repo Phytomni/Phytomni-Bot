@@ -67,6 +67,9 @@ package version remains `0.1.3` until the release bump.
 
 ### Fixed
 
+- **Knowledge empty slices** — Retrieval drops only slices that have
+  neither `content` nor `big_content`. A mixed repository payload keeps
+  the remaining documents instead of discarding the whole `doc_list`.
 - **Fingerprint settlement** — A live SUCCEEDED, FAILED, or CANCELLED
   child probe marks the fingerprint job terminal.
 - **Partial children** — One failed child no longer fails a run that

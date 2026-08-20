@@ -61,7 +61,11 @@ def require_retrieval_docs(
     payload: Any,
     field: str = "doc_list",
 ) -> list[dict[str, Any]]:
-    """Validate and detach retrieval documents from a provider payload."""
+    """Validate and detach retrieval documents from a provider payload.
+
+    Slices without ``content`` and without ``big_content`` are dropped.
+    Other shape failures still reject the whole payload.
+    """
     if not isinstance(payload, Mapping) or field not in payload:
         raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
     value = payload[field]
@@ -76,11 +80,11 @@ def require_retrieval_docs(
         title = item.get("title")
         big_content = item.get("big_content")
         content = item.get("content")
+        if not isinstance(big_content, str) and not isinstance(content, str):
+            continue
         if not isinstance(chunk_id, str) or not chunk_id.strip():
             raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
         if not isinstance(title, str):
-            raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
-        if not isinstance(big_content, str) and not isinstance(content, str):
             raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)
         if "score" in item and not _finite_number(item["score"]):
             raise RetrievalProtocolError(_INVALID_RETRIEVAL_RESPONSE)

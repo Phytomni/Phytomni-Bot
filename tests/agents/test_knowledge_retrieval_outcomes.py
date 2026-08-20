@@ -151,7 +151,6 @@ async def test_zero_reliable_docs_with_failure_is_unavailable(
         {"doc_list": [None]},
         {"doc_list": [{"title": "title", "content": "content"}]},
         {"doc_list": [{"chunk_id": "id", "content": "content"}]},
-        {"doc_list": [{"chunk_id": "id", "title": "title"}]},
         {
             "doc_list": [
                 {
@@ -170,6 +169,31 @@ def test_require_retrieval_docs_rejects_protocol_failures(
     """Reject missing fields, invalid types, and non-finite scores."""
     with pytest.raises(ValueError, match="Invalid retrieval response"):
         require_retrieval_docs(payload)
+
+
+def test_require_retrieval_docs_skips_slices_without_text() -> None:
+    """Drop slices that lack content and big_content; keep the rest."""
+    docs = require_retrieval_docs(
+        {
+            "doc_list": [
+                {"chunk_id": "empty", "title": "Heading only"},
+                _doc("kept"),
+                {"chunk_id": "big", "title": "Has body", "big_content": "BODY"},
+            ]
+        }
+    )
+
+    assert [doc["chunk_id"] for doc in docs] == ["kept", "big"]
+    assert docs[1]["big_content"] == "BODY"
+
+
+def test_require_retrieval_docs_all_empty_slices_are_no_docs() -> None:
+    """A payload of only empty slices is an empty list, not a protocol error."""
+    docs = require_retrieval_docs(
+        {"doc_list": [{"chunk_id": "empty", "title": "Heading only"}]}
+    )
+
+    assert docs == []
 
 
 def test_require_retrieval_docs_returns_detached_copies() -> None:

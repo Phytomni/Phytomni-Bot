@@ -370,7 +370,7 @@ async def test_public_retrieve_does_not_read_legacy_contract_key(
     monkeypatch: pytest.MonkeyPatch,
     isolated_retrieval_caches: dict[str, Any],
 ) -> None:
-    """A public v2 request misses an otherwise identical v1 cache row."""
+    """A public current-version request misses an identical v1 cache row."""
     calls = 0
     kwargs = {
         "repo_id": "repo-versioned",
@@ -388,7 +388,7 @@ async def test_public_retrieve_does_not_read_legacy_contract_key(
         options,
         "doc",
     )
-    assert scope_key.contract_version == 2
+    assert scope_key.contract_version == 3
     legacy_key = _RetrieveCacheKey(
         1,
         "versioned-query",

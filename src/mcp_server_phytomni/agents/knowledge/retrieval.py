@@ -44,7 +44,7 @@ from .retrieval_result import (
     retrieval_unavailable_error,
 )
 
-_RETRIEVAL_CONTRACT_VERSION = 2
+_RETRIEVAL_CONTRACT_VERSION = 3
 
 
 class _RetrieveCacheKey(NamedTuple):
