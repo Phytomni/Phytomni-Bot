@@ -12,7 +12,6 @@ remain intact while the route facade stays small.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from contextlib import nullcontext
 from copy import deepcopy
@@ -55,6 +54,7 @@ from ..runtime.submission_outcome import (
     project_submission_warnings as _project_warnings,
 )
 from . import research_capabilities, run_lifecycle
+from .agent_run_support import request_info_query
 from .attachments import (
     AttachmentContractError,
     ManagedAttachmentEvidence,
@@ -473,27 +473,6 @@ def _project_submission_warnings(raw: Any) -> list[dict[str, Any]]:
     return _app_attr("_project_warnings")(raw.get("submission_warnings"))
 
 
-def _request_info_query(
-    arguments: Mapping[str, Any], request_json: str | None
-) -> str | None:
-    """Resolve the original query without trusting attachment maps."""
-    for key in ("user_query", "goal_description"):
-        value = arguments.get(key)
-        if isinstance(value, str):
-            return value
-    try:
-        payload = json.loads(request_json or "{}")
-    except (AttributeError, TypeError, ValueError):
-        return None
-    if not isinstance(payload, Mapping):
-        return None
-    for key in ("user_query", "goal_description"):
-        value = payload.get(key)
-        if isinstance(value, str):
-            return value
-    return None
-
-
 def _preflight_agent_run(
     *,
     agent: str,
@@ -540,7 +519,7 @@ def _preflight_agent_run(
         request_info=RunRequestInfo(
             dialogue_id=dialogue_id,
             request_id=_app_attr("current_request_id")(),
-            query=_request_info_query(arguments, request_json),
+            query=request_info_query(arguments, request_json),
             tool_name=tool_name,
             model=None,
             request_json=request_json,
@@ -622,6 +601,16 @@ async def _execute_background_agent_run(
             arguments=arguments,
             preflight=preflight,
         )
+        if agent == "review":
+            execution = await _app_attr("_execute_review_with_run_id")(
+                run_id=cast(str, _app_attr("current_run_id")()),
+                arguments=arguments,
+                attachment_evidence=attachment_evidence,
+            )
+            return BackgroundSubmissionOutcome(
+                status=execution.status,
+                result=execution.result or empty_agent_result(),
+            )
         envelope = await app.invoke_tool_enveloped(
             prepared.tool_name, arguments
         )
@@ -636,6 +625,11 @@ async def _execute_background_agent_run(
     )
     if attachment_evidence is not None:
         result = redact_managed_attachment_values(result, attachment_evidence)
+    if agent == "data":
+        return BackgroundSubmissionOutcome(
+            status="succeeded",
+            result=strip_agent_result(result),
+        )
     return BackgroundSubmissionOutcome(
         accepted_task_ids=_app_attr("current_accepted_task_ids")(),
         failed_task_ids=failed_child_ids(

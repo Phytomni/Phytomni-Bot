@@ -240,48 +240,38 @@ def _redact_review_payload(
     return redact_managed_attachment_values(payload, evidence)
 
 
-@dataclass(frozen=True, slots=True)
-class _ReviewInterruptPersistRequest:
-    """Inputs needed to persist one Review pause row."""
-
-    registry: RunRegistry
-    run_id: str
-    owner: str
-    request_info: RunRequestInfo
-    interrupt: Mapping[str, Any]
-    attachment_evidence: ManagedAttachmentEvidence | None
-
-
-def _persist_review_interrupt(
-    request: _ReviewInterruptPersistRequest,
+async def execute_review_with_run_id(
+    *,
+    run_id: str,
+    arguments: dict[str, Any],
+    dependencies: A2UIRuntimeDependencies,
+    attachment_evidence: ManagedAttachmentEvidence | None = None,
 ) -> ReviewExecution:
-    """Persist one Review pause after projecting its interrupt surface."""
-    try:
-        interrupt_dict = project_review_interrupt(request.interrupt)
-    except ReviewSurfaceProjectionError as exc:
-        _settle_review_projection_failure(
-            request.registry,
-            run_id=request.run_id,
-            owner=request.owner,
-            request_info=request.request_info,
-            existing=False,
+    """Execute Review against a run identity reserved by the caller."""
+    args = dependencies.graphs.validate_review(arguments)
+    final_state = await dependencies.graphs.review_graph().ainvoke(
+        dependencies.graphs.review_initial_state(args),
+        config=build_runnable_config(run_id),
+    )
+    interrupt = detect_interrupt(final_state, run_id)
+    if interrupt is not None:
+        interrupt_dict = project_review_interrupt(interrupt)
+        return ReviewExecution(
+            run_id=run_id,
+            status="input_required",
+            result=_redact_review_payload(
+                review_interrupt_result(interrupt_dict),
+                attachment_evidence,
+            ),
+            interrupt=interrupt_dict,
         )
-        raise _review_projection_error() from exc
-    _create_review_pause(
-        request.registry,
-        run_id=request.run_id,
-        owner=request.owner,
-        request_info=request.request_info,
-        result=_redact_review_payload(
-            review_interrupt_result(interrupt_dict),
-            request.attachment_evidence,
+    result = _redact_review_payload(
+        dependencies.persistence.format_review_result(
+            final_state, arguments=arguments
         ),
+        attachment_evidence,
     )
-    return ReviewExecution(
-        run_id=request.run_id,
-        status="input_required",
-        interrupt=interrupt_dict,
-    )
+    return ReviewExecution(run_id=run_id, status="succeeded", result=result)
 
 
 async def run_review_with_interrupt(
@@ -292,40 +282,42 @@ async def run_review_with_interrupt(
     attachment_evidence: ManagedAttachmentEvidence | None = None,
 ) -> ReviewExecution:
     """Run ReviewAgent once, surfacing a LangGraph interrupt if present."""
-    args = dependencies.graphs.validate_review(arguments)
     owner = dependencies.persistence.current_user() or "anonymous"
     run_id = IdFactory().new_id("run", "review")
-    final_state = await dependencies.graphs.review_graph().ainvoke(
-        dependencies.graphs.review_initial_state(args),
-        config=build_runnable_config(run_id),
-    )
-    interrupt = detect_interrupt(final_state, run_id)
     registry = dependencies.persistence.registry_factory(
         dependencies.persistence.tasks_db_path()
     )
-    if interrupt is not None:
-        return _persist_review_interrupt(
-            _ReviewInterruptPersistRequest(
-                registry=registry,
-                run_id=run_id,
-                owner=owner,
-                request_info=request_info,
-                interrupt=interrupt,
-                attachment_evidence=attachment_evidence,
-            )
+    try:
+        execution = await execute_review_with_run_id(
+            run_id=run_id,
+            arguments=arguments,
+            dependencies=dependencies,
+            attachment_evidence=attachment_evidence,
         )
-    result = _redact_review_payload(
-        dependencies.persistence.format_review_result(
-            final_state, arguments=arguments
-        ),
-        attachment_evidence,
-    )
+    except ReviewSurfaceProjectionError as exc:
+        _settle_review_projection_failure(
+            registry,
+            run_id=run_id,
+            owner=owner,
+            request_info=request_info,
+            existing=False,
+        )
+        raise _review_projection_error() from exc
+    if execution.interrupt is not None:
+        _create_review_pause(
+            registry,
+            run_id=run_id,
+            owner=owner,
+            request_info=request_info,
+            result=execution.result or {},
+        )
+        return execution
     registry.create_run(
         review_run_spec(run_id, owner),
-        outcome=RunOutcome(status="succeeded", result=result),
+        outcome=RunOutcome(status="succeeded", result=execution.result),
         request_info=request_info,
     )
-    return ReviewExecution(run_id=run_id, status="succeeded", result=result)
+    return execution
 
 
 @dataclass(frozen=True, slots=True)
@@ -489,6 +481,7 @@ __all__ = [
     "build_review_stream_app",
     "chat_interrupt_body",
     "chat_interrupt_result",
+    "execute_review_with_run_id",
     "format_chat_result",
     "format_review_result",
     "open_surface_for_action",

@@ -587,6 +587,21 @@ async def _run_review_with_interrupt(
     )
 
 
+async def _execute_review_with_run_id(
+    *,
+    run_id: str,
+    arguments: dict[str, Any],
+    attachment_evidence: _attachments.ManagedAttachmentEvidence | None = None,
+) -> _ReviewExecution:
+    """Execute Review against a run reserved by the background runtime."""
+    return await a2ui_runtime.execute_review_with_run_id(
+        run_id=run_id,
+        arguments=arguments,
+        dependencies=_a2ui_runtime_dependencies(),
+        attachment_evidence=attachment_evidence,
+    )
+
+
 async def _resume_review_run(
     *,
     thread_id: str,

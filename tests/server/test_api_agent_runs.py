@@ -107,6 +107,14 @@ class _RemoteCase(BackgroundAssetCase):
     """One parametrize row for the remote-agent chokepoint contract."""
 
 
+@dataclass(frozen=True)
+class _LocalBlockingCase:
+    """One Data or Review run that must expose identity before work."""
+
+    slug: str
+    arguments: dict[str, Any]
+
+
 def _canonical_agent_slug(tool: PhytomniAgents) -> str:
     """Derive the native API slug from the canonical MCP enum member."""
     candidate = tool.name.removesuffix("_AGENT").lower()
@@ -412,16 +420,6 @@ async def test_agent_run_sync_persistence_failure_returns_safe_500(
             {"user_query": "hi", "obs_file_list": []},
         ),
         (
-            "data",
-            server.PhytomniAgents.DATA_AGENT.value,
-            {"user_query": "count rice genes"},
-        ),
-        (
-            "review",
-            server.PhytomniAgents.REVIEW_AGENT.value,
-            {"user_query": "review this", "obs_file_list": []},
-        ),
-        (
             "brief_gene",
             server.PhytomniAgents.BRIEF_GENE_AGENT.value,
             {"user_query": "AT1G01010"},
@@ -441,22 +439,7 @@ async def test_native_sync_agents_keep_succeeded_envelope(
     monkeypatch.setattr(
         api_app_module, "launch_background_submission", background_launcher
     )
-    if slug == "review":
-
-        async def fake_review(**_kwargs: Any) -> Any:
-            return ReviewExecution(
-                run_id="native-review-sync",
-                status="succeeded",
-                result=review_success_result(),
-            )
-
-        monkeypatch.setattr(
-            api_app_module, "_run_review_with_interrupt", fake_review
-        )
-    else:
-        install_tool_handler(
-            monkeypatch, tool_name, minimal_tool_handler("ok")
-        )
+    install_tool_handler(monkeypatch, tool_name, minimal_tool_handler("ok"))
     response = await post_native_run(
         api_client, issued_api_key, slug, arguments
     )
@@ -468,6 +451,86 @@ async def test_native_sync_agents_keep_succeeded_envelope(
     assert body["task_ids"] == []
     assert body["id"] == body["run_id"]
     assert background_launcher.call_count == 0
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        _LocalBlockingCase(
+            slug="data",
+            arguments={"user_query": "count rice genes"},
+        ),
+        _LocalBlockingCase(
+            slug="review",
+            arguments={"user_query": "review this", "obs_file_list": []},
+        ),
+    ],
+)
+async def test_native_local_run_exposes_id_before_gated_work_and_cancels(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+    case: _LocalBlockingCase,
+) -> None:
+    """Data and Review expose their real run before owner Stop."""
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    if case.slug == "review":
+
+        async def gated_review(**kwargs: Any) -> ReviewExecution:
+            started.set()
+            await release.wait()
+            return ReviewExecution(
+                run_id=kwargs["run_id"],
+                status="succeeded",
+                result=review_success_result(),
+            )
+
+        monkeypatch.setattr(
+            api_app_module, "_execute_review_with_run_id", gated_review
+        )
+    else:
+
+        async def gated_data(
+            _tool_name: str, _arguments: dict[str, Any]
+        ) -> Any:
+            started.set()
+            await release.wait()
+            return SimpleNamespace(
+                formatted=FormattedToolResult(answer="fake completed table"),
+                raw=None,
+            )
+
+        monkeypatch.setattr(
+            api_app_module, "invoke_tool_enveloped", gated_data
+        )
+
+    response = await post_native_run(
+        api_client, issued_api_key, case.slug, case.arguments
+    )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["agent"] == case.slug
+    assert body["status"] == "running"
+    assert body["id"] == body["run_id"]
+    await asyncio.wait_for(started.wait(), timeout=1)
+
+    cancelled = await api_client.post(
+        f"/v1/runs/{body['run_id']}/cancel",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    release.set()
+    await asyncio.sleep(0)
+
+    record = RunRegistry(tasks_db_path).get_run(body["run_id"], owner="u1")
+    assert record is not None
+    assert record.status == "cancelled"
+    assert "fake completed" not in json.dumps(record.result)
+    assert not is_live_running(body["run_id"])
 
 
 async def test_agent_run_sync_persists_request_info(

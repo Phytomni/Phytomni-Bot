@@ -11,7 +11,7 @@ __all__ = [
 ]
 
 BACKGROUND_SUBMISSION_AGENT_SLUGS: frozenset[str] = frozenset(
-    {"analyst", "research", "network", "design"}
+    {"analyst", "research", "network", "design", "data", "review"}
 )
 
 

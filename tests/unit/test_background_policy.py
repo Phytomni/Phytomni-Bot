@@ -15,7 +15,9 @@ from mcp_server_phytomni.runtime.background_policy import (
 
 pytestmark = pytest.mark.unit
 
-_EXPECTED = frozenset({"analyst", "research", "network", "design"})
+_EXPECTED = frozenset(
+    {"analyst", "research", "network", "design", "data", "review"}
+)
 
 
 def test_background_submission_agent_set_is_exact() -> None:
@@ -36,7 +38,7 @@ def test_remote_canonical_agents_use_detached_policy(agent: str) -> None:
     ("agent", "origin"),
     [
         ("deep_genome", "remote"),
-        ("review", "remote"),
+        ("chat", "remote"),
         ("analyst", "local"),
         ("unknown", "remote"),
     ],

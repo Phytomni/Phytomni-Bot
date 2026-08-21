@@ -57,6 +57,7 @@ BACKGROUND_RUNTIME_ERRORS: tuple[type[Exception], ...] = (Exception,)
 class BackgroundSubmissionOutcome:
     """Bounded result returned by one detached submission operation."""
 
+    status: str | None = None
     accepted_task_ids: tuple[str, ...] = ()
     failed_task_ids: tuple[str, ...] = ()
     result: dict[str, Any] | None = None
@@ -210,6 +211,50 @@ def _settle_cancelled(
         return False
 
 
+def _apply_direct_outcome(
+    reservation: BackgroundSubmissionReservation,
+    outcome: BackgroundSubmissionOutcome,
+    *,
+    db_path: str,
+) -> bool:
+    """Settle a local worker outcome without child-task reconciliation."""
+    if outcome.status is None:
+        return False
+    if outcome.status not in {
+        "succeeded",
+        "failed",
+        "cancelled",
+        "input_required",
+    }:
+        raise BackgroundSubmissionExecutionError(
+            "invalid background submission status"
+        )
+    registry = RunRegistry(db_path)
+    current = registry.get_run(reservation.run_id, owner=reservation.owner)
+    if _is_terminal_worker(current):
+        return True
+    settled = registry.settle_run(
+        reservation.run_id,
+        owner=reservation.owner,
+        status=outcome.status,
+        result=outcome.result or empty_execution_projection(),
+        error=(
+            "background_submission_failed"
+            if outcome.status == "failed"
+            else None
+        ),
+        expected_revision=reservation.revision,
+    )
+    if settled:
+        return True
+    current = registry.get_run(reservation.run_id, owner=reservation.owner)
+    if _is_terminal_worker(current):
+        return True
+    raise BackgroundSubmissionExecutionError(
+        "unable to settle background submission"
+    )
+
+
 def _apply_background_outcome(
     reservation: BackgroundSubmissionReservation,
     outcome: BackgroundSubmissionOutcome,
@@ -217,6 +262,8 @@ def _apply_background_outcome(
     db_path: str,
 ) -> None:
     """Settle or persist one detached worker outcome onto the umbrella."""
+    if _apply_direct_outcome(reservation, outcome, db_path=db_path):
+        return
     if outcome.degraded:
         degraded_result = empty_execution_projection(degraded=True)
         degraded_result["execution"]["tasks"] = [
