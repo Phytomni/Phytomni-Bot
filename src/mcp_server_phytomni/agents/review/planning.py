@@ -52,6 +52,9 @@ logger = logging.getLogger(__name__)
 # Ordinary retrieval failures stay in a private index accumulator. They are
 # not valid empty evidence and must not enter the public failures channel.
 _RETRIEVE_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
+MIN_REVIEW_DIMENSIONS = 4
+MAX_REVIEW_DIMENSIONS = 10
+_INVALID_RESEARCH_DIMENSIONS = "Invalid research dimensions from phyto_chat"
 
 
 def _plan_text(value: object) -> str:
@@ -69,6 +72,21 @@ def _plan_search_queries(value: object, count: int) -> list[str]:
     if any(not item for item in queries):
         return []
     return queries
+
+
+def _bounded_research_headings(value: object) -> list[str]:
+    """Return 4-10 heading strings, or raise when the list is too short.
+
+    Extra headings past ``MAX_REVIEW_DIMENSIONS`` are dropped. Empty
+    lists and lists shorter than ``MIN_REVIEW_DIMENSIONS`` raise the
+    same ``ValueError`` the planner already used for unusable output.
+    """
+    if not isinstance(value, list) or not value:
+        raise ValueError(_INVALID_RESEARCH_DIMENSIONS)
+    headings = [str(dimension) for dimension in value[:MAX_REVIEW_DIMENSIONS]]
+    if len(headings) < MIN_REVIEW_DIMENSIONS:
+        raise ValueError(_INVALID_RESEARCH_DIMENSIONS)
+    return headings
 
 
 def _retrieve_query_for_dimension(
@@ -203,6 +221,8 @@ class ReviewPlanningMixin:
                         "Research_dimensions": {
                             "type": "array",
                             "items": {"type": "string"},
+                            "minItems": MIN_REVIEW_DIMENSIONS,
+                            "maxItems": MAX_REVIEW_DIMENSIONS,
                         },
                         "thesis": {"type": "string"},
                         "in_scope": {"type": "string"},
@@ -246,14 +266,13 @@ class ReviewPlanningMixin:
             thesis, scope, and per-dimension search queries.
 
         Raises:
-            ValueError: If the LLM returns no valid dimensions.
+            ValueError: If the LLM returns fewer than four dimensions.
         """
         content = message_content(state.get("chat_response") or "")
         dimensions_json = parse_json_object_fragment(content)
-        dimensions = dimensions_json.get("Research_dimensions", [])
-        if not isinstance(dimensions, list) or not dimensions:
-            raise ValueError("Invalid research dimensions from phyto_chat")
-        headings = [str(dimension) for dimension in dimensions[:4]]
+        headings = _bounded_research_headings(
+            dimensions_json.get("Research_dimensions", [])
+        )
         return {
             "research_dimensions": headings,
             "thesis": _plan_text(dimensions_json.get("thesis")),

@@ -14,6 +14,7 @@ without surfacing on the integration smoke tests.
 
 from __future__ import annotations
 
+import json
 import re
 from types import SimpleNamespace
 from typing import Any, cast
@@ -33,8 +34,11 @@ from mcp_server_phytomni.agents.review.helpers import (
     _renumber_citations,
 )
 from mcp_server_phytomni.agents.review.planning import (
+    MAX_REVIEW_DIMENSIONS,
+    MIN_REVIEW_DIMENSIONS,
     RetrievalAccumulator,
     ReviewPlanningMixin,
+    _bounded_research_headings,
 )
 from mcp_server_phytomni.agents.review.state import DeepResearchState
 
@@ -231,19 +235,23 @@ async def test_plan_query_post_node_uses_common_response_helpers(
     ("content", "expected"),
     [
         (
-            '{"Research_dimensions": ["plain", "second"]}',
-            ["plain", "second"],
+            '{"Research_dimensions": ["A", "B", "C", "D"]}',
+            ["A", "B", "C", "D"],
         ),
         (
-            '```json\n{"Research_dimensions": ["fenced"]}\n```',
-            ["fenced"],
+            '```json\n{"Research_dimensions": ["W", "X", "Y", "Z"]}\n```',
+            ["W", "X", "Y", "Z"],
+        ),
+        (
+            '{"Research_dimensions": ["A", "B", "C", "D", "E"]}',
+            ["A", "B", "C", "D", "E"],
         ),
     ],
 )
 async def test_plan_query_post_node_accepts_object_fragments(
     content: str, expected: list[str]
 ) -> None:
-    """Valid plain and fenced dimension objects keep their domain shape."""
+    """Valid 4-10 dimension objects keep their domain shape."""
     result = await _PlanningProbe().plan_query_post_node(
         cast(
             DeepResearchState,
@@ -321,6 +329,88 @@ async def test_plan_query_post_node_drops_mismatched_search_queries() -> None:
 
     assert result["research_dimensions"] == ["A", "B", "C", "D"]
     assert result["search_queries"] == []
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"Research_dimensions": ["only", "three", "headings"]}',
+        '{"Research_dimensions": []}',
+    ],
+)
+async def test_plan_query_post_node_rejects_short_dimension_lists(
+    content: str,
+) -> None:
+    """Fewer than four headings are unusable review dimensions."""
+    with pytest.raises(ValueError, match="Invalid research dimensions"):
+        await _PlanningProbe().plan_query_post_node(
+            cast(
+                DeepResearchState,
+                {
+                    "chat_response": {
+                        "choices": [{"message": {"content": content}}]
+                    }
+                },
+            )
+        )
+
+
+async def test_plan_query_post_node_caps_headings_at_ten() -> None:
+    """An eleventh heading is dropped; the first ten stay."""
+    headings = [f"H{index}" for index in range(1, 12)]
+    queries = [f"q{index}" for index in range(1, 12)]
+    content = json.dumps(
+        {
+            "Research_dimensions": headings,
+            "search_queries": queries,
+        }
+    )
+    result = await _PlanningProbe().plan_query_post_node(
+        cast(
+            DeepResearchState,
+            {
+                "chat_response": {
+                    "choices": [{"message": {"content": content}}]
+                }
+            },
+        )
+    )
+
+    assert result["research_dimensions"] == headings[:10]
+    assert result["search_queries"] == []
+
+
+async def test_plan_query_post_node_keeps_five_search_queries() -> None:
+    """Five headings keep five matching search queries."""
+    content = (
+        '{"Research_dimensions":["A","B","C","D","E"],'
+        '"search_queries":["q1","q2","q3","q4","q5"]}'
+    )
+    result = await _PlanningProbe().plan_query_post_node(
+        cast(
+            DeepResearchState,
+            {
+                "chat_response": {
+                    "choices": [{"message": {"content": content}}]
+                }
+            },
+        )
+    )
+
+    assert result["research_dimensions"] == ["A", "B", "C", "D", "E"]
+    assert result["search_queries"] == ["q1", "q2", "q3", "q4", "q5"]
+
+
+def test_bounded_research_headings_floor_and_cap() -> None:
+    """The heading helper rejects short lists and caps long lists."""
+    four = ["a", "b", "c", "d"]
+    assert _bounded_research_headings(four) == four
+    eleven = [f"h{index}" for index in range(11)]
+    assert _bounded_research_headings(eleven) == eleven[:MAX_REVIEW_DIMENSIONS]
+    with pytest.raises(ValueError, match="Invalid research dimensions"):
+        _bounded_research_headings(["a", "b", "c"])
+    assert MIN_REVIEW_DIMENSIONS == 4
+    assert MAX_REVIEW_DIMENSIONS == 10
 
 
 def test_dimension_fragments_returns_empty_on_exception_result() -> None:

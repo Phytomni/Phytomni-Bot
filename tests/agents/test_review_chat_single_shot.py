@@ -119,7 +119,7 @@ async def test_plan_query_post_node_parses_chat_response() -> None:
                         "message": {
                             "content": (
                                 '{"Research_dimensions":'
-                                ' ["dim1", "dim2", "dim3"]}'
+                                ' ["dim1", "dim2", "dim3", "dim4"]}'
                             )
                         }
                     }
@@ -129,7 +129,12 @@ async def test_plan_query_post_node_parses_chat_response() -> None:
     )
     result = await agent.plan_query_post_node(state)
 
-    assert result["research_dimensions"] == ["dim1", "dim2", "dim3"]
+    assert result["research_dimensions"] == [
+        "dim1",
+        "dim2",
+        "dim3",
+        "dim4",
+    ]
 
 
 async def test_summary_post_node_parses_chat_response() -> None:

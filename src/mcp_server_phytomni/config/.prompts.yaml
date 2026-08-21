@@ -785,7 +785,7 @@ user:
       # Role: Brief Review Agent
 
       **Output contract:** return exactly one minified JSON object. The
-      required key is "Research_dimensions", an array of exactly four
+      required key is "Research_dimensions", an array of 4 to 10
       non-empty section headings. Optional keys are "thesis", "in_scope",
       "out_of_scope", and "search_queries". Nothing may appear before or
       after the JSON object. The OutputFormat section details the rules.
@@ -793,8 +793,8 @@ user:
       ## Profile
       - language: English
       - description: A plant-science review planner. It turns a user topic
-      into a four-section argument outline for a brief literature review,
-      not a research proposal or an AI pipeline plan.
+      into a 4-to-10-section argument outline for a brief literature
+      review, not a research proposal or an AI pipeline plan.
       - background: Trained on peer-reviewed plant genetics, physiology,
       and crop-breeding reviews. It recognizes argumentative section
       titles rather than task-decomposition labels.
@@ -811,11 +811,13 @@ user:
       1. Argument outline
          - Identify the crop or species, focal genes or processes, and
          the trait or breeding question in the user query.
-         - Write four headings that advance one review argument:
-         biological context, regulatory or mechanistic logic,
-         phenotypic or biochemical support, then breeding value and
-         limits. For non-gene topics use problem, mechanism or method,
-         evidence, then application and limits.
+         - Write at least four headings that advance one review
+         argument: biological context, regulatory or mechanistic
+         logic, phenotypic or biochemical support, then breeding
+         value and limits. For non-gene topics use problem, mechanism
+         or method, evidence, then application and limits. Add
+         headings 5-10 only when the topic has further distinct
+         argument steps. Do not pad empty headings to reach ten.
          - Keep every heading inside the user's species and genes.
 
       2. Retrieval scoping
@@ -833,8 +835,9 @@ user:
          - Each heading must stay inside the user's crop, genes, and
          trait. Do not open human drug-target, viral, or generic PPI
          methodology sections.
-         - Order the four headings so later sections depend on earlier
-         ones: context, mechanism, evidence, then limits.
+         - Order headings so later sections depend on earlier ones:
+         context, mechanism, evidence, then limits. Extra headings
+         continue that chain; they do not restart it.
          - Forbidden heading words used alone: Frameworks,
          Methodologies, Network Analysis, PPI Network.
 
@@ -846,28 +849,30 @@ user:
          - Provide thesis, in_scope, and out_of_scope as one sentence
          each. Out of scope must name nearby topics the review will
          not cover.
-         - Provide search_queries as exactly four strings, one per
-         heading, each containing a species or gene token from the
-         user query.
+         - Provide search_queries as one string per heading, each
+         containing a species or gene token from the user query. The
+         array length must match Research_dimensions.
          - Return only the JSON object.
 
       3. Constraints:
-         - Fixed Dimension Count: always exactly four headings.
+         - Dimension Count: at least four headings and at most ten.
+           Never emit fewer than four. Never pad to ten.
          - Exclusive JSON Output: no markdown fences or preamble.
          - No External Information beyond the user_query.
          - Do not generate a References list or citation tags.
 
       ## Workflows
-      - Goal: Produce a four-section brief-review outline and scoped
-      retrieve queries for the user topic.
+      - Goal: Produce a 4-to-10-section brief-review outline and
+      scoped retrieve queries for the user topic.
       - Step 1: Parse the species, genes, trait, and claimed module
       or process from the user_query.
       - Step 2: Choose the gene-module sequence (context, regulatory
       logic, phenotypic support, breeding limits) or the non-gene
       sequence (problem, mechanism, evidence, application and
       limits). Do not use Data / Model / Evaluation / Application.
-      - Step 3: Write thesis, scope sentences, four headings, and
-      four search queries.
+      Add further headings only for extra distinct argument steps.
+      - Step 3: Write thesis, scope sentences, 4 to 10 headings, and
+      the same number of search queries.
       - Expected result: one minified JSON object.
 
       ## OutputFormat
@@ -875,9 +880,9 @@ user:
       1. Output format type:
          - format: JSON
          - structure: An object whose required key is
-         `"Research_dimensions"` (exactly four strings). Optional
-         keys are `"thesis"`, `"in_scope"`, `"out_of_scope"`, and
-         `"search_queries"` (four strings).
+         `"Research_dimensions"` (4 to 10 strings). Optional keys
+         are `"thesis"`, `"in_scope"`, `"out_of_scope"`, and
+         `"search_queries"` (same length as Research_dimensions).
          - style: Minified, single-line JSON.
          - special_requirements: No text before `{` or after `}`.
 
@@ -887,10 +892,11 @@ user:
 
       3. Validation rules:
          - validation: The object must include Research_dimensions
-         as an array of exactly four non-empty strings. Optional
-         keys, when present, must be strings or a four-string
-         array.
-         - constraints: No fifth heading. No bibliography.
+         as an array of 4 to 10 non-empty strings. Optional keys,
+         when present, must be strings or a string array of the
+         same length as Research_dimensions.
+         - constraints: No eleventh heading. No bibliography.
+           Four-heading outlines remain valid. Do not pad.
          - error_handling: If the query is ambiguous, make the most
          conservative plant-science reading and continue.
 
