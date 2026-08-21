@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from typing import (
@@ -745,8 +746,7 @@ async def _drive_stream_until(
         else:
             await body.aclose()
         run_id = captured["run_id"]
-    registry = RunRegistry(db_path=tasks_db_path)
-    record = registry.get_run(run_id, owner="u1")
+    record = RunRegistry(db_path=tasks_db_path).get_run(run_id, owner="u1")
     if record is None:
         return None, None
     return record.status, record.result
@@ -794,18 +794,18 @@ async def test_disconnect_after_finish_never_attempts_failed_settlement(
     assert statuses == ["succeeded"]
 
 
-async def test_stream_run_fails_when_client_disconnects_before_finish(
+async def test_stream_run_succeeds_when_client_disconnects_before_finish(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A disconnect BEFORE RunFinished settles failed with partial answer."""
+    """A disconnect BEFORE RunFinished still lets leftover tokens succeed."""
     status, result = await _drive_stream_until(
         tasks_db_path, monkeypatch, stop_after_finish=False
     )
-    assert status == "failed"
+    assert status == "succeeded"
     assert result is not None
     assert result["formatted"]["answer"] == "Hi"
-    assert result["partial"] is True
+    assert result["partial"] is False
     assert result["stream"] is True
 
 
@@ -814,7 +814,7 @@ async def _close_partial_chat_stream(
 ) -> tuple[list[str], str, bool]:
     """Close a partial HTTP stream and report its run and upstream state."""
     captured_run_id = ""
-    closed = False
+    closed = asyncio.Event()
 
     async def fake_streamed(
         _tool_name: Any,
@@ -823,14 +823,14 @@ async def _close_partial_chat_stream(
         run_id: str,
         dialogue_id: str | None,
     ) -> AsyncIterator[Any]:
-        nonlocal captured_run_id, closed
+        nonlocal captured_run_id
         captured_run_id = run_id
         try:
             yield run_started(run_id, dialogue_id)
             yield text_message_content("m-disconnect", "partial")
             yield run_finished(run_id)
         finally:
-            closed = True
+            closed.set()
 
     monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
     payload = ChatCompletionRequest(
@@ -854,14 +854,15 @@ async def _close_partial_chat_stream(
                 break
         with pytest.raises(StopAsyncIteration):
             await anext(body)
-    return seen, captured_run_id, closed
+    await asyncio.wait_for(closed.wait(), 2)
+    return seen, captured_run_id, True
 
 
 async def test_disconnect_before_finish_has_no_synthetic_frames(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Closing before finish settles failed without writing another frame."""
+    """Closing before finish does not invent frames on the aborted body."""
     seen, run_id, _closed = await _close_partial_chat_stream(
         monkeypatch,
         query="disconnect",
@@ -871,14 +872,14 @@ async def test_disconnect_before_finish_has_no_synthetic_frames(
     assert "event: RunError\n" not in "".join(seen)
     record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
     assert record is not None
-    assert record.status == "failed"
+    assert record.status == "succeeded"
 
 
 async def test_disconnect_closes_upstream_without_normal_terminal_answer(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Early body closure closes the raw stream without a success frame."""
+    """Early HTTP closure still lets the detached producer finish."""
     seen, _run_id, closed = await _close_partial_chat_stream(
         monkeypatch,
         query="cancel",
@@ -888,7 +889,7 @@ async def test_disconnect_closes_upstream_without_normal_terminal_answer(
     assert closed is True
     assert "event: RunFinished\n" not in "".join(seen)
     records = RunRegistry(tasks_db_path).list_runs(owner="u1")
-    assert records[-1].status == "failed"
+    assert records[-1].status == "succeeded"
 
 
 async def test_stream_settle_marks_truncated_when_over_cap(

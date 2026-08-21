@@ -354,26 +354,6 @@ async def _wait_for_snapshot(
     raise AssertionError("unreachable")
 
 
-async def _wait_for_failed_run(
-    client: httpx.AsyncClient,
-    server: ApiServer,
-    *,
-    budget_seconds: float = 5.0,
-) -> dict[str, Any]:
-    """Wait until one disconnected stream has a failed terminal projection."""
-    latest: list[dict[str, Any]] = []
-    try:
-        async with asyncio.timeout(budget_seconds):
-            while True:
-                latest = await _assert_no_succeeded_run(client, server)
-                if len(latest) == 1 and latest[0].get("status") == "failed":
-                    return latest[0]
-                await asyncio.sleep(0.05)
-    except TimeoutError:
-        pytest.fail(f"failed run projection timed out: {latest}")
-    raise AssertionError("unreachable")
-
-
 async def _wait_for_run_status(
     client: httpx.AsyncClient,
     server: ApiServer,
@@ -803,52 +783,56 @@ async def open_live_sse_connections(
     return first.result(), second.result()
 
 
-async def _reset_live_sse_connection(
-    server: ApiServer,
-    upstream: KnowledgeUpstream,
-) -> str:
-    """Open one real SSE socket and always reset it after retrieval starts."""
-    connection = await _open_live_sse_connection(
-        server,
-        query=_CANCELLATION_QUERY,
-    )
-    try:
-        started = await _wait_for_snapshot(
-            upstream,
-            lambda value: value.get("cancellation", {}).get("active") == 2,
-        )
-        assert started["cancellation"] == {
-            "started": 2,
-            "active": 2,
-            "cancelled": 0,
-            "completed": 0,
-        }
-        return connection.run_id
-    finally:
-        await connection.reset()
-
-
-async def test_http_stream_cancellation_closes_retrieval_and_never_succeeds(
+async def test_owner_cancel_closes_retrieval_and_never_succeeds(
     tmp_path: Path,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
-    """Resetting a real SSE connection closes both retrieval leaves."""
+    """Owner Stop closes both retrieval leaves and records cancelled."""
     with _boot_case("complete", tmp_path, tmp_path_factory) as (
         upstream,
         server,
         cache_path,
     ):
-        await _reset_live_sse_connection(server, upstream)
-
-        async with make_async_client(server) as client:
-            failed = await _wait_for_failed_run(client, server)
-            run_id = failed["run_id"]
-            assert _FIXED_FAILURE_MESSAGE not in json.dumps(failed)
-            projected = await _assert_terminal_run_surfaces(
-                client, server, run_id, status="failed"
+        connection = await _open_live_sse_connection(
+            server,
+            query=_CANCELLATION_QUERY,
+        )
+        try:
+            started = await _wait_for_snapshot(
+                upstream,
+                lambda value: (
+                    value.get("cancellation", {}).get("active") == 2
+                ),
             )
-            assert _FIXED_FAILURE_MESSAGE not in json.dumps(projected)
-            await _assert_foreign_owner_cannot_read_run(client, server, run_id)
+            assert started["cancellation"] == {
+                "started": 2,
+                "active": 2,
+                "cancelled": 0,
+                "completed": 0,
+            }
+            run_id = connection.run_id
+            async with make_async_client(server) as client:
+                cancel = await client.post(
+                    f"/v1/runs/{run_id}/cancel",
+                    headers=auth_header(server),
+                )
+                assert cancel.status_code == 200, cancel.text
+                cancelled_run = await _wait_for_run_status(
+                    client,
+                    server,
+                    run_id,
+                    status="cancelled",
+                )
+                assert _FIXED_FAILURE_MESSAGE not in json.dumps(cancelled_run)
+                projected = await _assert_terminal_run_surfaces(
+                    client, server, run_id, status="cancelled"
+                )
+                assert _FIXED_FAILURE_MESSAGE not in json.dumps(projected)
+                await _assert_foreign_owner_cannot_read_run(
+                    client, server, run_id
+                )
+        finally:
+            await connection.reset()
 
         cancelled = await _wait_for_snapshot(
             upstream,
@@ -864,6 +848,29 @@ async def test_http_stream_cancellation_closes_retrieval_and_never_succeeds(
             "completed": 0,
         }
         assert _cache_counts(cache_path) == {}
+    _assert_process_logs_safe(upstream, server)
+
+
+async def test_http_stream_abort_leaves_run_running_until_finished(
+    tmp_path: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Aborting the SSE client leaves a healthy run running until finish."""
+    with _boot_case("complete", tmp_path, tmp_path_factory) as (
+        upstream,
+        server,
+        cache_path,
+    ):
+        connection = await _open_live_sse_connection(server, query=_QUERY)
+        run_id = connection.run_id
+        await connection.reset()
+        async with make_async_client(server) as client:
+            succeeded = await _wait_for_run_status(
+                client, server, run_id, status="succeeded"
+            )
+            assert succeeded["status"] != "failed"
+            assert _FIXED_FAILURE_MESSAGE not in json.dumps(succeeded)
+        assert _cache_counts(cache_path)
     _assert_process_logs_safe(upstream, server)
 
 
@@ -902,33 +909,57 @@ async def test_cancelling_one_of_two_live_http_streams_is_isolated(
             isolated = await _wait_for_snapshot(
                 upstream,
                 lambda value: (
-                    value.get("cancellation", {}).get("active") == 2
-                    and value.get("cancellation", {}).get("cancelled") == 2
+                    value.get("cancellation", {}).get("active") == 4
+                    and value.get("cancellation", {}).get("cancelled") == 0
                 ),
             )
             assert isolated["cancellation"] == {
                 "started": 4,
-                "active": 2,
-                "cancelled": 2,
+                "active": 4,
+                "cancelled": 0,
                 "completed": 0,
             }
 
             async with make_async_client(server) as client:
                 await _wait_for_run_status(
-                    client,
-                    server,
-                    stream_a.run_id,
-                    status="failed",
+                    client, server, stream_a.run_id, status="running"
                 )
-                stream_b_detail = await client.get(
+                await _wait_for_run_status(
+                    client, server, stream_b.run_id, status="running"
+                )
+                assert stream_b.writer.is_closing() is False
+                cancel_a = await client.post(
+                    f"/v1/runs/{stream_a.run_id}/cancel",
+                    headers=auth_header(server),
+                )
+                assert cancel_a.status_code == 200, cancel_a.text
+                await _wait_for_run_status(
+                    client, server, stream_a.run_id, status="cancelled"
+                )
+                owner_isolated = await _wait_for_snapshot(
+                    upstream,
+                    lambda value: (
+                        value.get("cancellation", {}).get("active") == 2
+                        and value.get("cancellation", {}).get("cancelled")
+                        == 2
+                    ),
+                )
+                assert owner_isolated["cancellation"] == {
+                    "started": 4,
+                    "active": 2,
+                    "cancelled": 2,
+                    "completed": 0,
+                }
+                stream_b_after = await client.get(
                     f"/v1/runs/{stream_b.run_id}",
                     headers=auth_header(server),
                 )
-                assert stream_b_detail.status_code == 200
-                stream_b_body = stream_b_detail.json()
-                _assert_public_surface_safe(stream_b_body)
-                assert stream_b_body["status"] == "running"
-                assert stream_b.writer.is_closing() is False
+                assert stream_b_after.json()["status"] == "running"
+                cancel_b = await client.post(
+                    f"/v1/runs/{stream_b.run_id}/cancel",
+                    headers=auth_header(server),
+                )
+                assert cancel_b.status_code == 200, cancel_b.text
         finally:
             await asyncio.gather(stream_a.reset(), stream_b.reset())
 
@@ -950,7 +981,7 @@ async def test_cancelling_one_of_two_live_http_streams_is_isolated(
                 client,
                 server,
                 stream_b.run_id,
-                status="failed",
+                status="cancelled",
             )
         assert _cache_counts(cache_path) == {}
     _assert_process_logs_safe(upstream, server)

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any, cast
 
@@ -322,11 +323,31 @@ async def test_context_stream_degraded_keeps_answer_and_finish(
     assert settlements[-1][3]["formatted"]["answer"] == "adapter answer"
 
 
-async def test_context_stream_disconnect_before_stage_marks_turn_failed(
+async def _wait_for_settlement(
+    settlements: list[tuple[str, str, str, dict[str, Any]]],
+    *,
+    statuses: frozenset[str],
+) -> tuple[str, str, str, dict[str, Any]]:
+    """Wait until the stream producer records a terminal settlement."""
+    latest: tuple[str, str, str, dict[str, Any]] | None = None
+    try:
+        async with asyncio.timeout(2.0):
+            while True:
+                if settlements:
+                    latest = settlements[-1]
+                    if latest[2] in statuses:
+                        return latest
+                await asyncio.sleep(0)
+    except TimeoutError:
+        pytest.fail(f"settlement timed out: {latest!r}")
+    raise AssertionError("unreachable")
+
+
+async def test_context_stream_disconnect_before_stage_still_stages_turn(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Any,
 ) -> None:
-    """Closing a V1 stream before ``RunFinished`` never stages context."""
+    """Closing a V1 HTTP body still lets the producer stage context."""
     db_path = str(tmp_path / "context.sqlite")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", db_path)
 
@@ -377,17 +398,19 @@ async def test_context_stream_disconnect_before_stage_marks_turn_failed(
     rendered, key, turn_id, store = await _consume_disconnect_stream(
         response, payload, db_path
     )
+    settled = await _wait_for_settlement(
+        settlements, statuses=frozenset({"succeeded"})
+    )
 
     assert '"name": "phyto.context_staged"' not in rendered
     assert "event: RunFinished\n" not in rendered
-    assert settlements[-1][2] == "failed"
-    assert settlements[-1][3]["formatted"]["answer"] == "adapter answer"
-    assert settlements[-1][3]["partial"] is True
+    assert settled[2] == "succeeded"
+    assert settled[3]["formatted"]["answer"] == "adapter answer"
+    assert settled[3]["partial"] is False
     stored_turn = store.load_turn(key, turn_id)
     assert stored_turn is not None
-    assert stored_turn.state == "failed"
-    assert stored_turn.result is None
-    assert store.load_context(key) is None
+    assert stored_turn.state == "staged"
+    assert stored_turn.result is not None
 
 
 async def test_owner_cancel_settles_cancelled_draft(
@@ -397,6 +420,8 @@ async def test_owner_cancel_settles_cancelled_draft(
     """Owner Stop keeps accumulated tokens as a cancelled draft."""
     db_path = str(tmp_path / "context.sqlite")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", db_path)
+
+    gate = asyncio.Event()
 
     async def staged_events(
         _tool_name: str,
@@ -409,6 +434,7 @@ async def test_owner_cancel_settles_cancelled_draft(
         yield text_message_start("msg-cancel")
         yield text_message_content("msg-cancel", "adapter answer")
         yield text_message_end("msg-cancel")
+        await gate.wait()
         yield run_finished(run_id)
 
     settlements: list[tuple[str, str, str, dict[str, Any]]] = []
@@ -442,15 +468,18 @@ async def test_owner_cancel_settles_cancelled_draft(
         user_query="adapter query",
         dependencies=dependencies,
     )
-    request_cancel("run-direct-contract")
     rendered, _key, _turn_id, _store = await _consume_disconnect_stream(
         response, payload, db_path
     )
+    request_cancel("run-direct-contract")
+    settled = await _wait_for_settlement(
+        settlements, statuses=frozenset({"cancelled"})
+    )
 
     assert "event: RunFinished\n" not in rendered
-    assert settlements[-1][2] == "cancelled"
-    assert settlements[-1][3]["formatted"]["answer"] == "adapter answer"
-    assert settlements[-1][3]["partial"] is True
+    assert settled[2] == "cancelled"
+    assert settled[3]["formatted"]["answer"] == "adapter answer"
+    assert settled[3]["partial"] is True
 
 
 async def test_context_stream_run_error_emits_no_successful_context_event(

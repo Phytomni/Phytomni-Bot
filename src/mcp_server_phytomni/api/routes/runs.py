@@ -11,7 +11,7 @@ from importlib import import_module
 from typing import Any, TypedDict, cast
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from ...mcp.result_formatting import resolve_debug, strip_agent_result
 from .. import run_lifecycle
@@ -23,6 +23,7 @@ from ..a2ui_limits import (
 )
 from ..auth import ApiPrincipal
 from ..schemas import ResumeRequest
+from ..stream_log import iter_run_stream
 from . import _paging_values
 
 
@@ -173,6 +174,22 @@ def _register_status_routes(
     dependencies: RunRouteDependencies,
 ) -> None:
     """Register logs and single-run status routes in public order."""
+
+    @app.get("/v1/runs/{run_id}/stream")
+    async def get_run_stream(
+        run_id: str,
+        after: int = 0,
+        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
+    ) -> StreamingResponse:
+        """Replay buffered AG-UI frames, then tail the live producer."""
+        del principal
+        await dependencies.projection.fetch_owner_run(run_id, debug=False)
+        frames = iter_run_stream(run_id, after)
+        if frames is None:
+            raise HTTPException(
+                status_code=404, detail=f"run stream not found: {run_id}"
+            )
+        return StreamingResponse(frames, media_type="text/event-stream")
 
     @app.get("/v1/runs/{run_id}/logs")
     async def get_run_logs(

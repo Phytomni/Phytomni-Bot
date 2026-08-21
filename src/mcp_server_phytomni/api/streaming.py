@@ -83,6 +83,12 @@ from .lifecycle_contract import empty_agent_result
 from .openai_mapping import to_chat_completion_chunks
 from .schemas import ChatCompletionRequest, ChatStreamCall
 from .stream_answer import StreamAnswerAccumulator
+from .stream_log import (
+    RunStreamLog,
+    bind_run_stream_log,
+    drop_run_stream_log,
+    iter_run_stream,
+)
 
 
 @dataclass(frozen=True)
@@ -194,6 +200,93 @@ class _PreparedContextStream:
 
 
 _CONTEXT_STREAM_RESULT_KEY = "__conversation_context_stream__"
+
+
+async def _aclose_async_iterator(stream: Any) -> None:
+    """Close one async iterator when it exposes ``aclose``."""
+    closer = getattr(stream, "aclose", None)
+    if callable(closer):
+        await cast(Callable[[], Awaitable[None]], closer)()
+
+
+def _settle_unsettled_prepared_stream(
+    prepared: _PreparedStream,
+    *,
+    settle_cancelled: Callable[[], bool],
+    settle_failed: Callable[[], bool],
+) -> None:
+    """Settle a still-open stream from owner cancel or producer failure."""
+    if (
+        prepared.agent_slug is not None
+        and not prepared.lifecycle_state.durably_settled
+    ):
+        if is_cancel_requested(prepared.run_id):
+            durable_settlement_succeeded(settle_cancelled)
+        else:
+            durable_settlement_succeeded(settle_failed)
+
+
+async def _produce_detached_stream(
+    *,
+    prepared: _PreparedStream,
+    sse_lines: AsyncIterator[str],
+    log: RunStreamLog,
+    settle_cancelled: Callable[[], bool],
+    settle_failed: Callable[[], bool],
+) -> None:
+    """Consume the AG-UI producer independently of any HTTP subscriber."""
+    try:
+        async for line in sse_lines:
+            log.append(line)
+    finally:
+        try:
+            await _aclose_async_iterator(sse_lines)
+        finally:
+            await _aclose_async_iterator(prepared.raw_events)
+            _settle_unsettled_prepared_stream(
+                prepared,
+                settle_cancelled=settle_cancelled,
+                settle_failed=settle_failed,
+            )
+            log.close()
+            if prepared.run_id:
+                drop_run_stream_log(prepared.run_id)
+            deregister_live_task(prepared.run_id)
+            clear_cancel_requested(prepared.run_id)
+
+
+def _detach_stream_response(
+    prepared: _PreparedStream,
+    sse_lines: AsyncIterator[str],
+    settle_cancelled: Callable[[], bool],
+    settle_failed: Callable[[], bool],
+) -> StreamingResponse:
+    """Spawn the producer task and return a subscriber-only HTTP generator."""
+    log = RunStreamLog()
+    if prepared.run_id:
+        bind_run_stream_log(prepared.run_id, log)
+    producer = asyncio.create_task(
+        _produce_detached_stream(
+            prepared=prepared,
+            sse_lines=sse_lines,
+            log=log,
+            settle_cancelled=settle_cancelled,
+            settle_failed=settle_failed,
+        )
+    )
+    if prepared.run_id:
+        register_live_task(prepared.run_id, producer)
+
+    async def _wrapped() -> AsyncIterator[str]:
+        """Forward buffered SSE; subscriber abort does not own the run."""
+        try:
+            async for line in log.follow(0):
+                yield line
+        finally:
+            if is_cancel_requested(prepared.run_id):
+                producer.cancel()
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
 def stream_setup_error(exc: Exception, *, priming: bool) -> HTTPException:
@@ -826,38 +919,12 @@ async def stream_chat_completion(
             context_stream=context_stream,
         )
     sse_lines = to_chat_completion_chunks(terminal_events, payload.model)
-
-    async def _wrapped() -> AsyncIterator[str]:
-        """Forward SSE lines and settle the run from typed lifecycle flags."""
-        current = asyncio.current_task()
-        if current is not None and prepared.run_id:
-            register_live_task(prepared.run_id, current)
-        try:
-            async for line in sse_lines:
-                yield line
-        finally:
-            try:
-                closer = getattr(sse_lines, "aclose", None)
-                if callable(closer):
-                    await cast(Callable[[], Awaitable[None]], closer)()
-            finally:
-                raw_closer = getattr(prepared.raw_events, "aclose", None)
-                if callable(raw_closer):
-                    await cast(Callable[[], Awaitable[None]], raw_closer)()
-                if (
-                    prepared.agent_slug is not None
-                    and not prepared.lifecycle_state.durably_settled
-                ):
-                    if is_cancel_requested(prepared.run_id):
-                        durable_settlement_succeeded(
-                            _settle_terminal_cancelled
-                        )
-                    else:
-                        durable_settlement_succeeded(_settle_terminal_failure)
-                deregister_live_task(prepared.run_id)
-                clear_cancel_requested(prepared.run_id)
-
-    return StreamingResponse(_wrapped(), media_type="text/event-stream")
+    return _detach_stream_response(
+        prepared,
+        sse_lines,
+        _settle_terminal_cancelled,
+        _settle_terminal_failure,
+    )
 
 
 async def _project_context_stage(
@@ -895,6 +962,7 @@ __all__ = [
     "StreamingPersistenceDependencies",
     "StreamingRequestDependencies",
     "failed_stream_result",
+    "iter_run_stream",
     "project_primed_stream",
     "replay_primed_stream",
     "stream_chat_a2ui_confirm",
