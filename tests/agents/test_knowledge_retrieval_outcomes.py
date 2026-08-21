@@ -178,7 +178,11 @@ def test_require_retrieval_docs_skips_slices_without_text() -> None:
             "doc_list": [
                 {"chunk_id": "empty", "title": "Heading only"},
                 _doc("kept"),
-                {"chunk_id": "big", "title": "Has body", "big_content": "BODY"},
+                {
+                    "chunk_id": "big",
+                    "title": "Has body",
+                    "big_content": "BODY",
+                },
             ]
         }
     )
@@ -188,12 +192,12 @@ def test_require_retrieval_docs_skips_slices_without_text() -> None:
 
 
 def test_require_retrieval_docs_all_empty_slices_are_no_docs() -> None:
-    """A payload of only empty slices is an empty list, not a protocol error."""
+    """Treat a payload of only empty slices as no documents."""
     docs = require_retrieval_docs(
         {"doc_list": [{"chunk_id": "empty", "title": "Heading only"}]}
     )
 
-    assert docs == []
+    assert not docs
 
 
 def test_require_retrieval_docs_returns_detached_copies() -> None:

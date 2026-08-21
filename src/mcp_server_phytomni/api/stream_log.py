@@ -74,9 +74,7 @@ def drop_run_stream_log(run_id: str) -> None:
     _STREAM_LOGS.pop(run_id, None)
 
 
-def iter_run_stream(
-    run_id: str, after: int = 0
-) -> AsyncIterator[str] | None:
+def iter_run_stream(run_id: str, after: int = 0) -> AsyncIterator[str] | None:
     """Replay then tail the detached SSE log for one run, if present."""
     log = _STREAM_LOGS.get(run_id)
     if log is None:

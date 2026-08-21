@@ -940,8 +940,7 @@ async def test_cancelling_one_of_two_live_http_streams_is_isolated(
                     upstream,
                     lambda value: (
                         value.get("cancellation", {}).get("active") == 2
-                        and value.get("cancellation", {}).get("cancelled")
-                        == 2
+                        and value.get("cancellation", {}).get("cancelled") == 2
                     ),
                 )
                 assert owner_isolated["cancellation"] == {
