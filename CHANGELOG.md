@@ -74,6 +74,9 @@ package version remains `0.1.3` until the release bump.
 
 ### Fixed
 
+- **Stream subscribers** — A browser refresh or tab leave detaches that
+  subscriber without stopping the owner run, so a later subscriber can
+  continue the same in-flight answer.
 - **Knowledge empty slices** — Retrieval drops only slices that have
   neither `content` nor `big_content`. A mixed repository payload keeps
   the remaining documents instead of discarding the whole `doc_list`.
