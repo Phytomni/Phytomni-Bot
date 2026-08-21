@@ -14,7 +14,10 @@ __all__ = [
     "bind_run_stream_log",
     "drop_run_stream_log",
     "iter_run_stream",
+    "schedule_run_stream_log_drop",
 ]
+
+RUN_STREAM_REPLAY_RETENTION_SECONDS = 15 * 60
 
 
 class RunStreamLog:
@@ -62,16 +65,47 @@ class RunStreamLog:
 
 
 _STREAM_LOGS: dict[str, RunStreamLog] = {}
+_DROP_HANDLES: dict[str, asyncio.TimerHandle] = {}
 
 
 def bind_run_stream_log(run_id: str, log: RunStreamLog) -> None:
     """Publish one live stream log under ``run_id``."""
+    handle = _DROP_HANDLES.pop(run_id, None)
+    if handle is not None:
+        handle.cancel()
     _STREAM_LOGS[run_id] = log
 
 
 def drop_run_stream_log(run_id: str) -> None:
     """Drop the live stream log for ``run_id`` if present."""
+    handle = _DROP_HANDLES.pop(run_id, None)
+    if handle is not None:
+        handle.cancel()
     _STREAM_LOGS.pop(run_id, None)
+
+
+def schedule_run_stream_log_drop(
+    run_id: str,
+    *,
+    delay: float = RUN_STREAM_REPLAY_RETENTION_SECONDS,
+) -> None:
+    """Retain a completed replay log until its bounded expiry."""
+    log = _STREAM_LOGS.get(run_id)
+    if log is None:
+        return
+    previous = _DROP_HANDLES.pop(run_id, None)
+    if previous is not None:
+        previous.cancel()
+
+    def _expire() -> None:
+        _DROP_HANDLES.pop(run_id, None)
+        if _STREAM_LOGS.get(run_id) is log:
+            _STREAM_LOGS.pop(run_id, None)
+
+    _DROP_HANDLES[run_id] = asyncio.get_running_loop().call_later(
+        max(delay, 0.0),
+        _expire,
+    )
 
 
 def iter_run_stream(run_id: str, after: int = 0) -> AsyncIterator[str] | None:

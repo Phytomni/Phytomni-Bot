@@ -86,8 +86,8 @@ from .stream_answer import StreamAnswerAccumulator
 from .stream_log import (
     RunStreamLog,
     bind_run_stream_log,
-    drop_run_stream_log,
     iter_run_stream,
+    schedule_run_stream_log_drop,
 )
 
 
@@ -250,7 +250,7 @@ async def _produce_detached_stream(
             )
             log.close()
             if prepared.run_id:
-                drop_run_stream_log(prepared.run_id)
+                schedule_run_stream_log_drop(prepared.run_id)
             deregister_live_task(prepared.run_id)
             clear_cancel_requested(prepared.run_id)
 

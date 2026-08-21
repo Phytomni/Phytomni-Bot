@@ -16,6 +16,13 @@ import pytest
 from mcp_server_phytomni.api import streaming
 from mcp_server_phytomni.api.app import _stream_chat_completion
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
+from mcp_server_phytomni.api.stream_log import (
+    RunStreamLog,
+    bind_run_stream_log,
+    drop_run_stream_log,
+    iter_run_stream,
+    schedule_run_stream_log_drop,
+)
 from mcp_server_phytomni.mcp.result_formatting import (
     run_finished,
     run_started,
@@ -184,6 +191,47 @@ async def test_abort_then_follow_run_stream_replays_leftover_tokens(
     )
     assert record.result is not None
     assert record.result["formatted"]["answer"] == "partial leftover"
+
+
+async def test_terminal_run_stream_replays_after_producer_completion(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retain terminal replay after producer completion."""
+    body, run_id, gate = await _open_gated_chat_stream(
+        monkeypatch,
+        request_id="req-terminal-replay",
+    )
+    await body.aclose()
+    gate.set()
+    await _wait_for_run_status(
+        tasks_db_path,
+        run_id,
+        owner="u1",
+        statuses=frozenset({"succeeded"}),
+    )
+
+    replay = streaming.iter_run_stream(run_id, after=0)
+    assert replay is not None
+    rendered = "".join([line async for line in replay])
+    assert "partial" in rendered
+    assert "leftover" in rendered
+    assert "event: RunFinished\n" in rendered
+    drop_run_stream_log(run_id)
+
+
+async def test_terminal_run_stream_replay_expires_after_bound() -> None:
+    """Terminal replay retention removes the exact completed log on expiry."""
+    run_id = "run-expiring-replay"
+    log = RunStreamLog()
+    log.append("event: RunFinished\ndata: {}\n\n")
+    log.close()
+    bind_run_stream_log(run_id, log)
+
+    schedule_run_stream_log_drop(run_id, delay=0)
+    await asyncio.sleep(0.001)
+
+    assert iter_run_stream(run_id, after=0) is None
 
 
 async def test_get_run_stream_http_tails_after_subscriber_abort(
