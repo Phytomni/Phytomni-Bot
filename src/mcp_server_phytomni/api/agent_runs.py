@@ -54,7 +54,7 @@ from ..runtime.submission_outcome import (
     project_submission_warnings as _project_warnings,
 )
 from . import research_capabilities, run_lifecycle
-from .agent_run_support import request_info_query
+from .agent_run_support import request_info_query, running_agent_run_response
 from .attachments import (
     AttachmentContractError,
     ManagedAttachmentEvidence,
@@ -362,16 +362,9 @@ async def invoke_research_http_run(
         return _research_replay_response(
             outcome.run_id, request.owner, db_path
         )
-    return (
-        build_agent_run_response(
-            run_id=outcome.run_id,
-            agent="research",
-            status="running",
-            task_ids=(),
-            result=empty_agent_result(),
-            persisted=True,
-        ),
-        202,
+    return running_agent_run_response(
+        run_id=outcome.run_id,
+        agent="research",
     )
 
 

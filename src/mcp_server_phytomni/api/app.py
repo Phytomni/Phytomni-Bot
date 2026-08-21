@@ -79,6 +79,7 @@ from .a2a import runtime as a2a_runtime
 from .a2a.executor import (
     A2ARegistration,
 )
+from .agent_run_support import running_agent_run_response, stream_run_id
 from .compat import (
     _a2ui_interrupt_body,
     _a2ui_runtime_dependencies,
@@ -116,6 +117,7 @@ from .routes.attachment_inputs import (
 )
 from .schemas import (
     ChatCompletionRequest,
+    ChatMessage,
     ChatStreamCall,
     ExpertQueryRequest,
     ResumeRequest,
@@ -289,6 +291,12 @@ _REMOTE_AGENT_SLUGS = frozenset(
 
 _BACKGROUND_SUBMISSION_AGENT_SLUGS = BACKGROUND_SUBMISSION_AGENT_SLUGS
 
+_EXPERT_STREAM_MODELS = {
+    "chat": "phyto-chat",
+    "knowledge": "phyto-knowledge",
+    "brief_gene": "phyto-brief-gene",
+}
+
 # Historical Web ``tool_name`` aliases preserved on ``/v1/agents`` rows
 # as ``legacy_aliases`` metadata. The route itself never accepts these
 # as routing slugs; chat-ai and Phytomni-Web Go consume the list to
@@ -332,6 +340,37 @@ def _record_v0_route_outcome(
         forced=payload.forced_tool is not None,
         error_class=None if error is None else type(error).__name__,
         http_status=http_status,
+    )
+
+
+async def _start_routed_expert_stream(
+    *,
+    slug: str,
+    tool_name: str,
+    arguments: dict[str, Any],
+    payload: ExpertQueryRequest,
+    debug: bool,
+) -> tuple[dict[str, Any], int]:
+    """Start one selected stream-family run and expose its durable id."""
+    response = await _stream_chat_completion(
+        tool_name=tool_name,
+        arguments=arguments,
+        payload=ChatCompletionRequest(
+            model=_EXPERT_STREAM_MODELS[slug],
+            messages=[ChatMessage(role="user", content=payload.user_query)],
+            stream=True,
+            dialogue_id=payload.dialogue_id,
+            debug=debug,
+            locale=current_effective_locale(),
+        ),
+        user_query=payload.user_query,
+    )
+    run_id = await stream_run_id(response)
+    if not run_id:
+        raise HTTPException(status_code=500, detail="stream run is missing")
+    return running_agent_run_response(
+        run_id=run_id,
+        agent=slug,
     )
 
 
@@ -459,6 +498,14 @@ async def _route_expert_query(
         db_path=resolve_tasks_db_path(),
     )
     try:
+        if slug in _EXPERT_STREAM_MODELS:
+            return await _start_routed_expert_stream(
+                slug=slug,
+                tool_name=selection.tool_name,
+                arguments=arguments,
+                payload=payload,
+                debug=debug,
+            )
         return await _invoke_agent_run(
             agent=slug,
             arguments=arguments,
