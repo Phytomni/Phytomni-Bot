@@ -33,7 +33,6 @@ ALIGN_A_PROMPTS_WITH_STRUCTURAL = (
 ALIGN_A_PROMPTS_LITERATURE_ONLY = (
     "retrieval",
     "retrieval_file",
-    "deep_research_report",
 )
 
 
@@ -76,15 +75,14 @@ def test_section_or_intro_prompt_uses_align_a(name: str) -> None:
 
 @pytest.mark.parametrize("name", ALIGN_A_PROMPTS_LITERATURE_ONLY)
 def test_literature_only_prompt_uses_align_a(name: str) -> None:
-    """Knowledge / Review prompts declare the citation form.
+    """Knowledge retrieve prompts declare the citation form.
 
-    These prompts (retrieval / retrieval_file / deep_research_report)
-    receive a retrieve_results blob in ``[document N begin] ... [document
-    N end]`` shape and instruct the LLM to cite as ``[document:N]`` (the
-    repo-internal form that aligns with that input); the post-processor
-    deduplicates, sorts, and renumbers each marker for the client. The
-    placeholder ``[document:X]`` form must never appear — N
-    must always be a real document number.
+    These prompts (retrieval / retrieval_file) receive a retrieve_results
+    blob in ``[document N begin] ... [document N end]`` shape and instruct
+    the LLM to cite as ``[document:N]`` (the repo-internal form that
+    aligns with that input); the post-processor deduplicates, sorts, and
+    renumbers each marker for the client. The placeholder ``[document:X]``
+    form must never appear — N must always be a real document number.
     """
     body = load_template(PROMPT_FILE, f"user/{name}")
     assert isinstance(body, str)

@@ -58,10 +58,6 @@ KNOWN_UNREFERENCED: frozenset[str] = frozenset(
         "user/deeploc_meta",
         "user/virtual_knockout",
         "user/virtual_knockout_meta",
-        # Intended-but-unwired: no production code loads it, but its
-        # Align-A citation quality is pinned by tests/agents/
-        # test_prompt_align_a.py, so it is kept deliberately.
-        "user/deep_research_report",
     }
 )
 

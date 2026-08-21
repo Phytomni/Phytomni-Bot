@@ -59,6 +59,9 @@ package version remains `0.1.3` until the release bump.
 
 ### Removed
 
+- **Unwired Review report prompt** — `user/deep_research_report` is
+  gone. It had no production loader. Knowledge `retrieval` /
+  `retrieval_file` still pin the Align-A literature citation form.
 - **Design/Network `obs_file_list`** — `DigitalDesignAgent` and
   `GeneNetworkAgent` no longer advertise or accept that field.
   Managed attachments to those slugs return

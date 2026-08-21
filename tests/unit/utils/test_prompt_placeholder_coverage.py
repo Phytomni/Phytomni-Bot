@@ -77,10 +77,9 @@ _INTENTIONALLY_OPTIONAL = frozenset({"fst_path"})
 # which rendered blank -- were resolved by dropping the placeholders.
 _KNOWN_UNSUPPLIED_GAPS: frozenset[str] = frozenset()
 
-# Prompts with no production loader (pinned only by an offline fixture), so
-# their placeholders are supplied by a test, not a call site. Mirrors
-# ``test_prompt_drift.KNOWN_UNREFERENCED``.
-_UNWIRED_PROMPTS = frozenset({"user/deep_research_report"})
+# Prompts with no production loader. Empty after the unwired Review
+# report prompt was removed.
+_UNWIRED_PROMPTS: frozenset[str] = frozenset()
 
 
 def _iter_leaf_paths(node, trail=()):
