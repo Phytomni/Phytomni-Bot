@@ -149,8 +149,10 @@ def review_summary_state() -> dict[str, Any]:
         "revised_reports": [
             {"subtopic": "dim1", "revised_report": "Content 1"},
             {"subtopic": "dim2", "revised_report": "Content 2"},
+            {"subtopic": "dim3", "revised_report": "Content 3"},
+            {"subtopic": "dim4", "revised_report": "Content 4"},
         ],
-        "research_dimensions": ["dim1", "dim2"],
+        "research_dimensions": ["dim1", "dim2", "dim3", "dim4"],
     }
 
 

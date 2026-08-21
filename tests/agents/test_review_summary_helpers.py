@@ -6,7 +6,7 @@
 
 Drives the wired ``summary_prep_node`` / ``summary_post_node`` and
 ``follow_up_prep_node`` / ``follow_up_post_node`` split (the chat call
-runs in the shared chat node). Pins the subsection_N prompt-param
+runs in the shared chat node). Pins the subsections prompt-param
 contract, the backtick-strip + empty fallback, and the citation-renumber
 plus follow-up assembly the legacy single nodes owned.
 """
@@ -22,6 +22,7 @@ from mcp_server_phytomni.agents.review.agent import (
     DeepResearchAgent,
     DeepResearchState,
 )
+from mcp_server_phytomni.agents.review.summary import pack_review_subsections
 from mcp_server_phytomni.config.defaults import ReviewConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
@@ -76,20 +77,53 @@ async def _run_follow_up(
     return result["final_response"]["choices"][0]["message"]
 
 
+def test_pack_review_subsections_joins_available_reports() -> None:
+    """The pack helper keeps short lists without padding empty slots."""
+    blob = pack_review_subsections(
+        ["Genetics", "Physiology"],
+        [
+            {"revised_report": "G content"},
+            {"revised_report": "P content"},
+        ],
+    )
+    assert "Sub-section 1" in blob
+    assert "Title: Genetics" in blob
+    assert "Content: G content" in blob
+    assert "Title: Physiology" in blob
+    assert "Sub-section 3" not in blob
+
+
+def test_pack_review_subsections_includes_tenth_heading() -> None:
+    """Ten headings produce a tenth sub-section block."""
+    headings = [f"H{index}" for index in range(1, 11)]
+    reports = [{"revised_report": f"c{index}"} for index in range(1, 11)]
+    blob = pack_review_subsections(headings, reports)
+    assert "Sub-section 10" in blob
+    assert "Title: H10" in blob
+    assert "Content: c10" in blob
+
+
 async def test_summary_prep_node_packs_four_subsections(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """summary_prep_node fills 4 subsection slots from reports + dims."""
+    """summary_prep_node packs four audited sections into subsections."""
     captured = _capture_summary_params(monkeypatch)
     agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
             "original_user_query": "drought tolerance",
-            "research_dimensions": ["Genetics", "Physiology"],
+            "research_dimensions": [
+                "Genetics",
+                "Physiology",
+                "Evidence",
+                "Limits",
+            ],
             "revised_reports": [
                 {"revised_report": "G content"},
                 {"revised_report": "P content"},
+                {"revised_report": "E content"},
+                {"revised_report": "L content"},
             ],
         },
     )
@@ -97,37 +131,54 @@ async def test_summary_prep_node_packs_four_subsections(
     await agent.summary_prep_node(state)
 
     params = captured[0]
-    assert params["subsection_1_title"] == "Genetics"
-    assert params["subsection_1_content"] == "G content"
-    assert params["subsection_2_title"] == "Physiology"
-    assert params["subsection_2_content"] == "P content"
+    assert "Title: Genetics" in params["subsections"]
+    assert "Content: G content" in params["subsections"]
+    assert "Title: Physiology" in params["subsections"]
+    assert "Content: P content" in params["subsections"]
+    assert "subsection_1_title" not in params
     assert params["thesis"] == ""
     assert params["in_scope"] == ""
     assert params["out_of_scope"] == ""
 
 
-async def test_summary_prep_node_pads_missing_subsections(
+async def test_summary_prep_node_packs_six_subsections(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Fewer than 4 dimensions fills the remaining slots with empty fields."""
+    """More than four audited sections stay in the subsections blob."""
     captured = _capture_summary_params(monkeypatch)
     agent = _build_agent()
+    headings = [f"H{index}" for index in range(1, 7)]
+    reports = [{"revised_report": f"c{index}"} for index in range(1, 7)]
     state = cast(
         DeepResearchState,
         {
             "original_user_query": "q",
-            "research_dimensions": ["only-one"],
-            "revised_reports": [{"revised_report": "first"}],
+            "research_dimensions": headings,
+            "revised_reports": reports,
         },
     )
 
     await agent.summary_prep_node(state)
 
-    params = captured[0]
-    assert params["subsection_1_title"] == "only-one"
-    assert params["subsection_2_title"] == ""
-    assert params["subsection_2_content"] == ""
-    assert params["subsection_4_content"] == ""
+    blob = captured[0]["subsections"]
+    assert "Sub-section 6" in blob
+    assert "Title: H6" in blob
+    assert "Content: c6" in blob
+
+
+async def test_summary_prep_node_rejects_short_dimension_lists() -> None:
+    """Fewer than four dimensions cannot enter summary assembly."""
+    agent = _build_agent()
+    state = cast(
+        DeepResearchState,
+        {
+            "original_user_query": "q",
+            "research_dimensions": ["only-one", "two", "three"],
+            "revised_reports": [{"revised_report": "first"}],
+        },
+    )
+    with pytest.raises(ValueError, match="Invalid research dimensions"):
+        await agent.summary_prep_node(state)
 
 
 async def test_summary_prep_node_forwards_thesis_and_scope(
@@ -140,8 +191,18 @@ async def test_summary_prep_node_forwards_thesis_and_scope(
         DeepResearchState,
         {
             "original_user_query": "ZOS7 in upland rice",
-            "research_dimensions": ["Context"],
-            "revised_reports": [{"revised_report": "body"}],
+            "research_dimensions": [
+                "Context",
+                "Regulation",
+                "Phenotype",
+                "Limits",
+            ],
+            "revised_reports": [
+                {"revised_report": "body"},
+                {"revised_report": "reg"},
+                {"revised_report": "pheno"},
+                {"revised_report": "limit"},
+            ],
             "thesis": "A wax module is proposed.",
             "in_scope": "This rice module only.",
             "out_of_scope": "Human PPI methods are out of scope.",
@@ -154,6 +215,7 @@ async def test_summary_prep_node_forwards_thesis_and_scope(
     assert params["thesis"] == "A wax module is proposed."
     assert params["in_scope"] == "This rice module only."
     assert params["out_of_scope"] == "Human PPI methods are out of scope."
+    assert "Title: Context" in params["subsections"]
 
 
 async def test_summary_post_node_strips_backticks() -> None:

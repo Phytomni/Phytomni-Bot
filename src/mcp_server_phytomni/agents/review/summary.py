@@ -24,11 +24,39 @@ from ...graphs.chat_adapters import build_chat_input
 from ...mcp.progress_events import emit_progress
 from .helpers import _renumber_citations, build_review_chat_kwargs
 from .manuscript import scrub_review_manuscript
+from .planning import MIN_REVIEW_DIMENSIONS
 
 if TYPE_CHECKING:
     from .agent import DeepResearchState
 else:
     DeepResearchState = dict[str, Any]
+
+
+def pack_review_subsections(dimensions: list[str], reports: object) -> str:
+    """Join audited subsection titles and bodies for the summary prompt.
+
+    Args:
+        dimensions: Ordered section headings from the planner.
+        reports: Parallel ``revised_reports`` list; missing slots are
+            empty content.
+
+    Returns:
+        One markdown blob with a Sub-section block per heading.
+    """
+    report_list = reports if isinstance(reports, list) else []
+    parts: list[str] = []
+    for index, title in enumerate(dimensions):
+        report = report_list[index] if index < len(report_list) else {}
+        content = ""
+        if isinstance(report, dict):
+            content = str(report.get("revised_report", "") or "")
+        number = index + 1
+        parts.append(
+            f"- **Sub-section {number}**:\n"
+            f"Title: {title}\n"
+            f"Content: {content}"
+        )
+    return "\n\n".join(parts)
 
 
 class ReviewSummaryMixin:
@@ -52,28 +80,25 @@ class ReviewSummaryMixin:
             State delta with the ``ChatInput`` payload under
             ``chat_payload`` and ``"summary_post_node"`` under
             ``pending_post``.
+
+        Raises:
+            ValueError: If fewer than four audited dimensions are present.
         """
+        dimensions = [
+            str(item) for item in (state.get("research_dimensions") or [])
+        ]
+        if len(dimensions) < MIN_REVIEW_DIMENSIONS:
+            raise ValueError("Invalid research dimensions from phyto_chat")
         summary_params: dict[str, str] = {
             "user_query": state["original_user_query"],
             "thesis": str(state.get("thesis") or ""),
             "in_scope": str(state.get("in_scope") or ""),
             "out_of_scope": str(state.get("out_of_scope") or ""),
+            "subsections": pack_review_subsections(
+                dimensions,
+                state.get("revised_reports") or [],
+            ),
         }
-        for idx in range(4):
-            report = (
-                state["revised_reports"][idx]
-                if idx < len(state["revised_reports"])
-                else {}
-            )
-            title = (
-                state["research_dimensions"][idx]
-                if idx < len(state["research_dimensions"])
-                else ""
-            )
-            summary_params[f"subsection_{idx + 1}_title"] = title
-            summary_params[f"subsection_{idx + 1}_content"] = str(
-                report.get("revised_report", "")
-            )
 
         chat_kwargs = build_review_chat_kwargs(
             self.review_config, self.sensitive_config, state.get("locale")

@@ -56,6 +56,10 @@ package version remains `0.1.3` until the release bump.
 - **Review manuscript** — Review plans argument-led sections, drops
   off-domain papers, writes claim-led subsections, and assembles
   Abstract / Introduction / Conclusions. Citation delivery is unchanged.
+- **Review dimension count** — Review plans 4–10 argument sections.
+  Fewer than 4 fails; more than 10 are capped. Assembly follows the
+  actual count instead of padding empty slots to four. No figures.
+  Citation delivery is unchanged.
 
 ### Removed
 

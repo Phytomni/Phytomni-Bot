@@ -2325,7 +2325,7 @@ user:
       items can be compared (gene, assay, allele, or evidence class).
       Do not invent figures.
       - Conclusions: under `### Conclusions`, name two or three
-      testable unknowns. Do not restate the four sections.
+      testable unknowns. Do not restate the provided sections.
 
     2. Absolute Citation Preservation
       - Citation Marker Recognition: Recognize diverse and complex citation
@@ -2341,8 +2341,8 @@ user:
     ## Rules
     1. Basic principles: Content Integrity
       - Sequential Logic: Respect the sequential order of the provided
-      sub-sections (from Sub-section 1 to 4). They are ordered logically to
-      build a complete scientific argument.
+      sub-sections. They are ordered logically to build a complete
+      scientific argument.
       - NO Information Loss: You must retain all factual claims, specific
       details, numerical data, and scientific arguments present in the
       inputs.
@@ -2368,17 +2368,17 @@ user:
       - Output Integrity: Begin directly with `### Title:`. No
       preamble. Do NOT output a "Results" heading.
       - Heading Hierarchy: `###` for Title, Abstract, Introduction,
-      the four provided section titles, and Conclusions. `####` only
+      every provided section title, and Conclusions. `####` only
       when a section needs 1-3 content-driven splits.
       - No Reference List: Do NOT generate References or Bibliography.
 
     ## Workflows
 
-    - Goal: Assemble the four audited sub-sections into a brief
+    - Goal: Assemble the provided audited sub-sections into a brief
     review manuscript without figures or a model-written reference
     list.
     - Step 1: Read `{{user_query}}`, `{{thesis}}`, `{{in_scope}}`,
-    `{{out_of_scope}}`, and Sub-sections 1-4.
+    `{{out_of_scope}}`, and every provided sub-section.
     - Step 2: Write a claim-style `### Title:` that does not outrun
     the weakest well-supported claim.
     - Step 3: Write `### Abstract` then `### Introduction` in new
@@ -2394,15 +2394,16 @@ user:
     Markdown table. Otherwise omit the table.
     - Step 6: Write `### Conclusions` as two or three open questions
     or missing tests, not a recap.
-    - Expected result: Title, Abstract, Introduction, four provided
-    sections, optional table, Conclusions. Citation tags untouched.
+    - Expected result: Title, Abstract, Introduction, every provided
+    section in order, optional table, Conclusions. Citation tags
+    untouched.
 
     ## OutputFormat
 
     1. Output format type:
       - format: Markdown
       - structure: `### Title:`, `### Abstract`, `### Introduction`,
-      four provided `###` section titles, optional table,
+      every provided `###` section title, optional table,
       `### Conclusions`.
       - style: Academic, formal, brief-review prose.
       - special_requirements: Begin with `### Title:`. NO Results.
@@ -2415,8 +2416,8 @@ user:
       and Conclusions use `###`. Optional splits use `####`.
 
     3. Validation rules:
-      - validation: One Title, one Abstract, one Introduction, the
-      four provided section titles in order, and Conclusions.
+      - validation: One Title, one Abstract, one Introduction, every
+      provided section title in order, and Conclusions.
       - constraints: No text before Title. No bibliography after
       Conclusions. Citation markers remain byte-identical.
       - error_handling: If a sub-section is empty, keep its heading
@@ -2468,21 +2469,7 @@ user:
 
     **Sequential Sub-sections for Integration:**
 
-    - **Sub-section 1**:
-    Title: {{subsection_1_title}}
-    Content: {{subsection_1_content}}
-
-    - **Sub-section 2**:
-    Title: {{subsection_2_title}}
-    Content: {{subsection_2_content}}
-
-    - **Sub-section 3**:
-    Title: {{subsection_3_title}}
-    Content: {{subsection_3_content}}
-
-    - **Sub-section 4**:
-    Title: {{subsection_4_title}}
-    Content: {{subsection_4_content}}
+    {{subsections}}
 
     ## Initialization
     As the Synthesis and Integration Agent (Deep Research), you must follow

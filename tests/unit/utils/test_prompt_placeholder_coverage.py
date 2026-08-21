@@ -51,15 +51,6 @@ _NAMED_LOCKS = frozenset(
 # harvest cannot see, but whose supplier is verified in production code.
 _DYNAMIC_SUPPLIERS = frozenset(
     {
-        # review/summary.py:68-69 builds f"subsection_{n}_{title,content}".
-        "subsection_1_title",
-        "subsection_1_content",
-        "subsection_2_title",
-        "subsection_2_content",
-        "subsection_3_title",
-        "subsection_3_content",
-        "subsection_4_title",
-        "subsection_4_content",
         # deep_genome/summary.py:200-218 assigns self.data["umap_path"] etc.
         "umap_path",
         "violin_path",
