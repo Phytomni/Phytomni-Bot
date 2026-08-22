@@ -16,7 +16,6 @@ from tests.support.a2ui_contract_fakes import (
     chat_terminal_state,
     confirm_surface,
 )
-
 from tests.support.asyncio_helpers import wait_until
 
 from mcp_server_phytomni.api import app as api_app_module
