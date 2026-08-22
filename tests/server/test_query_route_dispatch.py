@@ -35,7 +35,9 @@ from tests.support.expert_router_fakes import patch_expert_router
 import mcp_server_phytomni.api.a2a.messages as a2a_messages
 from mcp_server_phytomni.agents.expert import ToolSelectionError
 from mcp_server_phytomni.agents.expert import router as expert_router
-from mcp_server_phytomni.api.agent_run_support import running_agent_run_response
+from mcp_server_phytomni.api.agent_run_support import (
+    running_agent_run_response,
+)
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.config.defaults import ApiConfig, ServerConfig
 from mcp_server_phytomni.mcp.formatting.agui import run_finished, run_started

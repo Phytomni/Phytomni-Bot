@@ -103,9 +103,7 @@ async def _post_data_run(
     )
 
 
-async def _wait_data_run(
-    tasks_db_path: str, run_id: str, status: str
-) -> None:
+async def _wait_data_run(tasks_db_path: str, run_id: str, status: str) -> None:
     """Wait until one owned DataAgent run reaches ``status``."""
 
     def reached() -> bool:

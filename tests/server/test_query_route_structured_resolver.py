@@ -26,7 +26,9 @@ from mcp_server_phytomni.agents.deep_genome.resolve_query import (
     DeepGenomeResolveError,
 )
 from mcp_server_phytomni.agents.expert import router as expert_router
-from mcp_server_phytomni.api.agent_run_support import running_agent_run_response
+from mcp_server_phytomni.api.agent_run_support import (
+    running_agent_run_response,
+)
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
