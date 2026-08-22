@@ -13,9 +13,15 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
+from contextlib import suppress
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from ...runtime.resumable_uploads import (
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_TOTAL_BYTES,
+)
 from .input_contracts import (
     EvidenceSourceKind,
     ResearchInputFailure,
@@ -32,11 +38,10 @@ __all__ = [
     "ConvertedResearchSection",
     "DocumentEvidenceDigest",
     "ExtractedResearchEvidence",
-    "MAX_DOCUMENT_BYTES",
-    "MAX_TOTAL_DOCUMENT_BYTES",
     "ManagedDocumentConverter",
     "ManagedDocumentDownloader",
     "ManagedDocumentObservation",
+    "ManagedDocumentPayload",
     "ResearchEvidenceRequest",
     "ResearchEvidenceUnit",
     "extract_research_evidence",
@@ -44,8 +49,6 @@ __all__ = [
     "research_evidence_coverage_digest",
 ]
 
-MAX_DOCUMENT_BYTES = 25 * 1024**2
-MAX_TOTAL_DOCUMENT_BYTES = 50 * 1024**2
 _SAFE_EXTRACTION_MESSAGE = "Research document evidence could not be extracted."
 
 
@@ -76,6 +79,15 @@ class ResearchEvidenceRequest:
     effective_to_original: tuple[int, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ManagedDocumentPayload:
+    """Local file for one owner-authorized document body."""
+
+    path: str
+    size_bytes: int
+    cleanup: bool = False
+
+
 class ManagedDocumentDownloader(Protocol):
     """Download one already owner-authorized managed document."""
 
@@ -85,8 +97,10 @@ class ManagedDocumentDownloader(Protocol):
         """Return the current owner-bound snapshot before body download."""
         raise NotImplementedError
 
-    async def download(self, entry: ResearchInventoryEntry) -> bytes:
-        """Return the immutable bytes for one owner-authorized document."""
+    async def download(
+        self, entry: ResearchInventoryEntry
+    ) -> ManagedDocumentPayload:
+        """Return a local file for one owner-authorized document."""
         raise NotImplementedError
 
     if not TYPE_CHECKING:
@@ -101,7 +115,9 @@ class ManagedDocumentConverter(Protocol):
     """Convert one managed document into ordered pages or sections."""
 
     def convert(
-        self, entry: ResearchInventoryEntry, payload: bytes
+        self,
+        entry: ResearchInventoryEntry,
+        payload: ManagedDocumentPayload,
     ) -> tuple[ConvertedResearchSection, ...]:
         """Return all pages/sections in deterministic source order."""
         raise NotImplementedError
@@ -179,8 +195,11 @@ async def extract_research_evidence(
     for document_ordinal, entry in enumerate(request.inventory.documents):
         _observe_document(entry, downloader)
         payload = await _download_one(entry, downloader)
-        total_bytes = _check_document_size(entry, payload, total_bytes)
-        sections = _convert_one(entry, payload, converter)
+        try:
+            total_bytes = _check_document_size(entry, payload, total_bytes)
+            sections = _convert_one(entry, payload, converter)
+        finally:
+            _release_payload(payload)
         document_id = f"document_{document_ordinal + 1:03d}"
         document_units, digest = _document_units(
             document_id, sections, datasets, _is_pdf_entry(entry)
@@ -286,10 +305,10 @@ def _preflight_document_limits(
     for entry in documents:
         _validate_document_entry(entry)
         declared_size = entry.snapshot.size_bytes
-        if declared_size > MAX_DOCUMENT_BYTES:
+        if declared_size > MAX_UPLOAD_BYTES:
             raise _failure()
         total_bytes += declared_size
-        if total_bytes > MAX_TOTAL_DOCUMENT_BYTES:
+        if total_bytes > MAX_UPLOAD_TOTAL_BYTES:
             raise _failure()
 
 
@@ -328,8 +347,8 @@ def _query_units(
 
 async def _download_one(
     entry: ResearchInventoryEntry, downloader: ManagedDocumentDownloader
-) -> bytes:
-    """Download once and map all provider details to a safe domain error."""
+) -> ManagedDocumentPayload:
+    """Download once to a local file and map provider details to a safe error."""
     _validate_document_entry(entry)
     try:
         payload = await downloader.download(entry)
@@ -337,16 +356,47 @@ async def _download_one(
         raise
     except Exception as error:
         raise _failure(retryable=True, status=503) from error
-    if not isinstance(payload, bytes) or not payload:
+    if not isinstance(payload, ManagedDocumentPayload):
         raise _failure()
+    try:
+        _validate_payload_file(payload)
+    except ResearchInputFailure:
+        _release_payload(payload)
+        raise
+    except Exception as error:
+        _release_payload(payload)
+        raise _failure() from error
     return payload
+
+
+def _validate_payload_file(payload: ManagedDocumentPayload) -> None:
+    """Reject missing, empty, or size-inconsistent local document files."""
+    if not isinstance(payload.path, str) or not payload.path.strip():
+        raise _failure()
+    if not isinstance(payload.size_bytes, int) or payload.size_bytes <= 0:
+        raise _failure()
+    path = Path(payload.path)
+    try:
+        size = path.stat().st_size
+    except OSError as error:
+        raise _failure() from error
+    if not path.is_file() or size <= 0 or size != payload.size_bytes:
+        raise _failure()
+
+
+def _release_payload(payload: ManagedDocumentPayload) -> None:
+    """Delete a downloader-owned temp file without failing extraction."""
+    if not payload.cleanup or not isinstance(payload.path, str):
+        return
+    with suppress(OSError):
+        Path(payload.path).unlink(missing_ok=True)
 
 
 def _observe_document(
     entry: ResearchInventoryEntry,
     downloader: ManagedDocumentDownloader,
 ) -> ManagedDocumentObservation:
-    """Revalidate owner identity and snapshot before downloading bytes."""
+    """Revalidate owner identity and snapshot before staging the body."""
     try:
         observation = downloader.observe(entry)
     except ResearchInputFailure:
@@ -390,22 +440,24 @@ def _invalid_document_entry(
 
 
 def _check_document_size(
-    entry: ResearchInventoryEntry, payload: bytes, total_bytes: int
+    entry: ResearchInventoryEntry,
+    payload: ManagedDocumentPayload,
+    total_bytes: int,
 ) -> int:
     """Enforce raw document bounds before conversion and aggregate memory."""
-    if len(payload) != entry.snapshot.size_bytes:
+    if payload.size_bytes != entry.snapshot.size_bytes:
         raise _failure()
-    if len(payload) > MAX_DOCUMENT_BYTES:
+    if payload.size_bytes > MAX_UPLOAD_BYTES:
         raise _failure()
-    next_total = total_bytes + len(payload)
-    if next_total > MAX_TOTAL_DOCUMENT_BYTES:
+    next_total = total_bytes + payload.size_bytes
+    if next_total > MAX_UPLOAD_TOTAL_BYTES:
         raise _failure()
     return next_total
 
 
 def _convert_one(
     entry: ResearchInventoryEntry,
-    payload: bytes,
+    payload: ManagedDocumentPayload,
     converter: ManagedDocumentConverter,
 ) -> tuple[ConvertedResearchSection, ...]:
     """Convert once and require complete ordered non-empty output."""

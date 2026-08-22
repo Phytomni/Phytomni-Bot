@@ -12,17 +12,16 @@ the uploaded files itself.
 
 from __future__ import annotations
 
-import os
-import tempfile
 from collections.abc import Callable
-from contextlib import suppress
 from dataclasses import dataclass, replace
+from os import stat
 from typing import TYPE_CHECKING, Any
 
 from ..agents.research.contracts import ResearchGoal
 from ..agents.research.document_evidence import (
     ConvertedResearchSection,
     ManagedDocumentObservation,
+    ManagedDocumentPayload,
     ResearchEvidenceRequest,
     extract_research_evidence,
 )
@@ -45,17 +44,13 @@ from ..agents.research.planning import (
     ResearchPlanningRequest,
     build_research_plan,
 )
-from ..common.relay_client import current_relay_client
 from ..config.api_limits import ApiLimitsConfig
 from ..config.defaults import (
     InSilicoResearchConfig,
     ServerConfig,
     resolve_compute_resource,
 )
-from ..config.relay_mode import relay_mode_enabled
-from ..runtime.outbound import ObsProfileName, current_obs_runtime
-from ..storage.downloads import convert_single_file
-from ..storage.obs_relay_ops import ObsAccessOptions, get_object_bytes
+from ..storage.downloads import convert_document_file, download_obs_source
 from ..storage.research_objects import ResearchObjectMetadataPort
 from .asset_resolver import bind_research_asset_resolver
 
@@ -104,26 +99,22 @@ class _ManagedDocumentDownloader:
             snapshot=entry.snapshot,
         )
 
-    async def download(self, entry: Any) -> bytes:
-        """Read bytes only from the exact trusted inventory reference."""
-        if relay_mode_enabled():
-            return await current_relay_client().get_obs_object(
-                entry.exact_reference,
-                message="Failed to download Research document",
-            )
-        obs_runtime = current_obs_runtime()
-        return await obs_runtime.run(
-            ObsProfileName.PRIMARY,
-            lambda client: get_object_bytes(
-                self.source.BUCKET_NAME,
-                entry.exact_reference,
-                access=ObsAccessOptions(client=client),
-            ),
+    async def download(self, entry: Any) -> ManagedDocumentPayload:
+        """Stage one OBS object to a local file without buffering the body."""
+        resolved = await download_obs_source(
+            entry.exact_reference,
+            self.source.TEMP_DIR,
+            bucket_name=self.source.BUCKET_NAME,
+        )
+        return ManagedDocumentPayload(
+            path=resolved.file_path,
+            size_bytes=stat(resolved.file_path).st_size,
+            cleanup=resolved.cleanup,
         )
 
 
 class _MarkItDownDocumentConverter:
-    """Convert bounded document bytes through the repository converter."""
+    """Convert one staged document through the shared MarkItDown helper."""
 
     @property
     def contract_name(self) -> str:
@@ -131,25 +122,10 @@ class _MarkItDownDocumentConverter:
         return "managed_document_converter"
 
     def convert(
-        self, entry: Any, payload: bytes
+        self, entry: Any, payload: ManagedDocumentPayload
     ) -> tuple[ConvertedResearchSection, ...]:
-        """Return deterministic page/section units and remove the temp file."""
-        descriptor, path = tempfile.mkstemp(
-            prefix="phytomni-research-",
-            suffix=entry.compound_suffix or ".bin",
-        )
-        try:
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(payload)
-            markdown = convert_single_file(path, cleanup=False)
-        finally:
-            with suppress(FileNotFoundError):
-                os.unlink(path)
-        if not isinstance(markdown, str) or not markdown.strip():
-            raise ValueError("Research document conversion returned no text")
-        sections = tuple(
-            part.strip() for part in markdown.split("\f") if part.strip()
-        )
+        """Return deterministic page/section units from the staged file."""
+        converted = convert_document_file(payload.path, cleanup=False)
         is_pdf = entry.safe_basename.casefold().endswith(".pdf")
         return tuple(
             ConvertedResearchSection(
@@ -157,7 +133,7 @@ class _MarkItDownDocumentConverter:
                 label=(f"page-{ordinal}" if is_pdf else f"section-{ordinal}"),
                 text=text,
             )
-            for ordinal, text in enumerate(sections, start=1)
+            for ordinal, text in enumerate(converted.sections, start=1)
         )
 
 

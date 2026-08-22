@@ -107,6 +107,34 @@ def test_convert_single_file_removes_sdk_temp_when_cleanup_true(
     assert not source_file.exists()
 
 
+def test_convert_document_file_splits_form_feed_sections(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shared conversion returns markdown plus non-empty form-feed sections."""
+
+    def _convert(path: str, cleanup: bool = True) -> str:
+        del path, cleanup
+        return "page-one\f\npage-two\f\n"
+
+    monkeypatch.setattr(downloads, "convert_single_file", _convert)
+    converted = downloads.convert_document_file(tmp_path / "paper.pdf")
+    assert converted.markdown == "page-one\f\npage-two\f\n"
+    assert converted.sections == ("page-one", "page-two")
+
+
+def test_convert_document_file_rejects_empty_markdown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty conversion output is a hard failure, not a truncated prompt."""
+    monkeypatch.setattr(
+        downloads, "convert_single_file", lambda *_a, **_k: "   "
+    )
+    with pytest.raises(ValueError, match="returned no text"):
+        downloads.convert_document_file(tmp_path / "empty.txt")
+
+
 async def test_download_obs_file_returns_obsfs_source_when_available(tmp_path):
     """Verify obsfs files are returned directly instead of staged locally.
 

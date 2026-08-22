@@ -41,14 +41,17 @@ logger = logging.getLogger(__name__)
 SERVER_CONFIG = ServerConfig()
 
 __all__ = [
+    "ConvertedDocumentText",
     "ObsDownloadOptions",
     "ObsTransferContext",
     "ResolvedObsFile",
+    "convert_document_file",
     "convert_multi_files",
     "convert_single_file",
     "download_list_convert",
     "download_obs_file",
     "download_obs_list",
+    "download_obs_source",
     "download_upload_context",
 ]
 
@@ -129,6 +132,16 @@ async def download_upload_context(
     return format_upload_context(upload_texts, max_tokens=config.MAX_TOKENS)
 
 
+async def download_obs_source(
+    obs_file: str,
+    server_dir: str,
+    **kwargs: Any,
+) -> ResolvedObsFile:
+    """Resolve one OBS object to a local file without loading it into memory."""
+    context = _obs_transfer_context(server_dir, kwargs)
+    return await _resolve_obs_file(obs_file, context)
+
+
 async def download_obs_file(
     obs_file: str,
     server_dir: str,
@@ -151,8 +164,7 @@ async def download_obs_file(
     Raises:
         OSError: If the file download fails after all retry attempts.
     """
-    context = _obs_transfer_context(server_dir, kwargs)
-    resolved_file = await _resolve_obs_file(obs_file, context)
+    resolved_file = await download_obs_source(obs_file, server_dir, **kwargs)
     return resolved_file.file_path
 
 
@@ -391,6 +403,29 @@ def convert_single_file(server_file: str, cleanup: bool = True) -> str:
     if cleanup:
         server_path.unlink()
     return result.text_content
+
+
+@dataclass(frozen=True, slots=True)
+class ConvertedDocumentText:
+    """Markdown plus ordered form-feed sections for one converted file."""
+
+    markdown: str
+    sections: tuple[str, ...]
+
+
+def convert_document_file(
+    path: str | Path, *, cleanup: bool = False
+) -> ConvertedDocumentText:
+    """Convert one local document through MarkItDown and split on form feed."""
+    markdown = convert_single_file(str(path), cleanup=cleanup)
+    if not isinstance(markdown, str) or not markdown.strip():
+        raise ValueError("document conversion returned no text")
+    sections = tuple(
+        part.strip() for part in markdown.split("\f") if part.strip()
+    )
+    if not sections:
+        raise ValueError("document conversion returned no text")
+    return ConvertedDocumentText(markdown=markdown, sections=sections)
 
 
 def convert_multi_files(

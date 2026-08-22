@@ -5,15 +5,19 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import dataclass
+from typing import get_type_hints
 
 import pytest
 
 from mcp_server_phytomni.agents.research.document_evidence import (
-    MAX_DOCUMENT_BYTES,
-    MAX_TOTAL_DOCUMENT_BYTES,
     ConvertedResearchSection,
+    ManagedDocumentConverter,
+    ManagedDocumentDownloader,
     ManagedDocumentObservation,
+    ManagedDocumentPayload,
     ResearchEvidenceRequest,
     evidence_persistence_metadata,
     extract_research_evidence,
@@ -24,6 +28,10 @@ from mcp_server_phytomni.agents.research.input_inventory import (
     ResearchInputSnapshot,
     ResearchInventoryEntry,
     research_inventory_partitions,
+)
+from mcp_server_phytomni.runtime.resumable_uploads import (
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_TOTAL_BYTES,
 )
 from tests.support.research_fakes import research_inventory_entry
 
@@ -117,10 +125,20 @@ class _Downloader:
             snapshot=entry.snapshot,
         )
 
-    async def download(self, entry: ResearchInventoryEntry) -> bytes:
-        """Return the fixture payload for one document."""
+    async def download(
+        self, entry: ResearchInventoryEntry
+    ) -> ManagedDocumentPayload:
+        """Stage the fixture payload as a local file."""
         self.calls.append(entry.dataset_id)
-        return self.payloads[entry.dataset_id]
+        body = self.payloads[entry.dataset_id]
+        handle, path = tempfile.mkstemp(prefix="research-evidence-")
+        try:
+            os.write(handle, body)
+        finally:
+            os.close(handle)
+        return ManagedDocumentPayload(
+            path=path, size_bytes=len(body), cleanup=True
+        )
 
 
 @dataclass
@@ -132,7 +150,9 @@ class _Converter:
         self.calls: list[str] = []
 
     def convert(
-        self, entry: ResearchInventoryEntry, payload: bytes
+        self,
+        entry: ResearchInventoryEntry,
+        payload: ManagedDocumentPayload,
     ) -> tuple[ConvertedResearchSection, ...]:
         """Return fixture sections in their configured source order."""
         del payload
@@ -287,11 +307,11 @@ async def test_malformed_pdf_and_converter_failure_are_safe() -> None:
 
 
 async def test_document_and_total_limits() -> None:
-    """Per-document and aggregate limits are independent and inclusive."""
+    """Per-document and aggregate limits share the upload-plane ceiling."""
     oversized = _entry(
-        "document_001", "large.pdf", "document", MAX_DOCUMENT_BYTES + 1
+        "document_001", "large.pdf", "document", MAX_UPLOAD_BYTES + 1
     )
-    downloader = _Downloader({"document_001": b"x" * (MAX_DOCUMENT_BYTES + 1)})
+    downloader = _Downloader({"document_001": b"x"})
     converter = _Converter(
         {"document_001": (ConvertedResearchSection(0, "page", "x"),)}
     )
@@ -299,26 +319,21 @@ async def test_document_and_total_limits() -> None:
         await extract_research_evidence(
             _request((oversized,)), downloader, converter
         )
+    assert not downloader.observe_calls
+    assert not downloader.calls
+    assert not converter.calls
 
+    overflow_count = MAX_UPLOAD_TOTAL_BYTES // MAX_UPLOAD_BYTES + 1
     entries = tuple(
-        _entry(f"document_{index:03d}", f"{index}.pdf", "document", 1)
-        for index in range(1, 4)
-    )
-    entries = tuple(
-        _entry(entry.dataset_id, entry.safe_basename, "document", size)
-        for entry, size in zip(
-            entries,
-            (MAX_DOCUMENT_BYTES, MAX_DOCUMENT_BYTES, 1),
-            strict=True,
+        _entry(
+            f"document_{index:03d}",
+            f"{index}.pdf",
+            "document",
+            MAX_UPLOAD_BYTES,
         )
+        for index in range(1, overflow_count + 1)
     )
-    downloader = _Downloader(
-        {
-            "document_001": b"x" * MAX_DOCUMENT_BYTES,
-            "document_002": b"x" * MAX_DOCUMENT_BYTES,
-            "document_003": b"x",
-        }
-    )
+    downloader = _Downloader({entry.dataset_id: b"x" for entry in entries})
     converter = _Converter(
         {
             entry.dataset_id: (ConvertedResearchSection(0, "page", "x"),)
@@ -332,15 +347,14 @@ async def test_document_and_total_limits() -> None:
     assert not downloader.observe_calls
     assert not downloader.calls
     assert not converter.calls
-    assert MAX_TOTAL_DOCUMENT_BYTES == 2 * MAX_DOCUMENT_BYTES
 
 
 async def test_declared_oversize_fails_before_any_download() -> None:
     """Trusted size limits reject before the downloader can allocate bytes."""
     entry = _entry(
-        "document_001", "large.pdf", "document", MAX_DOCUMENT_BYTES + 1
+        "document_001", "large.pdf", "document", MAX_UPLOAD_BYTES + 1
     )
-    downloader = _Downloader({"document_001": b"x" * (MAX_DOCUMENT_BYTES + 1)})
+    downloader = _Downloader({"document_001": b"x"})
     converter = _Converter(
         {"document_001": (ConvertedResearchSection(0, "page", "x"),)}
     )
@@ -418,3 +432,43 @@ async def test_persistence_projection_excludes_plaintext() -> None:
         )
         == evidence.coverage_digest
     )
+
+
+def test_document_ports_are_file_backed() -> None:
+    """Evidence download and conversion take a local file, not a bytes body."""
+    download_hints = get_type_hints(ManagedDocumentDownloader.download)
+    convert_hints = get_type_hints(ManagedDocumentConverter.convert)
+    assert download_hints["return"] is ManagedDocumentPayload
+    assert convert_hints["payload"] is ManagedDocumentPayload
+
+
+async def test_bytes_download_is_rejected_before_conversion() -> None:
+    """The old in-memory body contract cannot reach the converter."""
+    entry = _entry("document_001", "paper.pdf", "document", 5)
+
+    class _BytesDownloader:
+        def observe(
+            self, observed: ResearchInventoryEntry
+        ) -> ManagedDocumentObservation:
+            """Return the owner snapshot without staging a file."""
+            return ManagedDocumentObservation(
+                exact_reference=observed.exact_reference,
+                snapshot=observed.snapshot,
+            )
+
+        async def download(self, observed: ResearchInventoryEntry) -> bytes:
+            """Return the historic bytes body that extraction must reject."""
+            del observed
+            return b"paper"
+
+    converter = _Converter(
+        {"document_001": (ConvertedResearchSection(0, "page", "text"),)}
+    )
+    with pytest.raises(Exception) as caught:
+        await extract_research_evidence(
+            _request((entry,)), _BytesDownloader(), converter
+        )
+    assert (
+        getattr(caught.value, "code") == "research_document_extraction_failed"
+    )
+    assert not converter.calls

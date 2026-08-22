@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -15,12 +16,13 @@ from tests.server.test_research_root import _MetadataPort
 
 from mcp_server_phytomni.agents.research.document_evidence import (
     ConvertedResearchSection,
+    ManagedDocumentPayload,
 )
 from mcp_server_phytomni.agents.research.input_parser import (
     parse_research_input,
 )
 from mcp_server_phytomni.api import research_root
-from mcp_server_phytomni.runtime.outbound import ObsProfileName
+from mcp_server_phytomni.storage.downloads import ResolvedObsFile
 
 pytestmark = pytest.mark.server
 
@@ -34,11 +36,12 @@ def _limits() -> SimpleNamespace:
     )
 
 
-def _source() -> SimpleNamespace:
+def _source(tmp_path: Path | None = None) -> SimpleNamespace:
     """Return the storage-config namespace used by the factory."""
     return SimpleNamespace(
         BUCKET_NAME="research-bucket",
         OBS_SERVER="https://obs.example.invalid",
+        TEMP_DIR=str(tmp_path) if tmp_path is not None else ".",
     )
 
 
@@ -95,91 +98,62 @@ def test_managed_downloader_observes_inventory_snapshot() -> None:
     assert observation.snapshot == {"etag": "abc"}
 
 
-async def test_managed_downloader_uses_relay_when_enabled(
+async def test_managed_downloader_uses_shared_obs_source(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    """Relay mode reads the object through the active relay client."""
+    """The HTTP adapter stages OBS objects through the shared download helper."""
+    staged = tmp_path / "brief.pdf"
+    staged.write_bytes(b"pdf-bytes")
+    captured: dict[str, Any] = {}
 
-    calls: list[tuple[str, str]] = []
+    async def _download_source(
+        obs_file: str, server_dir: str, **kwargs: Any
+    ) -> ResolvedObsFile:
+        captured["obs_file"] = obs_file
+        captured["server_dir"] = server_dir
+        captured["kwargs"] = kwargs
+        return ResolvedObsFile(file_path=str(staged), cleanup=True)
 
-    async def get_obs_object(reference: str, message: str = "") -> bytes:
-        """Return fixture bytes for the requested object."""
-        calls.append((reference, message))
-        return b"relay-bytes"
-
-    relay = SimpleNamespace(get_obs_object=get_obs_object)
-    monkeypatch.setattr(research_root, "relay_mode_enabled", lambda: True)
-    monkeypatch.setattr(research_root, "current_relay_client", lambda: relay)
+    monkeypatch.setattr(research_root, "download_obs_source", _download_source)
     downloader = getattr(research_root, "_ManagedDocumentDownloader")(
-        cast(Any, _source())
+        cast(Any, _source(tmp_path))
     )
 
     payload = await downloader.download(
         SimpleNamespace(exact_reference="owner/docs/brief.pdf")
     )
 
-    assert payload == b"relay-bytes"
-    assert calls == [
-        ("owner/docs/brief.pdf", "Failed to download Research document")
-    ]
-
-
-async def test_managed_downloader_uses_obs_runtime_when_direct(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Direct mode leases the primary OBS runtime and reads object bytes."""
-    captured: dict[str, Any] = {}
-
-    async def run(profile: Any, operation: Any) -> bytes:
-        """Record the profile and invoke the leased operation."""
-        captured["profile"] = profile
-        return operation(object())
-
-    def _get_bytes(bucket: str, reference: str, access: Any) -> bytes:
-        captured["bucket"] = bucket
-        captured["reference"] = reference
-        captured["access"] = access
-        return b"obs-bytes"
-
-    monkeypatch.setattr(research_root, "relay_mode_enabled", lambda: False)
-    monkeypatch.setattr(
-        research_root,
-        "current_obs_runtime",
-        lambda: SimpleNamespace(run=run),
+    assert payload == ManagedDocumentPayload(
+        path=str(staged), size_bytes=9, cleanup=True
     )
-    monkeypatch.setattr(research_root, "get_object_bytes", _get_bytes)
-    downloader = getattr(research_root, "_ManagedDocumentDownloader")(
-        cast(Any, _source())
-    )
-
-    payload = await downloader.download(
-        SimpleNamespace(exact_reference="owner/docs/notes.md")
-    )
-
-    assert payload == b"obs-bytes"
-    assert captured["profile"] is ObsProfileName.PRIMARY
-    assert captured["bucket"] == "research-bucket"
-    assert captured["reference"] == "owner/docs/notes.md"
+    assert captured["obs_file"] == "owner/docs/brief.pdf"
+    assert captured["server_dir"] == str(tmp_path)
+    assert captured["kwargs"]["bucket_name"] == "research-bucket"
 
 
 def test_document_converter_splits_pdf_pages(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """PDF conversion keeps form-feed units as numbered pages."""
 
-    def _convert(path: str, cleanup: bool = True) -> str:
+    def _convert(path: str, cleanup: bool = False) -> Any:
         del path, cleanup
-        return "page-one\f\npage-two\f\n"
+        return SimpleNamespace(sections=("page-one", "page-two"))
 
-    monkeypatch.setattr(research_root, "convert_single_file", _convert)
+    monkeypatch.setattr(research_root, "convert_document_file", _convert)
     converter = getattr(research_root, "_MarkItDownDocumentConverter")()
     entry = SimpleNamespace(
         compound_suffix=".pdf",
         safe_basename="Brief.PDF",
     )
+    payload = ManagedDocumentPayload(
+        path=str(tmp_path / "brief.pdf"), size_bytes=8
+    )
 
     assert converter.contract_name == "managed_document_converter"
-    sections = converter.convert(entry, b"%PDF-1.4")
+    sections = converter.convert(entry, payload)
 
     assert sections == (
         ConvertedResearchSection(1, "page-1", "page-one"),
@@ -189,51 +163,43 @@ def test_document_converter_splits_pdf_pages(
 
 def test_document_converter_labels_non_pdf_sections(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Non-PDF conversion uses section labels and rejects empty text."""
 
-    def _convert(path: str, cleanup: bool = True) -> str:
+    def _convert(path: str, cleanup: bool = False) -> Any:
         del path, cleanup
-        return "only-section"
+        return SimpleNamespace(sections=("only-section",))
 
-    monkeypatch.setattr(research_root, "convert_single_file", _convert)
+    monkeypatch.setattr(research_root, "convert_document_file", _convert)
     converter = getattr(research_root, "_MarkItDownDocumentConverter")()
     entry = SimpleNamespace(
         compound_suffix=".md",
         safe_basename="notes.md",
     )
+    payload = ManagedDocumentPayload(
+        path=str(tmp_path / "notes.md"), size_bytes=5
+    )
 
-    sections = converter.convert(entry, b"hello")
+    sections = converter.convert(entry, payload)
     assert sections == (
         ConvertedResearchSection(1, "section-1", "only-section"),
     )
 
-    monkeypatch.setattr(
-        research_root,
-        "convert_single_file",
-        lambda *_a, **_k: "  ",
-    )
+    def _empty(path: str, cleanup: bool = False) -> Any:
+        del path, cleanup
+        raise ValueError("document conversion returned no text")
+
+    monkeypatch.setattr(research_root, "convert_document_file", _empty)
     with pytest.raises(ValueError, match="returned no text"):
-        converter.convert(entry, b"")
+        converter.convert(entry, payload)
 
 
-def test_document_converter_swallows_missing_temp_file(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A vanished temp file after conversion is not fatal."""
-
-    def _convert(path: str, cleanup: bool = True) -> str:
-        del cleanup
-        research_root.os.unlink(path)
-        return "kept"
-
-    monkeypatch.setattr(research_root, "convert_single_file", _convert)
-    converter = getattr(research_root, "_MarkItDownDocumentConverter")()
-    entry = SimpleNamespace(compound_suffix=".txt", safe_basename="a.txt")
-
-    sections = converter.convert(entry, b"body")
-
-    assert sections[0].text == "kept"
+def test_research_root_does_not_buffer_document_bytes() -> None:
+    """HTTP Research composition must not join OBS objects into a bytes body."""
+    source = Path(research_root.__file__).read_text(encoding="utf-8")
+    assert "get_object_bytes" not in source
+    assert "get_obs_object(" not in source
 
 
 def test_factory_rejects_incomplete_metadata_port() -> None:

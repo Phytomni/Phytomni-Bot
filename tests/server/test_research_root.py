@@ -8,15 +8,20 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
+from mcp_server_phytomni.agents.research.document_evidence import (
+    ManagedDocumentPayload,
+)
 from mcp_server_phytomni.agents.research.input_parser import (
     parse_research_input,
 )
 from mcp_server_phytomni.api import research_root
+from mcp_server_phytomni.storage.downloads import ResolvedObsFile
 
 pytestmark = pytest.mark.server
 
@@ -199,6 +204,7 @@ def test_bind_default_factory_requires_runtime_and_port() -> None:
 
 def test_direct_goal_downloader_and_converter_branches(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Goal, download, and conversion ports stay bounded."""
     provider = getattr(research_root, "_DirectGoalProvider")(
@@ -212,7 +218,12 @@ def test_direct_goal_downloader_and_converter_branches(
 
     asyncio.run(_extract())
     downloader = getattr(research_root, "_ManagedDocumentDownloader")(
-        cast(Any, SimpleNamespace(BUCKET_NAME="research-bucket"))
+        cast(
+            Any,
+            SimpleNamespace(
+                BUCKET_NAME="research-bucket", TEMP_DIR=str(tmp_path)
+            ),
+        )
     )
     entry = SimpleNamespace(exact_reference="obs://research-bucket/a.pdf")
     assert (
@@ -224,83 +235,58 @@ def test_direct_goal_downloader_and_converter_branches(
         == entry.exact_reference
     )
 
-    class _Relay:
-        async def get_obs_object(self, _ref: str, *, message: str) -> bytes:
-            """Return scripted relay bytes."""
-            del message
-            return b"relay-bytes"
+    staged = tmp_path / "a.pdf"
+    staged.write_bytes(b"staged-pdf")
 
-        def describe(self) -> str:
-            """Return a stable name for the public-method floor."""
-            return "_Relay"
+    async def _source(obs_file: str, server_dir: str, **kwargs: Any) -> Any:
+        del obs_file, server_dir, kwargs
+        return ResolvedObsFile(file_path=str(staged), cleanup=True)
 
-        def close(self) -> None:
-            """No-op closer so the double meets the public-method floor."""
-            return None
+    monkeypatch.setattr(research_root, "download_obs_source", _source)
 
-    monkeypatch.setattr(research_root, "relay_mode_enabled", lambda: True)
-    monkeypatch.setattr(research_root, "current_relay_client", _Relay)
+    async def _download() -> None:
+        payload = await downloader.download(entry)
+        assert payload.path == str(staged)
+        assert payload.size_bytes == staged.stat().st_size
+        assert payload.cleanup is True
 
-    async def _relay() -> None:
-        assert await downloader.download(entry) == b"relay-bytes"
-
-    asyncio.run(_relay())
-
-    class _Obs:
-        async def run(self, _p: object, callback: Any) -> bytes:
-            """Invoke the download callback with a dummy client."""
-            return await callback(object())
-
-        def describe(self) -> str:
-            """Return a stable name for the public-method floor."""
-            return "_Obs"
-
-        def close(self) -> None:
-            """No-op closer so the double meets the public-method floor."""
-            return None
-
-    monkeypatch.setattr(research_root, "relay_mode_enabled", lambda: False)
-    monkeypatch.setattr(research_root, "current_obs_runtime", _Obs)
-
-    async def _bytes(*_a: Any, **_k: Any) -> bytes:
-        return b"direct-bytes"
-
-    monkeypatch.setattr(research_root, "get_object_bytes", _bytes)
-
-    async def _direct() -> None:
-        assert await downloader.download(entry) == b"direct-bytes"
-
-    asyncio.run(_direct())
+    asyncio.run(_download())
     converter = getattr(research_root, "_MarkItDownDocumentConverter")()
+    payload = ManagedDocumentPayload(path=str(staged), size_bytes=10)
     monkeypatch.setattr(
         research_root,
-        "convert_single_file",
-        lambda _p, cleanup=False: "page-a\f\npage-b",
+        "convert_document_file",
+        lambda _p, cleanup=False: SimpleNamespace(
+            sections=("page-a", "page-b")
+        ),
     )
     pages = converter.convert(
         SimpleNamespace(compound_suffix=".pdf", safe_basename="paper.pdf"),
-        b"%PDF",
+        payload,
     )
     assert [page.label for page in pages] == ["page-1", "page-2"]
     monkeypatch.setattr(
         research_root,
-        "convert_single_file",
-        lambda _p, cleanup=False: "only section",
+        "convert_document_file",
+        lambda _p, cleanup=False: SimpleNamespace(sections=("only section",)),
     )
     assert (
         converter.convert(
             SimpleNamespace(compound_suffix=".txt", safe_basename="notes.txt"),
-            b"t",
+            payload,
         )[0].label
         == "section-1"
     )
-    monkeypatch.setattr(
-        research_root, "convert_single_file", lambda *_a, **_k: "   "
-    )
+
+    def _empty(_path: str, cleanup: bool = False) -> None:
+        del _path, cleanup
+        raise ValueError("document conversion returned no text")
+
+    monkeypatch.setattr(research_root, "convert_document_file", _empty)
     with pytest.raises(ValueError, match="no text"):
         converter.convert(
             SimpleNamespace(compound_suffix=".txt", safe_basename="notes.txt"),
-            b"e",
+            payload,
         )
 
 

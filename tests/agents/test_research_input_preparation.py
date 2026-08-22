@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import tempfile
 from dataclasses import asdict, dataclass, replace
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -23,6 +26,7 @@ from mcp_server_phytomni.agents.research.description_resolver import (
 from mcp_server_phytomni.agents.research.document_evidence import (
     ConvertedResearchSection,
     ManagedDocumentObservation,
+    ManagedDocumentPayload,
     ResearchEvidenceRequest,
     extract_research_evidence,
 )
@@ -701,17 +705,31 @@ class _RestartDocumentPort:
             entry.exact_reference, entry.snapshot
         )
 
-    async def download(self, entry: ResearchInventoryEntry) -> bytes:
-        """Return the complete body for one immutable document."""
+    async def download(
+        self, entry: ResearchInventoryEntry
+    ) -> ManagedDocumentPayload:
+        """Stage the complete body for one immutable document."""
         self.downloaded.append(entry.dataset_id)
-        return self.payloads[entry.dataset_id]
+        body = self.payloads[entry.dataset_id]
+        handle, path = tempfile.mkstemp(prefix="research-input-")
+        try:
+            os.write(handle, body)
+        finally:
+            os.close(handle)
+        return ManagedDocumentPayload(
+            path=path, size_bytes=len(body), cleanup=True
+        )
 
     def convert(
-        self, entry: ResearchInventoryEntry, payload: bytes
+        self,
+        entry: ResearchInventoryEntry,
+        payload: ManagedDocumentPayload,
     ) -> tuple[ConvertedResearchSection, ...]:
         """Re-extract all deterministic pages or sections."""
         self.converted.append(entry.dataset_id)
-        assert payload == self.payloads[entry.dataset_id]
+        assert (
+            Path(payload.path).read_bytes() == self.payloads[entry.dataset_id]
+        )
         return self.pages[entry.dataset_id]
 
     def clear(self) -> None:
