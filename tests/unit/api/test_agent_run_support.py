@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Any, cast
 
 import pytest
 from fastapi.responses import StreamingResponse
@@ -49,7 +50,7 @@ def test_run_id_from_started_frame_accepts_bytes_and_memoryview() -> None:
 def test_run_id_from_started_frame_rejects_unusable_payloads() -> None:
     """Malformed or non-RunStarted frames do not yield a durable id."""
     assert _run_id_from_started_frame(b"\xff") == ""
-    assert _run_id_from_started_frame(object()) == ""
+    assert _run_id_from_started_frame(cast(Any, 123)) == ""
     assert _run_id_from_started_frame("event: RunStarted\ndata: {\n") == ""
     assert _run_id_from_started_frame("event: RunStarted\ndata: []\n") == ""
     assert _run_id_from_started_frame("event: RunFinished\ndata: {}\n") == ""
