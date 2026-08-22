@@ -1261,10 +1261,11 @@ explicit unsupported forced-tool or selected agent returns
 
 The invocation limits are inclusive and the same ceiling as the resumable
 upload plane (`API_UPLOAD_V2_MAX_BYTES`): at most 10 attachments, at most
-10 GiB per attachment, and at most 100 GiB across one request. Managed size metadata and registered
-legacy upload metadata both count; preconfigured legacy dataset paths retain
-their existing budget exclusion. Exact repeated asset ids are rejected before
-budget evaluation. Legacy preconfigured OBS dataset paths remain a separate
+10 GiB per attachment, and at most 100 GiB across one request. Managed size
+metadata and registered legacy upload metadata both count; preconfigured
+legacy dataset paths retain their existing budget exclusion. Exact repeated
+asset ids are rejected before budget evaluation. Legacy preconfigured OBS
+dataset paths remain a separate
 `data_list` policy for Analyst and Research; they do not prove ownership of a
 new upload and are not converted into `user_uploads` metadata.
 

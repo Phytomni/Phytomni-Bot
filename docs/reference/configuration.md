@@ -564,11 +564,11 @@ default). Native agent runs and Expert routing admit completed assets
 through that same ceiling — there is one upload contract, not a second
 smaller invocation budget:
 
-| Limit                  | Value                          | Applies to                             |
-| ---------------------- | ------------------------------ | -------------------------------------- |
-| Maximum files          | 10                             | One native or Expert request           |
-| Maximum bytes per file | `API_UPLOAD_V2_MAX_BYTES`      | One registered document or CSV dataset |
-| Maximum total bytes    | 10 × `API_UPLOAD_V2_MAX_BYTES` | All registered uploads in one request  |
+- Maximum files: 10 per native or Expert request
+- Maximum bytes per file: `API_UPLOAD_V2_MAX_BYTES` (one registered document
+  or CSV dataset)
+- Maximum total bytes: 10 × `API_UPLOAD_V2_MAX_BYTES` for all registered
+  uploads in one request
 
 The invocation limits are inclusive; the validator rejects only values above
 them. Duplicate asset ids are rejected before budget evaluation. The
