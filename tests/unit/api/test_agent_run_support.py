@@ -60,7 +60,7 @@ async def test_stream_run_id_returns_empty_when_the_body_is_empty() -> None:
     """A stream that ends before the first frame has no run identity."""
 
     async def empty() -> AsyncIterator[bytes]:
-        if False:
+        for _ in ():
             yield b""
 
     response = StreamingResponse(empty())

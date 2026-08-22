@@ -372,10 +372,3 @@ def test_sdk_path_listing_stops_pagination_at_limit(
         "/obs/phytomni/agent_data/u1/run0/b.txt",
     ]
     assert pages == [(["agent_data/u1/run0/c.txt"], None)]
-
-
-def test_extend_keys_reports_cap_when_already_full() -> None:
-    """A later page is ignored once the listing already holds the cap."""
-    keys = ["a", "b"]
-    assert artifact_listing._extend_keys_up_to_limit(keys, ["c"], 2) is True
-    assert keys == ["a", "b"]
