@@ -293,3 +293,89 @@ def test_obsfs_enumeration_confines_to_requested_tenant_prefix(tmp_path):
 
     assert paths == ["/obs/phytomni/agent_data/user_data/ua/run0/mine.png"]
     assert all("/ub/" not in path for path in paths)
+
+
+def test_obsfs_path_listing_stops_after_limit(tmp_path) -> None:
+    """Mounted path listing stops after the requested file cap."""
+    bucket = "phytomni"
+    run_dir = tmp_path / bucket / "agent_data" / "u1" / "run0"
+    run_dir.mkdir(parents=True)
+    for index in range(4):
+        (run_dir / f"f{index}.txt").write_bytes(b"x")
+
+    paths = artifact_listing.list_artifact_paths(
+        f"/obs/{bucket}/agent_data/u1/run0",
+        bucket_name=bucket,
+        mount_root=str(tmp_path),
+        limit=2,
+    )
+
+    assert len(paths) == 2
+
+
+async def test_async_obsfs_listing_skips_sdk_when_mount_has_files(
+    tmp_path,
+) -> None:
+    """A mounted output dir is listed without taking an OBS SDK lease."""
+    bucket = "phytomni"
+    run_dir = tmp_path / bucket / "agent_data" / "u1" / "run0"
+    run_dir.mkdir(parents=True)
+    (run_dir / "summary.csv").write_bytes(b"x")
+    runtime = CountingObsRuntime(object())
+
+    objects = await artifact_listing.list_artifact_objects_with_runtime(
+        f"/obs/{bucket}/agent_data/u1/run0",
+        bucket_name=bucket,
+        obs_runtime=runtime,
+        mount_root=str(tmp_path),
+        limit=1,
+    )
+    paths = await artifact_listing.list_artifact_paths_with_runtime(
+        f"/obs/{bucket}/agent_data/u1/run0",
+        bucket_name=bucket,
+        obs_runtime=runtime,
+        mount_root=str(tmp_path),
+        limit=1,
+    )
+
+    assert [item.relative_path for item in objects] == ["summary.csv"]
+    assert paths == ["/obs/phytomni/agent_data/u1/run0/summary.csv"]
+    assert runtime.calls == 0
+
+
+def test_sdk_path_listing_stops_pagination_at_limit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """SDK path listing does not fetch the next page after the cap."""
+    pages = [
+        (
+            ["agent_data/u1/run0/a.txt", "agent_data/u1/run0/b.txt"],
+            "next-page",
+        ),
+        (["agent_data/u1/run0/c.txt"], None),
+    ]
+
+    def fake_page(*_args: object, **_kwargs: object):
+        return pages.pop(0)
+
+    monkeypatch.setattr(artifact_listing, "list_object_keys_page", fake_page)
+    paths = artifact_listing.list_artifact_paths(
+        "/obs/phytomni/agent_data/u1/run0",
+        bucket_name="phytomni",
+        client=object(),
+        mount_root=str(tmp_path),
+        limit=2,
+    )
+
+    assert paths == [
+        "/obs/phytomni/agent_data/u1/run0/a.txt",
+        "/obs/phytomni/agent_data/u1/run0/b.txt",
+    ]
+    assert pages == [(["agent_data/u1/run0/c.txt"], None)]
+
+
+def test_extend_keys_reports_cap_when_already_full() -> None:
+    """A later page is ignored once the listing already holds the cap."""
+    keys = ["a", "b"]
+    assert artifact_listing._extend_keys_up_to_limit(keys, ["c"], 2) is True
+    assert keys == ["a", "b"]
