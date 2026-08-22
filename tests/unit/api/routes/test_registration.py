@@ -200,6 +200,7 @@ def test_admin_and_run_registration_preserve_public_contract() -> None:
         ("/v1/api-keys/{prefix}", ("DELETE",)),
         ("/v1/relay/audit", ("GET",)),
         ("/v1/relay/audit/{request_id}", ("GET",)),
+        ("/v1/runs/{run_id}/stream", ("GET",)),
         ("/v1/runs/{run_id}/logs", ("GET",)),
         ("/v1/runs/{run_id}", ("GET",)),
         ("/v1/runs/{run_id}/delivery/retry", ("POST",)),

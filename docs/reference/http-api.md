@@ -296,6 +296,12 @@ keeps operator probes and does not repeat the full list.
   cleanup.
 
 - **Method:** `GET`
+  **Path:** `/v1/runs/{run_id}/stream`
+  **Auth:** yes
+  **Purpose:** Replays buffered AG-UI frames for one owner-scoped run, then
+  tails the live producer as ``text/event-stream``.
+
+- **Method:** `GET`
   **Path:** `/v1/runs/{run_id}/logs`
   **Auth:** yes
   **Purpose:** Returns reconciled task logs for a run.

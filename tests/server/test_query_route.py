@@ -562,7 +562,7 @@ _BACKGROUND_EXPERT_CASES = (
 _SYNC_EXPERT_CASES = (
     pytest.param(
         ("ChatAgent", "chat", {"user_query": "q", "obs_file_list": []}),
-        id="chat-synchronous",
+        id="chat-stream",
     ),
     pytest.param(
         (
@@ -570,18 +570,10 @@ _SYNC_EXPERT_CASES = (
             "knowledge",
             {"user_query": "q", "obs_file_list": []},
         ),
-        id="knowledge-synchronous",
-    ),
-    pytest.param(
-        ("DataAgent", "data", {"user_query": "q"}),
-        id="data-synchronous",
-    ),
-    pytest.param(
-        ("ReviewAgent", "review", {"user_query": "q", "obs_file_list": []}),
-        id="review-synchronous",
+        id="knowledge-stream",
     ),
     pytest.param(
         ("BriefGeneAgent", "brief_gene", {"user_query": "AT1G01010"}),
-        id="brief-gene-synchronous",
+        id="brief-gene-stream",
     ),
 )

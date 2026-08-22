@@ -26,6 +26,7 @@ from mcp_server_phytomni.agents.deep_genome.resolve_query import (
     DeepGenomeResolveError,
 )
 from mcp_server_phytomni.agents.expert import router as expert_router
+from mcp_server_phytomni.api.agent_run_support import running_agent_run_response
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
@@ -56,7 +57,17 @@ def _capture_invoke(
             status_code,
         )
 
+    async def fake_stream(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        captured.update(
+            {"agent": kwargs["slug"], "arguments": kwargs["arguments"]}
+        )
+        return running_agent_run_response(
+            run_id="run-stream",
+            agent=kwargs["slug"],
+        )
+
     monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+    monkeypatch.setattr(api_app, "_start_routed_expert_stream", fake_stream)
     return captured
 
 
@@ -154,7 +165,7 @@ async def test_route_brief_gene_does_not_open_resolver(
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["agent"] == "brief_gene"
     assert captured["arguments"]["user_query"] == "rice CAB1 function"
     assert "resolve_gene_id" not in captured["arguments"]

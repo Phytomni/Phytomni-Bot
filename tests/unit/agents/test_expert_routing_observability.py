@@ -163,8 +163,8 @@ async def test_v0_logs_declined_chat_fallback(
     async def declining(*_args: object, **_kwargs: object) -> None:
         raise ExpertRoutingDeclinedError(_LEAK)
 
-    async def fake_invoke(**_kwargs: object) -> tuple[dict[str, str], int]:
-        return {"status": "succeeded"}, 200
+    async def fake_stream(**_kwargs: object) -> tuple[dict[str, str], int]:
+        return {"status": "running", "agent": "chat"}, 202
 
     monkeypatch.setattr(
         "mcp_server_phytomni.api.app.select_agent_tool",
@@ -178,8 +178,8 @@ async def test_v0_logs_declined_chat_fallback(
         ),
     )
     monkeypatch.setattr(
-        "mcp_server_phytomni.api.app._invoke_agent_run",
-        fake_invoke,
+        "mcp_server_phytomni.api.app._start_routed_expert_stream",
+        fake_stream,
     )
     caplog.set_level(logging.WARNING, logger=_ROUTE_LOGGER)
     payload = ExpertQueryRequest(
@@ -187,13 +187,13 @@ async def test_v0_logs_declined_chat_fallback(
         allowed_tools=["ChatAgent", "DataAgent"],
     )
     body, status_code = await _route_expert_query(payload, debug=False)
-    assert status_code == 200
-    assert body["status"] == "succeeded"
+    assert status_code == 202
+    assert body["status"] == "running"
     records = _route_records(caplog)
     assert len(records) == 1
     assert getattr(records[0], "outcome") == "declined_chat_fallback"
     assert getattr(records[0], "path") == "v0"
-    assert getattr(records[0], "http_status") == 200
+    assert getattr(records[0], "http_status") == 202
     assert _LEAK not in caplog.text
 
 

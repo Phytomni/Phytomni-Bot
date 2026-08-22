@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.asyncio_helpers import wait_until
 from tests.support.resolver_fakes import post_native_run
 
 from mcp_server_phytomni import server
@@ -39,6 +40,7 @@ from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
 from mcp_server_phytomni.common import relay_client
 from mcp_server_phytomni.mcp import app as mcp_app
+from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
 
@@ -324,6 +326,9 @@ def _install_review_projection(
         )
 
     context.monkeypatch.setattr(
+        api_app, "_execute_review_with_run_id", run_review
+    )
+    context.monkeypatch.setattr(
         api_app, "_run_review_with_interrupt", run_review
     )
 
@@ -367,8 +372,26 @@ async def _assert_native_projection(
         ),
         timeout=5,
     )
-    assert response.status_code == 200
-    formatted = response.json()["result"]["formatted"]
+    if case.slug == "review":
+        assert response.status_code == 202
+        run_id = response.json()["run_id"]
+
+        def completed() -> bool:
+            record = RunRegistry(api_app.resolve_tasks_db_path()).get_run(
+                run_id, owner="u1"
+            )
+            return record is not None and record.status == "succeeded"
+
+        await wait_until(completed)
+        fetched = await context.api_client.get(
+            f"/v1/runs/{run_id}",
+            headers={"Authorization": f"Bearer {context.issued_api_key}"},
+        )
+        assert fetched.status_code == 200
+        formatted = fetched.json()["result"]["formatted"]
+    else:
+        assert response.status_code == 200
+        formatted = response.json()["result"]["formatted"]
     assert formatted["answer"] == envelope.formatted.answer
     assert formatted["references"] == [_EXPECTED_REFERENCE]
 

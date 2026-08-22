@@ -129,6 +129,9 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
     "mcp_server_phytomni/agents/shared/gauss.py": Counter(
         {"aclose_gauss_pool": 1}
     ),
+    "mcp_server_phytomni/api/agent_run_support.py": Counter(
+        {"stream_run_id": 1}
+    ),
     "mcp_server_phytomni/api/app_support.py": Counter({"_http_lifespan": 2}),
     "mcp_server_phytomni/api/openai_mapping.py": Counter(
         {"to_chat_completion_chunks": 1}
@@ -151,6 +154,9 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
             "_produce_obs_chunks": 1,
             "_stream": 1,
         }
+    ),
+    "mcp_server_phytomni/api/streaming.py": Counter(
+        {"_produce_detached_stream": 3}
     ),
     "mcp_server_phytomni/api/run_lifecycle.py": Counter(
         {
@@ -326,11 +332,13 @@ _EXPECTED_CLOSE_PATH_DISPOSITIONS: dict[str, _CloseDisposition] = {
         "local_not_outbound"
     ),
     "mcp_server_phytomni/agents/shared/gauss.py": "native_asyncpg_pool",
+    "mcp_server_phytomni/api/agent_run_support.py": "downstream_iterator",
     "mcp_server_phytomni/api/app_support.py": "lifecycle_entrypoint",
     "mcp_server_phytomni/api/openai_mapping.py": "downstream_iterator",
     "mcp_server_phytomni/api/relay/forward.py": "server_outbound_owner",
     "mcp_server_phytomni/api/relay/obs.py": "server_outbound_owner",
     "mcp_server_phytomni/api/run_lifecycle.py": "local_not_outbound",
+    "mcp_server_phytomni/api/streaming.py": "downstream_iterator",
     "mcp_server_phytomni/common/reasoning_content.py": "local_not_outbound",
     "mcp_server_phytomni/func_cache/core.py": "local_not_outbound",
     "mcp_server_phytomni/func_cache/storage.py": "local_not_outbound",

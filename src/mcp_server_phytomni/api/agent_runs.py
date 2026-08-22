@@ -771,6 +771,21 @@ def _resolve_remote_run(owner: str) -> run_lifecycle.ResolvedRemoteRun:
     )
 
 
+def _has_in_request_context_execution(request: Mapping[str, Any]) -> bool:
+    """Return whether this invoke carries V1 conversation execution fields.
+
+    Native and Expert POSTs omit these fields and keep the detached 202
+    worker. Context Data/Review need a completed AgentOutcome so the
+    sync staging path can persist a bounded turn instead of 409
+    ``conversation_context_turn_in_progress``.
+    """
+    return (
+        request.get("agent_thread_id") is not None
+        or request.get("private_agent_state") is not None
+        or bool(request.get("conversation_messages"))
+    )
+
+
 async def _invoke_agent_run_request(
     request: Mapping[str, Any],
 ) -> tuple[dict[str, Any], int]:
@@ -788,7 +803,9 @@ async def _invoke_agent_run_request(
         request_json=request_json,
         attachment_evidence=attachment_evidence,
     )
-    if agent in _app_attr("_BACKGROUND_SUBMISSION_AGENT_SLUGS"):
+    if agent in _app_attr(
+        "_BACKGROUND_SUBMISSION_AGENT_SLUGS"
+    ) and not _has_in_request_context_execution(request):
         try:
             return _app_attr("_background_agent_run_response")(
                 agent=agent,

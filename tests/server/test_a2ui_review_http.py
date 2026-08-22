@@ -12,10 +12,12 @@ from typing import Any, NoReturn
 import httpx
 import pytest
 from fastapi import HTTPException
+from tests.support.asyncio_helpers import wait_until
 
 from mcp_server_phytomni.api import a2ui_runtime
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
+from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
 
@@ -33,6 +35,50 @@ def _patch_review_app(monkeypatch: pytest.MonkeyPatch, app: Any) -> None:
         "_review_initial_state",
         lambda _args: {"seed": "review"},
     )
+
+
+async def _post_native_review(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+) -> httpx.Response:
+    """Post one native Review run used by the A2UI HTTP tests."""
+    return await api_client.post(
+        "/v1/agents/review/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "arguments": {
+                "user_query": "Review photosynthesis.",
+                "obs_file_list": [],
+            }
+        },
+    )
+
+
+async def _wait_review_interrupt(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    response: httpx.Response,
+) -> dict[str, Any]:
+    """Wait until a 202 Review POST settles to input_required."""
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["status"] == "running"
+    run_id = body["id"]
+
+    def paused() -> bool:
+        record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
+        return record is not None and record.status == "input_required"
+
+    await wait_until(paused)
+    got = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert got.status_code == 200
+    stored = got.json()
+    assert stored["status"] == "input_required"
+    return stored
 
 
 async def _post_review_chat_completion(
@@ -79,25 +125,15 @@ async def test_review_pause_flag_on_projects_a2ui(
     review_app_factory: Any,
 ) -> None:
     """Review pauses attach a confirm surface."""
-    _ = tasks_db_path
     _patch_review_app(monkeypatch, review_app_factory())
-    response = await api_client.post(
-        "/v1/agents/review/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "user_query": "Review photosynthesis.",
-                "obs_file_list": [],
-            }
-        },
+    response = await _post_native_review(api_client, issued_api_key)
+    body = await _wait_review_interrupt(
+        api_client, issued_api_key, tasks_db_path, response
     )
-    assert response.status_code == 200
-    body = response.json()
-    draft = body["interrupt"]["draft"]
+    draft = body["result"]["interrupt"]["draft"]
     assert draft["summary"] == "draft review"
     assert draft["a2ui"]["widget"] == "confirm"
     assert draft["a2ui"]["props"]["body"] == "draft review"
-    # Registry must match response (GET /v1/runs/{id})
     got = await api_client.get(
         f"/v1/runs/{body['id']}",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -230,7 +266,6 @@ async def test_review_projection_failure_persists_failed_run(
     review_app_factory: Any,
 ) -> None:
     """A failed surface projection is persisted before the 500 response."""
-    _ = tasks_db_path
     _patch_review_app(monkeypatch, review_app_factory())
 
     def fail_projection(_interrupt: Any) -> NoReturn:
@@ -243,19 +278,15 @@ async def test_review_projection_failure_persists_failed_run(
         fail_projection,
     )
 
-    response = await api_client.post(
-        "/v1/agents/review/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "user_query": "Review photosynthesis.",
-                "obs_file_list": [],
-            }
-        },
-    )
+    response = await _post_native_review(api_client, issued_api_key)
 
-    assert response.status_code == 500
-    assert response.json()["error"]["code"] == "projection_failed"
+    assert response.status_code == 202, response.text
+
+    def failed() -> bool:
+        rows = RunRegistry(tasks_db_path).list_runs(owner="u1")
+        return any(row.status == "failed" for row in rows)
+
+    await wait_until(failed)
     listing = await api_client.get(
         "/v1/runs?status=failed&agent=review",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -326,22 +357,14 @@ async def test_review_a2ui_action_approve_matches_resume_kernel(
     review_app_factory: Any,
 ) -> None:
     """A2UI accept resumes Review through the shared kernel."""
-    _ = tasks_db_path
     review_app = review_app_factory()
     _patch_review_app(monkeypatch, review_app)
-    paused = await api_client.post(
-        "/v1/agents/review/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "user_query": "Review photosynthesis.",
-                "obs_file_list": [],
-            }
-        },
+    paused = await _post_native_review(api_client, issued_api_key)
+    body = await _wait_review_interrupt(
+        api_client, issued_api_key, tasks_db_path, paused
     )
-    body = paused.json()
     run_id = body["id"]
-    surface_id = body["interrupt"]["draft"]["a2ui"]["surface_id"]
+    surface_id = body["result"]["interrupt"]["draft"]["a2ui"]["surface_id"]
 
     calls: list[dict[str, Any]] = []
 
@@ -389,21 +412,13 @@ async def test_review_resume_includes_result_a2ui_when_projected(
     review_app_factory: Any,
 ) -> None:
     """Classic /resume also returns submitted a2ui when surface was open."""
-    _ = tasks_db_path
     _patch_review_app(monkeypatch, review_app_factory())
-    paused = await api_client.post(
-        "/v1/agents/review/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "user_query": "Review photosynthesis.",
-                "obs_file_list": [],
-            }
-        },
+    paused = await _post_native_review(api_client, issued_api_key)
+    body = await _wait_review_interrupt(
+        api_client, issued_api_key, tasks_db_path, paused
     )
-    body = paused.json()
     run_id = body["id"]
-    surface_id = body["interrupt"]["draft"]["a2ui"]["surface_id"]
+    surface_id = body["result"]["interrupt"]["draft"]["a2ui"]["surface_id"]
 
     resumed = await api_client.post(
         f"/v1/runs/{run_id}/resume",
@@ -426,21 +441,13 @@ async def test_review_classic_first_blocks_late_a2ui_action(
     review_app_factory: Any,
 ) -> None:
     """Classic Review resume claims the surface before a Web uplink."""
-    _ = tasks_db_path
     _patch_review_app(monkeypatch, review_app_factory())
-    paused = await api_client.post(
-        "/v1/agents/review/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "user_query": "Review photosynthesis.",
-                "obs_file_list": [],
-            }
-        },
+    paused = await _post_native_review(api_client, issued_api_key)
+    body = await _wait_review_interrupt(
+        api_client, issued_api_key, tasks_db_path, paused
     )
-    body = paused.json()
     run_id = body["id"]
-    surface_id = body["interrupt"]["draft"]["a2ui"]["surface_id"]
+    surface_id = body["result"]["interrupt"]["draft"]["a2ui"]["surface_id"]
 
     classic = await api_client.post(
         f"/v1/runs/{run_id}/resume",
@@ -472,21 +479,13 @@ async def test_review_a2ui_then_resume_second_returns_409(
     review_app_factory: Any,
 ) -> None:
     """Dual-transport: first winner settles; second path 409."""
-    _ = tasks_db_path
     _patch_review_app(monkeypatch, review_app_factory())
-    paused = await api_client.post(
-        "/v1/agents/review/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "user_query": "Review photosynthesis.",
-                "obs_file_list": [],
-            }
-        },
+    paused = await _post_native_review(api_client, issued_api_key)
+    body = await _wait_review_interrupt(
+        api_client, issued_api_key, tasks_db_path, paused
     )
-    body = paused.json()
     run_id = body["id"]
-    surface_id = body["interrupt"]["draft"]["a2ui"]["surface_id"]
+    surface_id = body["result"]["interrupt"]["draft"]["a2ui"]["surface_id"]
 
     first = await api_client.post(
         f"/v1/runs/{run_id}/a2ui-actions",
@@ -519,21 +518,13 @@ async def test_review_reject_a2ui_mints_new_surface_on_reinterrupt(
     review_app_factory: Any,
 ) -> None:
     """Reject resume that re-interrupts projects a new surface_id."""
-    _ = tasks_db_path
     _patch_review_app(monkeypatch, review_app_factory(reinterrupt=True))
-    paused = await api_client.post(
-        "/v1/agents/review/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "user_query": "Review photosynthesis.",
-                "obs_file_list": [],
-            }
-        },
+    paused = await _post_native_review(api_client, issued_api_key)
+    body = await _wait_review_interrupt(
+        api_client, issued_api_key, tasks_db_path, paused
     )
-    body = paused.json()
     run_id = body["id"]
-    old_surface_id = body["interrupt"]["draft"]["a2ui"]["surface_id"]
+    old_surface_id = body["result"]["interrupt"]["draft"]["a2ui"]["surface_id"]
 
     rejected = await api_client.post(
         f"/v1/runs/{run_id}/a2ui-actions",

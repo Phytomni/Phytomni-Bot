@@ -6,18 +6,21 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from typing import Any
+
 from tests.server.test_query_route import (
-    Any,
     RunRegistry,
     _post_query_route,
     _router_completion,
+    api_app,
     httpx,
     pytest,
 )
-from tests.support.chat_fakes import install_chat_handler
 from tests.support.expert_router_fakes import patch_expert_router
 
 from mcp_server_phytomni.agents.expert import router as expert_router
+from mcp_server_phytomni.mcp.formatting.agui import run_finished, run_started
 
 pytestmark = pytest.mark.server
 
@@ -35,7 +38,24 @@ async def test_route_strict_decline_dispatches_chat_when_allowed(
     route dispatches ChatAgent with the original query and records a run.
     """
     captured: dict[str, Any] = {}
-    install_chat_handler(monkeypatch, captured, content="declined to chat")
+    started: list[dict[str, Any]] = []
+
+    async def prepared_stream(
+        selected_tool: str,
+        selected_arguments: dict[str, Any],
+        *,
+        run_id: str,
+        dialogue_id: str | None,
+        **_kwargs: Any,
+    ) -> AsyncIterator[Any]:
+        started.append(
+            {"tool": selected_tool, "arguments": selected_arguments}
+        )
+        captured["user_query"] = selected_arguments["user_query"]
+        yield run_started(run_id, dialogue_id)
+        yield run_finished(run_id)
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", prepared_stream)
     patch_expert_router(
         monkeypatch, expert_router, _router_completion(empty_choices=True)
     )
@@ -47,13 +67,15 @@ async def test_route_strict_decline_dispatches_chat_when_allowed(
         {"user_query": query, "allowed_tools": ["ChatAgent", "DataAgent"]},
     )
 
-    assert captured["user_query"] == query
-    assert response.status_code == 200
+    assert response.status_code == 202
     body = response.json()
-    assert body["status"] == "succeeded"
+    assert body["status"] == "running"
     assert body["agent"] == "chat"
     assert body["object"] == "agent.run"
-    record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
+    assert captured["user_query"] == query
+    assert started[0]["tool"] == "ChatAgent"
+    record = RunRegistry(tasks_db_path).get_run(body["run_id"], owner="u1")
+    assert record is not None
     assert record.spec.agent == "chat"
 
 
@@ -65,7 +87,6 @@ async def test_route_strict_decline_without_chat_returns_502(
 ) -> None:
     """A decline stays a sanitized 502 when ChatAgent is not allowed."""
     captured: dict[str, Any] = {}
-    install_chat_handler(monkeypatch, captured, content="declined to chat")
     patch_expert_router(
         monkeypatch, expert_router, _router_completion(empty_choices=True)
     )

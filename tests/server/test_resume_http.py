@@ -17,6 +17,8 @@ from tests.support.a2ui_contract_fakes import (
     confirm_surface,
 )
 
+from tests.support.asyncio_helpers import wait_until
+
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -313,13 +315,27 @@ async def test_review_run_interrupt_then_resume_finishes(
         },
     )
 
-    assert first.status_code == 200
-    interrupted = first.json()
-    thread_id = interrupted["interrupt"]["thread_id"]
+    assert first.status_code == 202
+    run_id = first.json()["id"]
+
+    def paused() -> bool:
+        record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
+        return record is not None and record.status == "input_required"
+
+    await wait_until(paused)
+    fetched = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert fetched.status_code == 200
+    interrupted = fetched.json()
+    thread_id = interrupted["id"]
     assert interrupted["id"] == thread_id
     assert interrupted["run_id"] == thread_id
     assert interrupted["status"] == "input_required"
-    assert interrupted["interrupt"]["draft"]["summary"] == "draft review"
+    assert interrupted["result"]["interrupt"]["draft"]["summary"] == (
+        "draft review"
+    )
 
     resumed = await api_client.post(
         f"/v1/runs/{thread_id}/resume",

@@ -24,6 +24,7 @@ from tests.support.http_fakes import install_tool_handler
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.expert import ToolSelection
 from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.api.agent_run_support import running_agent_run_response
 from mcp_server_phytomni.api.app_support import (
     _ErrorResponseOptions,
     error_response,
@@ -184,14 +185,17 @@ async def test_expert_body_locale_reaches_selected_agent(
     async def fake_select(*_args: Any, **_kwargs: Any) -> ToolSelection:
         return ToolSelection("ChatAgent", {"user_query": "route me"})
 
-    async def fake(args: Any) -> dict[str, Any]:
-        captured["locale"] = args.locale
-        return _chat_result()
-
     monkeypatch.setattr(api_app, "select_agent_tool", fake_select)
-    install_tool_handler(
-        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
-    )
+
+    async def fake_stream(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        captured["locale"] = kwargs["arguments"].get("locale")
+        captured["payload_locale"] = kwargs["payload"].locale
+        return running_agent_run_response(
+            run_id="locale-chat-stream",
+            agent="chat",
+        )
+
+    monkeypatch.setattr(api_app, "_start_routed_expert_stream", fake_stream)
     response = await api_client.post(
         "/v1/query/route",
         headers={
@@ -205,8 +209,9 @@ async def test_expert_body_locale_reaches_selected_agent(
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["locale"] == "zh-CN"
+    assert captured["payload_locale"] == "zh-CN"
 
 
 async def test_unsupported_body_locale_is_422(

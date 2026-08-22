@@ -212,11 +212,11 @@ def _parity_handler(case: _ParityCase) -> Any:
         """Return the selected case's sync or remote response."""
         nonlocal calls
         calls += 1
-        if case.expected_status == 202:
+        if case.slug in {"analyst", "research", "network", "design"}:
             return submission_payload(calls)
         return {"answer": f"answer-{calls}", "doc_list": []}
 
-    if case.expected_status == 202:
+    if case.slug in {"analyst", "research", "network", "design"}:
         return records_submission(case.slug)(fake)
     return fake
 
@@ -224,23 +224,13 @@ def _parity_handler(case: _ParityCase) -> Any:
 _PARITY_CASES = (
     pytest.param(
         _ParityCase(
-            "ChatAgent",
-            "chat",
-            200,
-            {"user_query": "q", "obs_file_list": []},
-            {"user_query": "q"},
-        ),
-        id="chat-sync",
-    ),
-    pytest.param(
-        _ParityCase(
             "DataAgent",
             "data",
-            200,
+            202,
             {"user_query": "q"},
             {"user_query": "q"},
         ),
-        id="data-sync",
+        id="data-local-wait",
     ),
     pytest.param(
         _ParityCase(
@@ -379,6 +369,17 @@ async def test_expert_uses_native_run_contract(
             _assert_pending_research(
                 api_app.resolve_tasks_db_path(), direct_body["run_id"]
             )
+        elif case.slug == "data":
+            assert direct_body["id"] == direct_body["run_id"]
+            assert direct_body["task_ids"] == []
+            assert direct_body["result"] == empty_agent_result()
+            direct_record = await _wait_for_run(
+                api_app.resolve_tasks_db_path(),
+                direct_body["run_id"],
+                task_ids=set(),
+                status="succeeded",
+            )
+            assert direct_record.spec.agent == case.slug
         else:
             direct_task_ids = {f"expert-parity-{case.slug}-1"}
             assert direct_body["id"] == direct_body["run_id"]
@@ -417,6 +418,21 @@ async def test_expert_uses_native_run_contract(
             assert direct_record is not None
             assert routed_record.spec.agent == "research"
             assert routed_record.task_ids == direct_record.task_ids == ()
+            return
+        if case.slug == "data":
+            assert routed_body["id"] == routed_body["run_id"]
+            assert routed_body["task_ids"] == []
+            assert routed_body["result"] == empty_agent_result()
+            routed_record = await _wait_for_run(
+                api_app.resolve_tasks_db_path(),
+                routed_body["run_id"],
+                task_ids=set(),
+                status="succeeded",
+            )
+            assert routed_record.spec.run_id == routed_body["run_id"]
+            assert routed_record.spec.agent == case.slug
+            assert direct_record is not None
+            assert routed_record.status == direct_record.status == "succeeded"
             return
         routed_task_ids = {f"expert-parity-{case.slug}-2"}
         assert routed_body["id"] == routed_body["run_id"]

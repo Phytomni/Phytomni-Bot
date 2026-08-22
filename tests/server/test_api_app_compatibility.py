@@ -58,7 +58,7 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # Network dropped ``obs_file_list``. ``_normalized_openapi`` removes
 # only unstable version/server fields.
 _OPENAPI_HASH = (
-    "9b25103c3405d5482355462b6f7189174a7722bde5a5744c29df6a0c55c18bb6"
+    "7a90c10b6687b800883b07f74c0768d0865371d0180eac64b11d11cc775d12db"
 )
 
 
@@ -265,6 +265,14 @@ _DEFAULT_ROUTES = (
         "ContextMutationResponse",
         ("agents",),
         "tombstone_context",
+    ),
+    _route(
+        "/v1/runs/{run_id}/stream",
+        ("GET",),
+        200,
+        None,
+        ("agents",),
+        "get_run_stream",
     ),
     _route(
         "/v1/runs/{run_id}/logs",
@@ -569,9 +577,9 @@ def _all_flag_routes() -> tuple[_RouteContract, ...]:
     return (
         _DEFAULT_ROUTES[:4]
         + _MEMORY_ROUTES
-        + _DEFAULT_ROUTES[4:28]
+        + _DEFAULT_ROUTES[4:29]
         + _A2A_ROUTES
-        + _DEFAULT_ROUTES[28:]
+        + _DEFAULT_ROUTES[29:]
     )
 
 
@@ -619,7 +627,7 @@ def test_default_application_contract_is_literal() -> None:
     document = _normalized_openapi(app)
     if os.environ.get("PHYTOMNI_DEPENDENCY_FLOOR") != "1":
         assert _openapi_hash(app) == _OPENAPI_HASH
-    assert len(document["paths"]) == 46
+    assert len(document["paths"]) == 47
     assert len(document["components"]["schemas"]) == 29
     assert all(
         operation.get("operationId")
@@ -646,7 +654,7 @@ def test_optional_application_contract_is_literal(
     app = create_app()
 
     assert _route_manifest(app) == _all_flag_routes()
-    assert len(app.openapi()["paths"]) == 52
+    assert len(app.openapi()["paths"]) == 53
     assert _original_lifespan_name(app) == "_http_lifespan"
 
 

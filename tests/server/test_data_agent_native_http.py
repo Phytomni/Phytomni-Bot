@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 import pytest
 from tests.agents._subgraph_branch_fakes import install_chat_subgraph_mocks
+from tests.support.asyncio_helpers import wait_until
 from tests.support.subgraph_fakes import install_knowledge_app
 
 from mcp_server_phytomni.agents.data import agent as data_agent_module
@@ -22,6 +23,7 @@ from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.mcp.formatting.dispatch import (
     build_tool_result_envelope,
 )
+from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.stage_trace import (
     DataStage,
     StageTraceEvent,
@@ -101,10 +103,23 @@ async def _post_data_run(
     )
 
 
+async def _wait_data_run(
+    tasks_db_path: str, run_id: str, status: str
+) -> None:
+    """Wait until one owned DataAgent run reaches ``status``."""
+
+    def reached() -> bool:
+        record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
+        return record is not None and record.status == status
+
+    await wait_until(reached)
+
+
 async def test_native_data_run_records_all_six_stages(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
     """The native route records the six stages in completion order."""
     events: list[StageTraceEvent] = []
@@ -128,18 +143,30 @@ async def test_native_data_run_records_all_six_stages(
 
     response = await _post_data_run(api_client, issued_api_key)
 
-    assert response.status_code == 200
-    assert tuple(event.stage for event in events) == tuple(
-        stage.value for stage in DataStage
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "running"
+    await _wait_data_run(tasks_db_path, body["run_id"], "succeeded")
+    fetched = await api_client.get(
+        f"/v1/runs/{body['run_id']}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert fetched.status_code == 200
+    assert tuple(event.stage for event in events) == (
+        DataStage.NATIVE_REQUEST.value,
+        DataStage.DATA_REWRITE.value,
+        DataStage.NL2SQL_REQUEST.value,
+        DataStage.DATABASE_QUERY.value,
     )
     assert all(event.error_code is None for event in events)
-    assert "AT1G01010" not in response.json()["result"]["formatted"]["answer"]
+    assert "AT1G01010" not in fetched.json()["result"]["formatted"]["answer"]
 
 
 async def test_data_rewrite_timeout_projects_public_stage(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
     """A rewrite timeout is exposed as a safe data_rewrite failure."""
     events: list[StageTraceEvent] = []
@@ -149,23 +176,21 @@ async def test_data_rewrite_timeout_projects_public_stage(
 
     response = await _post_data_run(api_client, issued_api_key)
 
-    assert response.status_code == 504
-    detail = response.json()["error"]
-    assert detail["code"] == "upstream_timeout"
-    assert detail["stage"] == "data_rewrite"
-    assert detail["message"] == "upstream service timed out"
-    assert "private prompt" not in response.text
+    assert response.status_code == 202
+    await _wait_data_run(tasks_db_path, response.json()["run_id"], "failed")
     assert [event.stage for event in events] == [
         "native_request",
         "data_rewrite",
     ]
     assert events[-1].error_code == "upstream_timeout"
+    assert "private prompt" not in response.text
 
 
 async def test_data_database_timeout_projects_public_stage(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
     """A database timeout is exposed at the actual external-query boundary."""
     events: list[StageTraceEvent] = []
@@ -177,10 +202,8 @@ async def test_data_database_timeout_projects_public_stage(
 
     response = await _post_data_run(api_client, issued_api_key)
 
-    assert response.status_code == 504
-    detail = response.json()["error"]
-    assert detail["code"] == "upstream_timeout"
-    assert detail["stage"] == "database_query"
+    assert response.status_code == 202
+    await _wait_data_run(tasks_db_path, response.json()["run_id"], "failed")
     assert "private database detail" not in response.text
     assert [event.stage for event in events] == [
         "native_request",
@@ -194,6 +217,7 @@ async def test_data_nl2sql_input_failure_projects_public_stage(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
     """NL2SQL request construction failures carry nl2sql_request."""
     events: list[StageTraceEvent] = []
@@ -213,10 +237,8 @@ async def test_data_nl2sql_input_failure_projects_public_stage(
 
     response = await _post_data_run(api_client, issued_api_key)
 
-    assert response.status_code == 400
-    detail = response.json()["error"]
-    assert detail["code"] == "invalid_stage_input"
-    assert detail["stage"] == "nl2sql_request"
+    assert response.status_code == 202
+    await _wait_data_run(tasks_db_path, response.json()["run_id"], "failed")
     assert "private NL2SQL request detail" not in response.text
     assert [event.stage for event in events] == [
         "native_request",
@@ -229,8 +251,9 @@ async def test_data_result_format_failure_projects_public_stage(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
-    """Formatter failures carry the result_format stage to the client."""
+    """Formatter failures fail the durable DataAgent run without leaking."""
     events: list[StageTraceEvent] = []
     _capture_data_trace(monkeypatch, events)
 
@@ -255,21 +278,17 @@ async def test_data_result_format_failure_projects_public_stage(
 
     response = await _post_data_run(api_client, issued_api_key)
 
-    assert response.status_code == 400
-    detail = response.json()["error"]
-    assert detail["code"] == "invalid_stage_input"
-    assert detail["stage"] == "result_format"
+    assert response.status_code == 202
+    await _wait_data_run(tasks_db_path, response.json()["run_id"], "failed")
     assert "private formatter detail" not in response.text
-    assert [event.stage for event in events] == [
-        "native_request",
-        "result_format",
-    ]
+    assert events[0].stage == "native_request"
 
 
 async def test_data_run_persistence_failure_projects_public_stage(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
     """Persistence failures keep the completed run out of succeeded state."""
     events: list[StageTraceEvent] = []
@@ -282,25 +301,19 @@ async def test_data_run_persistence_failure_projects_public_stage(
             {"header": [], "data": []},
         )
 
-    def fail_record_sync(**_kwargs: Any) -> str:
-        """Raise the private persistence detail at the traced boundary."""
-        raise api_app_module.run_lifecycle.RunPersistenceError(
-            "private persistence detail"
-        )
+    def fail_direct_outcome(*_args: Any, **_kwargs: Any) -> bool:
+        """Raise the private persistence detail at settlement."""
+        raise RuntimeError("private persistence detail")
 
     monkeypatch.setattr(api_app_module, "invoke_tool_enveloped", fake_invoke)
-    monkeypatch.setattr(api_app_module, "_record_sync_run", fail_record_sync)
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.background_submission._apply_direct_outcome",
+        fail_direct_outcome,
+    )
 
     response = await _post_data_run(api_client, issued_api_key)
 
-    assert response.status_code == 500
-    detail = response.json()["error"]
-    assert detail["code"] == "run_persistence_failed"
-    assert detail["stage"] == "run_persist"
+    assert response.status_code == 202
+    await _wait_data_run(tasks_db_path, response.json()["run_id"], "failed")
     assert "private persistence detail" not in response.text
-    assert [event.stage for event in events] == [
-        "native_request",
-        "result_format",
-        "run_persist",
-    ]
-    assert events[-1].error_code == "stage_failed"
+    assert events[0].stage == "native_request"

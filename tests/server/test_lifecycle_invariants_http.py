@@ -14,6 +14,7 @@ import httpx
 import pytest
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
+from tests.support.asyncio_helpers import wait_until
 from tests.support.http_fakes import (
     install_tool_handler,
     open_asgi_client,
@@ -313,6 +314,7 @@ async def _new_restart_review_app(
 async def _pause_restart_review(
     client: httpx.AsyncClient,
     api_key: str,
+    tasks_db_path: str,
 ) -> tuple[str, str]:
     """Create the durable pause and return its run and surface IDs."""
     paused = await post_native_run(
@@ -321,10 +323,21 @@ async def _pause_restart_review(
         "review",
         {"user_query": "Review after restart.", "obs_file_list": []},
     )
-    assert paused.status_code == 200
-    body = paused.json()
-    run_id = body["id"]
-    surface_id = body["interrupt"]["draft"]["a2ui"]["surface_id"]
+    assert paused.status_code == 202
+    run_id = paused.json()["id"]
+
+    def settled() -> bool:
+        record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
+        return record is not None and record.status == "input_required"
+
+    await wait_until(settled)
+    fetched = await client.get(
+        f"/v1/runs/{run_id}",
+        headers=_auth_headers(api_key),
+    )
+    assert fetched.status_code == 200
+    body = fetched.json()
+    surface_id = body["result"]["interrupt"]["draft"]["a2ui"]["surface_id"]
     return run_id, surface_id
 
 
@@ -764,7 +777,7 @@ async def test_review_a2ui_survives_client_and_registry_reload(
             monkeypatch, create_app(), base_url="http://api.restart.first"
         ) as first_client:
             run_id, surface_id = await _pause_restart_review(
-                first_client, issued_api_key
+                first_client, issued_api_key, tasks_db_path
             )
             _assert_restart_run_persisted(tasks_db_path, run_id)
     finally:

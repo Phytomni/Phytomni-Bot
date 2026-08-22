@@ -412,7 +412,7 @@ async def _route_expert_query(
         _record_v0_route_outcome(
             ExpertRouteOutcome.DECLINED_CHAT_FALLBACK,
             payload=payload,
-            http_status=200,
+            http_status=202,
             error=exc,
         )
         recorded_outcome = True
@@ -499,6 +499,12 @@ async def _route_expert_query(
     )
     try:
         if slug in _EXPERT_STREAM_MODELS:
+            # Stream schemas historically omit empty file lists. Fill that
+            # optional field only for the Expert dispatch gate so a missing
+            # user_query still maps to selected_agent_invalid_argument.
+            schema_arguments = dict(arguments)
+            schema_arguments.setdefault("obs_file_list", [])
+            validate_tool_arguments(selection.tool_name, schema_arguments)
             return await _start_routed_expert_stream(
                 slug=slug,
                 tool_name=selection.tool_name,
