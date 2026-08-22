@@ -57,13 +57,15 @@ def list_artifact_objects(
     bucket_name: str,
     client: Any | None = None,
     mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    limit: int | None = None,
 ) -> list[ListedArtifactObject]:
     """List output objects with actual byte sizes.
 
     The obsfs branch obtains sizes from ``stat`` on the mounted file. The
     SDK branch obtains each size with an object metadata request; no producer
     manifest value is consulted here. All returned references stay under the
-    requested output-directory prefix.
+    requested output-directory prefix. ``limit`` stops the walk after that
+    many files so harvest does not HEAD leftover objects in a dirty prefix.
     """
     object_key = normalize_obs_object_key(output_dir, bucket_name)
     base_key = object_key.rstrip("/")
@@ -74,15 +76,22 @@ def list_artifact_objects(
                 dir_path,
                 base_key=base_key,
                 bucket_name=bucket_name,
+                limit=limit,
             )
 
     prefix = f"{base_key}/" if base_key else ""
     access = ObsAccessOptions(client=client, mount_root=mount_root)
     return _list_sdk_objects(
-        list_object_keys(bucket_name, prefix, access=access),
+        _list_sdk_keys(
+            bucket_name,
+            prefix,
+            access=access,
+            limit=limit,
+        ),
         base_key=base_key,
         bucket_name=bucket_name,
         access=access,
+        limit=limit,
     )
 
 
@@ -92,6 +101,7 @@ async def list_artifact_objects_with_runtime(
     bucket_name: str,
     obs_runtime: Any,
     mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    limit: int | None = None,
 ) -> list[ListedArtifactObject]:
     """List output objects with a separate OBS lease per SDK request."""
     object_key = normalize_obs_object_key(output_dir, bucket_name)
@@ -103,6 +113,7 @@ async def list_artifact_objects_with_runtime(
                 dir_path,
                 base_key=base_key,
                 bucket_name=bucket_name,
+                limit=limit,
             )
     prefix = f"{base_key}/" if base_key else ""
     keys = await _list_sdk_keys_with_runtime(
@@ -110,6 +121,7 @@ async def list_artifact_objects_with_runtime(
         prefix,
         obs_runtime=obs_runtime,
         mount_root=mount_root,
+        limit=limit,
     )
     objects: list[ListedArtifactObject] = []
     for key in keys:
@@ -137,6 +149,8 @@ async def list_artifact_objects_with_runtime(
                 download_ref=download_ref,
             )
         )
+        if limit is not None and len(objects) >= limit:
+            return objects
     return objects
 
 
@@ -145,12 +159,18 @@ def _list_obsfs_objects(
     *,
     base_key: str,
     bucket_name: str,
+    limit: int | None = None,
 ) -> list[ListedArtifactObject]:
     """Build object records from one confined obsfs directory."""
     dir_path = directory
     resolved_dir_path = dir_path.resolve()
     objects: list[ListedArtifactObject] = []
-    for path in sorted(dir_path.rglob("*")):
+    paths = (
+        dir_path.rglob("*")
+        if limit is not None
+        else sorted(dir_path.rglob("*"))
+    )
+    for path in paths:
         if path.is_symlink() or not path.is_file():
             continue
         resolved_path = path.resolve()
@@ -171,6 +191,8 @@ def _list_obsfs_objects(
                 download_ref=download_ref,
             )
         )
+        if limit is not None and len(objects) >= limit:
+            return objects
     return objects
 
 
@@ -180,6 +202,7 @@ def _list_sdk_objects(
     base_key: str,
     bucket_name: str,
     access: ObsAccessOptions,
+    limit: int | None = None,
 ) -> list[ListedArtifactObject]:
     """Build object records from SDK keys after prefix confinement."""
     objects: list[ListedArtifactObject] = []
@@ -201,6 +224,8 @@ def _list_sdk_objects(
                 download_ref=download_ref,
             )
         )
+        if limit is not None and len(objects) >= limit:
+            return objects
     return objects
 
 
@@ -222,6 +247,7 @@ def list_artifact_paths(
     bucket_name: str,
     client: Any | None = None,
     mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    limit: int | None = None,
 ) -> list[str]:
     """Return public ``/obs/<bucket>/<key>`` paths of files under output_dir.
 
@@ -230,6 +256,7 @@ def list_artifact_paths(
         bucket_name: OBS bucket the run wrote to.
         client: Runtime-owned OBS client for the SDK fallback.
         mount_root: obsfs mount root (default ``/obs``).
+        limit: Optional max file count; stops the walk once reached.
 
     Returns:
         Public paths of every file under ``output_dir`` (directories
@@ -239,22 +266,30 @@ def list_artifact_paths(
     if obsfs_bucket_available(bucket_name, mount_root):
         dir_path = obsfs_path_for(output_dir, bucket_name, mount_root)
         if dir_path.is_dir():
-            rels = [
-                p.relative_to(dir_path).as_posix()
-                for p in sorted(dir_path.rglob("*"))
-                if p.is_file()
-            ]
-            return [
-                obs_path_from_key(
-                    bucket_name,
-                    f"{object_key}/{rel}" if object_key else rel,
+            paths: list[str] = []
+            walk = (
+                dir_path.rglob("*")
+                if limit is not None
+                else sorted(dir_path.rglob("*"))
+            )
+            for path in walk:
+                if not path.is_file():
+                    continue
+                rel = path.relative_to(dir_path).as_posix()
+                paths.append(
+                    obs_path_from_key(
+                        bucket_name,
+                        f"{object_key}/{rel}" if object_key else rel,
+                    )
                 )
-                for rel in rels
-            ]
-    keys = list_object_keys(
+                if limit is not None and len(paths) >= limit:
+                    return paths
+            return paths
+    keys = _list_sdk_keys(
         bucket_name,
         object_key,
         access=ObsAccessOptions(client=client, mount_root=mount_root),
+        limit=limit,
     )
     return [obs_path_from_key(bucket_name, key) for key in keys]
 
@@ -265,31 +300,81 @@ async def list_artifact_paths_with_runtime(
     bucket_name: str,
     obs_runtime: Any,
     mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    limit: int | None = None,
 ) -> list[str]:
     """List output paths with a separate OBS lease for each list page."""
     object_key = normalize_obs_object_key(output_dir, bucket_name)
     if obsfs_bucket_available(bucket_name, mount_root):
         dir_path = obsfs_path_for(output_dir, bucket_name, mount_root)
         if dir_path.is_dir():
-            rels = [
-                path.relative_to(dir_path).as_posix()
-                for path in sorted(dir_path.rglob("*"))
-                if path.is_file()
-            ]
-            return [
-                obs_path_from_key(
-                    bucket_name,
-                    f"{object_key}/{relative}" if object_key else relative,
+            paths: list[str] = []
+            walk = (
+                dir_path.rglob("*")
+                if limit is not None
+                else sorted(dir_path.rglob("*"))
+            )
+            for path in walk:
+                if not path.is_file():
+                    continue
+                relative = path.relative_to(dir_path).as_posix()
+                paths.append(
+                    obs_path_from_key(
+                        bucket_name,
+                        f"{object_key}/{relative}" if object_key else relative,
+                    )
                 )
-                for relative in rels
-            ]
+                if limit is not None and len(paths) >= limit:
+                    return paths
+            return paths
     keys = await _list_sdk_keys_with_runtime(
         bucket_name,
         object_key,
         obs_runtime=obs_runtime,
         mount_root=mount_root,
+        limit=limit,
     )
     return [obs_path_from_key(bucket_name, key) for key in keys]
+
+
+def _extend_keys_up_to_limit(
+    keys: list[str],
+    page: list[str],
+    limit: int | None,
+) -> bool:
+    """Append ``page`` onto ``keys`` and return True when the cap is met."""
+    if limit is None:
+        keys.extend(page)
+        return False
+    remaining = limit - len(keys)
+    if remaining <= 0:
+        return True
+    keys.extend(page[:remaining])
+    return len(keys) >= limit
+
+
+def _list_sdk_keys(
+    bucket_name: str,
+    prefix: str,
+    *,
+    access: ObsAccessOptions,
+    limit: int | None = None,
+) -> list[str]:
+    """Fetch SDK list pages until exhausted or ``limit`` keys are collected."""
+    if limit is None:
+        return list_object_keys(bucket_name, prefix, access=access)
+    keys: list[str] = []
+    marker: str | None = None
+    while True:
+        page, marker = list_object_keys_page(
+            bucket_name,
+            prefix,
+            marker,
+            access=access,
+        )
+        if _extend_keys_up_to_limit(keys, page, limit):
+            return keys
+        if marker is None:
+            return keys
 
 
 async def _list_sdk_keys_with_runtime(
@@ -298,23 +383,25 @@ async def _list_sdk_keys_with_runtime(
     *,
     obs_runtime: Any,
     mount_root: str,
+    limit: int | None = None,
 ) -> list[str]:
-    """Fetch all list pages through individually scoped SDK operations."""
+    """Fetch list pages through individually scoped SDK operations."""
     keys: list[str] = []
     marker: str | None = None
     while True:
         page, marker = await obs_runtime.run(
             ObsProfileName.PRIMARY,
-            lambda client: list_object_keys_page(
+            lambda client, current=marker: list_object_keys_page(
                 bucket_name,
                 prefix,
-                marker,
+                current,
                 access=ObsAccessOptions(
                     client=client,
                     mount_root=mount_root,
                 ),
             ),
         )
-        keys.extend(page)
+        if _extend_keys_up_to_limit(keys, page, limit):
+            return keys
         if marker is None:
             return keys

@@ -49,6 +49,72 @@ async def test_async_sdk_listing_leases_list_and_each_metadata_head(
     assert runtime.calls == 3
 
 
+async def test_async_sdk_listing_stops_list_and_heads_at_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """A listing cap stops pagination and object HEADs while walking."""
+    runtime = CountingObsRuntime(object())
+    pages = [
+        (
+            [f"agent_data/u1/run0/f{index:03d}.csv" for index in range(3)],
+            "next-page",
+        ),
+        (
+            [f"agent_data/u1/run0/f{index:03d}.csv" for index in range(3, 6)],
+            None,
+        ),
+    ]
+    seen = {"pages": 0, "heads": 0}
+
+    def fake_list_page(*_args: object, **_kwargs: object):
+        seen["pages"] += 1
+        return pages.pop(0)
+
+    def fake_object_size(_bucket: str, _key: str, **_kwargs: object) -> int:
+        seen["heads"] += 1
+        return 37
+
+    monkeypatch.setattr(
+        artifact_listing,
+        "list_object_keys_page",
+        fake_list_page,
+    )
+    monkeypatch.setattr(artifact_listing, "object_size", fake_object_size)
+
+    objects = await artifact_listing.list_artifact_objects_with_runtime(
+        "/obs/phytomni/agent_data/u1/run0",
+        bucket_name="phytomni",
+        obs_runtime=runtime,
+        mount_root=str(tmp_path),
+        limit=3,
+    )
+
+    assert len(objects) == 3
+    assert seen["pages"] == 1
+    assert seen["heads"] == 3
+    assert runtime.calls == 4
+
+
+def test_obsfs_object_listing_stops_after_limit(tmp_path) -> None:
+    """Mounted listing stops after the requested file cap."""
+    bucket = "phytomni"
+    mount_root = tmp_path
+    run_dir = mount_root / bucket / "agent_data" / "u1" / "run0"
+    run_dir.mkdir(parents=True)
+    for index in range(5):
+        (run_dir / f"f{index}.txt").write_bytes(b"x")
+
+    objects = artifact_listing.list_artifact_objects(
+        f"/obs/{bucket}/agent_data/u1/run0",
+        bucket_name=bucket,
+        mount_root=str(mount_root),
+        limit=2,
+    )
+
+    assert len(objects) == 2
+
+
 def test_obsfs_branch_lists_files_as_public_paths(tmp_path):
     """When the obsfs bucket is mounted, files under output_dir are
     returned as /obs/<bucket>/<key> paths (recursive, dirs excluded)."""

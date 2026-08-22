@@ -83,18 +83,25 @@ class TerminalArtifactSet:
         return tuple(artifact.to_public() for artifact in self.artifacts)
 
 
-async def _default_artifact_lister(output_dir: str) -> list[str]:
+async def _default_artifact_lister(
+    output_dir: str,
+    *,
+    limit: int | None = None,
+) -> list[str]:
     """List public artifact paths through the existing storage helper."""
     config = ServerConfig()
     return await list_artifact_paths_with_runtime(
         output_dir,
         bucket_name=config.BUCKET_NAME,
         obs_runtime=current_obs_runtime(),
+        limit=limit,
     )
 
 
 async def _default_artifact_object_lister(
     output_dir: str,
+    *,
+    limit: int | None = None,
 ) -> list[ListedArtifactObject]:
     """List output objects and actual sizes off the event loop."""
     config = ServerConfig()
@@ -102,6 +109,7 @@ async def _default_artifact_object_lister(
         output_dir,
         bucket_name=config.BUCKET_NAME,
         obs_runtime=current_obs_runtime(),
+        limit=limit,
     )
 
 
@@ -124,7 +132,12 @@ async def enumerate_artifact_paths(
         if status not in _SUCCESS_STATUSES or not output_dir:
             continue
         try:
-            paths = await use(str(output_dir))
+            if lister is None:
+                paths = await _default_artifact_lister(
+                    str(output_dir), limit=cap + 1
+                )
+            else:
+                paths = await use(str(output_dir))
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             logger.warning(
                 "artifact listing failed for task %s (%s)",
@@ -162,9 +175,15 @@ async def collect_terminal_artifact_set(
     use_lister = lister or _default_artifact_object_lister
     listing_warnings: list[ExecutionWarning] = []
     try:
+        if lister is None:
+            raw_listed = await _default_artifact_object_lister(
+                output_dir, limit=cap + 1
+            )
+        else:
+            raw_listed = await use_lister(output_dir)
         listed = tuple(
             sorted(
-                await use_lister(output_dir),
+                raw_listed,
                 key=lambda item: item.relative_path,
             )
         )

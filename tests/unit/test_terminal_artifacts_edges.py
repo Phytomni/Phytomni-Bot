@@ -77,13 +77,13 @@ async def test_default_listers_forward_bucket_and_runtime(
     seen: dict[str, Any] = {}
 
     async def _paths(
-        output_dir: str, *, bucket_name: str, obs_runtime: Any
+        output_dir: str, *, bucket_name: str, obs_runtime: Any, **_kwargs: Any
     ) -> list[str]:
         seen["paths"] = (output_dir, bucket_name, obs_runtime)
         return [f"{output_dir}/a.txt"]
 
     async def _objects(
-        output_dir: str, *, bucket_name: str, obs_runtime: Any
+        output_dir: str, *, bucket_name: str, obs_runtime: Any, **_kwargs: Any
     ) -> list[ListedArtifactObject]:
         seen["objects"] = (output_dir, bucket_name, obs_runtime)
         return [_listed("a.txt")]
@@ -155,6 +155,51 @@ async def test_collect_set_truncates_over_cap_listing() -> None:
         cap=2,
     )
 
+    assert len(result.artifacts) == 2
+    assert result.warnings[0].code == "artifact_listing_truncated"
+
+
+async def test_collect_set_caps_default_listing_while_walking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The default object lister asks storage to stop one past the cap."""
+    seen: dict[str, Any] = {}
+
+    async def _objects(
+        output_dir: str,
+        *,
+        bucket_name: str,
+        obs_runtime: Any,
+        limit: int | None = None,
+    ) -> list[ListedArtifactObject]:
+        seen["limit"] = limit
+        count = 3 if limit is None else limit
+        return [_listed(f"f{index}.txt") for index in range(count)]
+
+    async def _no_manifest(_dir: str) -> None:
+        del _dir
+        return None
+
+    monkeypatch.setattr(
+        terminal_artifacts, "list_artifact_objects_with_runtime", _objects
+    )
+    monkeypatch.setattr(
+        terminal_artifacts, "current_obs_runtime", lambda: "runtime"
+    )
+    monkeypatch.setattr(
+        terminal_artifacts,
+        "ServerConfig",
+        lambda: type("Cfg", (), {"BUCKET_NAME": "phytomni"})(),
+    )
+
+    result = await collect_terminal_artifact_set(
+        task_id="task-1",
+        output_dir="owner/out",
+        manifest_loader=_no_manifest,
+        cap=2,
+    )
+
+    assert seen["limit"] == 3
     assert len(result.artifacts) == 2
     assert result.warnings[0].code == "artifact_listing_truncated"
 
