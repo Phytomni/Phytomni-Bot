@@ -6,9 +6,7 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
-import tempfile
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, cast
@@ -64,7 +62,10 @@ from mcp_server_phytomni.storage.research_objects import (
     ResearchObjectAuthority,
     ResearchObjectSnapshot,
 )
-from tests.support.research_fakes import research_inventory_entry
+from tests.support.research_fakes import (
+    research_inventory_entry,
+    staged_document_payload,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -710,15 +711,7 @@ class _RestartDocumentPort:
     ) -> ManagedDocumentPayload:
         """Stage the complete body for one immutable document."""
         self.downloaded.append(entry.dataset_id)
-        body = self.payloads[entry.dataset_id]
-        handle, path = tempfile.mkstemp(prefix="research-input-")
-        try:
-            os.write(handle, body)
-        finally:
-            os.close(handle)
-        return ManagedDocumentPayload(
-            path=path, size_bytes=len(body), cleanup=True
-        )
+        return staged_document_payload(self.payloads[entry.dataset_id])
 
     def convert(
         self,

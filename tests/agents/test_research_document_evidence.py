@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from dataclasses import dataclass
 from typing import cast, get_type_hints
 
@@ -33,7 +31,10 @@ from mcp_server_phytomni.runtime.resumable_uploads import (
     MAX_UPLOAD_BYTES,
     MAX_UPLOAD_TOTAL_BYTES,
 )
-from tests.support.research_fakes import research_inventory_entry
+from tests.support.research_fakes import (
+    research_inventory_entry,
+    staged_document_payload,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -130,15 +131,7 @@ class _Downloader:
     ) -> ManagedDocumentPayload:
         """Stage the fixture payload as a local file."""
         self.calls.append(entry.dataset_id)
-        body = self.payloads[entry.dataset_id]
-        handle, path = tempfile.mkstemp(prefix="research-evidence-")
-        try:
-            os.write(handle, body)
-        finally:
-            os.close(handle)
-        return ManagedDocumentPayload(
-            path=path, size_bytes=len(body), cleanup=True
-        )
+        return staged_document_payload(self.payloads[entry.dataset_id])
 
 
 @dataclass

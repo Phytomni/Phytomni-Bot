@@ -126,14 +126,18 @@ def test_catalog_uses_effective_runtime_limits_and_formats(
         ),
         "dataset_formats": list(advertised_research_formats()),
     }
-    assert catalog["limits"] == {
+    conversion = catalog["limits"]["document_conversion"]
+    assert conversion["max_file_bytes"] == MAX_UPLOAD_BYTES
+    assert conversion["max_total_bytes"] == MAX_UPLOAD_TOTAL_BYTES
+    other_limits = {
+        key: value
+        for key, value in catalog["limits"].items()
+        if key != "document_conversion"
+    }
+    assert other_limits == {
         "combined_references": {
             "default": limits.API_MAX_RESEARCH_INPUT_REFERENCES,
             "hard": MAX_RESEARCH_REFERENCES,
-        },
-        "document_conversion": {
-            "max_file_bytes": MAX_UPLOAD_BYTES,
-            "max_total_bytes": MAX_UPLOAD_TOTAL_BYTES,
         },
         "managed_references": {
             "default": limits.API_MAX_ATTACHMENTS_PER_REQUEST,

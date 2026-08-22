@@ -5,11 +5,16 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
+from mcp_server_phytomni.agents.research.document_evidence import (
+    ManagedDocumentPayload,
+)
 from mcp_server_phytomni.agents.research.input_inventory import (
     ResearchInputSnapshot,
     ResearchInventoryEntry,
@@ -26,6 +31,18 @@ RESEARCH_CONTRACT_FORBIDDEN_MARKERS = (
     "https://",
     "/home/",
 )
+
+
+def staged_document_payload(body: bytes) -> ManagedDocumentPayload:
+    """Write one fixture body to a cleanup-owned local file."""
+    handle, path = tempfile.mkstemp(prefix="research-evidence-")
+    try:
+        os.write(handle, body)
+    finally:
+        os.close(handle)
+    return ManagedDocumentPayload(
+        path=path, size_bytes=len(body), cleanup=True
+    )
 
 
 def resolver_policy(**changes: object) -> ResearchResolverPolicy:
