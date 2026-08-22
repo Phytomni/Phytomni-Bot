@@ -59,21 +59,18 @@ __all__ = [
 
 UPLOAD_PROTOCOL = "obs-multipart-v2"
 _CAPABILITY_OPERATIONS = ("head", "part", "complete", "abort")
-# Upload routes are v2-only; this mirrors Web's protocol version constant.
-UPLOAD_PROTOCOL_VERSION = 2
+UPLOAD_PROTOCOL_VERSION = 2  # mirrors Web's v2-only upload routes
 PART_SIZE_BYTES = 128 * 1024**2
 MAX_UPLOAD_BYTES = 10 * 1024**3
 MAX_UPLOAD_FILES = 10
 MAX_UPLOAD_TOTAL_BYTES = MAX_UPLOAD_BYTES * MAX_UPLOAD_FILES
-# Concurrent in-flight sessions; not a per-request attachment count.
-MAX_ACTIVE_ASSETS = 3
+MAX_ACTIVE_ASSETS = 3  # concurrent sessions, not per-request file count
 MAX_ACTIVE_PART_REQUESTS = 8
 MAX_UNFINISHED_BYTES = 30 * 1024**3
 MAX_ACCEPTED_CREATE_BYTES = 100 * 1024**3
 SESSION_TTL = timedelta(days=7)
 CAPABILITY_TTL = timedelta(minutes=15)
 PROVISIONAL_TTL = timedelta(minutes=180)
-
 AssetStatus = Literal["uploading", "completed", "aborted", "expired"]
 UploadAssetPurpose = Literal["dataset", "document"]
 PersistedUploadAssetPurpose = Literal["chat_attachment", "dataset", "document"]
