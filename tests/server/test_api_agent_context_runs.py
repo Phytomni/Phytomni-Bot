@@ -24,10 +24,6 @@ from tests.support.resumable_asset_fakes import (
 )
 
 from mcp_server_phytomni.api import app as api_app_module
-from mcp_server_phytomni.api.agent_capabilities import (
-    MAX_FILE_BYTES,
-    MAX_FILES,
-)
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.api.routes import agents as agent_routes
@@ -35,6 +31,10 @@ from mcp_server_phytomni.api.schemas import AgentRunRequest
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
+)
+from mcp_server_phytomni.runtime.resumable_uploads import (
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_FILES,
 )
 
 pytestmark = [pytest.mark.server, pytest.mark.usefixtures("outbound_runtime")]
@@ -506,7 +506,7 @@ async def test_native_context_asset_failures_precede_context_mutation(
                     purpose="chat_attachment",
                 ),
             )
-            for index in range(MAX_FILES + 1)
+            for index in range(MAX_UPLOAD_FILES + 1)
         ]
         harness = harnesses[-1]
         attachments = [
@@ -523,14 +523,16 @@ async def test_native_context_asset_failures_precede_context_mutation(
                     else "delegated-owner"
                 ),
                 filename="preflight-context.pdf",
-                content=(
-                    b"x" * (MAX_FILE_BYTES + 1)
-                    if scenario == "byte"
-                    else b"%PDF-1.4 preflight context"
-                ),
+                content=b"%PDF-1.4 preflight context",
                 complete=scenario != "incomplete",
             ),
         )
+        if scenario == "byte":
+            with sqlite3.connect(str(tmp_path / "tasks.sqlite")) as connection:
+                connection.execute(
+                    "UPDATE upload_assets SET size_bytes = ? WHERE asset_id = ?",
+                    (MAX_UPLOAD_BYTES + 1, harness.asset_id),
+                )
         attachments = _preflight_attachment_ids(harness, scenario)
     monkeypatch.setattr(
         UploadRuntime,

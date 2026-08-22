@@ -16,6 +16,8 @@ from tempfile import SpooledTemporaryFile
 from typing import BinaryIO, Literal, cast
 
 from ..runtime.resumable_uploads import (
+    MAX_UPLOAD_BYTES,
+    PART_SIZE_BYTES,
     AssetCreateSpec,
     AssetRecord,
     CapabilityAuthorization,
@@ -54,8 +56,6 @@ __all__ = [
 ]
 
 UPLOAD_PROTOCOL: Literal["obs-multipart-v2"] = "obs-multipart-v2"
-PART_SIZE_BYTES = 128 * 1024**2
-MAX_UPLOAD_BYTES = 10 * 1024**3
 MAX_PARALLEL_PARTS = 4
 _ACTIVATION_OPERATIONS = frozenset({"head", "part", "complete"})
 type _ExpiryReason = Literal["normal_deadline", "provisional_deadline"]

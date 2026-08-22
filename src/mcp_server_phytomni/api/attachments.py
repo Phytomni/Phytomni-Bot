@@ -25,13 +25,15 @@ from ..agents.research.input_inventory import (
 from ..config.api_limits import ApiLimitsConfig
 from ..config.defaults import ApiConfig, ServerConfig
 from ..runtime.attachment_assets import ResolvedAsset, ResolvedAttachmentBundle
+from ..runtime.resumable_uploads import (
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_FILES,
+    MAX_UPLOAD_TOTAL_BYTES,
+)
 from ..runtime.upload_registry import UploadMetadata, UploadRegistry
 from ..storage.obs_storage import ObsPathError, normalize_obs_object_key
 from .agent_capabilities import (
     DOCUMENT_EXTENSIONS,
-    MAX_FILE_BYTES,
-    MAX_FILES,
-    MAX_TOTAL_BYTES,
     get_attachment_capability,
 )
 from .asset_resolver import normalize_asset_attachments
@@ -215,7 +217,7 @@ def validate_agent_attachments(
     max_files = (
         ApiLimitsConfig().API_MAX_ATTACHMENTS_PER_REQUEST
         if agent == "research"
-        else MAX_FILES
+        else MAX_UPLOAD_FILES
     )
     _validate_budget_sizes(
         (*document_sizes, *dataset_sizes), max_files=max_files
@@ -686,7 +688,7 @@ def _validate_extension(
 
 
 def _validate_budget_sizes(
-    sizes: Sequence[int], *, max_files: int = MAX_FILES
+    sizes: Sequence[int], *, max_files: int = MAX_UPLOAD_FILES
 ) -> None:
     """Enforce inclusive limits across managed and registered uploads."""
     if len(sizes) > max_files:
@@ -694,12 +696,12 @@ def _validate_budget_sizes(
             "attachment_limit_exceeded",
             "Uploaded attachments exceed the allowed limit.",
         )
-    if any(size > MAX_FILE_BYTES for size in sizes):
+    if any(size > MAX_UPLOAD_BYTES for size in sizes):
         _raise(
             "attachment_limit_exceeded",
             "Uploaded attachments exceed the allowed limit.",
         )
-    if sum(sizes) > MAX_TOTAL_BYTES:
+    if sum(sizes) > MAX_UPLOAD_TOTAL_BYTES:
         _raise(
             "attachment_limit_exceeded",
             "Uploaded attachments exceed the allowed limit.",

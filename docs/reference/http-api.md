@@ -523,9 +523,9 @@ document descriptor is:
 ```json
 {
   "argument": "obs_file_list",
-  "max_file_bytes": 26214400,
+  "max_file_bytes": 10737418240,
   "max_files": 10,
-  "max_total_bytes": 52428800
+  "max_total_bytes": 107374182400
 }
 ```
 
@@ -1259,9 +1259,9 @@ allowlist with agents that advertise the required attachment channels. An
 explicit unsupported forced-tool or selected agent returns
 `attachment_not_supported` without rerouting or dropping assets.
 
-The invocation limits are inclusive and separate from those metadata policies:
-at most 10 attachments, at most 26,214,400 bytes per attachment, and at most
-52,428,800 bytes across one request. Managed size metadata and registered
+The invocation limits are inclusive and the same ceiling as the resumable
+upload plane (`API_UPLOAD_V2_MAX_BYTES`): at most 10 attachments, at most
+10 GiB per attachment, and at most 100 GiB across one request. Managed size metadata and registered
 legacy upload metadata both count; preconfigured legacy dataset paths retain
 their existing budget exclusion. Exact repeated asset ids are rejected before
 budget evaluation. Legacy preconfigured OBS dataset paths remain a separate

@@ -18,18 +18,16 @@ from mcp_server_phytomni.agents.research.scientific_formats import (
     advertised_research_formats,
 )
 from mcp_server_phytomni.api.agent_capabilities import (
-    MAX_FILE_BYTES as MAX_DOCUMENT_FILE_BYTES,
-)
-from mcp_server_phytomni.api.agent_capabilities import (
-    MAX_TOTAL_BYTES as MAX_DOCUMENT_TOTAL_BYTES,
-)
-from mcp_server_phytomni.api.agent_capabilities import (
     build_research_input_descriptor,
 )
 from mcp_server_phytomni.config.api_limits import (
     MAX_RESEARCH_REFERENCES,
     MAX_RESEARCH_USER_QUERY_CHARS,
     ApiLimitsConfig,
+)
+from mcp_server_phytomni.runtime.resumable_uploads import (
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_TOTAL_BYTES,
 )
 from mcp_server_phytomni.runtime.run_registry_models import (
     RESEARCH_FAILURE_CODES,
@@ -107,8 +105,8 @@ def _catalog() -> dict[str, Any]:
                 "hard": MAX_RESEARCH_REFERENCES,
             },
             "document_conversion": {
-                "max_file_bytes": MAX_DOCUMENT_FILE_BYTES,
-                "max_total_bytes": MAX_DOCUMENT_TOTAL_BYTES,
+                "max_file_bytes": MAX_UPLOAD_BYTES,
+                "max_total_bytes": MAX_UPLOAD_TOTAL_BYTES,
             },
             "managed_references": {
                 "default": config.API_MAX_ATTACHMENTS_PER_REQUEST,

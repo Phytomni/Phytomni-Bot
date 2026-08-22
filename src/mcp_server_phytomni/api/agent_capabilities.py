@@ -17,6 +17,8 @@ from ..runtime.resumable_uploads import (
     CAPABILITY_TTL,
     MAX_ACTIVE_ASSETS,
     MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_FILES,
+    MAX_UPLOAD_TOTAL_BYTES,
     PART_SIZE_BYTES,
     SESSION_TTL,
 )
@@ -44,9 +46,6 @@ __all__ = [
 ]
 
 
-MAX_FILE_BYTES = 26_214_400
-MAX_FILES = 10
-MAX_TOTAL_BYTES = 52_428_800
 DOCUMENT_EXTENSIONS = ("pdf", "docx", "pptx", "xls", "xlsx", "msg")
 MAX_PARALLEL_PARTS = 4
 
@@ -99,9 +98,9 @@ class DocumentContextCapability:
     """Limits and input shape for document-context attachments."""
 
     argument: str = "obs_file_list"
-    max_file_bytes: int = MAX_FILE_BYTES
-    max_files: int = MAX_FILES
-    max_total_bytes: int = MAX_TOTAL_BYTES
+    max_file_bytes: int = MAX_UPLOAD_BYTES
+    max_files: int = MAX_UPLOAD_FILES
+    max_total_bytes: int = MAX_UPLOAD_TOTAL_BYTES
 
     def to_public_dict(self) -> dict[str, Any]:
         """Serialize the immutable descriptor into JSON-compatible values."""
@@ -117,9 +116,9 @@ class DocumentContextCapability:
 class _AttachmentLimits:
     """Shared size limits for one attachment channel."""
 
-    max_file_bytes: int = MAX_FILE_BYTES
-    max_files: int = MAX_FILES
-    max_total_bytes: int = MAX_TOTAL_BYTES
+    max_file_bytes: int = MAX_UPLOAD_BYTES
+    max_files: int = MAX_UPLOAD_FILES
+    max_total_bytes: int = MAX_UPLOAD_TOTAL_BYTES
 
 
 @dataclass(frozen=True)

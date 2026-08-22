@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from mcp_server_phytomni.config.api_limits import ApiLimitsConfig
 from mcp_server_phytomni.config.defaults import ApiConfig
+from mcp_server_phytomni.runtime.resumable_uploads import MAX_UPLOAD_BYTES
 
 pytestmark = pytest.mark.unit
 
@@ -143,7 +144,7 @@ def test_resumable_upload_config_defaults() -> None:
 
     assert config.API_UPLOAD_V2_ORIGIN == "http://127.0.0.1:8080"
     assert config.API_UPLOAD_V2_BUCKET == "phytomni"
-    assert config.API_UPLOAD_V2_MAX_BYTES == 10 * 1024**3
+    assert config.API_UPLOAD_V2_MAX_BYTES == MAX_UPLOAD_BYTES
     assert config.API_UPLOAD_V2_PART_SIZE_BYTES == 128 * 1024**2
     assert config.API_UPLOAD_V2_MAX_PARALLEL_PARTS == 4
     assert config.API_UPLOAD_V2_CAPABILITY_TTL_SECONDS == 900

@@ -320,8 +320,8 @@
       "hard": 256
     },
     "document_conversion": {
-      "max_file_bytes": 26214400,
-      "max_total_bytes": 52428800
+      "max_file_bytes": 10737418240,
+      "max_total_bytes": 107374182400
     },
     "managed_references": {
       "default": 64,

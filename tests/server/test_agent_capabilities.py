@@ -55,6 +55,11 @@ from mcp_server_phytomni.runtime.attachment_assets import (
     ResolvedAsset,
     ResolvedAttachmentBundle,
 )
+from mcp_server_phytomni.runtime.resumable_uploads import (
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_FILES,
+    MAX_UPLOAD_TOTAL_BYTES,
+)
 
 pytestmark = pytest.mark.server
 
@@ -429,7 +434,7 @@ def test_capability_golden_is_byte_stable() -> None:
     assert json.loads(golden) == actual
     assert golden == json.dumps(actual, ensure_ascii=False, indent=2) + "\n"
     assert hashlib.sha256(golden.encode("utf-8")).hexdigest() == (
-        "ef5ad3106ebf8669ba2067e5fee6aaac87000542119839de7dfd8983efc48cfb"
+        "253df83201432390647449448be19218782f62211ce514b7900a31a66a03218c"
     )
 
 
@@ -440,9 +445,9 @@ def test_attachment_limits_are_public_and_exact() -> None:
         ("analyst", "datasets"),
     ):
         limits = serialize_agent_capability(slug)["attachments"][channel]
-        assert limits["max_file_bytes"] == 26_214_400
-        assert limits["max_files"] == 10
-        assert limits["max_total_bytes"] == 52_428_800
+        assert limits["max_file_bytes"] == MAX_UPLOAD_BYTES
+        assert limits["max_files"] == MAX_UPLOAD_FILES
+        assert limits["max_total_bytes"] == MAX_UPLOAD_TOTAL_BYTES
 
 
 @pytest.mark.parametrize("slug", ["design", "network"])

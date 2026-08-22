@@ -23,7 +23,7 @@ from pydantic import (
 from ..mcp.schemas import AGENT_TOOL_DEFINITIONS
 from ..runtime.conversation_context.models import ConversationEnvelopeV1
 from ..runtime.locale import SupportedLocale
-from ..runtime.resumable_uploads import UploadAssetPurpose
+from ..runtime.resumable_uploads import MAX_UPLOAD_BYTES, UploadAssetPurpose
 
 _CANONICAL_AGENT_TOOL_NAMES = frozenset(
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
@@ -227,7 +227,7 @@ class UploadCreateRequest(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     content_type: str = Field(default="", max_length=256)
     last_modified_ms: int = Field(default=0, ge=0)
-    size_bytes: int = Field(gt=0, le=10 * 1024**3)
+    size_bytes: int = Field(gt=0, le=MAX_UPLOAD_BYTES)
     purpose: UploadAssetPurpose
     idempotency_key: str = Field(min_length=1, max_length=256)
 

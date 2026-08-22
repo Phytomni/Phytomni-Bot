@@ -22,6 +22,7 @@ from pydantic import (
     model_validator,
 )
 
+from ...runtime.resumable_uploads import MAX_UPLOAD_BYTES, PART_SIZE_BYTES
 from ..api_limits import ApiLimitsConfig
 
 _API_CACHE_DIR = Path(".cache") / "phytomni"
@@ -95,17 +96,17 @@ class ApiConfig(ApiLimitsConfig):
         ),
     )
     API_UPLOAD_V2_MAX_BYTES: int = Field(
-        default=10 * 1024**3,
+        default=MAX_UPLOAD_BYTES,
         ge=1,
-        le=10 * 1024**3,
+        le=MAX_UPLOAD_BYTES,
         validation_alias=AliasChoices(
             "API_UPLOAD_V2_MAX_BYTES", "PHYTOMNI_API_UPLOAD_V2_MAX_BYTES"
         ),
     )
     API_UPLOAD_V2_PART_SIZE_BYTES: int = Field(
-        default=128 * 1024**2,
+        default=PART_SIZE_BYTES,
         ge=1,
-        le=128 * 1024**2,
+        le=PART_SIZE_BYTES,
         validation_alias=AliasChoices(
             "API_UPLOAD_V2_PART_SIZE_BYTES",
             "PHYTOMNI_API_UPLOAD_V2_PART_SIZE_BYTES",

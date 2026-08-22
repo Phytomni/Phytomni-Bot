@@ -20,6 +20,7 @@ from mcp_server_phytomni.api.schemas import (
     UploadCreateRequest,
     UploadCreateResponse,
 )
+from mcp_server_phytomni.runtime import resumable_uploads as runtime_uploads
 
 pytestmark = pytest.mark.unit
 
@@ -36,6 +37,14 @@ def _request(**overrides: object) -> dict[str, object]:
     }
     payload.update(overrides)
     return payload
+
+
+def test_upload_size_ceiling_is_owned_by_the_runtime_module() -> None:
+    """The API module re-exports the runtime constant; it does not copy it."""
+    assert MAX_UPLOAD_BYTES is runtime_uploads.MAX_UPLOAD_BYTES
+    assert runtime_uploads.MAX_UPLOAD_TOTAL_BYTES == (
+        runtime_uploads.MAX_UPLOAD_BYTES * runtime_uploads.MAX_UPLOAD_FILES
+    )
 
 
 def test_create_accepts_one_byte_and_ten_gib_boundaries() -> None:

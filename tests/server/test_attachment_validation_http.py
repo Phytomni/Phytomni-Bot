@@ -35,6 +35,11 @@ from mcp_server_phytomni.api.attachments import (
 )
 from mcp_server_phytomni.config.defaults import ApiConfig, ServerConfig
 from mcp_server_phytomni.runtime.attachment_assets import ResolvedAsset
+from mcp_server_phytomni.runtime.resumable_uploads import (
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_FILES,
+    MAX_UPLOAD_TOTAL_BYTES,
+)
 from mcp_server_phytomni.runtime.upload_registry import (
     UploadMetadata,
     UploadRegistry,
@@ -186,9 +191,9 @@ def test_generic_attachment_channel_limits_are_stable() -> None:
         ("research", "datasets"),
     ):
         limits = serialize_agent_capability(slug)["attachments"][channel]
-        assert limits["max_file_bytes"] == 26_214_400
-        assert limits["max_files"] == 10
-        assert limits["max_total_bytes"] == 52_428_800
+        assert limits["max_file_bytes"] == MAX_UPLOAD_BYTES
+        assert limits["max_files"] == MAX_UPLOAD_FILES
+        assert limits["max_total_bytes"] == MAX_UPLOAD_TOTAL_BYTES
 
 
 def test_duplicate_paths_are_rejected_across_channels(
@@ -581,13 +586,6 @@ def test_managed_evidence_preserves_duplicate_and_budget_guards(
         filename="input.csv",
         byte_size=26_214_400,
     )
-    document_path = register_fixture_upload(
-        registry,
-        owner="u1",
-        purpose="agent_context",
-        filename="context.pdf",
-        byte_size=26_214_400,
-    )
     evidence = managed_evidence("u1", (dataset_path, "data_list", 26_214_400))
     legacy_path = "/obs/phytomni/prepared/input.fasta"
     with pytest.raises(AttachmentContractError) as raised:
@@ -605,18 +603,18 @@ def test_managed_evidence_preserves_duplicate_and_budget_guards(
             managed_evidence=evidence,
         )
     assert raised.value.code == "attachment_duplicate"
-    extra_document_path = register_fixture_upload(
+    oversize_document_path = register_fixture_upload(
         registry,
         owner="u1",
         purpose="agent_context",
         filename="extra.pdf",
-        byte_size=1,
+        byte_size=MAX_UPLOAD_BYTES + 1,
     )
     with pytest.raises(AttachmentContractError) as raised:
         validate_agent_attachments(
             "analyst",
             {
-                "obs_file_list": [document_path, extra_document_path],
+                "obs_file_list": [oversize_document_path],
                 "data_list": {dataset_path: ""},
             },
             owner="u1",
@@ -657,14 +655,17 @@ def test_managed_upload_without_owner_metadata_is_not_legacy(
 
 @pytest.mark.parametrize(
     ("byte_size", "expected"),
-    [(26_214_400, None), (26_214_401, "attachment_limit_exceeded")],
+    [
+        (MAX_UPLOAD_BYTES, None),
+        (MAX_UPLOAD_BYTES + 1, "attachment_limit_exceeded"),
+    ],
 )
 def test_per_file_limit_is_inclusive(
     tasks_db_path: str,
     byte_size: int,
     expected: str | None,
 ) -> None:
-    """The exact 25 MiB boundary passes and the next byte fails."""
+    """The upload-plane per-file ceiling is inclusive."""
     registry = UploadRegistry(tasks_db_path)
     path = register_fixture_upload(
         registry,
@@ -763,7 +764,7 @@ def test_total_file_limit_is_inclusive(tasks_db_path: str) -> None:
             owner="u1",
             purpose="agent_context",
             filename=f"context-{index}.pdf",
-            byte_size=26_214_400,
+            byte_size=MAX_UPLOAD_BYTES,
         )
         for index in range(2)
     ]
@@ -773,20 +774,7 @@ def test_total_file_limit_is_inclusive(tasks_db_path: str) -> None:
         owner="u1",
         registry=registry,
     )
-
-    extra_path = register_fixture_upload(
-        registry,
-        owner="u1",
-        purpose="agent_context",
-        filename="context-extra.pdf",
-        byte_size=1,
-    )
-    assert_attachment_error(
-        registry,
-        agent="chat",
-        arguments={"obs_file_list": [*exact_paths, extra_path]},
-        code="attachment_limit_exceeded",
-    )
+    assert 2 * MAX_UPLOAD_BYTES <= MAX_UPLOAD_TOTAL_BYTES
 
 
 @pytest.mark.parametrize("agent", ["design", "network"])

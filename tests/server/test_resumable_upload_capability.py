@@ -39,6 +39,7 @@ from mcp_server_phytomni.api.schemas import (
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
 from mcp_server_phytomni.config.defaults import ApiConfig
 from mcp_server_phytomni.runtime.resumable_uploads import (
+    MAX_UPLOAD_BYTES,
     ResumableUploadRegistry,
     ResumableUploadRegistryConfig,
 )
@@ -101,7 +102,7 @@ def test_file_upload_capability_is_sanitized_and_fresh() -> None:
     assert "protocol" not in first
     assert first["route_family"] == "resumable_files"
     assert first["limits"] == {
-        "max_file_bytes": 10 * 1024**3,
+        "max_file_bytes": MAX_UPLOAD_BYTES,
         "part_size_bytes": 128 * 1024**2,
         "max_parallel_parts": 4,
         "max_active_assets": 3,

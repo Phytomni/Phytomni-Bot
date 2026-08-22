@@ -8,9 +8,9 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "max_file_bytes": 26214400,
+        "max_file_bytes": 10737418240,
         "max_files": 10,
-        "max_total_bytes": 52428800
+        "max_total_bytes": 107374182400
       },
       "datasets": null,
       "expert_forwarding": true
@@ -25,9 +25,9 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "max_file_bytes": 26214400,
+        "max_file_bytes": 10737418240,
         "max_files": 10,
-        "max_total_bytes": 52428800
+        "max_total_bytes": 107374182400
       },
       "datasets": null,
       "expert_forwarding": true
@@ -54,9 +54,9 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "max_file_bytes": 26214400,
+        "max_file_bytes": 10737418240,
         "max_files": 10,
-        "max_total_bytes": 52428800
+        "max_total_bytes": 107374182400
       },
       "datasets": null,
       "expert_forwarding": true
@@ -85,15 +85,15 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "max_file_bytes": 26214400,
+        "max_file_bytes": 10737418240,
         "max_files": 10,
-        "max_total_bytes": 52428800
+        "max_total_bytes": 107374182400
       },
       "datasets": {
         "argument": "data_list",
-        "max_file_bytes": 26214400,
+        "max_file_bytes": 10737418240,
         "max_files": 10,
-        "max_total_bytes": 52428800
+        "max_total_bytes": 107374182400
       },
       "expert_forwarding": false
     }
@@ -124,15 +124,15 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "max_file_bytes": 26214400,
+        "max_file_bytes": 10737418240,
         "max_files": 10,
-        "max_total_bytes": 52428800
+        "max_total_bytes": 107374182400
       },
       "datasets": {
         "argument": "data_list",
-        "max_file_bytes": 26214400,
+        "max_file_bytes": 10737418240,
         "max_files": 10,
-        "max_total_bytes": 52428800
+        "max_total_bytes": 107374182400
       },
       "expert_forwarding": false
     }

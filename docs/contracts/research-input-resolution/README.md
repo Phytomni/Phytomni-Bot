@@ -88,12 +88,13 @@ The effective defaults and hard ceilings are generated in `catalog.json`:
 - pasted dataset references: `64` by default, `256` hard; and
 - all managed plus pasted references: `128` by default, `256` hard.
 
-Document conversion remains independently bounded at 25 MiB per document and
-50 MiB total converted documents. These limits do not become dataset byte
-limits, and raising reference counts does not raise upload concurrency,
-storage quota, child fan-out, or archive expansion. The scientific registry
-is the single source for longest compound suffix matching and catalog formats;
-archives are classified but never extracted by input resolution.
+Document conversion uses the same per-file and aggregate byte ceiling as the
+resumable upload plane (`API_UPLOAD_V2_MAX_BYTES`). These limits do not become
+dataset *count* limits, and raising reference counts does not raise upload
+concurrency, storage quota, child fan-out, or archive expansion. The
+scientific registry is the single source for longest compound suffix matching
+and catalog formats; archives are classified but never extracted by input
+resolution.
 
 ## Lifecycle and failures
 

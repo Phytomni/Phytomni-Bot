@@ -552,22 +552,23 @@ child fan-out.
   **Purpose:** Combined managed and pasted Research reference limit. It must
   be at least as large as either lane limit.
 
-The separate document conversion budgets remain 25 MiB per document and
-50 MiB total converted documents. Metadata-only pasted datasets do not consume
-that conversion aggregate. The canonical suffix registry supplies the
+Research document conversion uses the same per-file and aggregate byte
+ceiling as the resumable upload plane. Metadata-only pasted datasets do not
+consume that conversion aggregate. The canonical suffix registry supplies the
 Research format catalog and longest compound-suffix classifier.
 
 ### Attachment Invocation Limits
 
 The resumable transfer ceiling is `API_UPLOAD_V2_MAX_BYTES` (10 GiB by
-default). Native agent runs and Expert routing apply a separate, deliberately
-bounded attachment contract after completion:
+default). Native agent runs and Expert routing admit completed assets
+through that same ceiling — there is one upload contract, not a second
+smaller invocation budget:
 
-| Limit                  | Value      | Applies to                             |
-| ---------------------- | ---------- | -------------------------------------- |
-| Maximum files          | 10         | One native or Expert request           |
-| Maximum bytes per file | 26,214,400 | One registered document or CSV dataset |
-| Maximum total bytes    | 52,428,800 | All registered uploads in one request  |
+| Limit                  | Value                         | Applies to                             |
+| ---------------------- | ----------------------------- | -------------------------------------- |
+| Maximum files          | 10                            | One native or Expert request           |
+| Maximum bytes per file | `API_UPLOAD_V2_MAX_BYTES`     | One registered document or CSV dataset |
+| Maximum total bytes    | 10 × `API_UPLOAD_V2_MAX_BYTES` | All registered uploads in one request |
 
 The invocation limits are inclusive; the validator rejects only values above
 them. Duplicate asset ids are rejected before budget evaluation. The

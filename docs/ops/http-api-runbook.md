@@ -311,9 +311,9 @@ adds a JSON-compatible `capabilities` object:
   "attachments": {
     "document_context": {
       "argument": "obs_file_list",
-      "max_file_bytes": 26214400,
+      "max_file_bytes": 10737418240,
       "max_files": 10,
-      "max_total_bytes": 52428800
+      "max_total_bytes": 107374182400
     },
     "datasets": null,
     "expert_forwarding": true
@@ -960,8 +960,9 @@ compression, or description contract. Arbitrary managed-prefix paths,
 incomplete assets, and foreign-owner rows are rejected; do not infer ownership
 from an OBS key.
 
-Use the following exact limits for registered uploads: 10 files per request,
-26,214,400 bytes per file, and 52,428,800 bytes in total. The limits are
+Use the following exact limits for registered uploads — the same ceiling as
+the resumable upload plane (`API_UPLOAD_V2_MAX_BYTES`): 10 files per request,
+10 GiB per file, and 100 GiB in total. The limits are
 inclusive. Duplicate asset ids are rejected before budget checks. Managed
 `data_list` values are exact empty strings. Legacy raw native document paths
 still use their purpose and filename-extension checks; legacy dataset maps
