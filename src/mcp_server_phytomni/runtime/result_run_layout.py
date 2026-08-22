@@ -66,3 +66,20 @@ def is_legacy_shared_output_dir(output_dir: str) -> bool:
     if not candidate or "/jobs/" in candidate:
         return False
     return _LEGACY_SHARED_OUTPUT.search(candidate) is not None
+
+
+def reusable_caller_output_dir(output_dir: str, default: str) -> str:
+    """Return ``output_dir`` only when it is a caller-owned run root.
+
+    Empty input, the shared config dump (and any descendant), and the
+    pre-jobs fingerprint dump are treated as unallocated so callers mint
+    a unique directory instead of harvesting leftover objects.
+    """
+    candidate = str(output_dir or "").strip()
+    if not candidate:
+        return ""
+    if is_unallocated_default_output_dir(candidate, default):
+        return ""
+    if is_legacy_shared_output_dir(candidate):
+        return ""
+    return candidate

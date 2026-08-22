@@ -13,6 +13,7 @@ from mcp_server_phytomni.runtime.result_run_layout import (
     is_unallocated_default_output_dir,
     result_child_output_dir,
     result_run_root_from_child,
+    reusable_caller_output_dir,
 )
 
 
@@ -89,3 +90,27 @@ def test_legacy_shared_output_dir_rejects_old_fingerprint_dump() -> None:
     assert is_legacy_shared_output_dir(
         "/obs/phytomni/agent_data/user_data/x"
     ) is (False)
+
+
+def test_reusable_caller_output_dir_rejects_shared_dumps() -> None:
+    """Config dump and legacy fingerprint dump are not caller-owned roots."""
+    default = "/obs/phytomni/agent_data/test/output"
+    owned = "/obs/phytomni/agent_data/users/alice/run-1"
+    fingerprint = "b" * 64
+    dump = f"/obs/phytomni/agent_data/shared/{fingerprint}/output"
+    isolated = (
+        f"/obs/phytomni/agent_data/shared/{fingerprint}/jobs/run-1/output"
+    )
+
+    assert reusable_caller_output_dir(default, default) == ""
+    assert (
+        reusable_caller_output_dir(f"{default}/children/part-001", default)
+        == ""
+    )
+    assert reusable_caller_output_dir("", default) == ""
+    assert reusable_caller_output_dir(owned, default) == owned
+    assert reusable_caller_output_dir(
+        f"{owned}/children/part-001", default
+    ) == f"{owned}/children/part-001"
+    assert reusable_caller_output_dir(dump, default) == ""
+    assert reusable_caller_output_dir(isolated, default) == isolated

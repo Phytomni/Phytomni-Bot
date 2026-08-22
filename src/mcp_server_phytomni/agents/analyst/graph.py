@@ -39,9 +39,9 @@ from ...runtime.outbound import (
     current_outbound_http_client,
 )
 from ...runtime.result_run_layout import (
-    is_unallocated_default_output_dir,
     result_child_output_dir,
     result_run_root_from_child,
+    reusable_caller_output_dir,
 )
 from ...storage.path_policy import RunIdentity, task_tmp_key
 from ..knowledge.retrieval import retrieve
@@ -217,16 +217,16 @@ class AnalystGraphMixin:
     ) -> str:
         """Return an existing or newly created submit output directory."""
         output_dir = str(state.get("output_dir") or "")
+        default = str(getattr(self.analyst_config, "OUTPUT_DIR", "") or "")
         if state.get("output_dir_is_result_child") is True:
             result_run_root_from_child(output_dir)
-            return output_dir
+            reused = reusable_caller_output_dir(output_dir, default)
+            if reused:
+                return reused
+            output_dir = ""
         if not self.analyst_config.CREATE_DIR:
             return output_dir
-        if is_unallocated_default_output_dir(
-            output_dir,
-            str(getattr(self.analyst_config, "OUTPUT_DIR", "") or ""),
-        ):
-            output_dir = ""
+        output_dir = reusable_caller_output_dir(output_dir, default)
         run_root = output_dir
         if output_dir:
             with suppress(ValueError):

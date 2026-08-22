@@ -34,7 +34,10 @@ from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...interop.planner import InteropMode
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ...runtime.locale import SupportedLocale
-from ...runtime.result_run_layout import result_child_output_dir
+from ...runtime.result_run_layout import (
+    result_child_output_dir,
+    reusable_caller_output_dir,
+)
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
     SubmissionOutcome,
@@ -537,7 +540,10 @@ class DigitalDesignAgents:
             user_id=state.get("user_id"),
             scope="digital_design_task",
         )
-        output_dir = state.get("output_dir") or await create_output_dir(
+        output_dir = reusable_caller_output_dir(
+            str(state.get("output_dir") or ""),
+            str(self.digital_design_config.OUTPUT_DIR or ""),
+        ) or await create_output_dir(
             user_id=run_identity.user_id,
             task="digital_design_task",
             bucket_name=self.digital_design_config.BUCKET_NAME,

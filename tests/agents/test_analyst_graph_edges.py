@@ -61,6 +61,38 @@ async def test_submit_output_dir_returns_flagged_child() -> None:
     assert output_dir == "/obs/run/children/part-003"
 
 
+async def test_submit_output_dir_reallocates_flagged_child_under_shared_dump(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A flagged child under the config dump is not treated as isolated."""
+    captured: dict[str, Any] = {}
+
+    async def fake_ensure(*_args: Any, **kwargs: Any) -> str:
+        captured["run_root"] = (
+            _args[3] if len(_args) > 3 else kwargs.get("output_dir")
+        )
+        return "/obs/scoped"
+
+    monkeypatch.setattr(analyst_graph, "ensure_run_output_dir", fake_ensure)
+    default = "/obs/phytomni/agent_data/test/output"
+    host = _host(CREATE_DIR=True, OUTPUT_DIR=default)
+    submit_output_dir = getattr(AnalystGraphMixin, "_submit_output_dir")
+
+    output_dir = await submit_output_dir(
+        host,
+        {
+            "output_dir": f"{default}/children/part-001",
+            "output_dir_is_result_child": True,
+            "input_fingerprint": "",
+        },
+        _identity(),
+    )
+
+    assert captured["run_root"] == ""
+    assert output_dir == "/obs/scoped/children/part-001"
+    assert not output_dir.startswith(default)
+
+
 def test_submit_job_data_uses_app_id_outside_relay(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

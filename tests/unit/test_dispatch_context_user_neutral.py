@@ -88,3 +88,41 @@ async def test_preset_output_dir_is_overridden_by_fingerprint(
     assert _FINGERPRINT in ctx.output_dir
     assert "user_data" not in ctx.output_dir
     assert "anonymous" not in ctx.output_dir
+
+
+async def test_flagged_dump_child_is_not_reused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Network-style flagged children under the config dump allocate a root."""
+    captured: dict[str, Any] = {}
+
+    async def fake_create(*_args: Any, **kwargs: Any) -> str:
+        captured["called"] = True
+        return "/obs/phytomni/agent_data/users/alice/run-new"
+
+    monkeypatch.setattr(storage_mod, "create_output_dir", fake_create)
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.shared.analysis.create_output_dir",
+        fake_create,
+    )
+    default = "/obs/phytomni/agent_data/test/output"
+    ctx = await prepare_analyst_dispatch_context(
+        SimpleNamespace(
+            USER_ID="alice",
+            OBS_SERVER="https://obs.example",
+            BUCKET_NAME="phytomni",
+            OUTPUT_DIR=default,
+        ),
+        {
+            "analysis_type": "gene_network_analysis",
+            "target_id": "TO:0000014",
+            "output_dir": f"{default}/children/part-001",
+            "output_dir_is_result_child": True,
+        },
+    )
+
+    assert captured.get("called") is True
+    assert ctx.output_dir == (
+        "/obs/phytomni/agent_data/users/alice/run-new/children/part-001"
+    )
+    assert not ctx.output_dir.startswith(default)

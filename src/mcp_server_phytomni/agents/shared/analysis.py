@@ -37,6 +37,7 @@ from ...runtime.request_context import (
 from ...runtime.result_run_layout import (
     result_child_output_dir,
     result_run_root_from_child,
+    reusable_caller_output_dir,
 )
 from ...runtime.submission_outcome import SubmissionOutcome
 from ...storage.path_policy import RunIdentity
@@ -181,15 +182,32 @@ async def prepare_analyst_dispatch_context(
         user_id=config.USER_ID,
         scope=analysis_type,
     )
+    default = str(getattr(config, "OUTPUT_DIR", "") or "")
     if request.get("output_dir_is_result_child") is True:
-        output_dir = str(request["output_dir"])
-        result_run_root_from_child(output_dir)
+        flagged = str(request.get("output_dir") or "")
+        result_run_root_from_child(flagged)
+        output_dir = reusable_caller_output_dir(flagged, default)
+        if not output_dir:
+            output_dir = result_child_output_dir(
+                await ensure_analysis_output_dir(
+                    config,
+                    analysis_type,
+                    None,
+                    run_identity,
+                    fingerprint=fingerprint,
+                ),
+                0,
+            )
     else:
+        caller = reusable_caller_output_dir(
+            str(request.get("output_dir") or ""),
+            default,
+        ) or None
         output_dir = result_child_output_dir(
             await ensure_analysis_output_dir(
                 config,
                 analysis_type,
-                request.get("output_dir"),
+                caller,
                 run_identity,
                 fingerprint=fingerprint,
             ),
