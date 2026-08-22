@@ -305,7 +305,8 @@ async def test_data_run_persistence_failure_projects_public_stage(
 
     monkeypatch.setattr(api_app_module, "invoke_tool_enveloped", fake_invoke)
     monkeypatch.setattr(
-        "mcp_server_phytomni.runtime.background_submission._apply_direct_outcome",
+        "mcp_server_phytomni.runtime.background_submission."
+        "_apply_direct_outcome",
         fail_direct_outcome,
     )
 
