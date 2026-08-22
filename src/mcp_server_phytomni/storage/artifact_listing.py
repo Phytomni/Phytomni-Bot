@@ -104,8 +104,7 @@ async def list_artifact_objects_with_runtime(
     limit: int | None = None,
 ) -> list[ListedArtifactObject]:
     """List output objects with a separate OBS lease per SDK request."""
-    object_key = normalize_obs_object_key(output_dir, bucket_name)
-    base_key = object_key.rstrip("/")
+    base_key = normalize_obs_object_key(output_dir, bucket_name).rstrip("/")
     if obsfs_bucket_available(bucket_name, mount_root):
         dir_path = obsfs_path_for(output_dir, bucket_name, mount_root)
         if dir_path.is_dir():

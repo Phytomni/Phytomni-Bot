@@ -173,6 +173,7 @@ async def test_collect_set_caps_default_listing_while_walking(
         limit: int | None = None,
     ) -> list[ListedArtifactObject]:
         seen["limit"] = limit
+        seen["call"] = (output_dir, bucket_name, obs_runtime)
         count = 3 if limit is None else limit
         return [_listed(f"f{index}.txt") for index in range(count)]
 
@@ -180,17 +181,17 @@ async def test_collect_set_caps_default_listing_while_walking(
         del _dir
         return None
 
+    def _runtime() -> str:
+        return "runtime"
+
+    def _config() -> Any:
+        return type("Cfg", (), {"BUCKET_NAME": "phytomni"})()
+
     monkeypatch.setattr(
         terminal_artifacts, "list_artifact_objects_with_runtime", _objects
     )
-    monkeypatch.setattr(
-        terminal_artifacts, "current_obs_runtime", lambda: "runtime"
-    )
-    monkeypatch.setattr(
-        terminal_artifacts,
-        "ServerConfig",
-        lambda: type("Cfg", (), {"BUCKET_NAME": "phytomni"})(),
-    )
+    monkeypatch.setattr(terminal_artifacts, "current_obs_runtime", _runtime)
+    monkeypatch.setattr(terminal_artifacts, "ServerConfig", _config)
 
     result = await collect_terminal_artifact_set(
         task_id="task-1",

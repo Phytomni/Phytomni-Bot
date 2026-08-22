@@ -642,8 +642,7 @@ class InSilicoResearchAgents:
             state: Current workflow state containing extracted goals.
 
         Returns:
-            Dict with research_tasks, output_dir, task_ids, and
-            completed_count.
+            Dict with research_tasks, output_dir, task_ids, completed_count.
         """
         goals = state.get("goals", [])
         run_identity = RunIdentity.create(
@@ -659,7 +658,6 @@ class InSilicoResearchAgents:
             bucket_name=self.in_silico_config.BUCKET_NAME,
             run_identity=run_identity,
         )
-
         tasks = [
             {
                 "goal_description": goal["goal"],
@@ -670,7 +668,6 @@ class InSilicoResearchAgents:
             }
             for i, goal in enumerate(goals)
         ]
-
         return {
             "research_tasks": tasks,
             "output_dir": output_dir,

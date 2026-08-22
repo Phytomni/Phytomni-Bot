@@ -96,7 +96,7 @@ async def test_flagged_dump_child_is_not_reused(
     """Network-style flagged children under the config dump allocate a root."""
     captured: dict[str, Any] = {}
 
-    async def fake_create(*_args: Any, **kwargs: Any) -> str:
+    async def fake_create(*_args: Any, **_kwargs: Any) -> str:
         captured["called"] = True
         return "/obs/phytomni/agent_data/users/alice/run-new"
 
