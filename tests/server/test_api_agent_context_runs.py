@@ -530,7 +530,7 @@ async def test_native_context_asset_failures_precede_context_mutation(
         if scenario == "byte":
             with sqlite3.connect(str(tmp_path / "tasks.sqlite")) as connection:
                 connection.execute(
-                    "UPDATE upload_assets SET size_bytes = ? WHERE asset_id = ?",
+                    "UPDATE upload_assets SET size_bytes=? WHERE asset_id=?",
                     (MAX_UPLOAD_BYTES + 1, harness.asset_id),
                 )
         attachments = _preflight_attachment_ids(harness, scenario)

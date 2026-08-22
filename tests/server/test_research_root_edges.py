@@ -102,7 +102,7 @@ async def test_managed_downloader_uses_shared_obs_source(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """The HTTP adapter stages OBS objects through the shared download helper."""
+    """The HTTP adapter stages OBS objects through the shared downloader."""
     staged = tmp_path / "brief.pdf"
     staged.write_bytes(b"pdf-bytes")
     captured: dict[str, Any] = {}
@@ -196,7 +196,7 @@ def test_document_converter_labels_non_pdf_sections(
 
 
 def test_research_root_does_not_buffer_document_bytes() -> None:
-    """HTTP Research composition must not join OBS objects into a bytes body."""
+    """HTTP Research composition must not join OBS objects into bytes."""
     source = Path(research_root.__file__).read_text(encoding="utf-8")
     assert "get_object_bytes" not in source
     assert "get_obs_object(" not in source

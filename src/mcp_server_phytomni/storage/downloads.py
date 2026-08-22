@@ -137,7 +137,7 @@ async def download_obs_source(
     server_dir: str,
     **kwargs: Any,
 ) -> ResolvedObsFile:
-    """Resolve one OBS object to a local file without loading it into memory."""
+    """Resolve one OBS object to a local file without loading it into RAM."""
     context = _obs_transfer_context(server_dir, kwargs)
     return await _resolve_obs_file(obs_file, context)
 

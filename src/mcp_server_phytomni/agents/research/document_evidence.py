@@ -348,7 +348,7 @@ def _query_units(
 async def _download_one(
     entry: ResearchInventoryEntry, downloader: ManagedDocumentDownloader
 ) -> ManagedDocumentPayload:
-    """Download once to a local file and map provider details to a safe error."""
+    """Stage one local file and map provider faults to a safe domain error."""
     _validate_document_entry(entry)
     try:
         payload = await downloader.download(entry)
