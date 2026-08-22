@@ -290,7 +290,6 @@ async def test_review_run_interrupt_then_resume_finishes(
     review_app_factory: Any,
 ) -> None:
     """A review run can pause for approval and resume to success."""
-    _ = tasks_db_path
     fake_app = review_app_factory(interrupt_key="summary")
     monkeypatch.setattr(
         api_app_module,
@@ -328,31 +327,30 @@ async def test_review_run_interrupt_then_resume_finishes(
     )
     assert fetched.status_code == 200
     interrupted = fetched.json()
-    thread_id = interrupted["id"]
-    assert interrupted["id"] == thread_id
-    assert interrupted["run_id"] == thread_id
+    assert interrupted["id"] == run_id
+    assert interrupted["run_id"] == run_id
     assert interrupted["status"] == "input_required"
     assert interrupted["result"]["interrupt"]["draft"]["summary"] == (
         "draft review"
     )
 
     resumed = await api_client.post(
-        f"/v1/runs/{thread_id}/resume",
+        f"/v1/runs/{run_id}/resume",
         headers={"Authorization": f"Bearer {issued_api_key}"},
         json={"approved": True, "edits": "ship it"},
     )
 
     assert resumed.status_code == 200
     body = resumed.json()
-    assert body["id"] == thread_id
-    assert body["run_id"] == thread_id
+    assert body["id"] == run_id
+    assert body["run_id"] == run_id
     assert body["status"] == "succeeded"
     assert body["result"]["formatted"]["answer"] == "Approved final review."
-    record = RunRegistry(tasks_db_path).get_run(thread_id, owner="u1")
+    record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
     assert record is not None
     assert record.status == "succeeded"
     actions = RunRegistry(tasks_db_path).list_a2ui_actions(
-        owner="u1", run_id=thread_id
+        owner="u1", run_id=run_id
     )
     assert len(actions) == 1
     assert actions[0].outcome == "succeeded"

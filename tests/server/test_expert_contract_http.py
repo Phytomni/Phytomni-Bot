@@ -221,6 +221,77 @@ def _parity_handler(case: _ParityCase) -> Any:
     return fake
 
 
+async def _wait_direct_parity_run(
+    case: _ParityCase, direct_body: dict[str, Any]
+) -> RunRecord:
+    """Wait for the native 202 side of one Expert parity case."""
+    db_path = api_app.resolve_tasks_db_path()
+    run_id = direct_body["run_id"]
+    if case.slug == "research":
+        record = await _wait_for_run(
+            db_path, run_id, task_ids=set(), status="running"
+        )
+        _assert_pending_research(db_path, run_id)
+        return record
+    assert direct_body["id"] == run_id
+    assert direct_body["task_ids"] == []
+    assert direct_body["result"] == empty_agent_result()
+    status = "succeeded" if case.slug == "data" else "running"
+    task_ids: set[str] = set()
+    if case.slug != "data":
+        task_ids = {f"expert-parity-{case.slug}-1"}
+    record = await _wait_for_run(
+        db_path, run_id, task_ids=task_ids, status=status
+    )
+    assert record.spec.agent == case.slug
+    return record
+
+
+async def _assert_routed_parity_202(
+    case: _ParityCase,
+    routed: httpx.Response,
+    routed_body: dict[str, Any],
+    direct_record: RunRecord,
+) -> None:
+    """Compare the Expert 202 side with the native run already waited."""
+    db_path = api_app.resolve_tasks_db_path()
+    run_id = routed_body["run_id"]
+    if case.slug == "research":
+        routed_record = await _wait_for_run(
+            db_path, run_id, task_ids=set(), status="running"
+        )
+        _assert_pending_research(db_path, run_id)
+        assert routed_record.spec.agent == "research"
+        assert routed_record.task_ids == direct_record.task_ids == ()
+        return
+    assert routed_body["id"] == run_id
+    assert routed_body["task_ids"] == []
+    assert routed_body["result"] == empty_agent_result()
+    if case.slug == "data":
+        routed_record = await _wait_for_run(
+            db_path, run_id, task_ids=set(), status="succeeded"
+        )
+        assert routed_record.spec.run_id == run_id
+        assert routed_record.spec.agent == case.slug
+        assert routed_record.status == direct_record.status == "succeeded"
+        return
+    routed_record = await _wait_for_run(
+        db_path,
+        run_id,
+        task_ids={f"expert-parity-{case.slug}-2"},
+        status="running",
+    )
+    assert routed_record.spec.run_id == run_id
+    assert routed_record.spec.agent == case.slug
+    assert (
+        routed_record.request_info.request_id == routed.headers["X-Request-Id"]
+    )
+    assert routed_record.request_info.tool_name == case.tool_name
+    assert routed_record.request_info.query is None
+    assert routed_record.request_info.request_json is None
+    assert routed_record.task_ids != direct_record.task_ids
+
+
 _PARITY_CASES = (
     pytest.param(
         _ParityCase(
@@ -359,39 +430,7 @@ async def test_expert_uses_native_run_contract(
     direct_body = direct.json()
     direct_record: RunRecord | None = None
     if case.expected_status == 202:
-        if case.slug == "research":
-            direct_record = await _wait_for_run(
-                api_app.resolve_tasks_db_path(),
-                direct_body["run_id"],
-                task_ids=set(),
-                status="running",
-            )
-            _assert_pending_research(
-                api_app.resolve_tasks_db_path(), direct_body["run_id"]
-            )
-        elif case.slug == "data":
-            assert direct_body["id"] == direct_body["run_id"]
-            assert direct_body["task_ids"] == []
-            assert direct_body["result"] == empty_agent_result()
-            direct_record = await _wait_for_run(
-                api_app.resolve_tasks_db_path(),
-                direct_body["run_id"],
-                task_ids=set(),
-                status="succeeded",
-            )
-            assert direct_record.spec.agent == case.slug
-        else:
-            direct_task_ids = {f"expert-parity-{case.slug}-1"}
-            assert direct_body["id"] == direct_body["run_id"]
-            assert direct_body["task_ids"] == []
-            assert direct_body["result"] == empty_agent_result()
-            direct_record = await _wait_for_run(
-                api_app.resolve_tasks_db_path(),
-                direct_body["run_id"],
-                task_ids=direct_task_ids,
-                status="running",
-            )
-            assert direct_record.spec.agent == case.slug
+        direct_record = await _wait_direct_parity_run(case, direct_body)
 
     _patch_selection(monkeypatch, case.tool_name, case.selected_args)
     routed = await _post_forced_expert(
@@ -405,58 +444,12 @@ async def test_expert_uses_native_run_contract(
     assert routed_body["agent"] == case.slug
     assert routed_body["agent"] != "expert"
     if case.expected_status == 202:
-        if case.slug == "research":
-            routed_record = await _wait_for_run(
-                api_app.resolve_tasks_db_path(),
-                routed_body["run_id"],
-                task_ids=set(),
-                status="running",
-            )
-            _assert_pending_research(
-                api_app.resolve_tasks_db_path(), routed_body["run_id"]
-            )
-            assert direct_record is not None
-            assert routed_record.spec.agent == "research"
-            assert routed_record.task_ids == direct_record.task_ids == ()
-            return
-        if case.slug == "data":
-            assert routed_body["id"] == routed_body["run_id"]
-            assert routed_body["task_ids"] == []
-            assert routed_body["result"] == empty_agent_result()
-            routed_record = await _wait_for_run(
-                api_app.resolve_tasks_db_path(),
-                routed_body["run_id"],
-                task_ids=set(),
-                status="succeeded",
-            )
-            assert routed_record.spec.run_id == routed_body["run_id"]
-            assert routed_record.spec.agent == case.slug
-            assert direct_record is not None
-            assert routed_record.status == direct_record.status == "succeeded"
-            return
-        routed_task_ids = {f"expert-parity-{case.slug}-2"}
-        assert routed_body["id"] == routed_body["run_id"]
-        assert routed_body["task_ids"] == []
-        assert routed_body["result"] == empty_agent_result()
-        routed_record = await _wait_for_run(
-            api_app.resolve_tasks_db_path(),
-            routed_body["run_id"],
-            task_ids=routed_task_ids,
-            status="running",
-        )
-        assert routed_record.spec.run_id == routed_body["run_id"]
-        assert routed_record.spec.agent == case.slug
-        assert (
-            routed_record.request_info.request_id
-            == routed.headers["X-Request-Id"]
-        )
-        assert routed_record.request_info.tool_name == case.tool_name
-        assert routed_record.request_info.query is None
-        assert routed_record.request_info.request_json is None
         assert direct_record is not None
-        assert routed_record.task_ids != direct_record.task_ids
-    else:
-        assert _contract_shape(routed_body) == _contract_shape(direct_body)
+        await _assert_routed_parity_202(
+            case, routed, routed_body, direct_record
+        )
+        return
+    assert _contract_shape(routed_body) == _contract_shape(direct_body)
 
 
 async def test_expert_partial_remote_preserves_execution_warnings(

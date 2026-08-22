@@ -137,7 +137,7 @@ async def test_route_sync_agent_returns_resolved_slug(
     )
 
     async def prepared_stream(
-        selected_tool: str,
+        _selected_tool: str,
         selected_arguments: dict[str, Any],
         *,
         run_id: str,
@@ -673,14 +673,13 @@ async def test_route_attachment_forwarding_follows_capability_matrix(
     """Expert forwarding follows the registry's exact ten-tool matrix."""
     tool_name, slug, forwarded = case
     captured: dict[str, dict[str, Any]] = {}
-    registry = UploadRegistry(tasks_db_path)
     file_id = "expert-context"
     path = obs_path_from_key(
         ServerConfig().BUCKET_NAME,
         f"{ApiConfig().API_UPLOAD_PREFIX.strip('/')}/u1/expert/"
         f"{file_id}/context.pdf",
     )
-    registry.record(
+    UploadRegistry(tasks_db_path).record(
         UploadMetadata(
             file_id=file_id,
             user_id="u1",
@@ -735,10 +734,9 @@ async def test_route_attachment_forwarding_follows_capability_matrix(
         },
     )
     if forwarded:
-        expected_status = 202 if slug in _STREAM_EXPERT_SLUGS else 200
-        if slug in {"data", "review"}:
-            expected_status = 200
-        assert response.status_code == expected_status
+        assert response.status_code == (
+            202 if slug in _STREAM_EXPERT_SLUGS else 200
+        )
         assert captured[slug]["obs_file_list"] == [path]
     else:
         assert response.status_code == 422
