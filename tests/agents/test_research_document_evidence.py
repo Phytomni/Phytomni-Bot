@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import tempfile
 from dataclasses import dataclass
-from typing import get_type_hints
+from typing import cast, get_type_hints
 
 import pytest
 
@@ -466,7 +466,9 @@ async def test_bytes_download_is_rejected_before_conversion() -> None:
     )
     with pytest.raises(Exception) as caught:
         await extract_research_evidence(
-            _request((entry,)), _BytesDownloader(), converter
+            _request((entry,)),
+            cast(ManagedDocumentDownloader, _BytesDownloader()),
+            converter,
         )
     assert (
         getattr(caught.value, "code") == "research_document_extraction_failed"
