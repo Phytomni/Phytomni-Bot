@@ -20,14 +20,17 @@ from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.agents.design.agent import (
     DigitalDesignAgents,
     DigitalDesignConfig,
+    DigitalDesignState,
 )
 from mcp_server_phytomni.agents.network.agent import (
     GeneNetworkAgents,
     GeneNetworkConfig,
+    GeneNetworkState,
 )
 from mcp_server_phytomni.agents.research.agent import (
     InSilicoResearchAgents,
     InSilicoResearchConfig,
+    InSilicoResearchState,
 )
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
@@ -65,10 +68,13 @@ async def test_network_prepare_tasks_ignores_shared_dump(
     )
 
     result = await agent.prepare_tasks(
-        {
-            "user_id": "alice",
-            "output_dir": _DEFAULT,
-        }
+        cast(
+            GeneNetworkState,
+            {
+                "user_id": "alice",
+                "output_dir": _DEFAULT,
+            },
+        )
     )
 
     assert result["output_dir"] == _ALLOCATED
@@ -92,10 +98,13 @@ async def test_design_prepare_tasks_ignores_shared_dump(
     )
 
     result = await agent.prepare_tasks(
-        {
-            "user_id": "alice",
-            "output_dir": _DEFAULT,
-        }
+        cast(
+            DigitalDesignState,
+            {
+                "user_id": "alice",
+                "output_dir": _DEFAULT,
+            },
+        )
     )
 
     assert result["output_dir"] == _ALLOCATED
@@ -122,11 +131,14 @@ async def test_research_prepare_tasks_ignores_shared_dump(
     )
 
     result = await agent.prepare_tasks(
-        {
-            "user_id": "alice",
-            "output_dir": _DEFAULT,
-            "goals": [{"goal": "map hormone genes", "context": "osa"}],
-        }
+        cast(
+            InSilicoResearchState,
+            {
+                "user_id": "alice",
+                "output_dir": _DEFAULT,
+                "goals": [{"goal": "map hormone genes", "context": "osa"}],
+            },
+        )
     )
 
     assert result["output_dir"] == _ALLOCATED
