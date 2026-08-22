@@ -199,10 +199,13 @@ async def prepare_analyst_dispatch_context(
                 0,
             )
     else:
-        caller = reusable_caller_output_dir(
-            str(request.get("output_dir") or ""),
-            default,
-        ) or None
+        caller = (
+            reusable_caller_output_dir(
+                str(request.get("output_dir") or ""),
+                default,
+            )
+            or None
+        )
         output_dir = result_child_output_dir(
             await ensure_analysis_output_dir(
                 config,

@@ -109,8 +109,9 @@ def test_reusable_caller_output_dir_rejects_shared_dumps() -> None:
     )
     assert reusable_caller_output_dir("", default) == ""
     assert reusable_caller_output_dir(owned, default) == owned
-    assert reusable_caller_output_dir(
-        f"{owned}/children/part-001", default
-    ) == f"{owned}/children/part-001"
+    assert (
+        reusable_caller_output_dir(f"{owned}/children/part-001", default)
+        == f"{owned}/children/part-001"
+    )
     assert reusable_caller_output_dir(dump, default) == ""
     assert reusable_caller_output_dir(isolated, default) == isolated
