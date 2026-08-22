@@ -12,6 +12,7 @@ harvest listed leftover objects from every prior job.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -40,12 +41,11 @@ _DEFAULT = "/obs/phytomni/agent_data/test/output"
 _ALLOCATED = "/obs/phytomni/agent_data/users/alice/run-new"
 
 
-class _StubAnalyst:
-    """Stand-in passed as ``analyst_agent`` to skip real construction."""
-
-    def identifier(self) -> str:
-        """Return a stable label for debugging."""
-        return "stub-analyst"
+def _analyst_stub() -> AnalystAgent:
+    """Return a construction-only Analyst stand-in."""
+    return cast(
+        AnalystAgent, SimpleNamespace(identifier=lambda: "stub-analyst")
+    )
 
 
 async def _fake_create(*_args: Any, **_kwargs: Any) -> str:
@@ -64,7 +64,7 @@ async def test_network_prepare_tasks_ignores_shared_dump(
     agent = GeneNetworkAgents(
         gene_network_config=GeneNetworkConfig(),
         sensitive_config=SensitiveConfig.load(),
-        analyst_agent=cast(AnalystAgent, _StubAnalyst()),
+        analyst_agent=_analyst_stub(),
     )
 
     result = await agent.prepare_tasks(
@@ -94,7 +94,7 @@ async def test_design_prepare_tasks_ignores_shared_dump(
     agent = DigitalDesignAgents(
         digital_design_config=DigitalDesignConfig(),
         sensitive_config=SensitiveConfig.load(),
-        analyst_agent=cast(AnalystAgent, _StubAnalyst()),
+        analyst_agent=_analyst_stub(),
     )
 
     result = await agent.prepare_tasks(
@@ -127,7 +127,7 @@ async def test_research_prepare_tasks_ignores_shared_dump(
     agent = InSilicoResearchAgents(
         in_silico_config=InSilicoResearchConfig(),
         sensitive_config=SensitiveConfig.load(),
-        analyst_agent=cast(AnalystAgent, _StubAnalyst()),
+        analyst_agent=_analyst_stub(),
     )
 
     result = await agent.prepare_tasks(
