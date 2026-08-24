@@ -20,7 +20,7 @@ from ...runtime.conversation_context.service import (
     PrepareStatus,
 )
 from ...runtime.locale import SupportedLocale, current_effective_locale
-from ..lifecycle_contract import (
+from ..conversation_context_errors import (
     conversation_context_rebuild_required_error,
     conversation_context_turn_in_progress_error,
 )

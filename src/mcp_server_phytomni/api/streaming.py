@@ -79,12 +79,11 @@ from ..runtime.task_manager import (
     resolve_tasks_db_path as _default_tasks_db_path,
 )
 from . import a2ui_runtime
-from .lifecycle_contract import (
-    SafeApiError,
+from .conversation_context_errors import (
     conversation_context_rebuild_required_error,
     conversation_context_turn_in_progress_error,
-    empty_agent_result,
 )
+from .lifecycle_contract import SafeApiError, empty_agent_result
 from .openai_mapping import to_chat_completion_chunks
 from .schemas import ChatCompletionRequest, ChatStreamCall
 from .stream_answer import StreamAnswerAccumulator
