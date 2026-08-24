@@ -668,13 +668,13 @@ def _patch_expert_selection(
     ("changed_field", "changed_value"),
     [("operation", "replace"), ("base_business_context_version", 1)],
 )
-async def test_expert_context_replay_mismatch_keeps_502_and_skips_resolution(
+async def test_expert_context_replay_mismatch_keeps_502(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     changed_field: str,
     changed_value: Any,
 ) -> None:
-    """Expert replay mismatches retain the old selection failure response."""
+    """Replace/rebuild probes still map Expert mismatch to HTTP 502."""
     context, assets, key = _enable_expert_context_assets(monkeypatch, tmp_path)
     resolver_calls = _patch_expert_resolver(monkeypatch)
     invoke_calls = _patch_expert_invocation(monkeypatch, "expert-mismatch")
@@ -708,7 +708,7 @@ async def test_expert_context_replay_mismatch_keeps_502_and_skips_resolution(
         )
 
     _assert_selection_mismatch(first, retry)
-    assert len(resolver_calls) == 1
+    assert len(resolver_calls) == 2
     assert len(invoke_calls) == 1
     assert _context_row_counts(context.db_path) == rows_after_first
 

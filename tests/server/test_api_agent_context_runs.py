@@ -210,13 +210,13 @@ def _count_context_mutations(
     ("changed_field", "changed_value"),
     [("operation", "replace"), ("base_business_context_version", 1)],
 )
-async def test_native_context_replay_mismatch_keeps_502_and_skips_resolution(
+async def test_native_context_replay_mismatch_keeps_502(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     changed_field: str,
     changed_value: Any,
 ) -> None:
-    """A duplicate proposal mismatch keeps native selection HTTP semantics."""
+    """A changed duplicate still returns the public 502 selection failure."""
     app, key = _native_context_delegated_setup(monkeypatch, tmp_path)
     harness, resolver_calls = _install_counted_context_asset(
         monkeypatch, tmp_path
@@ -245,7 +245,7 @@ async def test_native_context_replay_mismatch_keeps_502_and_skips_resolution(
         )
 
     _assert_selection_mismatch(first, retry)
-    assert len(resolver_calls) == 1
+    assert len(resolver_calls) == 2
     assert len(call_state.invoke_calls) == 1
 
 
