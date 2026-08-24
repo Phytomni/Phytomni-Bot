@@ -20,7 +20,10 @@ from ...runtime.conversation_context.service import (
     PrepareStatus,
 )
 from ...runtime.locale import SupportedLocale, current_effective_locale
-from ..lifecycle_contract import SafeApiError
+from ..lifecycle_contract import (
+    conversation_context_rebuild_required_error,
+    conversation_context_turn_in_progress_error,
+)
 from .agent_dependencies import AgentRouteDependencies
 
 __all__ = [
@@ -72,21 +75,9 @@ def context_response(
 ) -> JSONResponse:
     """Return a staged terminal payload or a bounded context retry signal."""
     if prepared.status is PrepareStatus.REBUILD_REQUIRED:
-        raise SafeApiError(
-            status_code=409,
-            code="conversation_context_rebuild_required",
-            message="conversation context rebuild required",
-            stage="context",
-            retryable=True,
-        )
+        raise conversation_context_rebuild_required_error()
     if prepared.status is PrepareStatus.IN_PROGRESS:
-        raise SafeApiError(
-            status_code=409,
-            code="conversation_context_turn_in_progress",
-            message="conversation context turn in progress",
-            stage="context",
-            retryable=True,
-        )
+        raise conversation_context_turn_in_progress_error()
     if prepared.result is None:
         raise HTTPException(
             status_code=500, detail="conversation context failed"
