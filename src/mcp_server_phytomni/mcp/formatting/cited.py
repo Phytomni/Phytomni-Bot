@@ -176,7 +176,7 @@ def _normalize_citations_detailed(
     def replace_citation_or_superscript(match: re.Match[str]) -> str:
         token = match.group(0)
         if token.lower().startswith("<sup"):
-            source_numbers = numbers_from_compact(match.group(1) or "")
+            source_numbers = list(numbers_from_compact(match.group(1) or ""))
         else:
             source_numbers = [
                 old_index
