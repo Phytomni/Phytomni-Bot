@@ -474,6 +474,27 @@ class ConversationContextService:
             )
         return True
 
+    def _should_reopen_existing_turn(
+        self, turn: StoredTurn, envelope: ConversationEnvelopeV1
+    ) -> bool:
+        """Allow replace/rebuild to supersede a finished turn on the same id."""
+        if envelope.operation not in {"replace", "rebuild"}:
+            return False
+        if turn.state == "staged":
+            return False
+        if (
+            turn.operation == envelope.operation
+            and turn.base_context_version
+            == envelope.base_business_context_version
+            and turn.state == "in_progress"
+        ):
+            return False
+        if turn.state == "committed" and self._matches_duplicate(
+            turn, envelope
+        ):
+            return False
+        return True
+
     def _project_existing_turn(
         self,
         turn: StoredTurn,
@@ -529,9 +550,17 @@ class ConversationContextService:
         )
         turn = begun.turn
         if not begun.created:
-            return self._project_existing_turn(
-                turn, envelope, inspect_only=False
-            )
+            if self._should_reopen_existing_turn(turn, envelope):
+                turn = self.store.reopen_turn(
+                    key,
+                    envelope.turn_id,
+                    envelope.operation,
+                    envelope.base_business_context_version,
+                )
+            else:
+                return self._project_existing_turn(
+                    turn, envelope, inspect_only=False
+                )
         stored = self.store.load_context(key)
         context, _rebuilt, failure = self._context_for(envelope, stored)
         if failure is not None:
@@ -562,9 +591,14 @@ class ConversationContextService:
             turn = self.store.load_turn(key, envelope.turn_id)
             if turn is None:
                 return None
-            return self._project_existing_turn(
-                turn, envelope, inspect_only=True
-            )
+            try:
+                return self._project_existing_turn(
+                    turn, envelope, inspect_only=True
+                )
+            except ValueError:
+                # A replace/rebuild probe is not a matching replay; the
+                # prepare path reopens the same durable turn id.
+                return None
 
     @staticmethod
     def _stage_from_turn(turn: StoredTurn) -> ContextStageMetadata | None:

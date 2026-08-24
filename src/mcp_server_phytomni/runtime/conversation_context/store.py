@@ -87,6 +87,7 @@ from .store_core import (
     load_context,
     load_turn,
     register_review_candidate,
+    reopen_turn,
     stage_turn,
     write,
 )
@@ -368,6 +369,12 @@ class ConversationContextStore:
     ) -> BeginTurnResult:
         """Create or replay one in-progress terminal turn row."""
         return begin_turn(self, key, turn_id, operation, base_version)
+
+    def reopen_turn(
+        self, key: str, turn_id: str, operation: str, base_version: int
+    ) -> StoredTurn:
+        """Reset one durable turn so replace/rebuild can supersede it."""
+        return reopen_turn(self, key, turn_id, operation, base_version)
 
     @staticmethod
     def _upsert_review_checkpoint_cleanup(

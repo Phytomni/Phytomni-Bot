@@ -100,16 +100,16 @@ async def test_context_service_inspect_replay_rejects_changed_duplicate(
     context_store: ConversationContextStore,
     changed_fields: dict[str, Any],
 ) -> None:
-    """Replay probes keep the bounded duplicate proposal mismatch."""
+    """Replay probes treat a changed proposal as no matching replay."""
     service = _service(context_store)
     envelope = _envelope()
     await service.execute_turn(envelope)
-    with pytest.raises(
-        ValueError, match="duplicate turn proposal does not match"
-    ):
+    assert (
         await service.inspect_replay(
             envelope.model_copy(update=changed_fields)
         )
+        is None
+    )
 
 
 def test_scope_change_stages_focus_until_successful_settlement() -> None:

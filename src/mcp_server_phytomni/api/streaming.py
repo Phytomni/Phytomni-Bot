@@ -79,7 +79,7 @@ from ..runtime.task_manager import (
     resolve_tasks_db_path as _default_tasks_db_path,
 )
 from . import a2ui_runtime
-from .lifecycle_contract import empty_agent_result
+from .lifecycle_contract import SafeApiError, empty_agent_result
 from .openai_mapping import to_chat_completion_chunks
 from .schemas import ChatCompletionRequest, ChatStreamCall
 from .stream_answer import StreamAnswerAccumulator
@@ -555,14 +555,33 @@ async def _prepare_context_stream(
             detail="instant context requires a ChatAgent model",
         )
     service = _context_service()
-    prepared = await service.prepare_turn(envelope)
+    try:
+        prepared = await service.prepare_turn(envelope)
+    except ValueError as exc:
+        if envelope.operation in {"replace", "rebuild"}:
+            raise SafeApiError(
+                status_code=409,
+                code="conversation_context_rebuild_required",
+                message="conversation context rebuild required",
+                stage="context",
+                retryable=True,
+            ) from exc
+        raise
     if prepared.status is PrepareStatus.REBUILD_REQUIRED:
-        raise HTTPException(
-            status_code=409, detail="conversation context rebuild required"
+        raise SafeApiError(
+            status_code=409,
+            code="conversation_context_rebuild_required",
+            message="conversation context rebuild required",
+            stage="context",
+            retryable=True,
         )
     if prepared.status is PrepareStatus.IN_PROGRESS:
-        raise HTTPException(
-            status_code=409, detail="conversation context turn in progress"
+        raise SafeApiError(
+            status_code=409,
+            code="conversation_context_turn_in_progress",
+            message="conversation context turn in progress",
+            stage="context",
+            retryable=True,
         )
     if prepared.status in {
         PrepareStatus.RETURN_STAGED,
@@ -570,8 +589,11 @@ async def _prepare_context_stream(
     }:
         return None, prepared
     if prepared.context is None or prepared.stored_turn is None:
-        raise HTTPException(
-            status_code=500, detail="conversation context failed"
+        raise SafeApiError(
+            status_code=500,
+            code="conversation_context_failed",
+            message="conversation context failed",
+            stage="context",
         )
     return (
         _PreparedContextStream(

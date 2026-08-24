@@ -97,7 +97,9 @@ async def inspect_context_replay(
         return await executor.inspect_replay(envelope=envelope)
     except ContextStoreUnavailableError as exc:
         raise conversation_context_unavailable_error() from exc
-    except (ToolSelectionError, ValueError) as exc:
+    except ValueError:
+        return None
+    except ToolSelectionError as exc:
         if selection_failure_detail is None:
             raise
         raise HTTPException(

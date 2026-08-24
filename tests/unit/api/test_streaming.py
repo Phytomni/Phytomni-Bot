@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -19,6 +20,7 @@ from tests.support.http_fakes import (
 )
 
 from mcp_server_phytomni.api import streaming
+from mcp_server_phytomni.api.lifecycle_contract import SafeApiError
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 from mcp_server_phytomni.mcp.result_formatting import (
     AguiEvent,
@@ -188,6 +190,33 @@ def test_stream_setup_error_keeps_preopen_mapping() -> None:
     )
     assert isinstance(unsupported, HTTPException)
     assert unsupported.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_prepare_context_stream_emits_typed_rebuild_required(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Stream setup must advertise the rebuild code Go retries on."""
+    tasks_db = tmp_path / "server_tasks.db"
+    monkeypatch.setenv("API_TASKS_DB_PATH", str(tasks_db))
+    envelope = build_instant_chat_context_envelope("1")
+    envelope["base_business_context_version"] = 3
+    payload = ChatCompletionRequest(
+        model="phyto-chat",
+        messages=[ChatMessage(role="user", content="What is photosynthesis?")],
+        conversation=ConversationEnvelopeV1.model_validate(envelope),
+    )
+
+    with pytest.raises(SafeApiError) as caught:
+        await streaming._prepare_context_stream(
+            tool_name="ChatAgent",
+            _arguments={},
+            payload=payload,
+        )
+
+    assert caught.value.status_code == 409
+    assert caught.value.code == "conversation_context_rebuild_required"
+    assert caught.value.retryable is True
 
 
 async def test_stream_runtime_uses_adapters_and_settles_answer() -> None:

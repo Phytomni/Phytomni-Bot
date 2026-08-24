@@ -372,6 +372,45 @@ def begin_turn(
     )
 
 
+def reopen_turn(
+    self: Any,
+    key: str,
+    turn_id: str,
+    operation: str,
+    base_version: int,
+):
+    """Reset one durable turn so replace/rebuild can supersede it."""
+    now = _now()
+    with getattr(self, "_write")() as connection:
+        existing = connection.execute(
+            "SELECT conversation_key FROM conversation_turns "
+            "WHERE conversation_key = ? AND turn_id = ?",
+            (key, turn_id),
+        ).fetchone()
+        if existing is None:
+            raise KeyError((key, turn_id))
+        connection.execute(
+            "UPDATE conversation_turns SET operation=?, "
+            "base_context_version=?, state='in_progress', "
+            "selected_agent_id=NULL, route_source=NULL, "
+            "result_json=NULL, delta_json=NULL, ledger_version=NULL, "
+            "updated_at=?, expires_at=NULL "
+            "WHERE conversation_key=? AND turn_id=?",
+            (operation, base_version, now, key, turn_id),
+        )
+        row = connection.execute(
+            "SELECT conversation_key, turn_id, operation, "
+            "base_context_version, state, selected_agent_id, "
+            "route_source, result_json, delta_json, "
+            "ledger_version, created_at, updated_at, expires_at "
+            "FROM conversation_turns WHERE conversation_key = ? "
+            "AND turn_id = ?",
+            (key, turn_id),
+        ).fetchone()
+    logger.debug("conversation turn reopened")
+    return getattr(self, "_turn")(row)
+
+
 def _upsert_review_checkpoint_cleanup(
     connection: sqlite3.Connection,
     entry: _ReviewCleanupEntry,

@@ -361,6 +361,48 @@ async def test_rebuild_required_turn_is_failed_and_retries_as_rebuild_required(
 
 
 @pytest.mark.asyncio
+async def test_replace_on_committed_append_same_turn_requires_rebuild(
+    store: ConversationContextStore,
+) -> None:
+    """Refresh reuses the committed turn id instead of raising a mismatch."""
+    service = _service(store)
+    first = await service.execute_turn(_envelope())
+    assert first.stage is not None
+    await service.acknowledge_settlement(_envelope(), "b" * 64)
+
+    assert (
+        await service.inspect_replay(_envelope(operation="replace")) is None
+    )
+    prepared = await service.prepare_turn(_envelope(operation="replace"))
+    assert prepared.status is PrepareStatus.REBUILD_REQUIRED
+    begun = store.begin_turn(str(_CONVERSATION_KEY), "1", "replace", 0)
+    assert begun.created is False
+    assert begun.turn.operation == "replace"
+    assert begun.turn.state == "failed"
+
+
+@pytest.mark.asyncio
+async def test_rebuild_supersedes_failed_replace_on_same_turn(
+    store: ConversationContextStore,
+) -> None:
+    """A typed rebuild retry must reopen the same durable turn id."""
+    service = _service(store)
+    first = await service.execute_turn(_envelope())
+    assert first.stage is not None
+    await service.acknowledge_settlement(_envelope(), "b" * 64)
+    rejected = await service.prepare_turn(_envelope(operation="replace"))
+    assert rejected.status is PrepareStatus.REBUILD_REQUIRED
+
+    rebuilt = await service.execute_turn(_envelope(operation="rebuild"))
+
+    assert rebuilt.stage is not None
+    assert rebuilt.stage.context_rebuilt is True
+    begun = store.begin_turn(str(_CONVERSATION_KEY), "1", "rebuild", 0)
+    assert begun.turn.operation == "rebuild"
+    assert begun.turn.state == "staged"
+
+
+@pytest.mark.asyncio
 async def test_missing_or_schema_incompatible_context_requires_rebuild(
     store: ConversationContextStore,
 ) -> None:

@@ -322,6 +322,28 @@ def test_absent_context_starts_at_version_zero(
     assert result.turn.state == "in_progress"
 
 
+def test_reopen_turn_resets_committed_append_for_replace(
+    store: ConversationContextStore,
+) -> None:
+    """Replace/rebuild must clear the prior proposal on the same turn id."""
+    store.begin_turn("conversation-1", "1", "append", 0)
+    store.stage_turn("conversation-1", "1", _staged())
+    store.commit_staged_turn(
+        "conversation-1",
+        "1",
+        expected_ledger_version="a" * 64,
+        ledger_version="a" * 64,
+    )
+
+    reopened = store.reopen_turn("conversation-1", "1", "replace", 1)
+
+    assert reopened.operation == "replace"
+    assert reopened.base_context_version == 1
+    assert reopened.state == "in_progress"
+    assert reopened.result is None
+    assert reopened.ledger_version is None
+
+
 def test_commit_staged_turn_compare_and_swaps_from_zero_to_one(
     store: ConversationContextStore,
 ) -> None:
