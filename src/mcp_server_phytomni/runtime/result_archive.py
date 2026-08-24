@@ -133,7 +133,8 @@ def build_result_archive_inventory(
     members: list[ResultArchiveMember] = []
     paths: set[str] = set()
     for child_index, group in enumerate(groups, start=1):
-        _raise_group_errors(group)
+        if _raise_group_errors(group):
+            continue
         for artifact in group.artifact_set.artifacts:
             relative_path = _safe_relative_path(artifact.relative_path)
             if _excluded_artifact(relative_path, artifact.role):
@@ -556,13 +557,14 @@ def _validate_member_scalars(member: ResultArchiveMember) -> None:
         raise ResultArchiveError("archive_contract_invalid")
 
 
-def _raise_group_errors(group: _ReportArtifactGroup) -> None:
-    """Map terminal collector warnings into the stable archive error set."""
+def _raise_group_errors(group: _ReportArtifactGroup) -> bool:
+    """Raise retryable listing errors; return True to omit a bad manifest."""
     codes = {warning.code for warning in group.artifact_set.warnings}
     if "artifact_listing_failed" in codes:
         raise ResultArchiveError("artifact_listing_failed", retryable=True)
     if {"artifact_manifest_missing", "artifact_manifest_invalid"} & codes:
-        raise ResultArchiveError("artifact_manifest_invalid")
+        return True
+    return False
 
 
 def _excluded_artifact(relative_path: str, role: ArtifactRole) -> bool:

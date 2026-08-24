@@ -150,14 +150,36 @@ def test_inventory_uses_child_prefixes_and_excludes_internal_files() -> None:
         ),
     ],
 )
-def test_inventory_rejects_missing_or_invalid_manifest(
+def test_inventory_maps_only_unusable_groups_to_empty_archive(
     artifact: ClassifiedArtifact, warning: ExecutionWarning
 ) -> None:
-    """Reject terminal groups whose producer manifest is unusable."""
-    with pytest.raises(ResultArchiveError, match="artifact_manifest_invalid"):
+    """A run whose every child lacks a usable manifest has no deliverables."""
+    with pytest.raises(ResultArchiveError, match="no_user_deliverables"):
         build_result_archive_inventory(
             _groups(_set(artifact, warnings=(warning,)))
         )
+
+
+def test_inventory_keeps_valid_sibling_when_one_manifest_is_invalid() -> None:
+    """Promoter JSON failure must not drop protein deliverables."""
+    inventory = build_result_archive_inventory(
+        _groups(
+            _set(_artifact("protein/model.cif")),
+            _set(
+                _artifact("smoc/plot.png"),
+                warnings=(
+                    ExecutionWarning(
+                        "artifact_manifest_invalid",
+                        False,
+                        "artifact_manifest",
+                    ),
+                ),
+            ),
+        )
+    )
+    assert [member.archive_path for member in inventory.members] == [
+        "results/part-001/protein/model.cif",
+    ]
 
 
 @pytest.mark.parametrize(
