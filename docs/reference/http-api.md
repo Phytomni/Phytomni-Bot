@@ -2299,11 +2299,16 @@ It must validate against this bounded schema and list every other output once:
 Paths are normalized relative POSIX paths. The manifest rejects absolute,
 parent, empty, backslash, duplicate, and control-character paths. A missing or
 invalid manifest makes every listed object `unknown`; the manifest object
-itself is `diagnostic`. A listed object absent from the manifest is `unknown`,
-and a manifest declaration with no listed object produces the fixed
-`artifact_manifest_path_not_listed` warning without creating a synthetic
-artifact. Unknown objects are downloadable when a safe download reference
-exists, but never enter report context.
+itself is `diagnostic`. A multi-child run still publishes a result archive from
+every child whose producer manifest is usable. A child whose manifest is missing
+or invalid is omitted; if no eligible members remain the delivery error is
+`no_user_deliverables`. Unescaped TAB/LF/CR inside JSON strings in
+`.phytomni-artifacts.json` are rewritten to `_` before validation.
+`artifact_manifest_invalid` stays non-retryable. A listed object absent from the
+manifest is `unknown`, and a manifest declaration with no listed object produces
+the fixed `artifact_manifest_path_not_listed` warning without creating a
+synthetic artifact. Unknown objects are downloadable when a safe download
+reference exists, but never enter report context.
 
 The public descriptor is deliberately path-minimal:
 

@@ -139,6 +139,11 @@ package version remains `0.1.3` until the release bump.
   `routing_upstream_failed`, both `stage=routing` and retryable. The
   V0 route already used those codes; the context path no longer
   surfaces them as an uncaught 500.
+- **Producer manifests** — Unescaped TAB/LF/CR inside
+  `.phytomni-artifacts.json` strings are rewritten to `_` before
+  classification. A child with a still-unusable manifest is omitted
+  from the result ZIP instead of blocking sibling children.
+  `artifact_manifest_invalid` is not retried.
 
 ## [0.1.3] — 2026-07-17
 

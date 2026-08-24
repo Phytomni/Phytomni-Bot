@@ -1657,7 +1657,12 @@ with relative POSIX paths. The exact role set is:
 | `unknown`           | excluded       | Unproven producer meaning.       |
 
 Admission is fail-closed: missing or invalid manifests and undeclared objects
-become `unknown`, while the manifest itself is `diagnostic`. The report reader
+become `unknown`, while the manifest itself is `diagnostic`. A multi-child run
+still publishes a result archive from every child whose producer manifest is
+usable. A child whose manifest is missing or invalid is omitted; if no eligible
+members remain the delivery error is `no_user_deliverables`. Unescaped TAB/LF/CR
+inside JSON strings in `.phytomni-artifacts.json` are rewritten to `_` before
+validation. `artifact_manifest_invalid` stays non-retryable. The report reader
 accepts at most 8 eligible text artifacts, rejects any verified object above
 32,768 bytes, reads at most 32,768 UTF-8 bytes per object, and caps the total
 prompt at 120,000 characters. The order matters because an object must first
