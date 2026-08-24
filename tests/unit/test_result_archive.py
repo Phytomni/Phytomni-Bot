@@ -218,6 +218,14 @@ def test_inventory_rejects_traversal_member(path: str) -> None:
         build_result_archive_inventory(_groups(_set(_artifact(path))))
 
 
+def test_inventory_rejects_control_characters_in_relative_path() -> None:
+    """ZIP member names cannot carry LF even if a caller skipped salvage."""
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        build_result_archive_inventory(
+            _groups(_set(_artifact("smoc/gene\nplot.png")))
+        )
+
+
 def test_inventory_rejects_duplicate_members_and_bounds() -> None:
     """Reject duplicate members and inventories beyond configured bounds."""
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):

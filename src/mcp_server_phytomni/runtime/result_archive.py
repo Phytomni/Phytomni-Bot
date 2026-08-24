@@ -582,6 +582,8 @@ def _safe_relative_path(value: object) -> str:
     """Validate one artifact path before it becomes a ZIP member name."""
     if not isinstance(value, str) or not value or "\\" in value:
         raise ResultArchiveError("archive_contract_invalid")
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ResultArchiveError("archive_contract_invalid")
     path = PurePosixPath(value)
     parts = value.split("/")
     if (
