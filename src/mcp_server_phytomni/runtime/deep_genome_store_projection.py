@@ -373,6 +373,57 @@ def public_snapshot_to_canonical_result(
     )
     artifacts = _public_artifacts(existing_result)
     output_dirs = _public_output_dirs(existing_result)
+    execution = _execution_for_public_snapshot(
+        snapshot,
+        task_id=task_id,
+        public_status=public_status,
+        existing=existing,
+        artifacts=artifacts,
+        output_dirs=output_dirs,
+    )
+    metadata = _public_metadata(existing_result)
+    metadata["deep_genome"] = _snapshot_metadata(snapshot)
+    answer, references = _bind_snapshot_citations(snapshot, existing_result)
+    formatted = apply_compatibility_projection(
+        FormattedToolResult(
+            answer=answer,
+            follow_up_questions=_existing_follow_up_questions(existing_result),
+            metadata=metadata,
+            references=references,
+            tabular=_existing_tabular(existing_result),
+            output_dirs=tuple(output_dirs),
+        ),
+        execution,
+    )
+    return _json_compatible(
+        {"formatted": asdict(formatted), "execution": asdict(execution)}
+    )
+
+
+def _bind_snapshot_citations(
+    snapshot: Mapping[str, Any],
+    existing_result: Mapping[str, Any] | None,
+) -> tuple[str, tuple[Mapping[str, Any], ...]]:
+    """Bind report superscripts to stored references when both exist."""
+    report = _best_report(snapshot)
+    corpus = _existing_references(existing_result)
+    if report and corpus:
+        bound_answer, bound_refs = normalize_citations(report, corpus)
+        if bound_refs:
+            return bound_answer, bound_refs
+    return report, corpus
+
+
+def _execution_for_public_snapshot(
+    snapshot: Mapping[str, Any],
+    *,
+    task_id: str,
+    public_status: str,
+    existing: ExecutionProjection,
+    artifacts: tuple[Mapping[str, Any], ...],
+    output_dirs: tuple[str, ...],
+) -> ExecutionProjection:
+    """Build execution warnings and the public task descriptor."""
     warnings = list(existing.warnings)
     diagnostics = list(existing.diagnostics)
     degraded = bool(snapshot.get("degraded"))
@@ -402,8 +453,7 @@ def public_snapshot_to_canonical_result(
             diagnostics,
             {"code": failure_code, "stage": "reconcile"},
         )
-
-    execution = ExecutionProjection(
+    return ExecutionProjection(
         tracking={
             "degraded": degraded
             or public_status != "succeeded"
@@ -425,32 +475,6 @@ def public_snapshot_to_canonical_result(
             source_artifact_count=len(artifacts),
         ),
         diagnostics=tuple(diagnostics),
-    )
-    metadata = _public_metadata(existing_result)
-    metadata["deep_genome"] = _snapshot_metadata(snapshot)
-    report = _best_report(snapshot)
-    corpus = _existing_references(existing_result)
-    if report and corpus:
-        bound_answer, bound_refs = normalize_citations(report, corpus)
-        if bound_refs:
-            answer, references = bound_answer, bound_refs
-        else:
-            answer, references = report, corpus
-    else:
-        answer, references = report, corpus
-    formatted = apply_compatibility_projection(
-        FormattedToolResult(
-            answer=answer,
-            follow_up_questions=_existing_follow_up_questions(existing_result),
-            metadata=metadata,
-            references=references,
-            tabular=_existing_tabular(existing_result),
-            output_dirs=tuple(output_dirs),
-        ),
-        execution,
-    )
-    return _json_compatible(
-        {"formatted": asdict(formatted), "execution": asdict(execution)}
     )
 
 

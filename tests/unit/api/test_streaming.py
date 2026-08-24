@@ -22,6 +22,7 @@ from tests.support.http_fakes import (
 from mcp_server_phytomni.api import streaming
 from mcp_server_phytomni.api.lifecycle_contract import SafeApiError
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
+from mcp_server_phytomni.api.streaming import _prepare_context_stream
 from mcp_server_phytomni.mcp.result_formatting import (
     AguiEvent,
     run_error,
@@ -208,7 +209,7 @@ async def test_prepare_context_stream_emits_typed_rebuild_required(
     )
 
     with pytest.raises(SafeApiError) as caught:
-        await streaming._prepare_context_stream(
+        await _prepare_context_stream(
             tool_name="ChatAgent",
             _arguments={},
             payload=payload,
