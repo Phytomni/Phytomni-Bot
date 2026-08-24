@@ -29,6 +29,8 @@ from mcp_server_phytomni.runtime.terminal_artifacts import (
     TerminalArtifactSet,
     collect_terminal_artifact_set,
     collect_terminal_artifacts,
+    repair_unescaped_json_string_controls,
+    sanitize_artifact_relpath,
 )
 from mcp_server_phytomni.storage.artifact_listing import ListedArtifactObject
 
@@ -614,3 +616,99 @@ async def test_manifest_rejects_duplicate_keys_and_oversize_body(
         task_id="task-1", output_dir="owner/out", lister=huge_listed
     )
     assert huge_result.warnings[0].code == "artifact_manifest_invalid"
+
+
+def test_repair_replaces_controls_only_inside_json_strings() -> None:
+    """Pretty-printed JSON may wrap; only in-string LF/TAB/CR become '_'."""
+    raw = '{\n  "path": "smoc/gene;::chr:start-end(\n).png"\n}'
+    repaired = repair_unescaped_json_string_controls(raw)
+    assert "\n  " in repaired
+    assert "start-end(_).png" in repaired
+    assert "start-end(\n).png" not in repaired
+
+
+def test_sanitize_artifact_relpath_replaces_controls() -> None:
+    """ZIP and manifest matching use one control-free relative path."""
+    dirty = "smoc/gene;::chr:start-end(\n).png"
+    assert (
+        sanitize_artifact_relpath(dirty) == "smoc/gene;::chr:start-end(_).png"
+    )
+
+
+@pytest.mark.asyncio
+async def test_manifest_salvages_unescaped_newline_in_path(
+    tmp_path,
+) -> None:
+    """Producer JSON with a raw LF inside path still classifies the figure."""
+    relative = "smoc/Zm00001eb355530;::chr:start-end(\n).png"
+    safe_relative = "smoc/Zm00001eb355530;::chr:start-end(_).png"
+    payload = (
+        '{\n  "version": "1.0",\n  "artifacts": [\n    {\n'
+        '      "path": "smoc/Zm00001eb355530;::chr:start-end(\n).png",\n'
+        '      "role": "scientific_figure",\n'
+        '      "media_type": "image/png"\n    }\n  ]\n}\n'
+    )
+    manifest_path = tmp_path / ".phytomni-artifacts.json"
+    manifest_path.write_text(payload, encoding="utf-8")
+    original_ref = "/obs/phytomni/run/" + relative
+
+    async def listed(_output_dir: str) -> list[ListedArtifactObject]:
+        return [
+            ListedArtifactObject(
+                relative_path=".phytomni-artifacts.json",
+                source_path=str(manifest_path),
+                size_bytes=manifest_path.stat().st_size,
+                download_ref="/obs/phytomni/run/.phytomni-artifacts.json",
+            ),
+            ListedArtifactObject(
+                relative_path=relative,
+                source_path="/private/obsfs/" + relative,
+                size_bytes=12,
+                download_ref=original_ref,
+            ),
+        ]
+
+    result = await collect_terminal_artifacts(
+        task_id="task-1", output_dir="owner/out", lister=listed
+    )
+    figure = next(
+        item
+        for item in result.artifacts
+        if item.role is ArtifactRole.SCIENTIFIC_FIGURE
+    )
+    assert figure.relative_path == safe_relative
+    assert figure.download_ref == original_ref
+    assert not any(
+        warning.code == "artifact_manifest_invalid"
+        for warning in result.warnings
+    )
+
+
+@pytest.mark.asyncio
+async def test_truncated_manifest_stays_invalid(tmp_path) -> None:
+    """Salvage must not accept truncated JSON."""
+    manifest_path = tmp_path / ".phytomni-artifacts.json"
+    manifest_path.write_text(
+        '{"version":"1.0","artifacts":[', encoding="utf-8"
+    )
+
+    async def listed(_output_dir: str) -> list[ListedArtifactObject]:
+        return [
+            ListedArtifactObject(
+                relative_path=".phytomni-artifacts.json",
+                source_path=str(manifest_path),
+                size_bytes=manifest_path.stat().st_size,
+                download_ref="/obs/phytomni/run/.phytomni-artifacts.json",
+            ),
+            _listed_object("report.md"),
+        ]
+
+    result = await collect_terminal_artifacts(
+        task_id="task-1", output_dir="owner/out", lister=listed
+    )
+    assert result.warnings[0].code == "artifact_manifest_invalid"
+    assert all(
+        item.role is ArtifactRole.UNKNOWN
+        for item in result.artifacts
+        if item.relative_path != ".phytomni-artifacts.json"
+    )

@@ -47,6 +47,8 @@ __all__ = [
     "collect_terminal_artifact_set",
     "collect_terminal_artifacts",
     "enumerate_artifact_paths",
+    "repair_unescaped_json_string_controls",
+    "sanitize_artifact_relpath",
 ]
 
 _SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
@@ -57,6 +59,8 @@ _INVALID_MANIFEST: Mapping[str, Any] = {
     "version": "invalid",
     "artifacts": [],
 }
+_JSON_STRING_CONTROLS = frozenset({0x09, 0x0A, 0x0D})
+_PATH_REPLACEMENT = "_"
 
 
 ArtifactLister = Callable[[str], Awaitable[list[str]]]
@@ -187,6 +191,7 @@ async def collect_terminal_artifact_set(
                 key=lambda item: item.relative_path,
             )
         )
+        listed = tuple(_sanitize_listed_object(item) for item in listed)
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
         logger.warning(
             "structured artifact listing failed for task %s (%s)",
@@ -309,6 +314,77 @@ def collect_terminal_artifacts(
     return _collect_legacy_artifacts(task_results or ())
 
 
+def repair_unescaped_json_string_controls(text: str) -> str:
+    """Replace unescaped TAB/LF/CR inside JSON strings with '_'."""
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    for char in text:
+        if not in_string:
+            if char == '"':
+                in_string = True
+            out.append(char)
+            continue
+        if escaped:
+            out.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            out.append(char)
+            continue
+        if char == '"':
+            in_string = False
+            out.append(char)
+            continue
+        if ord(char) in _JSON_STRING_CONTROLS:
+            out.append(_PATH_REPLACEMENT)
+            continue
+        out.append(char)
+    return "".join(out)
+
+
+def sanitize_artifact_relpath(value: str) -> str:
+    """Replace C0 controls and DEL so ZIP names and matching stay POSIX."""
+    return "".join(
+        _PATH_REPLACEMENT if ord(char) < 32 or ord(char) == 127 else char
+        for char in value
+    )
+
+
+def _sanitize_listed_object(
+    item: ListedArtifactObject,
+) -> ListedArtifactObject:
+    """Keep OBS keys; normalize only the classification relative path."""
+    safe_relative = sanitize_artifact_relpath(item.relative_path)
+    if safe_relative == item.relative_path:
+        return item
+    return ListedArtifactObject(
+        relative_path=safe_relative,
+        source_path=item.source_path,
+        size_bytes=item.size_bytes,
+        download_ref=item.download_ref,
+    )
+
+
+def _payload_with_sanitized_paths(payload: Any) -> Any:
+    """Rewrite manifest paths before Pydantic rejects control characters."""
+    if not isinstance(payload, dict):
+        return payload
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, list):
+        return payload
+    rewritten = []
+    for item in artifacts:
+        if isinstance(item, dict) and isinstance(item.get("path"), str):
+            item = {
+                **item,
+                "path": sanitize_artifact_relpath(item["path"]),
+            }
+        rewritten.append(item)
+    return {**payload, "artifacts": rewritten}
+
+
 async def _load_manifest_from_objects(
     output_dir: str,
     listed: Iterable[ListedArtifactObject],
@@ -329,11 +405,17 @@ async def _load_manifest_from_objects(
     content = await _read_manifest_bytes(output_dir, manifest_object)
     if len(content) > _MAX_MANIFEST_BYTES:
         raise ValueError("artifact manifest exceeds size cap")
-    payload = json.loads(
-        content.decode("utf-8"),
-        object_pairs_hook=_unique_json_object,
+    decoded = content.decode("utf-8")
+    try:
+        payload = json.loads(decoded, object_pairs_hook=_unique_json_object)
+    except json.JSONDecodeError:
+        payload = json.loads(
+            repair_unescaped_json_string_controls(decoded),
+            object_pairs_hook=_unique_json_object,
+        )
+    return ArtifactManifest.model_validate(
+        _payload_with_sanitized_paths(payload)
     )
-    return ArtifactManifest.model_validate(payload)
 
 
 async def _read_manifest_bytes(
