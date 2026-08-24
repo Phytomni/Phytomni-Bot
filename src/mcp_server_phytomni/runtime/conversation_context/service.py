@@ -489,11 +489,10 @@ class ConversationContextService:
             and turn.state == "in_progress"
         ):
             return False
-        if turn.state == "committed" and self._matches_duplicate(
-            turn, envelope
-        ):
-            return False
-        return True
+        return not (
+            turn.state == "committed"
+            and self._matches_duplicate(turn, envelope)
+        )
 
     def _project_existing_turn(
         self,

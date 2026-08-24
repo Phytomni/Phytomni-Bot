@@ -562,9 +562,9 @@ def _raise_group_errors(group: _ReportArtifactGroup) -> bool:
     codes = {warning.code for warning in group.artifact_set.warnings}
     if "artifact_listing_failed" in codes:
         raise ResultArchiveError("artifact_listing_failed", retryable=True)
-    if {"artifact_manifest_missing", "artifact_manifest_invalid"} & codes:
-        return True
-    return False
+    return bool(
+        {"artifact_manifest_missing", "artifact_manifest_invalid"} & codes
+    )
 
 
 def _excluded_artifact(relative_path: str, role: ArtifactRole) -> bool:
