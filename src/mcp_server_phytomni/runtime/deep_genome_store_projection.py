@@ -371,15 +371,13 @@ def public_snapshot_to_canonical_result(
     existing = build_execution_projection(
         "DeepGenomeAgent", existing_result or {}
     )
-    artifacts = _public_artifacts(existing_result)
     output_dirs = _public_output_dirs(existing_result)
     execution = _execution_for_public_snapshot(
         snapshot,
         task_id=task_id,
         public_status=public_status,
         existing=existing,
-        artifacts=artifacts,
-        output_dirs=output_dirs,
+        existing_result=existing_result,
     )
     metadata = _public_metadata(existing_result)
     metadata["deep_genome"] = _snapshot_metadata(snapshot)
@@ -420,10 +418,11 @@ def _execution_for_public_snapshot(
     task_id: str,
     public_status: str,
     existing: ExecutionProjection,
-    artifacts: tuple[Mapping[str, Any], ...],
-    output_dirs: tuple[str, ...],
+    existing_result: Mapping[str, Any] | None,
 ) -> ExecutionProjection:
     """Build execution warnings and the public task descriptor."""
+    artifacts = _public_artifacts(existing_result)
+    output_dirs = _public_output_dirs(existing_result)
     warnings = list(existing.warnings)
     diagnostics = list(existing.diagnostics)
     degraded = bool(snapshot.get("degraded"))
