@@ -39,6 +39,15 @@ _CITATION_PATTERN = re.compile(
 _CITATION_BLOCK_PATTERN = re.compile(
     rf"{_CITATION_TOKEN_PATTERN}" rf"(?:[ \t]*{_CITATION_TOKEN_PATTERN})*"
 )
+_SUP_INNER_PATTERN = r"\d+(?:\s*-\s*\d+)?(?:\s*,\s*\d+(?:\s*-\s*\d+)?)*"
+_SUP_PATTERN = re.compile(
+    rf"<sup(?:\s[^>]*)?>({_SUP_INNER_PATTERN})</sup>",
+    re.IGNORECASE,
+)
+_CITATION_OR_SUP_PATTERN = re.compile(
+    rf"(?:{_CITATION_BLOCK_PATTERN.pattern})|(?:{_SUP_PATTERN.pattern})",
+    re.IGNORECASE,
+)
 _ANNOTATION_MARKER_PATTERN = re.compile(
     r"[ \t]*\[annotation(?:\s+data)?(?::[^\]]*)?\]",
     re.IGNORECASE,
@@ -164,17 +173,27 @@ def _normalize_citations_detailed(
         seen_keys[doc_key] = new_ref
         old_to_new[old_index] = new_ref
 
-    def replace_citation_block(match: re.Match[str]) -> str:
+    def replace_citation_or_superscript(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if token.lower().startswith("<sup"):
+            source_numbers = numbers_from_compact(match.group(1) or "")
+        else:
+            source_numbers = [
+                old_index
+                for citation in _CITATION_PATTERN.finditer(token)
+                for old_index in numbers_from_match(citation)
+            ]
         new_numbers = [
             old_to_new[old_index]
-            for citation in _CITATION_PATTERN.finditer(match.group(0))
-            for old_index in numbers_from_match(citation)
+            for old_index in source_numbers
             if old_index in old_to_new
         ]
         compacted = compact_citation_numbers(new_numbers)
         return f"<sup>{compacted}</sup>" if compacted else ""
 
-    rewritten = _CITATION_BLOCK_PATTERN.sub(replace_citation_block, answer)
+    rewritten = _CITATION_OR_SUP_PATTERN.sub(
+        replace_citation_or_superscript, answer
+    )
     return _CitationNormalization(
         answer=_ANNOTATION_MARKER_PATTERN.sub("", rewritten),
         references=tuple(selected_docs),
@@ -184,13 +203,20 @@ def _normalize_citations_detailed(
 
 def citation_order_for(answer: str) -> tuple[int, ...]:
     """Return cited document indices in first-appearance order."""
-    seen_indices: set[int] = set()
-    ordered_indices: list[int] = []
+    events: list[tuple[int, int]] = []
     for match in _CITATION_PATTERN.finditer(answer):
         for number in numbers_from_match(match):
-            if number not in seen_indices:
-                seen_indices.add(number)
-                ordered_indices.append(number)
+            events.append((match.start(), number))
+    for match in _SUP_PATTERN.finditer(answer):
+        for number in numbers_from_compact(match.group(1)):
+            events.append((match.start(), number))
+    events.sort(key=lambda item: item[0])
+    seen_indices: set[int] = set()
+    ordered_indices: list[int] = []
+    for _, number in events:
+        if number not in seen_indices:
+            seen_indices.add(number)
+            ordered_indices.append(number)
     return tuple(ordered_indices)
 
 
@@ -200,6 +226,32 @@ def numbers_from_match(match: re.Match[str]) -> tuple[int, ...]:
     for raw_number in re.findall(r"\d+", match.group(1)):
         try:
             numbers.append(int(raw_number))
+        except ValueError:
+            continue
+    return tuple(numbers)
+
+
+def numbers_from_compact(inner: str) -> tuple[int, ...]:
+    """Return indices encoded in a client ``<sup>1-3,5</sup>`` body."""
+    numbers: list[int] = []
+    for raw_part in inner.split(","):
+        part = raw_part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            ends = [piece.strip() for piece in part.split("-", 1)]
+            if len(ends) != 2:
+                continue
+            try:
+                start = int(ends[0])
+                end = int(ends[1])
+            except ValueError:
+                continue
+            low, high = (start, end) if start <= end else (end, start)
+            numbers.extend(range(low, high + 1))
+            continue
+        try:
+            numbers.append(int(part))
         except ValueError:
             continue
     return tuple(numbers)

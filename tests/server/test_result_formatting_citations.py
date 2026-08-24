@@ -27,6 +27,119 @@ from mcp_server_phytomni.mcp.result_formatting import (
 pytestmark = pytest.mark.server
 
 
+def test_normalize_citations_binds_existing_superscripts() -> None:
+    """Client-form ``<sup>N</sup>`` markers still select retrieved docs.
+
+    Knowledge/Review/BriefGene answers sometimes already carry the
+    client superscript form (the model skips ``[document:N]``). The
+    formatter must still fill ``references`` instead of leaving an
+    empty list beside live superscripts.
+    """
+
+    answer = (
+        "Leaf fall is adaptive <sup>1</sup>. "
+        "Photoperiod matters <sup>2,3</sup>."
+    )
+    doc_list = [
+        {"file_id": "a", "title": "Paper A"},
+        {"file_id": "b", "title": "Paper B"},
+        {"file_id": "c", "title": "Paper C"},
+    ]
+    text, refs = _normalize_citations(answer, doc_list)
+
+    assert [ref["file_id"] for ref in refs] == ["a", "b", "c"]
+    assert text == (
+        "Leaf fall is adaptive <sup>1</sup>. "
+        "Photoperiod matters <sup>2,3</sup>."
+    )
+
+
+def test_normalize_citations_remaps_superscript_subset() -> None:
+    """A report that cites only later documents is renumbered from 1."""
+
+    text, refs = _normalize_citations(
+        "Only the second source <sup>2</sup>.",
+        [
+            {"file_id": "a", "title": "Paper A"},
+            {"file_id": "b", "title": "Paper B"},
+        ],
+    )
+
+    assert [ref["file_id"] for ref in refs] == ["b"]
+    assert text == "Only the second source <sup>1</sup>."
+
+
+def test_normalize_citations_mixes_document_markers_and_superscripts() -> None:
+    """Internal ``[document:N]`` and client ``<sup>`` share one numbering."""
+
+    text, refs = _normalize_citations(
+        "First [document:2] then already-client <sup>1</sup>.",
+        [
+            {"file_id": "a", "title": "Paper A"},
+            {"file_id": "b", "title": "Paper B"},
+        ],
+    )
+
+    assert [ref["file_id"] for ref in refs] == ["b", "a"]
+    assert text == "First <sup>1</sup> then already-client <sup>2</sup>."
+
+
+def test_format_cited_message_binds_superscripts_into_references() -> None:
+    """The Knowledge/Review/BriefGene envelope carries bound references."""
+
+    result = format_tool_result(
+        "KnowledgeAgent",
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Claim <sup>1</sup>.",
+                        "doc_list": [{"file_id": "p1", "title": "Paper 1"}],
+                    }
+                }
+            ]
+        },
+    )
+
+    assert result.answer == "Claim <sup>1</sup>."
+    assert result.references[0]["file_id"] == "p1"
+
+
+def test_deep_genome_cited_payload_uses_shared_citation_formatter() -> None:
+    """DeepGenome report payloads share Knowledge citation binding."""
+
+    result = format_tool_result(
+        "DeepGenomeAgent",
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Os01g0177400 is drought-linked <sup>1</sup>.",
+                        "doc_list": [{"file_id": "p1", "title": "Rice paper"}],
+                    }
+                }
+            ]
+        },
+    )
+
+    assert result.answer == "Os01g0177400 is drought-linked <sup>1</sup>."
+    assert result.references[0]["title"] == "Rice paper"
+
+
+def test_deep_genome_submit_envelope_still_uses_task_formatter() -> None:
+    """Submit envelopes stay on the task-created path."""
+
+    result = format_tool_result(
+        "DeepGenomeAgent",
+        {"task_id": "dg-1", "output_dir": "/obs/out"},
+        arguments={"gene_id": "Os01g0177400", "species_code": "osa"},
+    )
+
+    assert result.answer == "Task created successfully:dg-1"
+    assert result.references == ()
+    assert result.metadata["task_id"] == "dg-1"
+
+
 def test_normalize_citations_captures_colon_space_digit() -> None:
     """Today's regex misses ``[document: 32]`` (colon + space + digit).
 
@@ -677,7 +790,7 @@ def test_is_cited_tool() -> None:
     assert is_cited_tool("ReviewAgent")
     assert is_cited_tool("BriefGeneAgent")
     assert is_cited_tool("KnowledgeAgents")
-    assert not is_cited_tool("DeepGenomeAgent")
+    assert is_cited_tool("DeepGenomeAgent")
     assert not is_cited_tool("ChatAgent")
 
 
