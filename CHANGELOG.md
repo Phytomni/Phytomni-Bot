@@ -60,6 +60,9 @@ package version remains `0.1.3` until the release bump.
   Fewer than 4 fails; more than 10 are capped. Assembly follows the
   actual count instead of padding empty slots to four. No figures.
   Citation delivery is unchanged.
+- **Upload concurrency** — One owner may keep four in-flight
+  resumable-upload sessions (`MAX_ACTIVE_ASSETS`, was 3). The
+  advertised `file_upload.limits.max_active_assets` matches.
 
 ### Removed
 

@@ -506,10 +506,10 @@ def test_registry_rejects_nonwritable_purpose(tmp_path: Path) -> None:
 def test_owner_and_quota_limits_fail_closed(tmp_path: Path) -> None:
     """Active and unfinished reservations cannot exceed configured limits."""
     registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
-    for index in range(3):
+    for index in range(4):
         registry.create_or_replay(_spec(key=f"key-{index}"), now=NOW)
     with pytest.raises(UploadStateError, match="upload_limit_exceeded"):
-        registry.create_or_replay(_spec(key="key-4"), now=NOW)
+        registry.create_or_replay(_spec(key="key-5"), now=NOW)
 
 
 def test_part_retry_conflict_and_authoritative_completion(
@@ -825,7 +825,7 @@ def test_create_reclaims_due_owner_rows_before_quota_checks(
     registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
     old_assets = [
         registry.create_or_replay(_spec(key=f"old-{index}"), now=NOW)[0]
-        for index in range(3)
+        for index in range(4)
     ]
 
     created, _secret = registry.create_or_replay(
@@ -842,6 +842,7 @@ def test_create_reclaims_due_owner_rows_before_quota_checks(
         "expired",
         "expired",
         "expired",
+        "expired",
     ]
     with sqlite3.connect(registry.db_path) as conn:
         event_count, accepted_bytes = conn.execute(
@@ -849,8 +850,8 @@ def test_create_reclaims_due_owner_rows_before_quota_checks(
             "WHERE owner_subject = ? AND event_kind = 'create'",
             ("owner-1",),
         ).fetchone()
-    assert event_count == 4
-    assert accepted_bytes == 12
+    assert event_count == 5
+    assert accepted_bytes == 15
 
 
 def test_activated_zero_part_rows_keep_slots_until_normal_ttl(
@@ -858,7 +859,7 @@ def test_activated_zero_part_rows_keep_slots_until_normal_ttl(
 ) -> None:
     """Takeover preserves active reservations until the normal deadline."""
     registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
-    for index in range(3):
+    for index in range(4):
         asset, secret = registry.create_or_replay(
             _spec(key=f"active-{index}"), now=NOW
         )
@@ -872,7 +873,7 @@ def test_activated_zero_part_rows_keep_slots_until_normal_ttl(
     _assert_state_error(
         "upload_limit_exceeded",
         lambda: registry.create_or_replay(
-            _spec(key="fourth"), now=NOW + timedelta(minutes=181)
+            _spec(key="fifth"), now=NOW + timedelta(minutes=181)
         ),
     )
 

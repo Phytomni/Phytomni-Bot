@@ -42,7 +42,7 @@
     "max_file_bytes": 10737418240,
     "part_size_bytes": 134217728,
     "max_parallel_parts": 4,
-    "max_active_assets": 3,
+    "max_active_assets": 4,
     "capability_ttl_seconds": 900,
     "session_ttl_seconds": 604800
   }

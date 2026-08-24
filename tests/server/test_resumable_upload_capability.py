@@ -105,7 +105,7 @@ def test_file_upload_capability_is_sanitized_and_fresh() -> None:
         "max_file_bytes": MAX_UPLOAD_BYTES,
         "part_size_bytes": 128 * 1024**2,
         "max_parallel_parts": 4,
-        "max_active_assets": 3,
+        "max_active_assets": 4,
         "capability_ttl_seconds": 900,
         "session_ttl_seconds": 7 * 24 * 60 * 60,
     }

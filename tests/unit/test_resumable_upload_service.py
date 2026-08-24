@@ -555,11 +555,11 @@ def test_abort_releases_local_quota_before_provider_cleanup(
     storage = _FailingMultipartStorage(fail_abort_calls=1)
     service, _storage = _service(tmp_path, storage=storage)
     created = [
-        service.create(_request(key=f"create-{index}")) for index in range(3)
+        service.create(_request(key=f"create-{index}")) for index in range(4)
     ]
 
     status = service.abort(created[0].asset_id, created[0].capability)
-    admitted = service.create(_request(key="create-4"))
+    admitted = service.create(_request(key="create-5"))
 
     assert status.status == "aborted"
     assert admitted.status == "uploading"

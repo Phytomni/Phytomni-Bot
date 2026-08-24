@@ -3,7 +3,7 @@
   "fixture_version": "2026-08-15",
   "files": {
     "abort_response.json": "61af084446e79e0900f4ae1db9529af32ff47f2732690f6f73689d419692c962",
-    "capability.json": "b8317dab6e3dafa3c35324e5f12e31c50823e6a8eed07011c4a0eb14e61a91cf",
+    "capability.json": "27295000a3055d39e330479bfb459bcfbfe089dcd4e1519810e7d1884f81dbf8",
     "complete_request.json": "658b1c38bd53a42e9761dc6945520de111e454d2fd284ae0b7ce0510bf35ec1c",
     "complete_response.json": "e4822579cf5f4feabc027e2544416b2d3985616ca99f9db559d0b845edad13df",
     "create_request.json": "b89c5c7edc6eab45c2e66dcbb2ec6ac88c0c6bc594aa4df3367e0b9c891172eb",
