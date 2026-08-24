@@ -114,7 +114,9 @@ def test_deep_genome_cited_payload_uses_shared_citation_formatter() -> None:
             "choices": [
                 {
                     "message": {
-                        "content": "Os01g0177400 is drought-linked <sup>1</sup>.",
+                        "content": (
+                            "Os01g0177400 is drought-linked <sup>1</sup>."
+                        ),
                         "doc_list": [{"file_id": "p1", "title": "Rice paper"}],
                     }
                 }

@@ -477,7 +477,7 @@ class ConversationContextService:
     def _should_reopen_existing_turn(
         self, turn: StoredTurn, envelope: ConversationEnvelopeV1
     ) -> bool:
-        """Allow replace/rebuild to supersede a finished turn on the same id."""
+        """Allow replace/rebuild to supersede a finished same-id turn."""
         if envelope.operation not in {"replace", "rebuild"}:
             return False
         if turn.state == "staged":
