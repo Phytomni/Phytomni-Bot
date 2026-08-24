@@ -24,6 +24,7 @@ from ..contracts.deep_genome import (
     DEEP_GENOME_REPORT_FIELDS,
     sanitize_nonnegative_int,
 )
+from ..mcp.formatting.cited import normalize_citations
 from ..mcp.formatting.execution import (
     PUBLIC_ARTIFACT_KEYS,
     apply_compatibility_projection,
@@ -427,12 +428,22 @@ def public_snapshot_to_canonical_result(
     )
     metadata = _public_metadata(existing_result)
     metadata["deep_genome"] = _snapshot_metadata(snapshot)
+    report = _best_report(snapshot)
+    corpus = _existing_references(existing_result)
+    if report and corpus:
+        bound_answer, bound_refs = normalize_citations(report, corpus)
+        if bound_refs:
+            answer, references = bound_answer, bound_refs
+        else:
+            answer, references = report, corpus
+    else:
+        answer, references = report, corpus
     formatted = apply_compatibility_projection(
         FormattedToolResult(
-            answer=_best_report(snapshot),
+            answer=answer,
             follow_up_questions=_existing_follow_up_questions(existing_result),
             metadata=metadata,
-            references=_existing_references(existing_result),
+            references=references,
             tabular=_existing_tabular(existing_result),
             output_dirs=tuple(output_dirs),
         ),

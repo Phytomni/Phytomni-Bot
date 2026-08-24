@@ -252,6 +252,47 @@ def test_deep_genome_snapshot_uses_canonical_split() -> None:
     assert "artifacts" not in result
 
 
+def test_deep_genome_snapshot_binds_superscript_citations() -> None:
+    """Assembled DeepGenome reports reuse the cited superscript binder."""
+    snapshot = DeepGenomeSnapshot(
+        umbrella_task_id="dg-cited",
+        status="succeeded",
+        degraded=False,
+        degraded_reason=None,
+        failures=(),
+        report_revision=1,
+        report_updated_at="2026-07-25T00:00:00Z",
+        progress={
+            "planning_complete": True,
+            "brief_gene_status": "succeeded",
+            "total": 12,
+            "completed": 12,
+        },
+        intermediate_report="",
+        final_report="Os01g0177400 is drought-linked <sup>2</sup>.\n",
+        report_stage="final",
+        report_completeness="complete",
+    )
+    result = snapshot_to_canonical_result(
+        snapshot,
+        existing_result={
+            "formatted": {
+                "references": [
+                    {"file_id": "a", "title": "Paper A"},
+                    {"file_id": "b", "title": "Paper B"},
+                ]
+            }
+        },
+    )
+
+    assert result["formatted"]["answer"] == (
+        "Os01g0177400 is drought-linked <sup>1</sup>.\n"
+    )
+    assert [item["file_id"] for item in result["formatted"]["references"]] == [
+        "b"
+    ]
+
+
 def test_stream_settlement_keeps_execution_and_strips_raw() -> None:
     """Pre-open stream failures use the same sibling execution block."""
     result = failed_stream_result()
