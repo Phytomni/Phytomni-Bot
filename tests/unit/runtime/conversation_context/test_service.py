@@ -370,9 +370,7 @@ async def test_replace_on_committed_append_same_turn_requires_rebuild(
     assert first.stage is not None
     await service.acknowledge_settlement(_envelope(), "b" * 64)
 
-    assert (
-        await service.inspect_replay(_envelope(operation="replace")) is None
-    )
+    assert await service.inspect_replay(_envelope(operation="replace")) is None
     prepared = await service.prepare_turn(_envelope(operation="replace"))
     assert prepared.status is PrepareStatus.REBUILD_REQUIRED
     begun = store.begin_turn(str(_CONVERSATION_KEY), "1", "replace", 0)
