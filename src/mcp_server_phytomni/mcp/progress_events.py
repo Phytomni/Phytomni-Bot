@@ -17,6 +17,9 @@ from typing import Final, Literal, TypedDict
 
 from langgraph.config import get_stream_writer
 
+from ..runtime.execution_event_sink import emit_execution_event, event_intent
+from ..runtime.execution_instrumentation_v2 import advance_execution_todo
+
 PROGRESS_KIND: Final = "phyto.progress"
 
 
@@ -66,6 +69,28 @@ def emit_progress(
         "total": total,
         "detail": detail,
     }
+    if total is not None and total >= 1 and current >= 0:
+        emit_execution_event(
+            event_intent(
+                "phase.progress",
+                status="running",
+                payload={
+                    "phase": phase,
+                    "completed": current,
+                    "total": total,
+                },
+            )
+        )
+        advance_execution_todo(phase, completed=current >= total)
+    elif current == 0:
+        emit_execution_event(
+            event_intent(
+                "phase.started",
+                status="running",
+                payload={"phase": phase, "label_key": f"phase.{phase}"},
+            )
+        )
+        advance_execution_todo(phase, completed=False)
     try:
         writer = get_stream_writer()
     except RuntimeError:

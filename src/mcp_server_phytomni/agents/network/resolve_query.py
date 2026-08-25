@@ -46,6 +46,7 @@ __all__ = [
     "GeneNetworkResolveError",
     "GeneNetworkResolveResult",
     "GeneNetworkToIdCandidate",
+    "resolve_network_route_hint",
     "resolve_network_user_query",
 ]
 
@@ -53,6 +54,11 @@ _RESOLVER_SYSTEM_PROMPT_PATH = "system/gene_network_resolve_to_id"
 _RESOLVER_USER_PROMPT_PATH = "user/gene_network_resolve_to_id"
 _BARE_TO_ID_PATTERN = re.compile(r"TO:\d{7}")
 _BARE_TO_ID_DEFAULT_SPECIES = "osa"
+_NETWORK_INTENT_PATTERN = re.compile(
+    r"\b(?:gene\s+network|regulatory\s+network|network)\b"
+    r"|(?:基因网络|网络分析|调控网络|激素(?:调控)?网络)",
+    re.IGNORECASE,
+)
 
 
 class GeneNetworkResolveError(ValueError):
@@ -153,6 +159,40 @@ def _resolve_bare_to_id(
     )
 
 
+def resolve_network_route_hint(
+    raw_query: str,
+) -> GeneNetworkResolveResult | None:
+    """Resolve one unambiguous embedded TO id for Expert fallback routing.
+
+    This deliberately narrow, offline hint belongs to the Network domain:
+    it requires one catalog-valid TO id and explicit network/regulatory/trait
+    intent. It does not replace the LLM resolver for general free-form trait
+    queries and returns ``None`` rather than guessing on invalid or multiple
+    ids.
+    """
+    if not raw_query or not raw_query.strip():
+        return None
+    matches = _BARE_TO_ID_PATTERN.findall(raw_query)
+    if len(matches) != 1 or _NETWORK_INTENT_PATTERN.search(raw_query) is None:
+        return None
+    to_id = matches[0]
+    if to_id not in {entry.id for entry in load_to_ontology()}:
+        return None
+    _warn_if_deprecated(to_id, raw_query)
+    return GeneNetworkResolveResult(
+        to_id=to_id,
+        species_code=_BARE_TO_ID_DEFAULT_SPECIES,
+        raw_query=raw_query,
+        candidates=[
+            GeneNetworkToIdCandidate(
+                to_id=to_id,
+                confidence=1.0,
+                species_code=_BARE_TO_ID_DEFAULT_SPECIES,
+            )
+        ],
+    )
+
+
 async def resolve_network_user_query(
     raw_query: str,
     *,
@@ -194,6 +234,9 @@ async def resolve_network_user_query(
     bare_to_id = _resolve_bare_to_id(raw_query, valid_to_ids)
     if bare_to_id is not None:
         return bare_to_id
+    route_hint = resolve_network_route_hint(raw_query)
+    if route_hint is not None:
+        return route_hint
 
     rendered_user_query = get_prompt(
         network_config.PROMPT_FILE,
@@ -230,8 +273,7 @@ async def resolve_network_user_query(
     species_code = normalize_species_code(payload.get("species_code"), "")
     if not species_code:
         raise GeneNetworkResolveError(
-            "species_code could not be determined from query: "
-            f"'{raw_query}'"
+            f"species_code could not be determined from query: '{raw_query}'"
         )
 
     warn_if_unsupported_species(_LOGGER, species_code, raw_query)

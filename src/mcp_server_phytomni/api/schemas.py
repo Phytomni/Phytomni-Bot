@@ -76,6 +76,9 @@ class ChatStreamCall(TypedDict):
     user_query: str
     conversation_messages: NotRequired[Sequence[Mapping[str, str]]]
     private_agent_state: NotRequired[Mapping[str, Any] | None]
+    execution_id: NotRequired[str | None]
+    runtime_run_id: NotRequired[str]
+    runtime_prepared_events: NotRequired[Any]
 
 
 class ApiErrorDetail(BaseModel):

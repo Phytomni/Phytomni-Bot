@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -55,6 +56,8 @@ from .store import (
     StoredBusinessContext,
     StoredTurn,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 for _service_type in (
     AsyncAcceptanceError,
@@ -643,9 +646,20 @@ class ConversationContextService:
             )
             context = prepared.context
             rebuilt = prepared.context.version == 0
-            selection, route_source = await select_agent_for_turn(
-                self, envelope, context
-            )
+            try:
+                selection, route_source = await select_agent_for_turn(
+                    self, envelope, context
+                )
+            except BaseException:
+                try:
+                    self.store.discard_unstarted_turn(key, envelope.turn_id)
+                except (sqlite3.Error, OSError) as exc:
+                    _LOGGER.warning(
+                        "conversation routing claim release degraded: "
+                        "error=%s",
+                        exc.__class__.__name__,
+                    )
+                raise
             if selection.selected_agent_id not in envelope.allowed_agent_ids:
                 self.store.mark_turn_failed(key, envelope.turn_id)
                 raise ValueError(

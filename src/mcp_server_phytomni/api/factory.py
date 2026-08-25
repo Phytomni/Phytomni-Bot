@@ -42,13 +42,18 @@ from ..runtime.conversation_context.adapters import (
 from ..runtime.conversation_context.store import (
     ConversationContextStore,
 )
+from ..runtime.execution_entrypoint_v2 import (
+    bind_routed_reservation_identity,
+)
+from ..runtime.execution_runtime_contracts import ExecutionCommand
 from ..runtime.memory import (
     MemorySchemaError,
     MemoryStore,
     MemoryWrite,
     memory_policy_from_config,
 )
-from ..runtime.run_registry import RunFilter, RunRegistry, RunRequestInfo
+from ..runtime.request_context import request_context
+from ..runtime.run_registry import RunFilter, RunRegistry
 from . import agent_runs as _agent_runs
 from . import app_support, run_lifecycle
 from . import stage_errors as _stage_errors
@@ -83,6 +88,7 @@ from .research_input import (
 from .routes import admin as admin_routes
 from .routes import agents as agent_routes
 from .routes import conversation_context as conversation_context_routes
+from .routes import executions_v2 as execution_v2_routes
 from .routes import memory as memory_routes
 from .routes import runs as run_routes
 from .schemas import (
@@ -342,6 +348,9 @@ class _RouteAdapters:
         conversation_messages = options.pop("conversation_messages", ())
         agent_thread_id = options.pop("agent_thread_id", None)
         private_agent_state = options.pop("private_agent_state", None)
+        execution_id = options.pop("execution_id", None)
+        transport = options.pop("transport", None)
+        db_path = options.pop("db_path", None)
         if options:
             raise TypeError(
                 "unexpected tool invocation options: "
@@ -353,6 +362,9 @@ class _RouteAdapters:
             conversation_messages=conversation_messages,
             agent_thread_id=agent_thread_id,
             private_agent_state=private_agent_state,
+            execution_id=execution_id,
+            transport=transport,
+            db_path=db_path,
         )
 
     async def invoke_agent_run(
@@ -371,21 +383,48 @@ class _RouteAdapters:
         research_attachment_bundle = options.pop(
             "research_attachment_bundle", None
         )
-        if research_http_input is not None:
-            if not isinstance(research_http_input, ResearchHttpAdmissionInput):
-                raise TypeError("invalid Research HTTP admission input")
-            return await _agent_runs.invoke_research_http_run(
-                research_http_input,
-                research_attachment_bundle,
-                config=_api_config(),
-                db_path=_tasks_db_path(),
-                runtime_options=_agent_runs.ResearchHttpRuntimeOptions(
-                    allow_uninstalled=not self.research_input_runtime_required
-                ),
-            )
-        response_body, status_code = await _app_attr("_invoke_agent_run")(
-            agent=agent, arguments=arguments, **options
+        execution_id = options.get("execution_id")
+        owner = _app_attr("current_request_user")() or "anonymous"
+        selected_command = ExecutionCommand(
+            agent_slug=agent,
+            arguments=arguments,
         )
+        with bind_routed_reservation_identity(
+            db_path=_tasks_db_path(),
+            owner=owner,
+            execution_id=(
+                execution_id
+                if isinstance(execution_id, str) and execution_id
+                else ""
+            ),
+            command=selected_command,
+        ):
+            if research_http_input is not None:
+                if not isinstance(
+                    research_http_input, ResearchHttpAdmissionInput
+                ):
+                    raise TypeError("invalid Research HTTP admission input")
+                return await _agent_runs.invoke_research_http_run_via_runtime(
+                    research_http_input,
+                    research_attachment_bundle,
+                    arguments=arguments,
+                    config=_api_config(),
+                    db_path=_tasks_db_path(),
+                    execution_id=(
+                        execution_id
+                        if isinstance(execution_id, str) and execution_id
+                        else None
+                    ),
+                    transport="authenticated_http",
+                    runtime_options=_agent_runs.ResearchHttpRuntimeOptions(
+                        allow_uninstalled=(
+                            not self.research_input_runtime_required
+                        )
+                    ),
+                )
+            response_body, status_code = await _app_attr("_invoke_agent_run")(
+                agent=agent, arguments=arguments, **options
+            )
         return canonicalize_agent_run_body(response_body), status_code
 
     async def expert_query(
@@ -395,6 +434,7 @@ class _RouteAdapters:
         debug: bool,
         attachment_input: Any | None = None,
         idempotency_key: str | None = None,
+        execution_id: str | None = None,
     ) -> tuple[dict[str, Any], int]:
         """Route an Expert query through the app-level seam."""
         response_body, status_code = await _app_attr("_route_expert_query")(
@@ -402,6 +442,7 @@ class _RouteAdapters:
             debug=debug,
             attachment_input=attachment_input,
             idempotency_key=idempotency_key,
+            execution_id=execution_id,
             research_runtime_options=_agent_runs.ResearchHttpRuntimeOptions(
                 allow_uninstalled=not self.research_input_runtime_required
             ),
@@ -422,6 +463,7 @@ class _RouteAdapters:
         arguments: Mapping[str, object],
         user_query: str,
         attachment_evidence: Any | None = None,
+        execution_id: str | None = None,
     ) -> Response:
         """Stream a Review completion through the app-level seam."""
         return await _app_attr("_review_chat_completion_response")(
@@ -429,6 +471,7 @@ class _RouteAdapters:
             arguments=arguments,
             user_query=user_query,
             attachment_evidence=attachment_evidence,
+            execution_id=execution_id,
         )
 
     async def resolve_chat_query(
@@ -470,22 +513,6 @@ class _RouteAdapters:
             timeout_seconds=timeout_seconds,
         )
 
-    def record_sync_run(
-        self,
-        *,
-        agent: str,
-        owner: str,
-        result: dict[str, Any],
-        request_info: RunRequestInfo | None = None,
-    ) -> str | None:
-        """Record a synchronous run through the app-level seam."""
-        return _app_attr("_record_sync_run")(
-            agent=agent,
-            owner=owner,
-            result=result,
-            request_info=request_info,
-        )
-
 
 def _build_base_app() -> FastAPI:
     """Create the FastAPI object and install request context middleware."""
@@ -524,6 +551,9 @@ def _build_agent_dependencies(
             remote_agent_slugs=_app_attr("_REMOTE_AGENT_SLUGS"),
             legacy_aliases=_app_attr("_LEGACY_ALIASES"),
             serialize_capability=_app_attr("serialize_agent_capability"),
+            serialize_execution_runtime=_app_attr(
+                "serialize_execution_runtime_capability"
+            ),
         ),
         chat=agent_routes.AgentChatDependencies(
             input=agent_routes.AgentChatInputDependencies(
@@ -539,7 +569,6 @@ def _build_agent_dependencies(
                 review_chat_completion=adapters.review_chat_completion,
             ),
             projection=agent_routes.AgentChatProjectionDependencies(
-                record_sync_run=adapters.record_sync_run,
                 current_user=_app_attr("current_request_user"),
                 to_chat_completion=to_chat_completion,
                 strip_chat_completion=_app_attr("strip_chat_completion"),
@@ -695,6 +724,24 @@ def _register_run_routes(
     adapters: _RouteAdapters,
 ) -> None:
     """Register owner-scoped run history and pause/resume routes."""
+
+    async def resume_execution_v2(
+        *, owner: str, record: Any, action: Any
+    ) -> Any:
+        payload = A2uiActionRequest(
+            surface_id=action.surface_id,
+            widget=action.widget,
+            action_id=action.action_id,
+            run_id=record.run_id,
+            payload=action.payload,
+        )
+        with request_context(owner, action.action_id):
+            return await adapters.resume_a2ui(
+                run_id=record.run_id,
+                body=payload,
+                debug=False,
+            )
+
     run_routes.register_run_routes(
         app,
         run_routes.RunRouteDependencies(
@@ -721,6 +768,14 @@ def _register_run_routes(
                 resume_a2ui=adapters.resume_a2ui,
                 resume_review=adapters.resume_review,
             ),
+        ),
+    )
+    execution_v2_routes.register_execution_v2_routes(
+        app,
+        execution_v2_routes.ExecutionV2RouteDependencies(
+            require_service=require_service_principal,
+            tasks_db_path=_tasks_db_path,
+            resume_execution=resume_execution_v2,
         ),
     )
 
@@ -826,6 +881,7 @@ def build_app(
     agent_dependencies = _build_agent_dependencies(
         runtime, adapters, context_executor
     )
+    app.state.agent_route_dependencies = agent_dependencies
     _register_interop_route(app, runtime, scope)
     _register_health_routes(app)
     agent_routes.register_model_route(app, agent_dependencies)

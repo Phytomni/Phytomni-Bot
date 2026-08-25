@@ -494,12 +494,15 @@ def canonicalize_run_record(
     if run_id is None:
         raise LifecycleInvariantError(SafeErrorCode.ROUTING_CONTRACT_VIOLATION)
     source = {**dict(record), "id": run_id, "run_id": run_id}
+    if source.get("status") == "waiting_input":
+        source["status"] = "input_required"
     if record.get("status") == "running" and record.get("result") is None:
         source["result"] = empty_agent_result(
             degraded=record.get("degraded_tracking") is True
         )
     canonical = canonicalize_agent_run_body(source)
     projected = _project_scalar_fields(record, _PUBLIC_RUN_HISTORY_FIELDS)
+    projected["status"] = canonical["status"]
     if record.get("agent") == "research":
         stage, failure = project_research_lifecycle(
             record.get("status"), record.get("stage"), record.get("failure")
@@ -747,11 +750,23 @@ def _canonicalize_result_projection(
     """Lift partial terminal results into the safe canonical projection."""
     canonical = empty_agent_result(degraded=degraded_tracking)
     formatted = result.get("formatted")
+    if not isinstance(formatted, Mapping) and isinstance(
+        result.get("answer"), str
+    ):
+        formatted = {
+            "answer": result.get("answer"),
+            "follow_up_questions": result.get("follow_up_questions", ()),
+            "metadata": result.get("metadata", {}),
+        }
     merged_formatted = _project_formatted(
         formatted if isinstance(formatted, Mapping) else {},
         canonical["formatted"],
     )
     execution = result.get("execution")
+    if not isinstance(execution, Mapping) and isinstance(
+        result.get("artifacts"), list
+    ):
+        execution = {"artifacts": result.get("artifacts")}
     merged_execution = _project_execution(
         execution if isinstance(execution, Mapping) else {},
         canonical["execution"],

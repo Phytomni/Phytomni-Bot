@@ -39,6 +39,9 @@ from ...runtime.deep_genome_store import (
     DeepGenomeTrackingError,
     DeepGenomeTransitionError,
 )
+from ...runtime.execution_instrumentation_v2 import (
+    schedule_public_agent_child_work,
+)
 from ...runtime.langgraph_runner import (
     ainvoke_graph,
     ensure_checkpointer,
@@ -558,9 +561,8 @@ class DeepGenomeAgents(
         derives a placeholder ``output_dir`` under
         ``deep_genome_config.DEEPGENOME_OUT``, binds the run id, then spawns
         the LangGraph
-        workflow on the running event loop via
-        ``asyncio.create_task`` (best-effort: a process exit before
-        terminal loses the workflow), and returns the submit envelope
+        workflow through the shared Runtime scheduling boundary (durably
+        registered when V2 context is active), and returns the submit envelope
         so the caller can poll the umbrella row through
         ``GetTaskStatus`` / ``GET /v1/runs/{id}``.
 
@@ -676,15 +678,20 @@ class DeepGenomeAgents(
     ) -> None:
         """Launch and register a coordinator after its reservation commits."""
         bind_pre_recorded_task_id(launch.reservation.umbrella_task_id)
-        workflow_coroutine = ainvoke_graph(
-            self.app,
-            launch.initial_state,
-            thread_id=launch.thread_id,
-        )
         try:
-            workflow_task = asyncio.create_task(workflow_coroutine)
+            workflow_task = schedule_public_agent_child_work(
+                work_unit_id=launch.reservation.umbrella_task_id,
+                operation_key="deep_genome.workflow",
+                driver="hybrid",
+                call=lambda: ainvoke_graph(
+                    self.app,
+                    launch.initial_state,
+                    thread_id=launch.thread_id,
+                ),
+                join_policy="best_effort",
+                max_attempts=3,
+            )
         except Exception as exc:
-            workflow_coroutine.close()
             try:
                 launch.store.compensate_launch_failure(launch.reservation)
             except (sqlite3.Error, OSError) as compensation_error:

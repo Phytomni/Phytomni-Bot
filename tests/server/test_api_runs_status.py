@@ -4,10 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for ``GET /v1/runs/{run_id}`` owner-scoped run status.
 
-Covers terminal cache replay (no reconcile_task call), owner isolation
-(unknown id and foreign-owned id both collapse to a 404 envelope), and
-non-terminal reconciliation: the route polls each child task once and
-settles the run as terminal when all children are success-like.
+Covers terminal cache replay, owner isolation (unknown id and foreign-owned
+id both collapse to a 404 envelope), and pure-read projection of non-terminal
+runs without provider polling or mutation.
 """
 
 from __future__ import annotations
@@ -41,9 +40,6 @@ from mcp_server_phytomni.mcp.formatting.models import (
     ResultDelivery,
 )
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
-from mcp_server_phytomni.runtime import (
-    run_registry_reports as run_registry_reports_module,
-)
 from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.execution_defaults import (
     empty_execution_projection,
@@ -63,7 +59,6 @@ from mcp_server_phytomni.runtime.task_manager import (
     Submission,
     TaskManager,
 )
-from mcp_server_phytomni.runtime.terminal_artifacts import TerminalArtifactSet
 
 pytestmark = pytest.mark.server
 
@@ -474,7 +469,7 @@ async def test_get_run_preserves_request_and_task_identity(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Polling keeps the exact request, run, and task correlation."""
+    """A pure read keeps the exact request, run, and task correlation."""
     run_id = "run-analyst-correlation"
     task_id = "task-analyst-correlation"
     seed_remote_run_with_task(
@@ -505,36 +500,33 @@ async def test_get_nonterminal_run_does_not_hang_through_send(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    outbound_runtime: Any,
 ) -> None:
-    """A running child must not hang GET /v1/runs via live send.
-
-    ``api_client`` restores ``httpx.AsyncClient.request`` for ASGI.
-    Outbound ``BoundAsyncRequestClient`` talks through ``send``.
-    Swapping the trusted profile onto a default HTTPX client
-    reproduces the old hang: ``task_status`` would open a real
-    socket. The offline send guard must fail that path quickly.
-    """
+    """A running child is returned by a pure read without provider polling."""
     run_id = "run-nonterminal-send"
     seed_remote_run_with_task(
         tasks_db_path,
         remote_analyst_seed(run_id, "task-nonterminal-send", "running"),
     )
-    live_client = httpx.AsyncClient()
-    original = outbound_runtime.runtime.http.trusted
-    outbound_runtime.runtime.http.trusted = live_client
-    try:
-        with pytest.raises(RuntimeError, match="HTTP requests are disabled"):
-            await asyncio.wait_for(
-                api_client.get(
-                    f"/v1/runs/{run_id}",
-                    headers={"Authorization": f"Bearer {issued_api_key}"},
-                ),
-                timeout=2.0,
-            )
-    finally:
-        outbound_runtime.runtime.http.trusted = original
-        await live_client.aclose()
+    registry = RunRegistry(tasks_db_path)
+    before = registry.get_run(run_id, owner="u1")
+    assert before is not None
+
+    response = await asyncio.wait_for(
+        api_client.get(
+            f"/v1/runs/{run_id}",
+            headers={"Authorization": f"Bearer {issued_api_key}"},
+        ),
+        timeout=2.0,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "running"
+    assert body["task_ids"] == ["task-nonterminal-send"]
+    after = registry.get_run(run_id, owner="u1")
+    assert after is not None
+    assert after.status == before.status == "running"
+    assert after.revision == before.revision
 
 
 async def test_get_run_does_not_fuzzy_match_task_metadata(
@@ -627,12 +619,12 @@ async def test_get_zero_child_live_background_run_remains_running(
         deregister_live_task(run_id)
 
 
-async def test_get_zero_child_orphan_background_run_settles_safe_failure(
+async def test_get_zero_child_orphan_background_run_is_a_pure_read(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
-    """A missing detached worker becomes a generic terminal failure."""
+    """A GET never settles a missing worker outside the supervisor."""
     run_id = "run-orphan-background"
     registry = RunRegistry(tasks_db_path)
     registry.reserve_run(
@@ -662,25 +654,25 @@ async def test_get_zero_child_orphan_background_run_settles_safe_failure(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "failed"
-    assert body["error"] == "run failed"
+    assert body["status"] == "running"
     assert body["query"] == "safe public query"
     record = registry.get_run(run_id, owner="u1")
     assert record is not None
-    assert record.error == "background_submission_worker_lost"
+    assert record.status == "running"
+    assert record.error == "error-sentinel: /private/input.fa"
     assert "query-sentinel" not in response.text
     assert "/private/input.fa" not in response.text
     assert "Bearer sentinel" not in response.text
     assert "error-sentinel" not in response.text
 
 
-async def test_get_run_reconciles_non_terminal_to_terminal(
+async def test_get_run_does_not_reconcile_non_terminal_children(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A running run polls its children once and settles as succeeded."""
+    """A running GET projects state without executing supervisor work."""
     registry = RunRegistry(tasks_db_path)
     ctx = RunContext(
         run_id="run-r-1",
@@ -708,27 +700,18 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
         )
     )
 
-    output_dirs = {"t-1": "/obs/x", "t-2": "/obs/y"}
+    reconciled: list[str] = []
 
     async def fake(task_id: str) -> dict[str, Any]:
         """Return a terminal success for every child task with output_dir."""
+        reconciled.append(task_id)
         return {
             "task_id": task_id,
             "status": "succeeded",
-            "output_dir": output_dirs[task_id],
+            "output_dir": "/obs/unused",
         }
 
     monkeypatch.setattr(run_registry_module, "reconcile_task", fake)
-
-    async def fake_collect(**_kwargs: Any) -> TerminalArtifactSet:
-        """Return no artifacts without touching OBS at the HTTP layer."""
-        return TerminalArtifactSet(artifacts=(), warnings=())
-
-    monkeypatch.setattr(
-        run_registry_reports_module,
-        "collect_terminal_artifact_set",
-        fake_collect,
-    )
 
     response = await api_client.get(
         "/v1/runs/run-r-1",
@@ -736,51 +719,13 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "succeeded"
+    assert body["status"] == "running"
     assert body["origin"] == "remote"
     assert sorted(body["task_ids"]) == ["t-1", "t-2"]
-    assert body["expires_at"] is not None
-    # The public terminal projection keeps accepted work identity but never
-    # leaks the registry's live task rows or tenant artifact paths.
-    execution = body["result"]["execution"]
-    assert execution["tasks"] == [
-        {"id": "t-1", "accepted": True, "status": "succeeded"},
-        {"id": "t-2", "accepted": True, "status": "succeeded"},
-    ]
-    assert execution["artifacts"] == []
-    assert "task_results" not in body["result"]
-    assert "live_status" not in body["result"]
-    # Successful execution without scientific artifacts has no report text;
-    # report failure belongs in operational metadata and warnings only.
-    assert body["result"]["formatted"]["answer"] == ""
-    assert execution["report"] == {
-        "state": "degraded",
-        "degraded": True,
-        "source_artifact_count": 0,
-    }
-    assert execution["tracking"]["degraded"] is True
-    assert execution["warnings"] == [
-        {
-            "code": "report_no_scientific_text",
-            "retryable": False,
-            "stage": "terminal_report",
-        }
-    ]
-    assert body["result"]["formatted"]["metadata"]["report"] == (
-        execution["report"]
-    )
-    assert body["answer"] == ""
-    assert "error" not in body
-
-    registry = RunRegistry(tasks_db_path)
-    persisted = registry.get_run("run-r-1", owner="u1")
-    assert persisted is not None and persisted.result is not None
-    assert persisted.status == "succeeded"
-    assert persisted.error is None
-    assert persisted.result["formatted"]["answer"] == ""
-    for field in ("report", "warnings", "tasks", "artifacts", "tracking"):
-        assert persisted.result["execution"][field] == execution[field]
-    assert registry.get_run("run-r-1", owner="other-owner") is None
+    assert reconciled == []
+    record = registry.get_run("run-r-1", owner="u1")
+    assert record is not None
+    assert record.status == "running"
 
 
 async def test_get_deep_genome_run_refreshes_intermediate_snapshot(

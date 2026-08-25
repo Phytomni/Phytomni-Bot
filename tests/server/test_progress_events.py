@@ -14,6 +14,9 @@ from mcp_server_phytomni.mcp.progress_events import (
     ProgressEvent,
     emit_progress,
 )
+from mcp_server_phytomni.runtime.execution_event_sink import (
+    bind_execution_event_sink,
+)
 
 pytestmark = pytest.mark.server
 
@@ -110,3 +113,32 @@ def test_progress_event_preserves_protocol_projection_inputs() -> None:
         "current": 3,
         "total": 8,
     }
+
+
+def test_emit_progress_also_adapts_to_context_bound_canonical_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    intents: list[Any] = []
+
+    class Sink:
+        def emit(self, intent: Any) -> None:
+            intents.append(intent)
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.mcp.progress_events.get_stream_writer",
+        lambda: lambda _event: None,
+    )
+    with bind_execution_event_sink(Sink()):
+        emit_progress(
+            "retrieving",
+            3,
+            total=8,
+            detail="private provider detail",
+        )
+
+    assert [intent.kind for intent in intents] == ["phase.progress"]
+    assert intents[0].payload.phase == "retrieving"
+    assert intents[0].payload.completed == 3
+    assert "private provider detail" not in repr(
+        intents[0].model_dump(mode="json")
+    )

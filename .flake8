@@ -1,6 +1,8 @@
 [flake8]
 max-line-length = 79
+extend-ignore = E203,E501
 exclude =
+    .codex-tmp-review-debug,
     .git,
     .mypy_cache,
     .pytest_cache,

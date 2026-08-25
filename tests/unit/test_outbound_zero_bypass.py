@@ -296,6 +296,104 @@ _EXPECTED_LOCAL_SQLITE_CALLS: Counter[_CallSite] = Counter(
             "MemoryStore.__init__",
             "sqlite3.connect",
         ): 1,
+        (
+            "mcp_server_phytomni/api/routes/executions_v2.py",
+            "_project_reservation_diagnostics",
+            "sqlite3.connect",
+        ): 1,
+    }
+)
+
+_EXPECTED_EXECUTION_V2_SQLITE_METHODS: dict[str, tuple[str, ...]] = {
+    "execution_command_dispatcher_v2.py": (
+        "SQLiteExecutionCommandQueueV2._settle",
+        "SQLiteExecutionCommandQueueV2._settle_reconcile",
+        "SQLiteExecutionCommandQueueV2.claim",
+        "SQLiteExecutionCommandQueueV2.claim_reconcile",
+        "SQLiteExecutionCommandQueueV2.redispatch_reconcile",
+        "SQLiteExecutionCommandQueueV2.release_failed_turn_and_redispatch",
+    ),
+    "execution_command_reconciler_v2.py": (
+        "_mark_reconcile_degraded",
+        "read_reconcile_evidence",
+    ),
+    "execution_event_store.py": (
+        "SQLiteExecutionEventStore._init_db",
+        "SQLiteExecutionEventStore.append",
+        "SQLiteExecutionEventStore.get_event",
+        "SQLiteExecutionEventStore.get_projection",
+        "SQLiteExecutionEventStore.list_events",
+    ),
+    "execution_journal_store_v2.py": (
+        "SQLiteExecutionJournal._init_db",
+        "SQLiteExecutionJournal.append",
+        "SQLiteExecutionJournal.append_provider_trace_batch",
+        "SQLiteExecutionJournal.get_event",
+        "SQLiteExecutionJournal.get_projection",
+        "SQLiteExecutionJournal.list_events",
+        "SQLiteExecutionJournal.tombstone_execution",
+    ),
+    "execution_log_artifact_v2.py": (
+        "SQLiteExecutionLogArtifactStore._init_db",
+        "SQLiteExecutionLogArtifactStore.get",
+        "SQLiteExecutionLogArtifactStore.put",
+    ),
+    "execution_reservation_v2.py": (
+        "SQLiteExecutionReservationRepository.admitted_assistant_message_id",
+        "SQLiteExecutionReservationRepository.bind_routed_agent",
+        "SQLiteExecutionReservationRepository.claim_operation",
+        "SQLiteExecutionReservationRepository.claim_start",
+        "SQLiteExecutionReservationRepository.complete_operation",
+        "SQLiteExecutionReservationRepository.get",
+        "SQLiteExecutionReservationRepository.list_recoverable",
+        "SQLiteExecutionReservationRepository.mark_running",
+        "SQLiteExecutionReservationRepository.provider_join_lease_valid",
+        "SQLiteExecutionReservationRepository.record_context_stage",
+        "SQLiteExecutionReservationRepository.record_observation",
+        "SQLiteExecutionReservationRepository.reserve",
+        "SQLiteExecutionReservationRepository.settle_terminal",
+    ),
+    "execution_target_store_v2.py": (
+        "SQLiteExecutionTargetStore._init_db",
+        "SQLiteExecutionTargetStore.get",
+        "SQLiteExecutionTargetStore.put",
+    ),
+    "execution_work_store_v2.py": (
+        "SQLiteExecutionWorkRepository._list_due_work_units",
+        "SQLiteExecutionWorkRepository.bind_provider",
+        "SQLiteExecutionWorkRepository.claim_lease",
+        "SQLiteExecutionWorkRepository.claim_provider_join_lease",
+        "SQLiteExecutionWorkRepository.create_span",
+        "SQLiteExecutionWorkRepository.create_work_unit",
+        "SQLiteExecutionWorkRepository.execution_deadline_at",
+        "SQLiteExecutionWorkRepository.find_span_by_work_unit_id",
+        "SQLiteExecutionWorkRepository.find_work_unit_by_provider_task_id",
+        "SQLiteExecutionWorkRepository.get_span",
+        "SQLiteExecutionWorkRepository.get_work_unit",
+        "SQLiteExecutionWorkRepository.list_ready_provider_joins",
+        "SQLiteExecutionWorkRepository.latest_provider_contact_at",
+        "SQLiteExecutionWorkRepository.observe_provider_contact",
+        "SQLiteExecutionWorkRepository.owns_provider_join_lease",
+        "SQLiteExecutionWorkRepository.release_lease",
+        "SQLiteExecutionWorkRepository.release_provider_join_lease",
+        "SQLiteExecutionWorkRepository.renew_provider_join_lease",
+        "SQLiteExecutionWorkRepository.schedule_retry",
+        "SQLiteExecutionWorkRepository.set_cancellation_state",
+        "SQLiteExecutionWorkRepository.start_attempt",
+        "SQLiteExecutionWorkRepository.update_provider_trace_state",
+        "SQLiteExecutionWorkRepository.update_span_status",
+        "SQLiteExecutionWorkRepository.update_work_unit_status",
+    ),
+}
+_EXPECTED_LOCAL_SQLITE_CALLS.update(
+    {
+        (
+            f"mcp_server_phytomni/runtime/{filename}",
+            method,
+            "sqlite3.connect",
+        ): 1
+        for filename, methods in _EXPECTED_EXECUTION_V2_SQLITE_METHODS.items()
+        for method in methods
     }
 )
 
@@ -574,7 +672,7 @@ def _call_site(
 ) -> _CallSite:
     """Project one call to a stable source/owner/callee identity."""
     return (
-        str(path.relative_to(_SRC_ROOT)),
+        path.relative_to(_SRC_ROOT).as_posix(),
         _qualified_owner(node, parents),
         ast.unparse(node.func),
     )

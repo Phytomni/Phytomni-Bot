@@ -229,10 +229,10 @@ async def test_context_expert_chat_keeps_thread_private_to_primary_call(
             "turn_id": "2",
             "role": "assistant",
             "content": (
-                "OsDREB1A is a rice stress-response " "transcription factor."
+                "OsDREB1A is a rice stress-response transcription factor."
             ),
             "summary": (
-                "OsDREB1A is a rice stress-response " "transcription factor."
+                "OsDREB1A is a rice stress-response transcription factor."
             ),
         },
         {
@@ -381,12 +381,13 @@ async def test_context_expert_router_keeps_full_allowlist_and_async_202(
         "ROUTER_SELECTED"
     )
     assert received == allowed
+    # The active query is passed separately; router history contains only
+    # completed user/assistant exchanges and must not duplicate the turn.
     assert received_history == (
         {"role": "user", "content": "U1"},
         {"role": "assistant", "content": "A1"},
         {"role": "user", "content": "U2"},
         {"role": "assistant", "content": "A2"},
-        {"role": "user", "content": "U3"},
     )
 
 

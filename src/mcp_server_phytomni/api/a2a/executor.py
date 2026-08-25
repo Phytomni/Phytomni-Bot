@@ -604,24 +604,22 @@ class A2ARequestHandler(RequestHandler):
             status=build_task_status("submitted"),
         )
         task.history.append(params.message)
-        if self._record_a2a is not None:
-            self._record_a2a(
-                A2ARegistration(
-                    run_id=task_id,
-                    agent=self._tool_to_agent[request.tool_name],
-                    correlation=A2ACorrelation(
-                        task_id=task_id,
-                        context_id=context_id,
-                        message_id=params.message.message_id or None,
-                    ),
-                    request_info=RunRequestInfo(
-                        dialogue_id=context_id,
-                        query=_query_from_arguments(request.arguments),
-                        tool_name=request.tool_name,
-                        request_json=json_format.MessageToJson(params),
-                    ),
-                )
-            )
+        registration = A2ARegistration(
+            run_id=task_id,
+            agent=self._tool_to_agent[request.tool_name],
+            correlation=A2ACorrelation(
+                task_id=task_id,
+                context_id=context_id,
+                message_id=params.message.message_id or None,
+            ),
+            request_info=RunRequestInfo(
+                dialogue_id=context_id,
+                query=_query_from_arguments(request.arguments),
+                tool_name=request.tool_name,
+                request_json=json_format.MessageToJson(params),
+                execution_id=f"turn-a2a-{task_id}",
+            ),
+        )
         yield task
 
         projector = A2AProgressProjector(task_id, context_id)
@@ -633,18 +631,26 @@ class A2ARequestHandler(RequestHandler):
             run_id=task_id,
             dialogue_id=context_id,
         )
-        async for event in stream:
-            for update in _artifact_updates_for_event(
-                task_id, context_id, event, artifact_state
-            ):
-                yield update
-            status_events, submitted_status_skipped = (
-                _status_events_for_stream(
-                    projector.project(event), submitted_status_skipped
+        registered = False
+        try:
+            async for event in stream:
+                if not registered and self._record_a2a is not None:
+                    self._record_a2a(registration)
+                    registered = True
+                for update in _artifact_updates_for_event(
+                    task_id, context_id, event, artifact_state
+                ):
+                    yield update
+                status_events, submitted_status_skipped = (
+                    _status_events_for_stream(
+                        projector.project(event), submitted_status_skipped
+                    )
                 )
-            )
-            for status_event in status_events:
-                yield status_event
+                for status_event in status_events:
+                    yield status_event
+        finally:
+            if not registered and self._record_a2a is not None:
+                self._record_a2a(registration)
         del context
 
     async def on_create_task_push_notification_config(

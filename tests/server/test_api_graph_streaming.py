@@ -84,8 +84,10 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
 
 async def test_stream_phyto_review_emits_agui_frames(
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
     """Review graph streaming preserves stage and cited custom frames."""
+    _ = tasks_db_path
     guard_network_escape(monkeypatch)
     fake_app = FakeCitedStreamApp(
         stage_node="retrieve_reduce_node", answer="Review evidence [1]."

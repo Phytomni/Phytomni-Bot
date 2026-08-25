@@ -8,11 +8,26 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from ..agents.research.scientific_formats import advertised_research_formats
 from ..config.api_limits import ApiLimitsConfig
+from ..public_agent_catalog import EXECUTION_DRIVER_ORDER, PUBLIC_AGENT_CATALOG
 from ..runtime.attachment_assets import ResolvedAttachmentBundle
+from ..runtime.execution_event_flags import execution_event_production_enabled
+from ..runtime.execution_event_limits import (
+    DEFAULT_EXECUTION_EVENT_LIMITS,
+    EXECUTION_CONTENT_DELTA_MAX_BYTES,
+    EXECUTION_STREAM_HEARTBEAT_SECONDS,
+)
+from ..runtime.execution_events import (
+    EXECUTION_EVENTS_CAPABILITY_V1,
+    ExecutionEventsCapabilityV1,
+)
+from ..runtime.execution_journal_v2 import PublicTargetKind
+from ..runtime.execution_trace_detail import (
+    serialize_operation_record_capability,
+)
 from ..runtime.resumable_uploads import (
     CAPABILITY_TTL,
     MAX_ACTIVE_ASSETS,
@@ -27,9 +42,11 @@ __all__ = [
     "AGENT_CAPABILITIES",
     "AttachmentCapability",
     "AgentCapability",
+    "AgentWorkTraceCapabilityV1",
     "DatasetCapability",
     "DocumentContextCapability",
     "ExpertAttachmentRequirement",
+    "ExecutionEventsCapabilityV1",
     "ResearchInputResolutionDescriptor",
     "agent_has_any_attachment_channel",
     "agent_supports_attachment_channels",
@@ -43,6 +60,7 @@ __all__ = [
     "required_attachment_channels",
     "serialize_file_upload_capability",
     "serialize_agent_capability",
+    "serialize_execution_runtime_capability",
 ]
 
 
@@ -178,6 +196,40 @@ class AttachmentCapability:
         }
 
 
+WorkTraceFeatureState = Literal["supported", "degraded", "unsupported"]
+
+
+@dataclass(frozen=True)
+class AgentWorkTraceCapabilityV1:
+    """Truthful per-Agent availability of public work-trace producers."""
+
+    state: WorkTraceFeatureState = "unsupported"
+    lifecycle: WorkTraceFeatureState = "unsupported"
+    semantic_phases: WorkTraceFeatureState = "unsupported"
+    semantic_tools: WorkTraceFeatureState = "unsupported"
+    public_reasoning: WorkTraceFeatureState = "unsupported"
+    trace_target: WorkTraceFeatureState = "unsupported"
+
+    def to_public_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "major_version": 1,
+            "state": self.state,
+            "features": {
+                "lifecycle": self.lifecycle,
+                "semantic_phases": self.semantic_phases,
+                "semantic_tools": self.semantic_tools,
+                "public_reasoning": self.public_reasoning,
+                "trace_target": self.trace_target,
+            },
+        }
+        if self.trace_target == "supported":
+            payload["target"] = {"kind": "trace", "major_version": 1}
+            payload["detail_endpoint"] = (
+                "/v2/executions/{execution_id}/targets/trace/{target_id}"
+            )
+        return payload
+
+
 @dataclass(frozen=True, slots=True)
 class ExpertAttachmentRequirement:
     """Attachment facts used to constrain one Expert selection."""
@@ -196,17 +248,29 @@ class AgentCapability:
     artifacts: bool = False
     degraded_outcomes: bool = False
     attachments: AttachmentCapability = AttachmentCapability()
+    execution_events: ExecutionEventsCapabilityV1 = (
+        EXECUTION_EVENTS_CAPABILITY_V1
+    )
+    work_trace: AgentWorkTraceCapabilityV1 | None = None
 
     def to_public_dict(self) -> dict[str, Any]:
         """Serialize with JSON-compatible deterministic values."""
-        return {
+        payload = {
             "streaming": self.streaming,
             "interactive": self.interactive,
             "report_states": list(self.report_states),
             "artifacts": self.artifacts,
             "degraded_outcomes": self.degraded_outcomes,
             "attachments": self.attachments.to_public_dict(),
+            "execution_events": (
+                self.execution_events.to_public_dict()
+                if execution_event_production_enabled()
+                else {}
+            ),
         }
+        if self.work_trace is not None:
+            payload["work_trace"] = self.work_trace.to_public_dict()
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,50 +286,84 @@ class ResearchInputResolutionDescriptor:
 
 _DOCUMENTS = DocumentContextCapability()
 _DATASETS = DatasetCapability()
+_LOCAL_WORK_TRACE = AgentWorkTraceCapabilityV1(
+    state="supported",
+    lifecycle="supported",
+    semantic_phases="supported",
+    semantic_tools="supported",
+)
+_PROVIDER_WORK_TRACE = AgentWorkTraceCapabilityV1(
+    state="supported",
+    lifecycle="supported",
+    semantic_phases="supported",
+    semantic_tools="supported",
+    trace_target="supported",
+)
+_GENE_NETWORK_WORK_TRACE = AgentWorkTraceCapabilityV1(
+    state="supported",
+    lifecycle="supported",
+    semantic_phases="supported",
+    semantic_tools="supported",
+    public_reasoning="supported",
+    trace_target="supported",
+)
 
 _CAPABILITIES: dict[str, AgentCapability] = {
     "chat": AgentCapability(
         streaming=True,
         interactive=True,
         attachments=AttachmentCapability(_DOCUMENTS, None, True),
+        work_trace=_LOCAL_WORK_TRACE,
     ),
     "knowledge": AgentCapability(
         streaming=True,
         attachments=AttachmentCapability(_DOCUMENTS, None, True),
+        work_trace=_LOCAL_WORK_TRACE,
     ),
-    "data": AgentCapability(),
+    "data": AgentCapability(work_trace=_LOCAL_WORK_TRACE),
     "review": AgentCapability(
         streaming=True,
         interactive=True,
         attachments=AttachmentCapability(_DOCUMENTS, None, True),
+        work_trace=_LOCAL_WORK_TRACE,
     ),
-    "brief_gene": AgentCapability(streaming=True),
+    "brief_gene": AgentCapability(
+        streaming=True,
+        work_trace=_LOCAL_WORK_TRACE,
+    ),
     "analyst": AgentCapability(
         report_states=("final",),
         artifacts=True,
         degraded_outcomes=True,
         attachments=AttachmentCapability(_DOCUMENTS, _DATASETS, False),
+        work_trace=_PROVIDER_WORK_TRACE,
     ),
     "deep_genome": AgentCapability(
         report_states=("intermediate", "final"),
         artifacts=True,
         degraded_outcomes=True,
+        work_trace=_PROVIDER_WORK_TRACE,
     ),
     "research": AgentCapability(
         report_states=("final",),
         artifacts=True,
         degraded_outcomes=True,
         attachments=AttachmentCapability(_DOCUMENTS, _DATASETS, False),
+        work_trace=_PROVIDER_WORK_TRACE,
     ),
     "design": AgentCapability(
         report_states=("final",),
         artifacts=True,
         degraded_outcomes=True,
+        attachments=AttachmentCapability(_DOCUMENTS, None, False),
+        work_trace=_PROVIDER_WORK_TRACE,
     ),
     "network": AgentCapability(
         report_states=("final",),
         artifacts=True,
         degraded_outcomes=True,
+        attachments=AttachmentCapability(_DOCUMENTS, None, False),
+        work_trace=_GENE_NETWORK_WORK_TRACE,
     ),
 }
 
@@ -395,6 +493,42 @@ def filter_tools_for_attachment_channels(
 def serialize_agent_capability(slug: str) -> dict[str, Any]:
     """Return one JSON-compatible capability descriptor for ``slug``."""
     return get_agent_capability(slug).to_public_dict()
+
+
+def serialize_execution_runtime_capability() -> dict[str, Any]:
+    """Return the complete V2 execution-runtime negotiation descriptor."""
+    limits = DEFAULT_EXECUTION_EVENT_LIMITS
+    used_drivers = {item.driver for item in PUBLIC_AGENT_CATALOG}
+    drivers = [
+        driver for driver in EXECUTION_DRIVER_ORDER if driver in used_drivers
+    ]
+    return {
+        "execution_runtime_major": 1,
+        "execution_journal_major": 2,
+        "stable_execution_identity": True,
+        "async_message_admission": True,
+        "content_resume": True,
+        "actions": True,
+        "cancellation": True,
+        "drivers": drivers,
+        "target_kinds": [kind.value for kind in PublicTargetKind],
+        "limits": {
+            "default_event_page": limits.default_page_size,
+            "max_event_page": limits.max_page_size,
+            "max_events_per_execution": limits.max_events_per_run,
+            "max_live_backlog": limits.max_live_backlog,
+            "max_event_bytes": limits.max_event_bytes,
+            "max_content_delta_bytes": EXECUTION_CONTENT_DELTA_MAX_BYTES,
+            "max_todo_items": limits.max_todo_items,
+            "heartbeat_seconds": EXECUTION_STREAM_HEARTBEAT_SECONDS,
+        },
+        "operation_records": serialize_operation_record_capability(),
+        "compatibility": {
+            "state": "read_only",
+            "v1_read_projection": True,
+            "v1_write_authority": False,
+        },
+    }
 
 
 def build_research_input_descriptor(

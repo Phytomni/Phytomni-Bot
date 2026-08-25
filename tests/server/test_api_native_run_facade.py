@@ -32,6 +32,7 @@ def test_native_run_facade_preserves_signature_and_module_identity() -> None:
         "dialogue_id",
         "request_json",
         "attachment_evidence",
+        "execution_id",
         "debug",
     )
     assert all(
@@ -54,6 +55,7 @@ def test_native_run_facade_preserves_signature_and_module_identity() -> None:
             "attachment_evidence",
             "ManagedAttachmentEvidence | None",
         ),
+        ("execution_id", "str | None"),
         ("debug", "bool"),
         ("return", "tuple[dict[str, Any], int]"),
     )

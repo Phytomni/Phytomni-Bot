@@ -44,6 +44,13 @@ from mcp_server_phytomni.agents.shared import remote_analysis
 from mcp_server_phytomni.config.defaults import AnalystConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.mcp.formatting.dispatch import format_tool_result
+from mcp_server_phytomni.runtime.execution_journal_v2 import ExecutionStatus
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
 from mcp_server_phytomni.runtime.request_context import (
     current_accepted_task_ids,
     request_context,
@@ -80,6 +87,28 @@ _ANALYST_BUILDER = (
 )
 _ANALYST_RECORDER_AGENT = "analyst"
 _ANALYST_TOOL_NAME = "AnalystAgent"
+
+
+def _reserve_analyst_runtime(db_path: Path, run_id: str) -> None:
+    execution_id = f"turn-{run_id}"
+    reservations = SQLiteExecutionReservationRepository(
+        str(db_path), run_id_factory=lambda: run_id
+    )
+    reservations.reserve(
+        owner="anonymous",
+        execution_id=execution_id,
+        fingerprint_version=1,
+        fingerprint=f"fixture:{execution_id}",
+        command=ExecutionCommand(agent_slug="analyst", arguments={}),
+    )
+    assert reservations.record_observation(
+        owner="anonymous",
+        execution_id=execution_id,
+        status=ExecutionStatus.RUNNING,
+        tracking_health="healthy",
+        cancellation_state="unsupported",
+        next_attempt_at=None,
+    )
 
 
 @dataclass
@@ -549,8 +578,10 @@ async def test_partial_retrieval_records_once_before_final_projection(
     output_dir = str(tmp_path / consumer / "run" / "children" / "part-001")
     invoke = _build_consumer(consumer, harness.agent, output_dir, monkeypatch)
     projection = Mock(wraps=format_tool_result)
+    run_id = f"run-{consumer}-partial"
+    _reserve_analyst_runtime(tmp_path / "tasks.sqlite", run_id)
 
-    with request_context("anonymous", f"request-{consumer}-partial"):
+    with request_context("anonymous", f"request-{consumer}-partial", run_id):
         formatted = await _record_and_format_consumer(invoke, projection)
         accepted_task_ids = current_accepted_task_ids()
 

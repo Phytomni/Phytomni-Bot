@@ -13,8 +13,6 @@ bind application-specific registry, graph, and request-context seams through
 
 from __future__ import annotations
 
-import asyncio
-import inspect
 from collections.abc import (
     AsyncIterator,
     Awaitable,
@@ -68,31 +66,15 @@ from ..runtime.conversation_context.store import (
     StagedTurn,
     StoredTurn,
 )
-from ..runtime.live_tasks import (
-    clear_cancel_requested,
-    deregister_live_task,
-    is_cancel_requested,
-    register_live_task,
-)
-from ..runtime.run_registry import RunRequestInfo
 from ..runtime.task_manager import (
     resolve_tasks_db_path as _default_tasks_db_path,
 )
 from . import a2ui_runtime
-from .conversation_context_errors import (
-    conversation_context_rebuild_required_error,
-    conversation_context_turn_in_progress_error,
-)
-from .lifecycle_contract import SafeApiError, empty_agent_result
+from .lifecycle_contract import empty_agent_result
 from .openai_mapping import to_chat_completion_chunks
 from .schemas import ChatCompletionRequest, ChatStreamCall
 from .stream_answer import StreamAnswerAccumulator
-from .stream_log import (
-    RunStreamLog,
-    bind_run_stream_log,
-    iter_run_stream,
-    schedule_run_stream_log_drop,
-)
+from .stream_log import iter_run_stream
 
 
 @dataclass(frozen=True)
@@ -116,10 +98,8 @@ class StreamingA2UIDependencies:
 
 @dataclass(frozen=True)
 class StreamingPersistenceDependencies:
-    """Run-registry and answer-storage seams."""
+    """Transport-only stream limits; Runtime owns all durable state."""
 
-    create_running_stream_run: Callable[[str, str, str, RunRequestInfo], None]
-    settle_stream_run: Callable[..., bool | None]
     stream_answer_max_bytes: Callable[[], int]
 
 
@@ -136,39 +116,10 @@ class StreamingDependencies:
 class _PreparedStream:
     """State shared by the opened stream and its finalizer."""
 
-    run_id: str
-    owner: str
     agent_slug: str | None
-    expected_revision: int
     raw_events: AsyncIterator[AguiEvent]
     accumulator: StreamAnswerAccumulator
     lifecycle_state: StreamLifecycleState
-
-
-def _settle_stream_run_compat(
-    settle: Callable[..., bool | None],
-    *args: Any,
-    expected_revision: int,
-) -> bool | None:
-    """Preserve four-argument settlement injection seams."""
-    try:
-        parameters = inspect.signature(settle).parameters
-    except (TypeError, ValueError):
-        revision_parameter = None
-        accepts_var_keyword = True
-    else:
-        revision_parameter = parameters.get("expected_revision")
-        accepts_var_keyword = any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD
-            for parameter in parameters.values()
-        )
-    accepts_revision = (
-        revision_parameter is not None
-        and revision_parameter.kind is not inspect.Parameter.POSITIONAL_ONLY
-    ) or accepts_var_keyword
-    if not accepts_revision:
-        return settle(*args)
-    return settle(*args, expected_revision=expected_revision)
 
 
 @dataclass(frozen=True)
@@ -190,6 +141,8 @@ class _StreamPreparationRequest:
     dependencies: StreamingDependencies
     private_context: _PrivateStreamContext = _PrivateStreamContext()
     raw_event_factory: Callable[[str], AsyncIterator[AguiEvent]] | None = None
+    runtime_run_id: str | None = None
+    runtime_prepared_events: AsyncIterator[AguiEvent] | None = None
 
 
 @dataclass(frozen=True)
@@ -204,93 +157,6 @@ class _PreparedContextStream:
 
 
 _CONTEXT_STREAM_RESULT_KEY = "__conversation_context_stream__"
-
-
-async def _aclose_async_iterator(stream: Any) -> None:
-    """Close one async iterator when it exposes ``aclose``."""
-    closer = getattr(stream, "aclose", None)
-    if callable(closer):
-        await cast(Callable[[], Awaitable[None]], closer)()
-
-
-def _settle_unsettled_prepared_stream(
-    prepared: _PreparedStream,
-    *,
-    settle_cancelled: Callable[[], bool],
-    settle_failed: Callable[[], bool],
-) -> None:
-    """Settle a still-open stream from owner cancel or producer failure."""
-    if (
-        prepared.agent_slug is not None
-        and not prepared.lifecycle_state.durably_settled
-    ):
-        if is_cancel_requested(prepared.run_id):
-            durable_settlement_succeeded(settle_cancelled)
-        else:
-            durable_settlement_succeeded(settle_failed)
-
-
-async def _produce_detached_stream(
-    *,
-    prepared: _PreparedStream,
-    sse_lines: AsyncIterator[str],
-    log: RunStreamLog,
-    settle_cancelled: Callable[[], bool],
-    settle_failed: Callable[[], bool],
-) -> None:
-    """Consume the AG-UI producer independently of any HTTP subscriber."""
-    try:
-        async for line in sse_lines:
-            log.append(line)
-    finally:
-        try:
-            await _aclose_async_iterator(sse_lines)
-        finally:
-            await _aclose_async_iterator(prepared.raw_events)
-            _settle_unsettled_prepared_stream(
-                prepared,
-                settle_cancelled=settle_cancelled,
-                settle_failed=settle_failed,
-            )
-            log.close()
-            if prepared.run_id:
-                schedule_run_stream_log_drop(prepared.run_id)
-            deregister_live_task(prepared.run_id)
-            clear_cancel_requested(prepared.run_id)
-
-
-def _detach_stream_response(
-    prepared: _PreparedStream,
-    sse_lines: AsyncIterator[str],
-    settle_cancelled: Callable[[], bool],
-    settle_failed: Callable[[], bool],
-) -> StreamingResponse:
-    """Spawn the producer task and return a subscriber-only HTTP generator."""
-    log = RunStreamLog()
-    if prepared.run_id:
-        bind_run_stream_log(prepared.run_id, log)
-    producer = asyncio.create_task(
-        _produce_detached_stream(
-            prepared=prepared,
-            sse_lines=sse_lines,
-            log=log,
-            settle_cancelled=settle_cancelled,
-            settle_failed=settle_failed,
-        )
-    )
-    if prepared.run_id:
-        register_live_task(prepared.run_id, producer)
-
-    async def _wrapped() -> AsyncIterator[str]:
-        """Forward buffered SSE; subscriber abort does not own the run."""
-        try:
-            async for line in log.follow(0):
-                yield line
-        finally:
-            if is_cancel_requested(prepared.run_id):
-                producer.cancel()
-
-    return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
 def stream_setup_error(exc: Exception, *, priming: bool) -> HTTPException:
@@ -368,6 +234,7 @@ async def stream_chat_a2ui_confirm(
     payload: ChatCompletionRequest,
     user_query: str,
     dependencies: StreamingDependencies,
+    runtime_run_id: str,
 ) -> StreamingResponse:
     """Delegate Chat A2UI pause shaping to the domain runtime."""
     return await a2ui_runtime.stream_chat_a2ui_confirm(
@@ -375,6 +242,7 @@ async def stream_chat_a2ui_confirm(
         payload=payload,
         user_query=user_query,
         dependencies=dependencies.a2ui.runtime(),
+        runtime_run_id=runtime_run_id,
     )
 
 
@@ -384,6 +252,7 @@ async def stream_review_a2ui_pause(
     payload: ChatCompletionRequest,
     user_query: str,
     dependencies: StreamingDependencies,
+    runtime_run_id: str,
 ) -> StreamingResponse:
     """Delegate Review A2UI pause shaping to the domain runtime."""
     return await a2ui_runtime.stream_review_a2ui_pause(
@@ -391,24 +260,8 @@ async def stream_review_a2ui_pause(
         payload=payload,
         user_query=user_query,
         dependencies=dependencies.a2ui.runtime(),
+        runtime_run_id=runtime_run_id,
     )
-
-
-def _prepare_request_info(
-    *,
-    payload: ChatCompletionRequest,
-    user_query: str,
-    tool_name: str,
-) -> RunRequestInfo:
-    """Build the request metadata persisted before the first stream frame."""
-    values: dict[str, Any] = {
-        "dialogue_id": payload.dialogue_id,
-        "query": user_query,
-        "tool_name": tool_name,
-        "model": payload.model,
-        "request_json": payload.model_dump_json(),
-    }
-    return RunRequestInfo(**values)
 
 
 async def _prepare_stream(
@@ -416,13 +269,14 @@ async def _prepare_stream(
 ) -> _PreparedStream:
     """Prepare, persist, prime, and shape one ordinary stream."""
     agent_slug = request.dependencies.request.agent_slug(request.payload.model)
-    owner = request.dependencies.request.current_user() or "anonymous"
-    run_id = request.dependencies.request.new_run_id(
+    run_id = request.runtime_run_id or request.dependencies.request.new_run_id(
         "run", agent_slug or "chat"
     )
     try:
         if request.raw_event_factory is not None:
             raw_events = request.raw_event_factory(run_id)
+        elif request.runtime_prepared_events is not None:
+            raw_events = request.runtime_prepared_events
         else:
             private_kwargs: dict[str, Any] = {}
             if request.private_context.conversation_messages:
@@ -443,29 +297,9 @@ async def _prepare_stream(
     except Exception as exc:
         raise stream_setup_error(exc, priming=False) from exc
 
-    if agent_slug is not None:
-        request.dependencies.persistence.create_running_stream_run(
-            run_id,
-            agent_slug,
-            owner,
-            _prepare_request_info(
-                payload=request.payload,
-                user_query=request.user_query,
-                tool_name=request.tool_name,
-            ),
-        )
     try:
         primed = await prime_agui_stream(raw_events)
     except Exception as exc:
-        if agent_slug is not None:
-            _settle_stream_run_compat(
-                request.dependencies.persistence.settle_stream_run,
-                run_id,
-                owner,
-                "failed",
-                failed_stream_result(),
-                expected_revision=0,
-            )
         raise stream_setup_error(exc, priming=True) from exc
 
     lifecycle_state = StreamLifecycleState()
@@ -483,10 +317,7 @@ async def _prepare_stream(
         lifecycle_state=lifecycle_state,
     )
     return _PreparedStream(
-        run_id=run_id,
-        owner=owner,
         agent_slug=agent_slug,
-        expected_revision=0,
         raw_events=raw_events,
         accumulator=accumulator,
         lifecycle_state=lifecycle_state,
@@ -559,27 +390,23 @@ async def _prepare_context_stream(
             detail="instant context requires a ChatAgent model",
         )
     service = _context_service()
-    try:
-        prepared = await service.prepare_turn(envelope)
-    except ValueError as exc:
-        if envelope.operation in {"replace", "rebuild"}:
-            raise conversation_context_rebuild_required_error() from exc
-        raise
+    prepared = await service.prepare_turn(envelope)
     if prepared.status is PrepareStatus.REBUILD_REQUIRED:
-        raise conversation_context_rebuild_required_error()
+        raise HTTPException(
+            status_code=409, detail="conversation context rebuild required"
+        )
     if prepared.status is PrepareStatus.IN_PROGRESS:
-        raise conversation_context_turn_in_progress_error()
+        raise HTTPException(
+            status_code=409, detail="conversation context turn in progress"
+        )
     if prepared.status in {
         PrepareStatus.RETURN_STAGED,
         PrepareStatus.RETURN_COMMITTED,
     }:
         return None, prepared
     if prepared.context is None or prepared.stored_turn is None:
-        raise SafeApiError(
-            status_code=500,
-            code="conversation_context_failed",
-            message="conversation context failed",
-            stage="context",
+        raise HTTPException(
+            status_code=500, detail="conversation context failed"
         )
     return (
         _PreparedContextStream(
@@ -619,24 +446,6 @@ def _replay_stream_events(result: dict[str, Any]) -> list[AguiEvent]:
             )
         events.append(AguiEvent(type=event_type, data=data))
     return events
-
-
-def _replay_stream_response(prepared: Any, payload: Any) -> StreamingResponse:
-    """Return a stored conversation replay as a chat-completion stream."""
-    if prepared.result is None:
-        raise HTTPException(
-            status_code=500, detail="conversation context replay failed"
-        )
-    replay_events = _replay_stream_events(prepared.result)
-
-    async def _replayed_events() -> AsyncIterator[AguiEvent]:
-        for event in replay_events:
-            yield event
-
-    return StreamingResponse(
-        to_chat_completion_chunks(_replayed_events(), payload.model),
-        media_type="text/event-stream",
-    )
 
 
 def _record_replay_event(
@@ -798,11 +607,18 @@ async def stream_chat_completion(
         and payload.conversation is None
         and dependencies.a2ui.select_widget(user_query) is not None
     ):
+        runtime_run_id = request.get("runtime_run_id")
+        if runtime_run_id is None:
+            raise HTTPException(
+                status_code=500,
+                detail="execution runtime boundary required",
+            )
         return await stream_chat_a2ui_confirm(
             arguments=request["arguments"],
             payload=payload,
             user_query=user_query,
             dependencies=dependencies,
+            runtime_run_id=runtime_run_id,
         )
 
     context_stream, replay_prepared = await _prepare_context_stream(
@@ -811,7 +627,20 @@ async def stream_chat_completion(
         payload=payload,
     )
     if replay_prepared is not None:
-        return _replay_stream_response(replay_prepared, payload)
+        if replay_prepared.result is None:
+            raise HTTPException(
+                status_code=500, detail="conversation context replay failed"
+            )
+        replay_events = _replay_stream_events(replay_prepared.result)
+
+        async def _replayed_events() -> AsyncIterator[AguiEvent]:
+            for event in replay_events:
+                yield event
+
+        return StreamingResponse(
+            to_chat_completion_chunks(_replayed_events(), payload.model),
+            media_type="text/event-stream",
+        )
 
     try:
         prepared = await _prepare_stream(
@@ -841,6 +670,8 @@ async def stream_chat_completion(
                     if context_stream is not None
                     else None
                 ),
+                runtime_run_id=request.get("runtime_run_id"),
+                runtime_prepared_events=request.get("runtime_prepared_events"),
             )
         )
     except Exception:
@@ -850,66 +681,29 @@ async def stream_chat_completion(
 
     def _settle_terminal_success() -> bool:
         snapshot = prepared.accumulator.snapshot
-        return (
-            _settle_stream_run_compat(
-                dependencies.persistence.settle_stream_run,
-                prepared.run_id,
-                prepared.owner,
-                "succeeded",
-                {
-                    "formatted": {"answer": snapshot.answer},
-                    "execution": empty_agent_result()["execution"],
-                    "raw": None,
-                    "stream": True,
-                    "truncated": snapshot.truncated,
-                    "partial": False,
-                },
-                expected_revision=prepared.expected_revision,
-            )
-            is True
-        )
+        terminal_result = {
+            "formatted": {"answer": snapshot.answer},
+            "execution": empty_agent_result()["execution"],
+            "raw": None,
+            "stream": True,
+            "truncated": snapshot.truncated,
+            "partial": False,
+        }
+        setattr(response, "runtime_terminal_result", lambda: terminal_result)
+        return True
 
     def _settle_terminal_failure() -> bool:
         snapshot = prepared.accumulator.snapshot
-        return (
-            _settle_stream_run_compat(
-                dependencies.persistence.settle_stream_run,
-                prepared.run_id,
-                prepared.owner,
-                "failed",
-                {
-                    "formatted": {"answer": snapshot.answer},
-                    "execution": empty_agent_result()["execution"],
-                    "raw": None,
-                    "stream": True,
-                    "truncated": snapshot.truncated,
-                    "partial": True,
-                },
-                expected_revision=prepared.expected_revision,
-            )
-            is True
-        )
-
-    def _settle_terminal_cancelled() -> bool:
-        snapshot = prepared.accumulator.snapshot
-        return (
-            _settle_stream_run_compat(
-                dependencies.persistence.settle_stream_run,
-                prepared.run_id,
-                prepared.owner,
-                "cancelled",
-                {
-                    "formatted": {"answer": snapshot.answer},
-                    "execution": empty_agent_result()["execution"],
-                    "raw": None,
-                    "stream": True,
-                    "truncated": snapshot.truncated,
-                    "partial": True,
-                },
-                expected_revision=prepared.expected_revision,
-            )
-            is True
-        )
+        terminal_result = {
+            "formatted": {"answer": snapshot.answer},
+            "execution": empty_agent_result()["execution"],
+            "raw": None,
+            "stream": True,
+            "truncated": snapshot.truncated,
+            "partial": True,
+        }
+        setattr(response, "runtime_terminal_result", lambda: terminal_result)
+        return True
 
     terminal_events = project_terminal_settlement(
         prepared.accumulator,
@@ -927,12 +721,48 @@ async def stream_chat_completion(
             context_stream=context_stream,
         )
     sse_lines = to_chat_completion_chunks(terminal_events, payload.model)
-    return _detach_stream_response(
-        prepared,
-        sse_lines,
-        _settle_terminal_cancelled,
-        _settle_terminal_failure,
+
+    async def _wrapped() -> AsyncIterator[str]:
+        """Forward SSE lines and settle the run from typed lifecycle flags."""
+        try:
+            async for line in sse_lines:
+                yield line
+        finally:
+            try:
+                close_sse_lines = cast(
+                    Callable[[], Awaitable[None]] | None,
+                    getattr(sse_lines, "aclose", None),
+                )
+                if close_sse_lines is not None:
+                    await close_sse_lines()
+            finally:
+                close_raw_events = cast(
+                    Callable[[], Awaitable[None]] | None,
+                    getattr(prepared.raw_events, "aclose", None),
+                )
+                if close_raw_events is not None:
+                    await close_raw_events()
+                if (
+                    prepared.agent_slug is not None
+                    and not prepared.lifecycle_state.durably_settled
+                ):
+                    durable_settlement_succeeded(_settle_terminal_failure)
+
+    response = StreamingResponse(_wrapped(), media_type="text/event-stream")
+    setattr(response, "runtime_terminal_result", failed_stream_result)
+    setattr(
+        response,
+        "runtime_terminal_status",
+        lambda: (
+            "failed" if prepared.lifecycle_state.saw_error else "succeeded"
+        ),
     )
+    setattr(
+        response,
+        "runtime_terminal_ready",
+        lambda: prepared.lifecycle_state.durably_settled,
+    )
+    return response
 
 
 async def _project_context_stage(

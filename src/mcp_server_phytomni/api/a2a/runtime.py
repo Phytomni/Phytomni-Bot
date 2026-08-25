@@ -15,16 +15,18 @@ from __future__ import annotations
 import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ...mcp.result_formatting import strip_agent_result
+from ...runtime.checkpoint_instrumentation_v2 import (
+    record_projected_input_required,
+)
+from ...runtime.execution_instrumentation_v2 import current_execution_boundary
 from ...runtime.resume import NoCheckpointError, detect_interrupt
 from ...runtime.run_registry import (
-    RunOutcome,
     RunRecord,
     RunRegistry,
-    RunSpec,
 )
 from .. import run_lifecycle
 from .executor import A2ARegistration, task_from_run_record
@@ -121,35 +123,31 @@ def record_registration(
     *,
     dependencies: A2ARegistryDependencies,
 ) -> None:
-    """Persist A2A ids against an existing or newly-streaming run.
-
-    Blocking A2A calls already have a run row from ``_invoke_agent_run``;
-    streaming calls use the A2A task id as their run id and need a small
-    running row before the first SSE event.  Both paths converge on the same
-    owner-scoped registry and remain best-effort like the other API
-    bookkeeping helpers.
-    """
+    """Attach A2A ids to the run already reserved by Runtime."""
     owner = dependencies.current_user() or "anonymous"
     registry = dependencies.registry_factory(dependencies.tasks_db_path())
     try:
-        updated = registry.update_a2a_correlation(
+        existing = registry.get_run(registration.run_id, owner=owner)
+        request_info = registration.request_info
+        if existing is not None and request_info.execution_id is None:
+            request_info = replace(
+                request_info,
+                execution_id=existing.request_info.execution_id,
+            )
+        updated = registry.update_request_info(
+            registration.run_id,
+            owner=owner,
+            request_info=request_info,
+        ) and registry.update_a2a_correlation(
             registration.run_id,
             owner=owner,
             correlation=registration.correlation,
         )
-        if updated:
-            return
-        registry.create_run(
-            RunSpec(
-                run_id=registration.run_id,
-                user_id=owner,
-                agent=registration.agent,
-                origin="local",
-            ),
-            outcome=RunOutcome(status="running"),
-            request_info=registration.request_info,
-            a2a=registration.correlation,
-        )
+        if not updated:
+            _LOGGER.warning(
+                "A2A correlation has no Runtime reservation for %s",
+                registration.run_id,
+            )
     except (sqlite3.Error, OSError) as exc:
         _LOGGER.warning(
             "A2A run correlation write failed for %s: %s",
@@ -236,7 +234,7 @@ def _resume_context(
         return None
     if context_id != (record.a2a.context_id or ""):
         raise ValueError("A2A context_id does not match the task")
-    if record.status != "input_required":
+    if record.status not in {"input_required", "waiting_input"}:
         raise ValueError("A2A task is not awaiting input")
     stored = record.result or {}
     generation = stored.get("generation", 0)
@@ -254,6 +252,13 @@ def _resume_context(
         raise ValueError("A2A generation mismatch or expired input")
     if int(supplied_generation) != generation:
         raise ValueError("A2A generation mismatch or expired input")
+    boundary = current_execution_boundary()
+    if (
+        boundary is None
+        or boundary.context.run_id != record.spec.run_id
+        or boundary.context.execution_id != record.request_info.execution_id
+    ):
+        raise ValueError("legacy A2A execution is read-only")
     return _ResumeContext(
         owner=owner,
         record=record,
@@ -297,17 +302,13 @@ def _settle_interrupt(
             interrupt=interrupt_dict,
         )
     result["generation"] = next_generation
-    if (
-        context.registry.settle_run(
-            context.record.spec.run_id,
-            owner=context.owner,
-            status="input_required",
-            result=result,
-            expected_revision=context.record.revision,
-        )
-        is not True
+    if not context.registry.update_active_result(
+        context.record.spec.run_id,
+        owner=context.owner,
+        result=result,
     ):
         raise ValueError("A2A resume persistence conflict")
+    record_projected_input_required(result)
     body["generation"] = next_generation
     return body, 200
 
@@ -382,17 +383,6 @@ async def resume_task(
         final_state,
         dependencies=dependencies,
     )
-    if (
-        context.registry.settle_run(
-            context.record.spec.run_id,
-            owner=context.owner,
-            status="succeeded",
-            result=result,
-            expected_revision=context.record.revision,
-        )
-        is not True
-    ):
-        raise ValueError("A2A resume persistence conflict")
     return (
         run_lifecycle.agent_run_response(
             run_id=context.record.spec.run_id,

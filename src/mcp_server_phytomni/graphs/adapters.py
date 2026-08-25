@@ -17,6 +17,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
+from ..runtime.langgraph_runner import invoke_graph
+
 
 def adapter_node(
     map_in: Callable[[Mapping[str, Any]], Mapping[str, Any]],
@@ -49,7 +51,7 @@ def adapter_node(
 
     async def _adapter(state: Mapping[str, Any]) -> dict[str, Any]:
         sub_input = map_in(state)
-        sub_output = await compiled_subgraph.ainvoke(sub_input)
+        sub_output = await invoke_graph(compiled_subgraph, sub_input)
         return map_out(sub_output)
 
     return _adapter

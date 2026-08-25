@@ -28,6 +28,9 @@ from mcp_server_phytomni.runtime.artifact_roles import ArtifactRole
 from mcp_server_phytomni.runtime.execution_defaults import (
     empty_execution_projection,
 )
+from mcp_server_phytomni.runtime.execution_event_store import (
+    SQLiteExecutionEventStore,
+)
 from mcp_server_phytomni.runtime.result_archive import (
     ResultArchiveError,
     ResultArchiveInventory,
@@ -351,6 +354,18 @@ def test_automatic_attempts_are_capped_then_manual_retry_reuses_inventory(
         == inventory.digest
     )
     assert calls == 4
+    events = SQLiteExecutionEventStore(registry.db_path).list_events(
+        "run-1", owner="alice"
+    )
+    assert events is not None
+    assert [event.kind for event in events.items] == [
+        "artifact.published",
+        "run.succeeded",
+    ]
+    assert events.items[0].target is not None
+    assert events.items[0].target.kind == "download"
+    assert events.items[0].target.id.startswith("result-archive:sha256:")
+    assert "/obs/" not in repr(events.items[0].to_public_dict())
 
 
 def test_manual_retry_owner_and_ready_checks_fail_closed(

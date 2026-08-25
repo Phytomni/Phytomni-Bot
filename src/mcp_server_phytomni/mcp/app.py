@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Register and dispatch MCP schemas through domain tool handlers."""
 
+import asyncio
+import time
 from collections.abc import (
     AsyncIterator,
     Awaitable,
@@ -11,7 +13,7 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from json import dumps
 from typing import (
     Any,
@@ -36,34 +38,40 @@ from ..agents.shared.citation_enrichment import enrich_cited_doc_list
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..agents.shared.intermediate_state import merge_intermediate_state
 from ..common.logging_config import configure_logging
-from ..runtime.langgraph_runner import build_runnable_config
+from ..public_agent_catalog import PUBLIC_AGENT_CATALOG
+from ..runtime.execution_entrypoint_v2 import (
+    invoke_public_agent,
+    invoke_public_agent_stream_response,
+)
+from ..runtime.execution_event_sink import (
+    emit_execution_event,
+    event_intent,
+    set_todos,
+)
+from ..runtime.execution_identity_v2 import new_execution_id
+from ..runtime.execution_instrumentation_v2 import instrument_tool_invocation
+from ..runtime.execution_journal_v2 import ExecutionStatus
+from ..runtime.langgraph_runner import build_runnable_config, stream_graph
 from ..runtime.outbound import (
     aclose_outbound_runtime,
     init_outbound_runtime,
 )
-from ..runtime.request_context import current_request_id
+from ..runtime.request_context import current_request_id, current_request_user
 from ..runtime.resume import (
     aresume_graph,
     detect_interrupt,
     elicit_review_decision,
 )
+from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
+from . import handlers as _handlers
+from . import schemas as _schemas
 from .handler_support import (
     chat_call_kwargs,
     load_chat_runtime,
 )
 from .handlers import (
-    handle_analyst_agent,
-    handle_brief_gene_agent,
-    handle_chat_agent,
-    handle_data_agent,
-    handle_deep_genome_agent,
-    handle_digital_design_agent,
-    handle_gene_network_agent,
     handle_get_task_status,
-    handle_in_silico_research_agent,
-    handle_knowledge_agent,
-    handle_review_agent,
     reset_private_agent_state,
     reset_private_agent_thread_id,
     reset_private_conversation_messages,
@@ -92,15 +100,10 @@ from .result_formatting import (
 )
 from .schemas import (
     AGENT_TOOL_DEFINITIONS,
-    AnalystAgent,
     BriefGeneAgent,
     ChatAgent,
     DataAgent,
-    DeepGenomeAgent,
-    DigitalDesignAgent,
-    GeneNetworkAgent,
     GetTaskStatus,
-    InSilicoResearchAgent,
     KnowledgeAgent,
     PhytomniAgents,
     ReviewAgent,
@@ -116,40 +119,72 @@ from .streaming_phases import StreamRunMeta as _StreamRunMeta
 from .streaming_phases import (
     close_async_iterator as _close_async_iterator,
 )
-from .streaming_phases import iterate_owned, phase_for
+from .streaming_phases import (
+    iterate_owned,
+    phase_for,
+    todo_snapshot_for_phase,
+)
 
 ToolHandler = Callable[[Any], Awaitable[Any]]
 
 
+@dataclass(slots=True)
+class _StreamCarrier:
+    """AG-UI stream plus its typed terminal observation for Runtime."""
+
+    body_iterator: AsyncIterator[AguiEvent]
+    answer: str = ""
+    terminal_status: str | None = None
+
+    def runtime_terminal_ready(self) -> bool:
+        return self.terminal_status is not None
+
+    def runtime_terminal_status(self) -> str:
+        return self.terminal_status or "failed"
+
+    def runtime_terminal_result(self) -> dict[str, Any]:
+        return {
+            "formatted": {"answer": self.answer},
+            "stream": True,
+            "partial": self.terminal_status != "succeeded",
+        }
+
+
+def _tracked_stream_carrier(
+    raw_events: AsyncIterator[AguiEvent],
+) -> _StreamCarrier:
+    """Accumulate one MCP/A2A stream without adding another run writer."""
+    carrier = _StreamCarrier(raw_events)
+
+    async def tracked() -> AsyncIterator[AguiEvent]:
+        async for event in raw_events:
+            if event.type == "TextMessageContent":
+                content = event.data.get("delta", event.data.get("content"))
+                if isinstance(content, str):
+                    carrier.answer += content
+            elif event.type == "RunError":
+                carrier.terminal_status = "failed"
+            elif event.type == "RunFinished":
+                carrier.terminal_status = "succeeded"
+            yield event
+
+    carrier.body_iterator = tracked()
+    return carrier
+
+
 TOOL_ARGUMENT_MODELS: dict[str, type[BaseModel]] = {
-    PhytomniAgents.CHAT_AGENT.value: ChatAgent,
-    PhytomniAgents.KNOWLEDGE_AGENT.value: KnowledgeAgent,
-    PhytomniAgents.DATA_AGENT.value: DataAgent,
-    PhytomniAgents.ANALYST_AGENT.value: AnalystAgent,
-    PhytomniAgents.REVIEW_AGENT.value: ReviewAgent,
-    PhytomniAgents.BRIEF_GENE_AGENT.value: BriefGeneAgent,
-    PhytomniAgents.DEEP_GENOME_AGENT.value: DeepGenomeAgent,
-    PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value: InSilicoResearchAgent,
-    PhytomniAgents.DIGITAL_DESIGN_AGENT.value: DigitalDesignAgent,
-    PhytomniAgents.GENE_NETWORK_AGENT.value: GeneNetworkAgent,
-    PhytomniAgents.GET_TASK_STATUS.value: GetTaskStatus,
+    item.tool: cast(type[BaseModel], getattr(_schemas, item.schema))
+    for item in PUBLIC_AGENT_CATALOG
 }
+TOOL_ARGUMENT_MODELS[PhytomniAgents.GET_TASK_STATUS.value] = GetTaskStatus
+
+_PUBLIC_AGENT_BY_TOOL = {item.tool: item for item in PUBLIC_AGENT_CATALOG}
 
 TOOL_HANDLERS: dict[str, ToolHandler] = {
-    PhytomniAgents.CHAT_AGENT.value: handle_chat_agent,
-    PhytomniAgents.KNOWLEDGE_AGENT.value: handle_knowledge_agent,
-    PhytomniAgents.DATA_AGENT.value: handle_data_agent,
-    PhytomniAgents.ANALYST_AGENT.value: handle_analyst_agent,
-    PhytomniAgents.REVIEW_AGENT.value: handle_review_agent,
-    PhytomniAgents.BRIEF_GENE_AGENT.value: handle_brief_gene_agent,
-    PhytomniAgents.DEEP_GENOME_AGENT.value: handle_deep_genome_agent,
-    PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value: (
-        handle_in_silico_research_agent
-    ),
-    PhytomniAgents.DIGITAL_DESIGN_AGENT.value: handle_digital_design_agent,
-    PhytomniAgents.GENE_NETWORK_AGENT.value: handle_gene_network_agent,
-    PhytomniAgents.GET_TASK_STATUS.value: handle_get_task_status,
+    item.tool: cast(ToolHandler, getattr(_handlers, item.handler))
+    for item in PUBLIC_AGENT_CATALOG
 }
+TOOL_HANDLERS[PhytomniAgents.GET_TASK_STATUS.value] = handle_get_task_status
 
 
 def _tool_name(name: Any) -> str:
@@ -205,9 +240,15 @@ async def invoke_tool_raw(
     name: Any,
     arguments: dict[str, Any],
     *,
+    runtime_arguments: dict[str, Any] | None = None,
     conversation_messages: Sequence[Mapping[str, str]] = (),
     agent_thread_id: str | None = None,
     private_agent_state: Mapping[str, Any] | None = None,
+    execution_id: str | None = None,
+    transport: str | None = None,
+    db_path: str | None = None,
+    fingerprint_version: int = 1,
+    fingerprint: str | None = None,
 ) -> Any:
     """Validate arguments and call a tool handler, returning its payload.
 
@@ -233,12 +274,100 @@ async def invoke_tool_raw(
         McpError: If the tool is unknown or arguments fail schema validation.
     """
     tool_name = _tool_name(name)
-    args = validate_tool_arguments(tool_name, arguments)
     messages_token = set_private_conversation_messages(conversation_messages)
     thread_token = set_private_agent_thread_id(agent_thread_id)
     state_token = set_private_agent_state(private_agent_state)
+    call_id = IdFactory().new_id("tool-call")
+    started = time.perf_counter()
     try:
-        return await TOOL_HANDLERS[tool_name](args)
+
+        async def call_handler() -> Any:
+            args = validate_tool_arguments(tool_name, arguments)
+            emit_execution_event(
+                event_intent(
+                    "tool.started",
+                    status="running",
+                    payload={"tool_key": tool_name, "call_id": call_id},
+                )
+            )
+            try:
+                result = await instrument_tool_invocation(
+                    tool_name,
+                    lambda: TOOL_HANDLERS[tool_name](args),
+                )
+            except BaseException as exc:
+                duration_ms = max(
+                    0, int((time.perf_counter() - started) * 1000)
+                )
+                cancelled = isinstance(exc, asyncio.CancelledError)
+                emit_execution_event(
+                    event_intent(
+                        "tool.failed",
+                        status="cancelled" if cancelled else "failed",
+                        payload={
+                            "tool_key": tool_name,
+                            "call_id": call_id,
+                            "duration_ms": duration_ms,
+                            "code": (
+                                "tool_cancelled"
+                                if cancelled
+                                else "tool_execution_failed"
+                            ),
+                        },
+                    )
+                )
+                raise
+            duration_ms = max(0, int((time.perf_counter() - started) * 1000))
+            emit_execution_event(
+                event_intent(
+                    "tool.completed",
+                    status="succeeded",
+                    payload={
+                        "tool_key": tool_name,
+                        "call_id": call_id,
+                        "duration_ms": duration_ms,
+                    },
+                )
+            )
+            return result
+
+        spec = _PUBLIC_AGENT_BY_TOOL.get(tool_name)
+        if spec is None:
+            return await call_handler()
+        return await invoke_public_agent(
+            db_path=db_path or resolve_tasks_db_path(),
+            owner=current_request_user() or "mcp-local",
+            execution_id=(execution_id or new_execution_id()),
+            agent_slug=spec.slug,
+            arguments=(
+                runtime_arguments
+                if runtime_arguments is not None
+                else arguments
+            ),
+            transport=(
+                transport
+                or ("authenticated_http" if current_request_user() else "mcp")
+            ),
+            call=call_handler,
+            status_mapper=(
+                (lambda _value: ExecutionStatus.RUNNING)
+                if spec.lifecycle == "asynchronous"
+                else None
+            ),
+            public_result_mapper=lambda value: {
+                "result": {
+                    "formatted": asdict(
+                        format_tool_result(
+                            tool_name,
+                            value,
+                            arguments=arguments,
+                        )
+                    )
+                }
+            },
+            fingerprint_version=fingerprint_version,
+            fingerprint=fingerprint,
+        )
     finally:
         reset_private_agent_state(state_token)
         reset_private_agent_thread_id(thread_token)
@@ -278,9 +407,15 @@ async def invoke_tool_enveloped(
     name: Any,
     arguments: dict[str, Any],
     *,
+    runtime_arguments: dict[str, Any] | None = None,
     conversation_messages: Sequence[Mapping[str, str]] = (),
     agent_thread_id: str | None = None,
     private_agent_state: Mapping[str, Any] | None = None,
+    execution_id: str | None = None,
+    transport: str | None = None,
+    db_path: str | None = None,
+    fingerprint_version: int = 1,
+    fingerprint: str | None = None,
 ) -> ToolResultEnvelope:
     """Validate arguments, call a handler, and preserve raw payload.
 
@@ -308,9 +443,15 @@ async def invoke_tool_enveloped(
     raw = await invoke_tool_raw(
         name,
         arguments,
+        runtime_arguments=runtime_arguments,
         conversation_messages=conversation_messages,
         agent_thread_id=agent_thread_id,
         private_agent_state=private_agent_state,
+        execution_id=execution_id,
+        transport=transport,
+        db_path=db_path,
+        fingerprint_version=fingerprint_version,
+        fingerprint=fingerprint,
     )
     await _maybe_enrich_cited(_tool_name(name), raw)
     return build_tool_result_envelope(
@@ -446,8 +587,33 @@ def invoke_tool_streamed(
         run_id=run_id,
         dialogue_id=dialogue_id,
     )
+    tool_name = _tool_name(name)
+    spec = _PUBLIC_AGENT_BY_TOOL.get(tool_name)
+
+    async def runtime_events() -> AsyncIterator[AguiEvent]:
+        if spec is None:
+            async for event in raw_events:
+                yield event
+            return
+
+        async def carry(_runtime_run_id: str) -> _StreamCarrier:
+            return _tracked_stream_carrier(raw_events)
+
+        carrier = await invoke_public_agent_stream_response(
+            db_path=resolve_tasks_db_path(),
+            owner=current_request_user() or "mcp-local",
+            execution_id=f"turn-a2a-{run_id}",
+            agent_slug=spec.slug,
+            arguments=arguments,
+            transport="mcp_stream",
+            call=carry,
+            run_id=run_id,
+        )
+        async for event in carrier.body_iterator:
+            yield event
+
     return project_stream_failures(
-        raw_events,
+        runtime_events(),
         state=StreamLifecycleState(),
         run_id=run_id,
         request_id=current_request_id() or "unknown",
@@ -603,9 +769,13 @@ async def _stream_graph_agent(
     """
     run_id = run_meta["run_id"]
     yield run_started(run_id, run_meta["dialogue_id"])
+    declared_todos = todo_snapshot_for_phase(agent_name, None)
+    if declared_todos:
+        set_todos(declared_todos)
     seen_phases: set[str] = set()
     final_state: Mapping[str, Any] | None = None
-    graph_events = app.astream(
+    graph_events = stream_graph(
+        app,
         initial_state,
         stream_mode=["custom", "updates", "values"],
         subgraphs=True,
@@ -623,6 +793,17 @@ async def _stream_graph_agent(
                     phase = phase_for(agent_name, node_name)
                     if phase and phase not in seen_phases:
                         seen_phases.add(phase)
+                        emit_execution_event(
+                            event_intent(
+                                "phase.started",
+                                status="running",
+                                payload={
+                                    "phase": phase,
+                                    "label_key": f"phase.{phase}",
+                                },
+                            )
+                        )
+                        set_todos(todo_snapshot_for_phase(agent_name, phase))
                         yield step_started(phase)
             elif mode == "values" and ns == ():
                 final_state = chunk
@@ -630,6 +811,8 @@ async def _stream_graph_agent(
         await _close_async_iterator(graph_events)
     async for event in _terminal_graph_events(tool_name, final_state):
         yield event
+    if declared_todos:
+        set_todos(todo_snapshot_for_phase(agent_name, None, completed=True))
     yield run_finished(run_id)
 
 
@@ -707,7 +890,8 @@ async def _astream_progress_ticks(
     Yields:
         Each ``phyto.progress`` custom tick emitted by the graph.
     """
-    async for ns, mode, chunk in app.astream(
+    async for ns, mode, chunk in stream_graph(
+        app,
         initial_state,
         stream_mode=["custom", "updates", "values"],
         subgraphs=True,

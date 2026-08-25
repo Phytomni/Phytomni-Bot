@@ -15,6 +15,9 @@ import pytest
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
 from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 from tests.support.http_fakes import install_tool_handler
@@ -231,7 +234,6 @@ async def _wait_for_background_record(
 ) -> RunRecord:
     """Wait until a background resolver run reaches its expected state."""
     body = observation.response.json()
-    assert body["task_ids"] == []
     assert body["run_id"]
     registry = RunRegistry(observation.tasks_db_path)
     record: RunRecord | None = None
@@ -259,8 +261,8 @@ def _assert_background_resolver_success(
 ) -> None:
     """Assert a successful background resolver projection."""
     if observation.scenario == "resolved":
-        assert record.result is not None
-        metadata = record.result["formatted"].get("metadata") or {}
+        body = observation.response.json()
+        metadata = body["result"]["formatted"].get("metadata") or {}
         _assert_resolved_metadata(metadata, observation)
         return
     assert observation.captured["gene_id"] == (
@@ -276,9 +278,15 @@ def _assert_background_resolver_failure(
     """Assert a safely sanitized background resolver failure."""
     assert record.status == "failed"
     assert not record.task_ids
-    assert record.error == "background_submission_failed"
-    assert observation.case.expected.failure_message not in record.error
-    assert observation.case.expected.blank_message not in record.error
+    assert record.error is None
+    execution_id = record.request_info.execution_id
+    assert execution_id
+    projection = SQLiteExecutionJournal(
+        observation.tasks_db_path
+    ).get_projection(execution_id, owner="u1")
+    assert projection.status.value == "failed"
+    assert projection.terminal is not None
+    assert projection.terminal.status == "failed"
     if observation.scenario == "missing":
         assert not observation.resolver_calls
     else:
@@ -306,7 +314,9 @@ def _assert_sync_resolver_observation(
     """Assert the direct-response contract for a synchronous resolver call."""
     expected = observation.case.expected
     if observation.scenario == "resolved":
-        assert observation.response.status_code == 202
+        assert (
+            observation.response.status_code == 202
+        ), observation.response.text
         body = observation.response.json()
         metadata = body["result"]["formatted"].get("metadata") or {}
         _assert_resolved_metadata(metadata, observation)
@@ -316,7 +326,10 @@ def _assert_sync_resolver_observation(
         assert observation.captured["gene_id"] == expected.resolved_gene_id
         assert not observation.resolver_calls
         return
-    assert_invalid_argument_response(observation.response)
+    assert observation.response.status_code == 202, observation.response.text
+    body = observation.response.json()
+    assert body["status"] == "failed"
+    assert body["task_ids"] == []
     if observation.scenario == "missing":
         assert not observation.resolver_calls
     else:

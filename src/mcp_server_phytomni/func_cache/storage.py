@@ -217,7 +217,11 @@ class Storage:
         """
         try:
             conn = self._get_conn()
-            expires_at = time.time() + ttl if ttl is not None else None
+            expires_at = (
+                0.0
+                if ttl is not None and ttl <= 0
+                else time.time() + ttl if ttl is not None else None
+            )
             conn.execute(
                 "INSERT OR REPLACE INTO cache_entries "
                 "(func_id, key_hash, value, expires_at) VALUES (?,?,?,?)",
@@ -317,8 +321,7 @@ class Storage:
         try:
             conn = self._get_conn()
             cursor = conn.execute(
-                "SELECT DISTINCT func_id FROM cache_entries "
-                "ORDER BY func_id"
+                "SELECT DISTINCT func_id FROM cache_entries ORDER BY func_id"
             )
             return [row[0] for row in cursor.fetchall()]
         except sqlite3.Error as e:

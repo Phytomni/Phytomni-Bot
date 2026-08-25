@@ -93,9 +93,13 @@ def test_manifest_writes_json_with_expected_nodes(
     assert exit_code == 0
     capsys.readouterr()  # Drain captured stdout/stderr; not asserted here.
 
-    written = tmp_path / "brief_gene.json"
+    written = tmp_path / "brief_gene.graph.json"
     assert written.exists()
     payload = json.loads(written.read_text(encoding="utf-8"))
+    assert payload["graph_id"] == "brief_gene"
+    assert payload["classification"] == "public"
+    assert payload["public_agent"] == "BriefGeneAgent"
+    assert payload["subgraph_dependencies"] == ["knowledge", "chat"]
     names = {node["name"] for node in payload["nodes"]}
     # The preamble fan-out wires a parallel annotation / homology fetch,
     # four role-named section nodes joined on retrieve + homology, an
@@ -206,3 +210,20 @@ def test_knowledge_xray2_keeps_single_chat_untouched(
     out = capsys.readouterr().out
     assert "subgraph chat\n" in out
     assert "subgraph chat_2\n" not in out
+
+
+def test_check_manifest_detects_committed_drift(tmp_path: Path) -> None:
+    viz = _load_script()
+    assert viz.main(["--agent", "chat", "--manifest", str(tmp_path)]) == 0
+    assert (
+        viz.main(["--agent", "chat", "--check-manifest", str(tmp_path)]) == 0
+    )
+
+    target = tmp_path / "chat.graph.json"
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    payload["classification"] = "internal"
+    target.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert (
+        viz.main(["--agent", "chat", "--check-manifest", str(tmp_path)]) == 1
+    )

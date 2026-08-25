@@ -428,22 +428,22 @@ async def test_terminal_logs_publish_safe_cumulative_outcome_counters(
     registry = OutboundPoolRegistry(_capacities(llm=1), wait_warn_seconds=0.01)
     logger_name = "mcp_server_phytomni.runtime.outbound.registry"
     caplog.set_level(logging.INFO, logger=logger_name)
-    marker = "https://secret.invalid/query-user-run-task"
-    entered = asyncio.Event()
-
-    async def cancel_in_flight() -> None:
-        """Hold one lease until the caller cancels the task."""
-        async with registry.lease(OutboundPoolName.LLM):
-            entered.set()
-            await asyncio.Event().wait()
-
     with capture_non_propagating_logger(logger_name, caplog.handler):
         async with registry.lease(OutboundPoolName.LLM):
             pass
 
+        marker = "https://secret.invalid/query-user-run-task"
         with pytest.raises(RuntimeError, match="secret.invalid"):
             async with registry.lease(OutboundPoolName.LLM):
                 raise RuntimeError(marker)
+
+        entered = asyncio.Event()
+
+        async def cancel_in_flight() -> None:
+            """Hold one lease until the caller cancels the task."""
+            async with registry.lease(OutboundPoolName.LLM):
+                entered.set()
+                await asyncio.Event().wait()
 
         task = asyncio.create_task(cancel_in_flight(), name=marker)
         await entered.wait()

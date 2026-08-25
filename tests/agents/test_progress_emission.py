@@ -19,6 +19,12 @@ from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.agents.brief_gene.render import (
     _render_preamble_node,
 )
+from mcp_server_phytomni.agents.chat.graph import (
+    follow_up_node as chat_follow_up_node,
+)
+from mcp_server_phytomni.agents.chat.graph import (
+    generate_node as chat_generate_node,
+)
 from mcp_server_phytomni.agents.data.agent import DataAgent
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.knowledge.retrieval import _retrieval_result
@@ -43,6 +49,68 @@ def _install_writer(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 def _phases(seen: list[dict[str, Any]]) -> list[str]:
     """Extract phase labels from progress events."""
     return [e["phase"] for e in seen if e.get("kind") == "phyto.progress"]
+
+
+# ------------------------------------------------------------------ #
+# ChatAgent                                                           #
+# ------------------------------------------------------------------ #
+
+
+async def test_chat_generate_node_emits_responding_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = _install_writer(monkeypatch)
+
+    async def _fake_chat(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"choices": [{"message": {"content": "answer"}}]}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.graph.service.get_prompt",
+        lambda *_args, **_kwargs: "system",
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.graph._run_phyto_chat",
+        _fake_chat,
+    )
+
+    await chat_generate_node(cast(Any, {"user_query": "q"}))
+
+    assert "responding" in _phases(seen)
+
+
+async def test_chat_follow_up_node_emits_follow_up_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = _install_writer(monkeypatch)
+
+    async def _fake_chat(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"choices": [{"message": {"content": "[]"}}]}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.graph.service.get_prompt",
+        lambda *_args, **_kwargs: "follow up",
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.graph.service.phyto_chat",
+        _fake_chat,
+    )
+
+    await chat_follow_up_node(
+        cast(
+            Any,
+            {
+                "user_query": "q",
+                "response": {"choices": [{"message": {"content": "answer"}}]},
+            },
+        )
+    )
+
+    assert "follow_up" in _phases(seen)
+
+
+# ------------------------------------------------------------------ #
+# KnowledgeAgent                                                      #
+# ------------------------------------------------------------------ #
 
 
 async def test_knowledge_retrieve_node_emits_progress(
@@ -92,6 +160,11 @@ async def test_knowledge_generate_post_node_emits_progress(
     assert "generating" in _phases(seen)
 
 
+# ------------------------------------------------------------------ #
+# ReviewAgent (DeepResearchAgent)                                     #
+# ------------------------------------------------------------------ #
+
+
 async def test_review_draft_reduce_node_emits_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -139,7 +212,9 @@ async def test_review_retrieve_reduce_node_emits_progress(
         Any,
         {
             "research_dimensions": ["dim1"],
-            "retrieve_indexed_results": [(0, [])],
+            "retrieve_indexed_results": [
+                (0, [{"title": "dim1 evidence", "content": "reliable"}])
+            ],
             "retrieve_failed_indices": [],
             "total_length": 0,
         },
@@ -167,6 +242,11 @@ async def test_review_revised_reduce_node_emits_progress(
     await agent.revised_reduce_node(state)
 
     assert "revising" in _phases(seen)
+
+
+# ------------------------------------------------------------------ #
+# DataAgent                                                           #
+# ------------------------------------------------------------------ #
 
 
 async def test_data_retrieve_post_node_emits_progress(
@@ -231,6 +311,11 @@ async def test_data_search_node_emits_progress(
     await agent.search_node(state)
 
     assert "querying" in _phases(seen)
+
+
+# ------------------------------------------------------------------ #
+# BriefGeneAgent                                                      #
+# ------------------------------------------------------------------ #
 
 
 async def test_brief_gene_section_discovery_emits_progress(

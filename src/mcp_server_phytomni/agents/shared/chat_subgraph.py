@@ -13,19 +13,26 @@ parent graph's ``compile()`` time.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from ...runtime.langgraph_runner import invoke_graph
+from ...runtime.operation_instrumentation_v2 import (
+    instrument_operation_invocation,
+)
 from ..chat.service import _cached_chat_app
 from .graph_routing import make_after_router
 
 CHAT_APP: CompiledStateGraph = _cached_chat_app()
 
 type ChatInvokeContextFactory = Callable[[], AbstractAsyncContextManager[None]]
+type ChatOperationResolver = Callable[
+    [Any], tuple[str, Mapping[str, Any]] | None
+]
 
 
 def _default_chat_input(state: Any) -> dict[str, Any]:
@@ -44,6 +51,7 @@ def make_chat_node_wrapper(
     extract_output_fn: Callable[[dict[str, Any]], Any],
     response_key: str,
     invoke_context_factory: ChatInvokeContextFactory | None = None,
+    operation_resolver: ChatOperationResolver | None = None,
 ) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Return an async node body that adapts consumer state to chat IO.
 
@@ -72,12 +80,29 @@ def make_chat_node_wrapper(
     """
 
     async def _chat_node(state: Any) -> dict[str, Any]:
+        chat_app = CHAT_APP
         chat_input = build_input_fn(state)
-        if invoke_context_factory is None:
-            chat_output = await CHAT_APP.ainvoke(chat_input)
-        else:
+
+        async def invoke() -> dict[str, Any]:
+            if invoke_context_factory is None:
+                return await invoke_graph(chat_app, chat_input)
             async with invoke_context_factory():
-                chat_output = await CHAT_APP.ainvoke(chat_input)
+                return await invoke_graph(chat_app, chat_input)
+
+        operation = (
+            operation_resolver(state)
+            if operation_resolver is not None
+            else None
+        )
+        chat_output = (
+            await instrument_operation_invocation(
+                operation[0],
+                invoke,
+                detail=operation[1],
+            )
+            if operation is not None
+            else await invoke()
+        )
         return {response_key: extract_output_fn(chat_output)}
 
     return _chat_node
@@ -90,6 +115,7 @@ def mount_chat_node(
     extract_output_fn: Callable[[dict[str, Any]], Any] = _default_chat_output,
     response_key: str = "chat_response",
     invoke_context_factory: ChatInvokeContextFactory | None = None,
+    operation_resolver: ChatOperationResolver | None = None,
 ) -> None:
     """Register the shared ``chat`` wrapper on a consumer workflow.
 
@@ -115,6 +141,7 @@ def mount_chat_node(
             extract_output_fn=extract_output_fn,
             response_key=response_key,
             invoke_context_factory=invoke_context_factory,
+            operation_resolver=operation_resolver,
         ),
     )
 

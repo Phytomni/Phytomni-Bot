@@ -137,6 +137,8 @@ async def execute_context_expert(
     attachment_owner: str,
     helpers: ExpertContextHelpers,
     idempotency_key: str | None = None,
+    execution_id: str | None = None,
+    selected_arguments: Mapping[str, Any] | None = None,
 ) -> JSONResponse:
     """Run constrained Expert V1 selection through the shared lifecycle."""
     envelope = payload.conversation
@@ -196,6 +198,7 @@ async def execute_context_expert(
         request_json=request_json,
         debug=dependencies.chat.projection.resolve_debug(None),
         obs_file_list=None,
+        execution_id=execution_id,
     )
 
     async def invoke(
@@ -243,6 +246,7 @@ async def execute_context_expert(
             invoke=invoke,
             executor=dependencies.context.executor,
             delegate_async=delegate_async,
+            selected_arguments=selected_arguments,
             selection_failure_detail=(
                 "router did not resolve one permitted agent"
             ),
@@ -450,6 +454,7 @@ async def _delegate_context_expert_async(
         "request_json": request.context_request.request_json,
         "debug": request.context_request.debug,
         "attachment_evidence": request.attachments.evidence,
+        "execution_id": request.context_request.execution_id,
     }
     research_admission = request.attachments.research_admission
     if research_admission is not None:
@@ -488,6 +493,7 @@ async def _invoke_context_expert_agent(
             obs_file_list=None,
             attachment_arguments=request.attachments.arguments,
             attachment_evidence=request.attachments.evidence,
+            execution_id=request.context_request.execution_id,
         ),
         dependencies=request.dependencies,
         research_admission=request.attachments.research_admission,

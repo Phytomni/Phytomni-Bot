@@ -23,6 +23,20 @@ from mcp_server_phytomni.api.lifecycle_contract import (
     build_agent_run_response,
     empty_agent_result,
 )
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    ExecutionStatus,
+    SpanStatus,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SpanSpec,
+    SQLiteExecutionWorkRepository,
+)
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
@@ -68,14 +82,77 @@ def _seed_a2ui_run(
         },
         "status": "input_required",
     }
-    RunRegistry(tasks_db_path).create_run(
-        RunSpec(
-            run_id=run_id,
-            user_id=user_id,
-            agent="chat",
-            origin="local",
-        ),
-        outcome=RunOutcome(status=status, result=result),
+    if status != "input_required":
+        RunRegistry(tasks_db_path).create_run(
+            RunSpec(
+                run_id=run_id,
+                user_id=user_id,
+                agent="chat",
+                origin="local",
+            ),
+            outcome=RunOutcome(status=status, result=result),
+        )
+        return run_id
+    return _seed_runtime_a2ui_run(
+        tasks_db_path,
+        run_id=run_id,
+        user_id=user_id,
+        agent="chat",
+        result=result,
+    )
+
+
+def _seed_runtime_a2ui_run(
+    tasks_db_path: str,
+    *,
+    run_id: str,
+    user_id: str,
+    agent: str,
+    result: dict[str, Any],
+) -> str:
+    """Seed a canonical V2 execution paused at an A2UI boundary."""
+    execution_id = f"turn-{run_id}"
+    reservations = SQLiteExecutionReservationRepository(
+        tasks_db_path,
+        run_id_factory=lambda: run_id,
+        root_span_id_factory=lambda: f"span-{run_id}",
+    )
+    reservation = reservations.reserve(
+        owner=user_id,
+        execution_id=execution_id,
+        fingerprint_version=2,
+        fingerprint=f"fixture:{run_id}",
+        command=ExecutionCommand(agent_slug=agent, arguments={}),
+    )
+    work = SQLiteExecutionWorkRepository(tasks_db_path)
+    root = work.create_span(
+        SpanSpec(
+            owner=user_id,
+            execution_id=execution_id,
+            span_id=reservation.root_span_id,
+            kind="agent",
+            label_key=f"agent.{agent}",
+        )
+    )
+    work.update_span_status(
+        execution_id,
+        reservation.root_span_id,
+        owner=user_id,
+        status=SpanStatus.WAITING_INPUT,
+        expected_revision=root.revision,
+    )
+    assert reservations.record_observation(
+        owner=user_id,
+        execution_id=execution_id,
+        status=ExecutionStatus.WAITING_INPUT,
+        tracking_health="healthy",
+        cancellation_state="none",
+        next_attempt_at=None,
+    )
+    assert RunRegistry(tasks_db_path).update_active_result(
+        run_id,
+        owner=user_id,
+        result=result,
     )
     return run_id
 
@@ -161,7 +238,7 @@ async def test_a2ui_action_accept_succeeds(
         ),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "succeeded"
     assert body["result"]["formatted"]["answer"] == "Analysis complete."
@@ -603,16 +680,13 @@ def _seed_a2ui_form_run(
         },
         "status": "input_required",
     }
-    RunRegistry(tasks_db_path).create_run(
-        RunSpec(
-            run_id=run_id,
-            user_id=user_id,
-            agent="chat",
-            origin="local",
-        ),
-        outcome=RunOutcome(status="input_required", result=result),
+    return _seed_runtime_a2ui_run(
+        tasks_db_path,
+        run_id=run_id,
+        user_id=user_id,
+        agent="chat",
+        result=result,
     )
-    return run_id
 
 
 def _form_submitted_final_state() -> dict[str, Any]:
@@ -791,16 +865,13 @@ def _seed_review_a2ui_form_run(
         },
         "status": "input_required",
     }
-    RunRegistry(tasks_db_path).create_run(
-        RunSpec(
-            run_id=run_id,
-            user_id=user_id,
-            agent="review",
-            origin="local",
-        ),
-        outcome=RunOutcome(status="input_required", result=result),
+    return _seed_runtime_a2ui_run(
+        tasks_db_path,
+        run_id=run_id,
+        user_id=user_id,
+        agent="review",
+        result=result,
     )
-    return run_id
 
 
 async def test_a2ui_action_review_form_submit_succeeds(

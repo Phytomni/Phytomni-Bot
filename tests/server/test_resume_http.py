@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from types import SimpleNamespace
 from typing import Any
 
@@ -19,6 +20,20 @@ from tests.support.a2ui_contract_fakes import (
 from tests.support.asyncio_helpers import wait_until
 
 from mcp_server_phytomni.api import app as api_app_module
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    ExecutionStatus,
+    SpanStatus,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SpanSpec,
+    SQLiteExecutionWorkRepository,
+)
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
@@ -81,9 +96,54 @@ def _seed_run(
             },
             "status": "input_required",
         }
-    RunRegistry(tasks_db_path).create_run(
-        local_run_spec(run_id, owner, agent),
-        outcome=RunOutcome(status=status, result=result),
+    if status != "input_required":
+        RunRegistry(tasks_db_path).create_run(
+            local_run_spec(run_id, owner, agent),
+            outcome=RunOutcome(status=status, result=result),
+        )
+        return run_id
+    execution_id = f"turn-{run_id}"
+    reservations = SQLiteExecutionReservationRepository(
+        tasks_db_path,
+        run_id_factory=lambda: run_id,
+        root_span_id_factory=lambda: f"span-{run_id}",
+    )
+    reservation = reservations.reserve(
+        owner=owner,
+        execution_id=execution_id,
+        fingerprint_version=2,
+        fingerprint=f"fixture:{run_id}",
+        command=ExecutionCommand(agent_slug=agent, arguments={}),
+    )
+    work = SQLiteExecutionWorkRepository(tasks_db_path)
+    root = work.create_span(
+        SpanSpec(
+            owner=owner,
+            execution_id=execution_id,
+            span_id=reservation.root_span_id,
+            kind="agent",
+            label_key=f"agent.{agent}",
+        )
+    )
+    work.update_span_status(
+        execution_id,
+        reservation.root_span_id,
+        owner=owner,
+        status=SpanStatus.WAITING_INPUT,
+        expected_revision=root.revision,
+    )
+    assert reservations.record_observation(
+        owner=owner,
+        execution_id=execution_id,
+        status=ExecutionStatus.WAITING_INPUT,
+        tracking_health="healthy",
+        cancellation_state="none",
+        next_attempt_at=None,
+    )
+    assert RunRegistry(tasks_db_path).update_active_result(
+        run_id,
+        owner=owner,
+        result=result or {},
     )
     return run_id
 
@@ -164,9 +224,14 @@ async def test_two_http_clients_only_one_resumes_a2ui_graph(
             )
         ),
     ]
-    await control.started.wait()
+    try:
+        await asyncio.wait_for(control.started.wait(), timeout=5)
+    except TimeoutError:
+        control.release.set()
+        stalled = await asyncio.gather(*tasks, return_exceptions=True)
+        pytest.fail(f"neither resume reached the graph: {stalled!r}")
     control.release.set()
-    responses = await asyncio.gather(*tasks)
+    responses = await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
 
     assert sorted(response.status_code for response in responses) == [200, 409]
     assert len(control.calls) == 1
@@ -352,8 +417,25 @@ async def test_review_run_interrupt_then_resume_finishes(
     actions = RunRegistry(tasks_db_path).list_a2ui_actions(
         owner="u1", run_id=run_id
     )
-    assert len(actions) == 1
-    assert actions[0].outcome == "succeeded"
+    assert actions == []
+    with sqlite3.connect(tasks_db_path) as connection:
+        operations = connection.execute(
+            "SELECT operation, state FROM execution_operations_v2 "
+            "WHERE owner_ref = ? AND execution_id = ?",
+            ("u1", record.request_info.execution_id),
+        ).fetchall()
+        event_types = [
+            row[0]
+            for row in connection.execute(
+                "SELECT event_type FROM execution_events_v2 "
+                "WHERE owner_ref = ? AND execution_id = ? ORDER BY seq",
+                ("u1", record.request_info.execution_id),
+            ).fetchall()
+        ]
+    assert operations == [("resume", "completed")]
+    assert event_types.count("input.action_claimed") == 1
+    assert event_types.count("input.resolved") == 1
+    assert event_types.count("execution.resumed") == 1
 
 
 async def test_review_chat_completion_interrupt_body(

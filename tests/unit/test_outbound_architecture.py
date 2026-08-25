@@ -334,7 +334,7 @@ def _generic_relay_calls(path: Path) -> set[RelayGenericCall]:
         )
         calls.add(
             RelayGenericCall(
-                str(path.relative_to(_SOURCE_ROOT)),
+                path.relative_to(_SOURCE_ROOT).as_posix(),
                 owner,
                 method,
                 _relay_path_template(node.args[0]),

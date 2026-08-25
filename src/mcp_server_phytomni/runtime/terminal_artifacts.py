@@ -94,6 +94,12 @@ async def _default_artifact_lister(
 ) -> list[str]:
     """List public artifact paths through the existing storage helper."""
     config = ServerConfig()
+    if limit is None:
+        return await list_artifact_paths_with_runtime(
+            output_dir,
+            bucket_name=config.BUCKET_NAME,
+            obs_runtime=current_obs_runtime(),
+        )
     return await list_artifact_paths_with_runtime(
         output_dir,
         bucket_name=config.BUCKET_NAME,
@@ -113,7 +119,7 @@ async def _default_artifact_object_lister(
         output_dir,
         bucket_name=config.BUCKET_NAME,
         obs_runtime=current_obs_runtime(),
-        limit=limit,
+        limit=_DEFAULT_PATH_CAP + 1,
     )
 
 

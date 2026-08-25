@@ -15,8 +15,12 @@ from uuid import UUID
 
 import pytest
 
+from mcp_server_phytomni.agents.expert import ToolSelectionError
 from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
 from mcp_server_phytomni.runtime.conversation_context import service as module
+from mcp_server_phytomni.runtime.conversation_context.adapters import (
+    native_history_from_context,
+)
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ArtifactRefV1,
     BusinessContext,
@@ -163,6 +167,60 @@ def test_review_metadata_path_bounds_match_field_contracts() -> None:
         assert bounded_review_stage_field(key, "value/with/path") == (
             "value/with/path"
         )
+
+
+def test_router_history_omits_unpaired_user_turns() -> None:
+    """Routing sees completed exchanges, not a backlog of old questions."""
+    context = BusinessContext.model_validate(
+        {
+            "schema_version": 1,
+            "version": 1,
+            "last_applied_ledger_cursor": 2,
+            "last_applied_ledger_version": "a" * 64,
+            "observed_mode": "expert",
+            "recent_turns": [
+                {"role": "user", "content": "first question"},
+                {"role": "assistant", "content": "first summary"},
+                {"role": "user", "content": "unanswered old question"},
+                {"role": "user", "content": "another old question"},
+            ],
+        }
+    )
+
+    assert native_history_from_context(context) == (
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "first summary"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_router_failure_releases_unstarted_turn_for_retry(
+    store: ConversationContextStore,
+) -> None:
+    """A failed route may retry because no business Agent has started."""
+    calls = 0
+
+    async def router(*_args: object) -> AgentSelection:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ToolSelectionError(
+                "routing model must return exactly one tool call"
+            )
+        return AgentSelection("DataAgent", "ROUTER_SELECTED")
+
+    service = _service(store, router=router)
+    envelope = _envelope()
+
+    with pytest.raises(ToolSelectionError):
+        await service.execute_turn(envelope)
+
+    assert store.load_turn(str(_CONVERSATION_KEY), envelope.turn_id) is None
+    retried = await service.execute_turn(envelope)
+    assert retried.status is PrepareStatus.RETURN_STAGED
+    assert retried.stage is not None
+    assert retried.stage.selected_agent_id == "DataAgent"
+    assert calls == 2
 
 
 @pytest.mark.asyncio

@@ -21,7 +21,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ..config.defaults import ApiConfig
-from ..runtime.background_submission import BACKGROUND_RUNTIME_ERRORS
 from ..runtime.outbound import current_outbound_runtime
 from ..runtime.resumable_uploads import (
     ResumableUploadRegistry,
@@ -39,6 +38,8 @@ from .resumable_uploads import (
     UploadContractError,
     UploadServiceConfig,
 )
+
+_UPLOAD_RUNTIME_ERRORS: tuple[type[Exception], ...] = (Exception,)
 
 __all__ = [
     "UploadRuntime",
@@ -144,7 +145,7 @@ class UploadRuntime:
         """Start at most one process-local cleanup worker per interval."""
         try:
             claimed = self._claim_cleanup_slot()
-        except BACKGROUND_RUNTIME_ERRORS as error:
+        except _UPLOAD_RUNTIME_ERRORS as error:
             self._log_cleanup_failure(error)
             return False
         if not claimed:
@@ -154,7 +155,7 @@ class UploadRuntime:
                 target=self._cleanup_expired_best_effort,
                 daemon=True,
             ).start()
-        except BACKGROUND_RUNTIME_ERRORS as error:
+        except _UPLOAD_RUNTIME_ERRORS as error:
             self._release_cleanup_slot(reset_interval=True)
             self._log_cleanup_failure(error)
             return False
@@ -164,7 +165,7 @@ class UploadRuntime:
         """Run cleanup in a daemon worker and contain unexpected failures."""
         try:
             self._cleanup_expired()
-        except BACKGROUND_RUNTIME_ERRORS as error:
+        except _UPLOAD_RUNTIME_ERRORS as error:
             self._log_cleanup_failure(error)
         finally:
             self._release_cleanup_slot()

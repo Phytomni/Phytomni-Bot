@@ -30,6 +30,9 @@ AUTHOR_CONTINUATION_PATTERN = re.compile(
     r"^#         [A-Za-z0-9_.-]+ \([^@\s)]+@[^@\s)]+\.[^@\s)]+\)$"
 )
 ALLOWED_UUID4_CALLERS = {
+    # Public execution identities are UUID-shaped by contract. All callers
+    # delegate here so transports cannot mint competing identity formats.
+    "src/mcp_server_phytomni/runtime/execution_identity_v2.py",
     "src/mcp_server_phytomni/runtime/task_manager.py",
 }
 
@@ -241,11 +244,17 @@ def test_runtime_ids_do_not_use_direct_uuid_generation():
                 and relative_path not in ALLOWED_UUID4_CALLERS
             ):
                 violations.append(f"{relative_path}:{line_number}: uuid4")
-            if "from uuid import uuid4" in line:
+            if (
+                "from uuid import uuid4" in line
+                and relative_path not in ALLOWED_UUID4_CALLERS
+            ):
                 violations.append(
                     f"{relative_path}:{line_number}: uuid4 import"
                 )
-            if direct_uuid4_pattern.search(line):
+            if (
+                direct_uuid4_pattern.search(line)
+                and relative_path not in ALLOWED_UUID4_CALLERS
+            ):
                 violations.append(
                     f"{relative_path}:{line_number}: direct uuid4"
                 )

@@ -22,7 +22,9 @@ from tests.server.test_api_chat_streaming import (
 from tests.support.http_fakes import expected_context_staged_value
 
 from mcp_server_phytomni.api import app as api_app
-from mcp_server_phytomni.api.app import _stream_chat_completion
+from mcp_server_phytomni.api.app import (
+    _stream_chat_response as _stream_chat_completion,
+)
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 from mcp_server_phytomni.mcp.result_formatting import (
     run_error,
@@ -191,6 +193,7 @@ async def test_context_stream_duplicate_turn_replays_without_reinvocation(
                 },
                 payload=payload,
                 user_query="context",
+                execution_id="turn-context-24",
             )
             return "".join(
                 [
@@ -251,6 +254,7 @@ async def test_context_stream_committed_turn_replays_without_reinvocation(
                 },
                 payload=payload,
                 user_query="context",
+                execution_id="turn-context-committed-24",
             )
             return "".join(
                 [

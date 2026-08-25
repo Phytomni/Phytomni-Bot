@@ -287,8 +287,17 @@ def review_agent_invocation(
 def native_history_from_context(
     context: BusinessContext,
 ) -> tuple[dict[str, str], ...]:
-    """Build bounded router history from Bot-owned semantic context."""
-    return _native_history_from_turns(context.recent_turns)
+    """Build router history from complete Bot-owned exchanges only."""
+    history = _native_history_from_turns(context.recent_turns)
+    completed: list[dict[str, str]] = []
+    pending_user: dict[str, str] | None = None
+    for message in history:
+        if message["role"] == "user":
+            pending_user = message
+        elif pending_user is not None:
+            completed.extend((pending_user, message))
+            pending_user = None
+    return tuple(completed)
 
 
 class ConversationContextExecutor:

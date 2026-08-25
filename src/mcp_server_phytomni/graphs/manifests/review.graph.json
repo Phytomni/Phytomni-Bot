@@ -1,9 +1,21 @@
 {
+  "classification": "public",
+  "driver": "resumable_graph",
   "edges": [
     {
       "conditional": false,
       "source": "__start__",
       "target": "plan_query_prep_node"
+    },
+    {
+      "conditional": true,
+      "source": "approval_node",
+      "target": "follow_up_prep_node"
+    },
+    {
+      "conditional": true,
+      "source": "approval_node",
+      "target": "summary_prep_node"
     },
     {
       "conditional": true,
@@ -98,7 +110,7 @@
     {
       "conditional": false,
       "source": "summary_post_node",
-      "target": "follow_up_prep_node"
+      "target": "approval_node"
     },
     {
       "conditional": false,
@@ -110,6 +122,12 @@
       "source": "follow_up_post_node",
       "target": "__end__"
     }
+  ],
+  "graph_id": "review",
+  "lifecycle": [
+    "synchronous",
+    "streaming",
+    "input_required"
   ],
   "nodes": [
     {
@@ -139,6 +157,10 @@
     {
       "kind": "node",
       "name": "follow_up_post_node"
+    },
+    {
+      "kind": "node",
+      "name": "approval_node"
     },
     {
       "kind": "node",
@@ -196,5 +218,15 @@
       "kind": "boundary",
       "name": "__end__"
     }
-  ]
+  ],
+  "public_agent": "ReviewAgent",
+  "remote_providers": [
+    "retrieval_service",
+    "model_provider"
+  ],
+  "subgraph_dependencies": [
+    "knowledge",
+    "chat"
+  ],
+  "topology": "parallel"
 }

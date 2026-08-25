@@ -33,6 +33,12 @@ from mcp_server_phytomni.api.research_input import (
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ConversationEnvelopeV1,
 )
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
 from mcp_server_phytomni.runtime.research_input_store import (
     ResearchAdmissionReservation,
 )
@@ -242,6 +248,39 @@ def test_admission_replays_without_public_query_or_second_root(
         assert connection.execute(
             "SELECT COUNT(*) FROM research_work_units WHERE run_id = ?",
             (first.run_id,),
+        ).fetchone() == (1,)
+
+
+def test_research_domain_adopts_the_runtime_root_without_second_run(
+    tmp_path: Path,
+) -> None:
+    """Research-specific tables attach to, rather than replace, Runtime."""
+    store, database = _store(tmp_path)
+    runtime = SQLiteExecutionReservationRepository(database)
+    reserved = runtime.reserve(
+        owner="owner-1",
+        execution_id="turn-research-shared",
+        fingerprint_version=1,
+        fingerprint="a" * 64,
+        command=ExecutionCommand(
+            agent_slug="research",
+            arguments={"query": "summarize the inputs"},
+        ),
+    )
+
+    admitted = admit_research_request(
+        _request(), store, run_id=reserved.run_id
+    )
+
+    assert admitted.run_id == reserved.run_id
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM runs WHERE run_id = ?",
+            (reserved.run_id,),
+        ).fetchone() == (1,)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM research_work_units WHERE run_id = ?",
+            (reserved.run_id,),
         ).fetchone() == (1,)
 
 

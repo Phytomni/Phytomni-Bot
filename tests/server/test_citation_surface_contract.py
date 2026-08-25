@@ -16,7 +16,6 @@ from typing import Any
 
 import httpx
 import pytest
-from tests.support.asyncio_helpers import wait_until
 from tests.support.resolver_fakes import post_native_run
 from tests.support.sqlite import closed_sqlite_connection
 
@@ -41,7 +40,6 @@ from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
 from mcp_server_phytomni.common import relay_client
 from mcp_server_phytomni.mcp import app as mcp_app
-from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
 
@@ -377,26 +375,12 @@ async def _assert_native_projection(
         ),
         timeout=5,
     )
-    if case.slug == "review":
-        assert response.status_code == 202
-        run_id = response.json()["run_id"]
-
-        def completed() -> bool:
-            record = RunRegistry(api_app.resolve_tasks_db_path()).get_run(
-                run_id, owner="u1"
-            )
-            return record is not None and record.status == "succeeded"
-
-        await wait_until(completed)
-        fetched = await context.api_client.get(
-            f"/v1/runs/{run_id}",
-            headers={"Authorization": f"Bearer {context.issued_api_key}"},
-        )
-        assert fetched.status_code == 200
-        formatted = fetched.json()["result"]["formatted"]
-    else:
-        assert response.status_code == 200
-        formatted = response.json()["result"]["formatted"]
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    result = body["result"]
+    assert result["execution"]["tracking"] == {"degraded": False}
+    formatted = result["formatted"]
     assert formatted["answer"] == envelope.formatted.answer
     assert formatted["references"] == [_EXPECTED_REFERENCE]
 
@@ -432,11 +416,13 @@ async def test_cited_surfaces_share_one_complete_nature_contract(
 @pytest.mark.parametrize("failure_mode", ("missing", "quarantined", "failed"))
 async def test_cited_metadata_failures_degrade_blocking_and_stream(
     citation_db_path: Path,
+    tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
     case: _CitedSurfaceCase,
     failure_mode: str,
 ) -> None:
     """SQLite misses omit silently; lookup failures stay title-only."""
+    _ = tasks_db_path
     _forbid_non_sqlite_calls(monkeypatch)
     _install_handler(monkeypatch, case.tool_name)
     _install_bounded_lookup(monkeypatch, citation_db_path)

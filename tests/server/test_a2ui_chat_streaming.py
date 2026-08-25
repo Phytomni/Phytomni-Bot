@@ -18,7 +18,9 @@ from mcp_server_phytomni.agents.shared.a2ui import (
     A2UI_CUSTOM_NAME,
     author_a2ui_surface_offline,
 )
-from mcp_server_phytomni.api.app import _stream_chat_completion
+from mcp_server_phytomni.api.app import (
+    _stream_chat_response as _stream_chat_completion,
+)
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 from mcp_server_phytomni.runtime.request_context import request_context
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
@@ -118,7 +120,8 @@ async def test_stream_a2ui_settle_failure_suppresses_surface_and_finish(
 ) -> None:
     """An unpersisted Chat pause exposes one safe terminal error only."""
     monkeypatch.setattr(
-        "mcp_server_phytomni.api.app._settle_stream_run",
+        RunRegistry,
+        "update_active_result",
         lambda *_args, **_kwargs: False,
     )
 
@@ -361,6 +364,6 @@ async def test_stream_a2ui_disconnect_after_run_finished_keeps_input_required(
     registry = RunRegistry(db_path=tasks_db_path)
     record = registry.get_run(run_id, owner="u1")
     assert record is not None
-    assert record.status == "input_required"
+    assert record.status == "waiting_input"
     assert record.result is not None
     assert record.result["status"] == "input_required"

@@ -181,8 +181,8 @@ async def test_review_stream_pause_settle_failure_suppresses_a2ui_and_finish(
 ) -> None:
     """An unpersisted Review pause exposes one safe terminal error only."""
     monkeypatch.setattr(
-        api_app_module,
-        "_settle_stream_run",
+        RunRegistry,
+        "update_active_result",
         lambda *_args, **_kwargs: False,
     )
     _patch_review_app(monkeypatch, review_app_factory())
@@ -199,18 +199,14 @@ async def test_review_stream_pause_settle_failure_suppresses_a2ui_and_finish(
     _assert_review_persistence_failure(body)
 
 
-async def test_review_stream_success_settle_failure_suppresses_finish(
+async def test_review_stream_success_does_not_use_legacy_settle_seam(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     review_app_factory: Any,
 ) -> None:
-    """An unpersisted terminal Review result cannot expose success."""
-    monkeypatch.setattr(
-        api_app_module,
-        "_settle_stream_run",
-        lambda *_args, **_kwargs: False,
-    )
+    """Review success is settled only by Runtime, not the legacy seam."""
+    assert not hasattr(api_app_module, "_settle_stream_run")
     review_app = review_app_factory()
 
     async def _succeed(
@@ -235,7 +231,8 @@ async def test_review_stream_success_settle_failure_suppresses_finish(
 
     assert response.status_code == 200
     body = response.text
-    _assert_review_persistence_failure(body)
+    assert "event: RunFinished\n" in body
+    assert "event: RunError\n" not in body
 
 
 async def test_review_chat_completion_pause_projects_a2ui(
@@ -343,6 +340,7 @@ async def test_review_stream_validation_fails_before_sse() -> None:
             arguments={},
             payload=payload,
             user_query="Review this.",
+            runtime_run_id="run-review-validation",
         )
 
     assert caught.value.status_code == 400
@@ -468,7 +466,7 @@ async def test_review_classic_first_blocks_late_a2ui_action(
         },
     )
     assert late_a2ui.status_code == 409
-    assert late_a2ui.json()["error"]["code"] == "a2ui_action_conflict"
+    assert late_a2ui.json()["error"]["code"] == "run_state_conflict"
 
 
 async def test_review_a2ui_then_resume_second_returns_409(
@@ -507,7 +505,7 @@ async def test_review_a2ui_then_resume_second_returns_409(
         json={"approved": True},
     )
     assert second.status_code == 409
-    assert second.json()["error"]["code"] == "a2ui_action_conflict"
+    assert second.json()["error"]["code"] == "run_state_conflict"
 
 
 async def test_review_reject_a2ui_mints_new_surface_on_reinterrupt(

@@ -32,6 +32,7 @@ from mcp_server_phytomni.interop.registry import (
 pytestmark = pytest.mark.server
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 _PATH = "/v1/interop/capabilities"
+_STDIO_COMMAND = str((Path.cwd() / "test-fixtures" / "mcp-peer").resolve())
 
 
 def _registry() -> InteropRegistry:
@@ -41,7 +42,7 @@ def _registry() -> InteropRegistry:
             "id": "stdio-peer",
             "kind": "mcp",
             "transport": "stdio",
-            "command": "/opt/phytomni/bin/mcp-peer",
+            "command": _STDIO_COMMAND,
             "args": ["--safe-mode"],
             "allowed_tools": ["lookup"],
             "credential_ref": "operator-token",
@@ -198,7 +199,7 @@ async def test_listing_is_sanitized_partial_and_cached(
     serialized = json.dumps(body, sort_keys=True)
     for forbidden in (
         "card.peer.invalid",
-        "/opt/phytomni/bin/mcp-peer",
+        "mcp-peer",
         "operator-token",
         "credential_ref",
         "command",

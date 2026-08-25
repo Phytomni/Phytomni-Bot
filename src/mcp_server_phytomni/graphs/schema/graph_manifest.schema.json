@@ -63,6 +63,88 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "Serializable structural manifest of one compiled LangGraph app.",
   "properties": {
+    "graph_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Graph Id"
+    },
+    "classification": {
+      "default": "unspecified",
+      "enum": [
+        "public",
+        "internal",
+        "unspecified"
+      ],
+      "title": "Classification",
+      "type": "string"
+    },
+    "public_agent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Public Agent"
+    },
+    "lifecycle": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Lifecycle",
+      "type": "array"
+    },
+    "subgraph_dependencies": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Subgraph Dependencies",
+      "type": "array"
+    },
+    "remote_providers": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Remote Providers",
+      "type": "array"
+    },
+    "driver": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Driver"
+    },
+    "topology": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Topology"
+    },
     "edges": {
       "default": [],
       "items": {

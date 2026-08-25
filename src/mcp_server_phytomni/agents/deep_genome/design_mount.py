@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 from langgraph.graph.state import CompiledStateGraph
 
 from ...runtime.deep_genome_store import DeepGenomeTrackingError
+from ...runtime.langgraph_runner import invoke_graph
 from .coordinator import RemoteSubmission, normalize_submission
 from .mount_common import degraded_analysis_delta
 
@@ -131,8 +132,8 @@ def make_design_mount_node(
             "locale": state.get("locale"),
         }
         try:
-            design_output: dict[str, Any] = await design_app.ainvoke(
-                design_input
+            design_output: dict[str, Any] = await invoke_graph(
+                design_app, design_input
             )
             submissions = _normalize_design_submissions(design_output)
             return await finalize_fn(submissions, state)

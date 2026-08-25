@@ -1,4 +1,6 @@
 {
+  "classification": "public",
+  "driver": "local_graph",
   "edges": [
     {
       "conditional": false,
@@ -11,11 +13,6 @@
       "target": "follow_up_post_node"
     },
     {
-      "conditional": true,
-      "source": "chat",
-      "target": "generate_post_node"
-    },
-    {
       "conditional": false,
       "source": "fetch_annotation_node",
       "target": "retrieve_prep_tasks_node"
@@ -26,19 +23,9 @@
       "target": "chat"
     },
     {
-      "conditional": true,
-      "source": "generate_post_node",
-      "target": "__end__"
-    },
-    {
-      "conditional": true,
-      "source": "generate_post_node",
-      "target": "follow_up_prep_node"
-    },
-    {
       "conditional": false,
-      "source": "generate_prep_node",
-      "target": "chat"
+      "source": "introduction_node",
+      "target": "render_node"
     },
     {
       "conditional": true,
@@ -46,9 +33,24 @@
       "target": "fetch_annotation_node"
     },
     {
+      "conditional": false,
+      "source": "query_judge_node",
+      "target": "fetch_homology_interactions_node"
+    },
+    {
       "conditional": true,
       "source": "query_judge_node",
       "target": "retrieve_prep_tasks_node"
+    },
+    {
+      "conditional": true,
+      "source": "render_node",
+      "target": "__end__"
+    },
+    {
+      "conditional": true,
+      "source": "render_node",
+      "target": "follow_up_prep_node"
     },
     {
       "conditional": true,
@@ -58,7 +60,22 @@
     {
       "conditional": false,
       "source": "retrieve_reduce_node",
-      "target": "generate_prep_node"
+      "target": "section_application_node"
+    },
+    {
+      "conditional": false,
+      "source": "retrieve_reduce_node",
+      "target": "section_cloning_node"
+    },
+    {
+      "conditional": false,
+      "source": "retrieve_reduce_node",
+      "target": "section_discovery_node"
+    },
+    {
+      "conditional": false,
+      "source": "retrieve_reduce_node",
+      "target": "section_functional_node"
     },
     {
       "conditional": false,
@@ -67,9 +84,39 @@
     },
     {
       "conditional": false,
+      "source": "section_application_node",
+      "target": "introduction_node"
+    },
+    {
+      "conditional": false,
+      "source": "section_cloning_node",
+      "target": "introduction_node"
+    },
+    {
+      "conditional": false,
+      "source": "section_discovery_node",
+      "target": "introduction_node"
+    },
+    {
+      "conditional": false,
+      "source": "section_functional_node",
+      "target": "introduction_node"
+    },
+    {
+      "conditional": false,
+      "source": "fetch_homology_interactions_node",
+      "target": "__end__"
+    },
+    {
+      "conditional": false,
       "source": "follow_up_post_node",
       "target": "__end__"
     }
+  ],
+  "graph_id": "brief_gene",
+  "lifecycle": [
+    "synchronous",
+    "streaming"
   ],
   "nodes": [
     {
@@ -86,6 +133,10 @@
     },
     {
       "kind": "node",
+      "name": "fetch_homology_interactions_node"
+    },
+    {
+      "kind": "node",
       "name": "retrieve_prep_tasks_node"
     },
     {
@@ -98,11 +149,27 @@
     },
     {
       "kind": "node",
-      "name": "generate_prep_node"
+      "name": "section_discovery_node"
     },
     {
       "kind": "node",
-      "name": "generate_post_node"
+      "name": "section_cloning_node"
+    },
+    {
+      "kind": "node",
+      "name": "section_functional_node"
+    },
+    {
+      "kind": "node",
+      "name": "section_application_node"
+    },
+    {
+      "kind": "node",
+      "name": "introduction_node"
+    },
+    {
+      "kind": "node",
+      "name": "render_node"
     },
     {
       "kind": "node",
@@ -120,5 +187,16 @@
       "kind": "boundary",
       "name": "__end__"
     }
-  ]
+  ],
+  "public_agent": "BriefGeneAgent",
+  "remote_providers": [
+    "annotation_service",
+    "retrieval_service",
+    "model_provider"
+  ],
+  "subgraph_dependencies": [
+    "knowledge",
+    "chat"
+  ],
+  "topology": "hybrid"
 }

@@ -443,6 +443,7 @@ async def test_default_listers_use_storage_helpers(
     ) -> list[ListedArtifactObject]:
         del output_dir
         assert kwargs["obs_runtime"] == "runtime"
+        assert kwargs["limit"] == 201
         return [_listed_object("report.md")]
 
     monkeypatch.setattr(

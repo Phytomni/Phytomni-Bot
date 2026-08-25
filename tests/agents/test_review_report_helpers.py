@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -212,6 +213,44 @@ def test_format_supplementary_query_uses_subtopic_offset_in_doc_id() -> None:
     assert add_doc_list[0]["doc_id"] == "add document S4-001"
 
 
+def test_format_supplementary_query_rejects_off_domain_evidence() -> None:
+    """Supplementary evidence follows the same plant relevance contract."""
+    relevant = {
+        "chunk_id": "plant-1",
+        "title": "Plant guard-cell single-cell responses to pathogen stress",
+        "content": "Leaf cell types show biotic transcriptional responses.",
+    }
+    off_domain = {
+        "chunk_id": "mouse-1",
+        "title": "Single-cell sequencing of mouse embryonic stem cells",
+        "content": "Murine cell-state heterogeneity.",
+    }
+    add_doc_list: list[dict[str, Any]] = []
+    context = SupplementaryResultContext(
+        subtopic_idx=0,
+        add_queries=["single-cell stress response"],
+        add_query_results=[[off_domain, relevant]],
+        add_doc_list=add_doc_list,
+        draft_content="",
+        original_query=(
+            "How does single-cell RNA sequencing reveal plant cell-type "
+            "responses to biotic stress?"
+        ),
+        subtopic="Plant cell-type-specific stress responses",
+    )
+    fmt_state = SupplementaryFormatState(
+        query_length=10_000, counters=SupplementaryCounters()
+    )
+
+    block = _ReportProbe().format_supplementary_query(
+        context, [off_domain, relevant], 0, fmt_state
+    )
+
+    assert "Plant guard-cell" in block
+    assert "mouse embryonic" not in block
+    assert [doc["chunk_id"] for doc in add_doc_list] == ["plant-1"]
+
+
 def test_format_supplementary_results_empty_when_all_queries_fail() -> None:
     """All-empty supplementary results yield an empty joined string."""
     add_doc_list: list = []
@@ -289,6 +328,8 @@ def test_format_supplementary_query_skips_off_topic_documents() -> None:
 class _MixinSurface(ReviewReportMixin):
     """Harness that keeps the mixin public wrappers un-overridden."""
 
+    ka: Any
+
     def __init__(self, max_tokens: int = 4000) -> None:
         self.review_config = SimpleNamespace(
             MAX_TOKENS=max_tokens, PROMPT_FILE="unused.yaml"
@@ -362,6 +403,45 @@ async def test_mixin_feedback_rag_public_wrapper_coerces_queries(
     )
 
     assert result == {"revised_content": "draft-orig", "add_doc_list": []}
+
+
+async def test_feedback_rag_preserves_original_scope_in_add_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Supplementary retrieval receives question, subtopic, and gap query."""
+
+    async def _audit_passthrough(
+        self: Any,
+        *,
+        content_to_check: str,
+        raw_doc_list: list[dict[str, Any]],
+        add_doc_list: list[dict[str, Any]],
+    ) -> str:
+        del self, raw_doc_list, add_doc_list
+        return content_to_check
+
+    monkeypatch.setattr(
+        ReviewReportMixin, "_audit_citations", _audit_passthrough
+    )
+    probe = _MixinSurface()
+    probe.ka = SimpleNamespace(arun=AsyncMock(return_value=[]))
+    original_query = "How do plant guard cells respond to drought?"
+    subtopic = "Cell-type-specific abiotic stress"
+    add_query = "single-cell transcriptome evidence"
+
+    await probe.feedback_rag(
+        0,
+        "draft-orig",
+        '{"has_critical_gaps": true, "search_queries": ' f'["{add_query}"]}}',
+        [{"doc_id": "document 001", "content": "existing"}],
+        original_query=original_query,
+        subtopic=subtopic,
+    )
+
+    sent_query = probe.ka.arun.await_args.kwargs["user_query"]
+    assert original_query in sent_query
+    assert subtopic in sent_query
+    assert add_query in sent_query
 
 
 def test_format_supplementary_query_skips_oversized_fragments() -> None:

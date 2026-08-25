@@ -104,6 +104,7 @@ class DeepResearchState(ParallelDispatchState):
 
     # Send-payload fields; set only during a Send invocation.
     subtopic: str | None
+    dimension_total: int | None
     knowledge: str | None
     dimension: str | None
     review_draft: str | None

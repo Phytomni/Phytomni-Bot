@@ -34,6 +34,7 @@ from ..agents.shared.analysis_requests import (
 )
 from ..agents.shared.options import resolve_agent_locale
 from ..runtime.fingerprint_jobs import try_attach_reuse_claim
+from ..runtime.langgraph_runner import invoke_graph
 from ..runtime.request_context import current_request_user, current_run_id
 from ..runtime.result_run_layout import result_run_root_from_child
 from ..runtime.task_dedup import (
@@ -88,10 +89,9 @@ def map_send_payload_to_analyst_input(
     constants ``submit_analyst_analysis`` hard-codes). ``query`` is
     set to the empty string because the preset-plan path inside the
     analyst graph never reads ``query`` once ``is_preset_plan`` is
-    True. ``is_polling`` is parameterised: the default is ``False`` so
-    standalone and chat/HTTP callers submit and let GetRun wait.
-    DeepGenome mounts pass an explicit value so its coordinator owns
-    remote waiting. Callers that opt in pass ``True``.
+    True. ``is_polling`` is parameterised and defaults to submit-return so
+    the shared execution runtime owns remote waiting. Legacy callers that
+    still require in-graph polling opt in explicitly.
 
     Args:
         payload: Request mapping with ``analysis_type`` / ``target_id``
@@ -99,9 +99,8 @@ def map_send_payload_to_analyst_input(
             plan meta string, and data list dict) / ``compute_resource``
             / optional ``output_dir``.
         is_polling: Whether the analyst graph should block until the
-            submitted task reaches a terminal state. Defaults to
-            ``False`` so GetRun owns remote waiting. Callers that opt
-            in pass ``True`` to enter ``pooling_node``.
+            submitted task reaches a terminal state. Defaults to ``False``
+            so the caller-owned execution runtime performs remote polling.
 
     Returns:
         An ``AnalystInput`` dict suitable for ``ainvoke`` on the
@@ -222,9 +221,8 @@ async def submit_analyst_via_subgraph(
             description, preset plan meta string, and data list
             dict) / ``compute_resource`` / optional ``output_dir``.
         is_polling: Whether the analyst graph should block until the
-            submitted task reaches a terminal state. Defaults to
-            ``False`` so GetRun owns remote waiting. Callers that
-            opt in pass ``True`` to enter ``pooling_node``.
+            submitted task reaches a terminal state. Defaults to ``False``
+            so the caller-owned execution runtime performs remote polling.
 
     Returns:
         Dict containing ``task_id`` / ``output_dir`` / ``plan`` /
@@ -278,8 +276,8 @@ async def submit_analyst_via_subgraph(
     logger.info(
         "Submitting %s task via analyst subgraph", context.analysis_type
     )
-    final_state = await analyst_agent.app.ainvoke(
-        analyst_input, config=runnable_config
+    final_state = await invoke_graph(
+        analyst_agent.app, analyst_input, config=runnable_config
     )
     result = _stamp_analysis_type(
         map_analyst_output_to_dispatch_state(final_state),

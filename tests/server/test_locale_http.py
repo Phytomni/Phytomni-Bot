@@ -31,6 +31,20 @@ from mcp_server_phytomni.api.app_support import (
     _ErrorResponseOptions,
     error_response,
 )
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    ExecutionStatus,
+    SpanStatus,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SpanSpec,
+    SQLiteExecutionWorkRepository,
+)
 from mcp_server_phytomni.runtime.locale import (
     SupportedLocale,
     bind_effective_locale,
@@ -38,10 +52,8 @@ from mcp_server_phytomni.runtime.locale import (
 )
 from mcp_server_phytomni.runtime.request_context import reset_request_var
 from mcp_server_phytomni.runtime.run_registry import (
-    RunOutcome,
     RunRegistry,
     RunRequestInfo,
-    local_run_spec,
 )
 
 pytestmark = pytest.mark.server
@@ -274,10 +286,58 @@ def _seed_a2ui_run(
         },
         "status": "input_required",
     }
-    RunRegistry(tasks_db_path).create_run(
-        local_run_spec(run_id, "u1", "chat"),
-        outcome=RunOutcome(status="input_required", result=result),
-        request_info=RunRequestInfo(query=query, locale=locale),
+    execution_id = f"turn-{run_id}"
+    reservations = SQLiteExecutionReservationRepository(
+        tasks_db_path,
+        run_id_factory=lambda: run_id,
+        root_span_id_factory=lambda: f"span-{run_id}",
+    )
+    reservation = reservations.reserve(
+        owner="u1",
+        execution_id=execution_id,
+        fingerprint_version=2,
+        fingerprint=f"fixture:{run_id}",
+        command=ExecutionCommand(agent_slug="chat", arguments={}),
+    )
+    work = SQLiteExecutionWorkRepository(tasks_db_path)
+    root = work.create_span(
+        SpanSpec(
+            owner="u1",
+            execution_id=execution_id,
+            span_id=reservation.root_span_id,
+            kind="agent",
+            label_key="agent.chat",
+        )
+    )
+    work.update_span_status(
+        execution_id,
+        reservation.root_span_id,
+        owner="u1",
+        status=SpanStatus.WAITING_INPUT,
+        expected_revision=root.revision,
+    )
+    assert reservations.record_observation(
+        owner="u1",
+        execution_id=execution_id,
+        status=ExecutionStatus.WAITING_INPUT,
+        tracking_health="healthy",
+        cancellation_state="none",
+        next_attempt_at=None,
+    )
+    registry = RunRegistry(tasks_db_path)
+    assert registry.update_request_info(
+        run_id,
+        owner="u1",
+        request_info=RunRequestInfo(
+            query=query,
+            locale=locale,
+            execution_id=execution_id,
+        ),
+    )
+    assert registry.update_active_result(
+        run_id,
+        owner="u1",
+        result=result,
     )
 
 

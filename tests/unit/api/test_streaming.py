@@ -5,9 +5,7 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -20,9 +18,7 @@ from tests.support.http_fakes import (
 )
 
 from mcp_server_phytomni.api import streaming
-from mcp_server_phytomni.api.lifecycle_contract import SafeApiError
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
-from mcp_server_phytomni.api.streaming import _prepare_context_stream
 from mcp_server_phytomni.mcp.result_formatting import (
     AguiEvent,
     run_error,
@@ -38,7 +34,6 @@ from mcp_server_phytomni.runtime.conversation_context.models import (
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
 )
-from mcp_server_phytomni.runtime.live_tasks import request_cancel
 
 pytestmark = pytest.mark.unit
 
@@ -131,26 +126,13 @@ async def _consume_disconnect_stream(
     return rendered, key, turn_id, ConversationContextStore(db_path)
 
 
-def _dependencies(settlements: list[tuple[str, str, str, dict[str, Any]]]):
-    """Build explicit request, A2UI, and persistence seams for one test."""
-
-    def _record_run(
-        run_id: str,
-        agent: str,
-        owner: str,
-        request_info: Any,
-    ) -> None:
-        settlements.append((run_id, agent, owner, {"request": request_info}))
-
-    def _settle(
-        run_id: str,
-        owner: str,
-        status: str,
-        result: dict[str, Any],
-        **_kwargs: Any,
-    ) -> bool:
-        settlements.append((run_id, owner, status, result))
-        return True
+def _dependencies(
+    settlements: list[tuple[str, str, str, dict[str, Any]]],
+    *,
+    event_sink: Any = None,
+):
+    """Build transport-only stream dependencies for one test."""
+    del settlements, event_sink
 
     return streaming.StreamingDependencies(
         request=streaming.StreamingRequestDependencies(
@@ -165,8 +147,6 @@ def _dependencies(settlements: list[tuple[str, str, str, dict[str, Any]]]):
             runtime=_unused_runtime,
         ),
         persistence=streaming.StreamingPersistenceDependencies(
-            create_running_stream_run=_record_run,
-            settle_stream_run=_settle,
             stream_answer_max_bytes=_max_answer_bytes,
         ),
     )
@@ -193,35 +173,8 @@ def test_stream_setup_error_keeps_preopen_mapping() -> None:
     assert unsupported.status_code == 400
 
 
-@pytest.mark.asyncio
-async def test_prepare_context_stream_emits_typed_rebuild_required(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Stream setup must advertise the rebuild code Go retries on."""
-    tasks_db = tmp_path / "server_tasks.db"
-    monkeypatch.setenv("API_TASKS_DB_PATH", str(tasks_db))
-    envelope = build_instant_chat_context_envelope("1")
-    envelope["base_business_context_version"] = 3
-    payload = ChatCompletionRequest(
-        model="phyto-chat",
-        messages=[ChatMessage(role="user", content="What is photosynthesis?")],
-        conversation=ConversationEnvelopeV1.model_validate(envelope),
-    )
-
-    with pytest.raises(SafeApiError) as caught:
-        await _prepare_context_stream(
-            tool_name="ChatAgent",
-            _arguments={},
-            payload=payload,
-        )
-
-    assert caught.value.status_code == 409
-    assert caught.value.code == "conversation_context_rebuild_required"
-    assert caught.value.retryable is True
-
-
 async def test_stream_runtime_uses_adapters_and_settles_answer() -> None:
-    """The extracted runtime persists running then terminal state via seams."""
+    """The transport exposes its answer for canonical Runtime settlement."""
     settlements: list[tuple[str, str, str, dict[str, Any]]] = []
     dependencies = _dependencies(settlements)
     payload = ChatCompletionRequest(
@@ -244,18 +197,9 @@ async def test_stream_runtime_uses_adapters_and_settles_answer() -> None:
     assert "event: RunStarted\n" in body
     assert "adapter answer" in body
     assert body.rstrip().endswith("data: [DONE]")
-    assert len(settlements) == 2
-    assert settlements[0][0:3] == (
-        "run-direct-contract",
-        "chat",
-        "owner-direct-contract",
-    )
-    assert settlements[1][0:3] == (
-        "run-direct-contract",
-        "owner-direct-contract",
-        "succeeded",
-    )
-    assert settlements[1][3]["formatted"]["answer"] == "adapter answer"
+    terminal_result = cast(Any, response).runtime_terminal_result()
+    assert terminal_result["formatted"]["answer"] == "adapter answer"
+    assert settlements == []
 
 
 async def test_context_stream_inserts_bounded_custom_before_finish(
@@ -298,7 +242,7 @@ async def test_context_stream_inserts_bounded_custom_before_finish(
         "Custom",
         "RunFinished",
     ]
-    assert settlements[-1][2] == "succeeded"
+    assert cast(Any, response).runtime_terminal_result()["partial"] is False
     assert frames[2][1] == {
         "type": "Custom",
         "name": "phyto.context_staged",
@@ -350,34 +294,16 @@ async def test_context_stream_degraded_keeps_answer_and_finish(
         "RunFinished",
     ]
     assert frames[-2][1]["value"]["context_degraded"] is True
-    assert settlements[-1][3]["formatted"]["answer"] == "adapter answer"
+    assert cast(Any, response).runtime_terminal_result()["formatted"][
+        "answer"
+    ] == ("adapter answer")
 
 
-async def _wait_for_settlement(
-    settlements: list[tuple[str, str, str, dict[str, Any]]],
-    *,
-    statuses: frozenset[str],
-) -> tuple[str, str, str, dict[str, Any]]:
-    """Wait until the stream producer records a terminal settlement."""
-    latest: tuple[str, str, str, dict[str, Any]] | None = None
-    try:
-        async with asyncio.timeout(2.0):
-            while True:
-                if settlements:
-                    latest = settlements[-1]
-                    if latest[2] in statuses:
-                        return latest
-                await asyncio.sleep(0)
-    except TimeoutError:
-        pytest.fail(f"settlement timed out: {latest!r}")
-    raise AssertionError("unreachable")
-
-
-async def test_context_stream_disconnect_before_stage_still_stages_turn(
+async def test_context_stream_disconnect_before_stage_marks_turn_failed(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Any,
 ) -> None:
-    """Closing a V1 HTTP body still lets the producer stage context."""
+    """Closing a V1 stream before ``RunFinished`` never stages context."""
     db_path = str(tmp_path / "context.sqlite")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", db_path)
 
@@ -428,88 +354,17 @@ async def test_context_stream_disconnect_before_stage_still_stages_turn(
     rendered, key, turn_id, store = await _consume_disconnect_stream(
         response, payload, db_path
     )
-    settled = await _wait_for_settlement(
-        settlements, statuses=frozenset({"succeeded"})
-    )
 
     assert '"name": "phyto.context_staged"' not in rendered
     assert "event: RunFinished\n" not in rendered
-    assert settled[2] == "succeeded"
-    assert settled[3]["formatted"]["answer"] == "adapter answer"
-    assert settled[3]["partial"] is False
+    terminal_result = cast(Any, response).runtime_terminal_result()
+    assert terminal_result["formatted"]["answer"] == "adapter answer"
+    assert terminal_result["partial"] is True
     stored_turn = store.load_turn(key, turn_id)
     assert stored_turn is not None
-    assert stored_turn.state == "staged"
-    assert stored_turn.result is not None
-
-
-async def test_owner_cancel_settles_cancelled_draft(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Any,
-) -> None:
-    """Owner Stop keeps accumulated tokens as a cancelled draft."""
-    db_path = str(tmp_path / "context.sqlite")
-    monkeypatch.setenv("PHYTOMNI_TASKS_DB", db_path)
-
-    gate = asyncio.Event()
-
-    async def staged_events(
-        _tool_name: str,
-        _arguments: dict[str, Any],
-        *,
-        run_id: str,
-        dialogue_id: str | None,
-    ) -> AsyncIterator[AguiEvent]:
-        yield run_started(run_id, dialogue_id)
-        yield text_message_start("msg-cancel")
-        yield text_message_content("msg-cancel", "adapter answer")
-        yield text_message_end("msg-cancel")
-        await gate.wait()
-        yield run_finished(run_id)
-
-    settlements: list[tuple[str, str, str, dict[str, Any]]] = []
-    dependencies = _dependencies(settlements)
-    dependencies = streaming.StreamingDependencies(
-        request=streaming.StreamingRequestDependencies(
-            prepare_tool_stream=staged_events,
-            current_user=dependencies.request.current_user,
-            current_request_id=dependencies.request.current_request_id,
-            new_run_id=dependencies.request.new_run_id,
-            agent_slug=dependencies.request.agent_slug,
-        ),
-        a2ui=dependencies.a2ui,
-        persistence=dependencies.persistence,
-    )
-    payload = ChatCompletionRequest(
-        model="phyto-chat",
-        messages=[ChatMessage(role="user", content="adapter query")],
-        stream=True,
-        conversation=_conversation_envelope(turn_id="15"),
-    )
-
-    response = await streaming.stream_chat_completion(
-        tool_name="ChatAgent",
-        arguments={
-            "user_query": "adapter query",
-            "locale": "en-US",
-            "obs_file_list": [],
-        },
-        payload=payload,
-        user_query="adapter query",
-        dependencies=dependencies,
-    )
-    rendered, _key, _turn_id, _store = await _consume_disconnect_stream(
-        response, payload, db_path
-    )
-    request_cancel("run-direct-contract")
-    settled = await _wait_for_settlement(
-        settlements, statuses=frozenset({"cancelled"})
-    )
-
-    assert "event: RunFinished\n" not in rendered
-    assert settled[2] == "cancelled"
-    assert settled[3]["formatted"]["answer"] == "adapter answer"
-    assert settled[3]["partial"] is True
+    assert stored_turn.state == "failed"
+    assert stored_turn.result is None
+    assert store.load_context(key) is None
 
 
 async def test_context_stream_run_error_emits_no_successful_context_event(

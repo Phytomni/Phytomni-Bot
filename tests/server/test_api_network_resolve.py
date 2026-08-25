@@ -27,6 +27,9 @@ from mcp_server_phytomni.agents.network.resolve_query import (
     GeneNetworkToIdCandidate,
 )
 from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
 from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
@@ -109,6 +112,21 @@ async def _wait_for_background_run(
     pytest.fail("background Network run did not settle")
 
 
+def _assert_v2_failed_projection(
+    tasks_db_path: str, record: RunRecord
+) -> None:
+    """Assert failure is owned by the canonical V2 execution journal."""
+    assert record.error is None
+    execution_id = record.request_info.execution_id
+    assert execution_id
+    projection = SQLiteExecutionJournal(tasks_db_path).get_projection(
+        execution_id, owner="u1"
+    )
+    assert projection.status.value == "failed"
+    assert projection.terminal is not None
+    assert projection.terminal.status == "failed"
+
+
 async def test_native_runs_resolves_when_flag_true(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -141,13 +159,12 @@ async def test_native_runs_resolves_when_flag_true(
 
     assert response.status_code == 202
     body = response.json()
-    assert body["task_ids"] == []
-    record = await _wait_for_background_run(tasks_db_path, body["run_id"])
+    assert body["task_ids"] == ["network-resolver-task"]
+    await _wait_for_background_run(tasks_db_path, body["run_id"])
     assert captured["species_code"] == "osa"
     assert captured["to_id"] == "TO:0000207"
     assert resolver_calls == ["rice plant height trait"]
-    assert record.result is not None
-    metadata = record.result["formatted"].get("metadata") or {}
+    metadata = body["result"]["formatted"].get("metadata") or {}
     assert metadata.get("original_query") == "rice plant height trait"
     assert metadata.get("resolved_to_id") == "TO:0000207"
     assert metadata.get("resolved_species_code") == "osa"
@@ -181,13 +198,12 @@ async def test_native_runs_defaults_bare_to_id_to_rice_without_llm(
 
     assert response.status_code == 202
     body = response.json()
-    record = await _wait_for_background_run(tasks_db_path, body["run_id"])
+    await _wait_for_background_run(tasks_db_path, body["run_id"])
     assert captured == {
         "species_code": "osa",
         "to_id": "TO:0000227",
     }
-    assert record.result is not None
-    metadata = record.result["formatted"].get("metadata") or {}
+    metadata = body["result"]["formatted"].get("metadata") or {}
     assert metadata.get("original_query") == "TO:0000227"
     assert metadata.get("resolved_to_id") == "TO:0000227"
     assert metadata.get("resolved_species_code") == "osa"
@@ -222,7 +238,7 @@ async def test_native_runs_skips_resolver_when_flag_false(
 
     assert response.status_code == 202
     body = response.json()
-    assert body["task_ids"] == []
+    assert body["task_ids"] == ["network-resolver-task"]
     record = await _wait_for_background_run(tasks_db_path, body["run_id"])
     assert set(record.task_ids) == {"network-resolver-task"}
     assert captured["to_id"] == "TO:0000207"
@@ -311,7 +327,7 @@ async def test_native_runs_missing_user_query_settles_failed(
         tasks_db_path, body["run_id"], failed=True
     )
     assert record.task_ids == ()
-    assert record.error == "background_submission_failed"
+    _assert_v2_failed_projection(tasks_db_path, record)
     assert not resolver_calls
     assert "to_id" not in captured
 
@@ -353,8 +369,7 @@ async def test_native_runs_resolver_failure_settles_failed(
         tasks_db_path, body["run_id"], failed=True
     )
     assert record.task_ids == ()
-    assert record.error == "background_submission_failed"
-    assert "no valid candidate" not in record.error
+    _assert_v2_failed_projection(tasks_db_path, record)
     assert "to_id" not in captured
 
 
@@ -402,7 +417,6 @@ async def test_native_runs_blank_species_code_settles_failed(
         tasks_db_path, body["run_id"], failed=True
     )
     assert record.task_ids == ()
-    assert record.error == "background_submission_failed"
-    assert "species_code" not in record.error
+    _assert_v2_failed_projection(tasks_db_path, record)
     assert "to_id" not in captured
     assert "species_code" not in captured

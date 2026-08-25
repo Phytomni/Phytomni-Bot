@@ -200,7 +200,7 @@ async def test_get_orphan_run_logs_are_finite_and_status_is_terminal(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
-    """An orphaned detached run yields finite empty logs and settles."""
+    """An orphaned detached run yields finite logs without read-side mutation."""
     registry = RunRegistry(tasks_db_path)
     registry.reserve_run(
         RunSpec("run-orphan-logs", "u1", "analyst", "remote"),
@@ -218,11 +218,11 @@ async def test_get_orphan_run_logs_are_finite_and_status_is_terminal(
         "task_ids": [],
         "task_logs": [],
     }
-    assert status.json()["status"] == "failed"
-    assert status.json()["error"] == "run failed"
+    assert status.json()["status"] == "running"
+    assert "error" not in status.json()
     record = registry.get_run("run-orphan-logs", owner="u1")
     assert record is not None
-    assert record.error == "background_submission_worker_lost"
+    assert record.error is None
 
 
 async def test_get_run_logs_default_strips_private_sentinel(

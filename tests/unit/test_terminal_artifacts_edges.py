@@ -89,15 +89,19 @@ async def test_default_listers_forward_bucket_and_runtime(
     seen: dict[str, Any] = {}
 
     async def _paths(
-        output_dir: str, *, bucket_name: str, obs_runtime: Any, **_kwargs: Any
+        output_dir: str, *, bucket_name: str, obs_runtime: Any
     ) -> list[str]:
         seen["paths"] = (output_dir, bucket_name, obs_runtime)
         return [f"{output_dir}/a.txt"]
 
     async def _objects(
-        output_dir: str, *, bucket_name: str, obs_runtime: Any, **_kwargs: Any
+        output_dir: str,
+        *,
+        bucket_name: str,
+        obs_runtime: Any,
+        limit: int,
     ) -> list[ListedArtifactObject]:
-        seen["objects"] = (output_dir, bucket_name, obs_runtime)
+        seen["objects"] = (output_dir, bucket_name, obs_runtime, limit)
         return [_listed("a.txt")]
 
     monkeypatch.setattr(
@@ -124,7 +128,7 @@ async def test_default_listers_forward_bucket_and_runtime(
     )("out")
     assert listed[0].relative_path == "a.txt"
     assert seen["paths"] == ("out", "phytomni", "runtime")
-    assert seen["objects"] == ("out", "phytomni", "runtime")
+    assert seen["objects"] == ("out", "phytomni", "runtime", 201)
 
 
 async def test_collect_set_degrades_when_listing_fails() -> None:
@@ -212,7 +216,7 @@ async def test_collect_set_caps_default_listing_while_walking(
         cap=2,
     )
 
-    assert seen["limit"] == 3
+    assert seen["limit"] == getattr(terminal_artifacts, "_DEFAULT_PATH_CAP") + 1
     assert len(result.artifacts) == 2
     assert result.warnings[0].code == "artifact_listing_truncated"
 

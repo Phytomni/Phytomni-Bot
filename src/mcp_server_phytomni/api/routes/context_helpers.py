@@ -99,6 +99,8 @@ async def stream_context_chat(
     dependencies: AgentRouteDependencies,
     payload: Any,
     attachment_arguments: Mapping[str, object],
+    *,
+    execution_id: str | None = None,
 ) -> Response:
     """Stream an Instant context turn through the shared chat runtime."""
     envelope = payload.conversation
@@ -113,6 +115,7 @@ async def stream_context_chat(
         },
         payload=payload,
         user_query=user_query,
+        execution_id=execution_id,
     )
 
 

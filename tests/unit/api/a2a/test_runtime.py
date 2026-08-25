@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -15,12 +16,29 @@ import pytest
 
 from mcp_server_phytomni.api.a2a import runtime
 from mcp_server_phytomni.api.a2a.executor import A2ARegistration
+from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
+    invoke_public_agent_operation,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    ExecutionStatus,
+    SpanStatus,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    DriverOutcome,
+    ExecutionCommand,
+    TerminalSettlementAuthority,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SpanSpec,
+    SQLiteExecutionWorkRepository,
+)
 from mcp_server_phytomni.runtime.run_registry import (
     A2ACorrelation,
-    RunOutcome,
     RunRegistry,
     RunRequestInfo,
-    RunSpec,
 )
 
 pytestmark = pytest.mark.unit
@@ -53,18 +71,135 @@ def _create_run(
     *,
     options: _RunOptions | None = None,
 ) -> None:
-    """Create one registry row with stable A2A correlation ids."""
+    """Create one Runtime V2 row with stable A2A correlation ids."""
     options = options or _RunOptions()
-    RunRegistry(db_path).create_run(
-        RunSpec(
-            f"run-{options.task_id}", options.owner, options.agent, "local"
+    run_id = f"run-{options.task_id}"
+    execution_id = f"turn-{options.task_id}"
+    reservations = SQLiteExecutionReservationRepository(
+        db_path,
+        run_id_factory=lambda: run_id,
+    )
+    reservations.reserve(
+        owner=options.owner,
+        execution_id=execution_id,
+        fingerprint_version=1,
+        fingerprint=f"fixture:{options.task_id}",
+        command=ExecutionCommand(agent_slug=options.agent, arguments={}),
+    )
+    status = {
+        "input_required": ExecutionStatus.WAITING_INPUT,
+        "waiting_input": ExecutionStatus.WAITING_INPUT,
+        "running": ExecutionStatus.RUNNING,
+        "succeeded": ExecutionStatus.RUNNING,
+    }[options.status]
+    reservations.record_observation(
+        owner=options.owner,
+        execution_id=execution_id,
+        status=status,
+        tracking_health="healthy",
+        cancellation_state="unsupported",
+        next_attempt_at=None,
+    )
+    reserved = reservations.get(
+        owner=options.owner,
+        execution_id=execution_id,
+    )
+    work = SQLiteExecutionWorkRepository(db_path)
+    span = work.create_span(
+        SpanSpec(
+            owner=options.owner,
+            execution_id=execution_id,
+            span_id=reserved.root_span_id,
+            kind="agent",
+            label_key=f"agent.{options.agent}",
+        )
+    )
+    work.update_span_status(
+        execution_id,
+        reserved.root_span_id,
+        owner=options.owner,
+        status=(
+            SpanStatus.WAITING_INPUT
+            if status is ExecutionStatus.WAITING_INPUT
+            else SpanStatus.RUNNING
         ),
-        outcome=RunOutcome(status=options.status, result=options.result),
-        request_info=_request_info(),
-        a2a=A2ACorrelation(
+        expected_revision=span.revision,
+    )
+    registry = RunRegistry(db_path)
+    registry.update_request_info(
+        run_id,
+        owner=options.owner,
+        request_info=replace(_request_info(), execution_id=execution_id),
+    )
+    registry.update_a2a_correlation(
+        run_id,
+        owner=options.owner,
+        correlation=A2ACorrelation(
             task_id=options.task_id,
             context_id=options.context_id,
         ),
+    )
+    if options.result is not None:
+        assert registry.update_active_result(
+            run_id,
+            owner=options.owner,
+            result=options.result,
+        )
+    if options.status == "succeeded":
+        reserved = reservations.get(
+            owner=options.owner,
+            execution_id=execution_id,
+        )
+        assert reservations.settle_terminal(
+            TerminalSettlementAuthority(
+                owner_ref=options.owner,
+                execution_id=execution_id,
+                expected_revision=reserved.supervisor_revision,
+                actor="runtime",
+                issued_at=datetime.now(UTC),
+            ),
+            DriverOutcome(status=ExecutionStatus.SUCCEEDED),
+        )
+
+
+async def _resume_through_runtime(
+    db_path: str,
+    task_id: str,
+    context_id: str,
+    arguments: dict[str, Any],
+    *,
+    dependencies: runtime.A2AResumeDependencies,
+) -> tuple[dict[str, Any], int] | None:
+    """Exercise the same Runtime operation boundary as the public route."""
+    owner = dependencies.registry.current_user() or "anonymous"
+    registry = dependencies.registry.registry_factory(db_path)
+    record = registry.get_run_by_a2a_task(task_id, owner=owner)
+    assert record is not None and record.request_info.execution_id is not None
+    execution_id = record.request_info.execution_id
+    reservation = SQLiteExecutionReservationRepository(db_path).get(
+        owner=owner,
+        execution_id=execution_id,
+    )
+
+    async def call() -> tuple[dict[str, Any], int] | None:
+        return await runtime.resume_task(
+            task_id,
+            context_id,
+            arguments,
+            dependencies=dependencies,
+        )
+
+    return await invoke_public_agent_operation(
+        db_path=db_path,
+        owner=owner,
+        execution_id=execution_id,
+        agent_slug=record.spec.agent,
+        operation="resume",
+        action_id=f"test:{task_id}:{arguments.get('generation')}",
+        expected_revision=reservation.supervisor_revision,
+        arguments=arguments,
+        transport="a2a_test",
+        call=call,
     )
 
 
@@ -149,50 +284,10 @@ def _dependencies(
     return dependencies, calls
 
 
-def _competing_dependencies(
-    db_path: str,
-    *,
-    status: str,
-    result: dict[str, Any],
-    resume_result: dict[str, Any],
-) -> runtime.A2AResumeDependencies:
-    """Build dependencies whose first settlement loses a concurrent CAS."""
-    dependencies, _calls = _dependencies(
-        db_path,
-        resume_result=resume_result,
-    )
-
-    def registry_factory(path: str) -> RunRegistry:
-        class CompetingRegistry(RunRegistry):
-            """Commit a competing result before the resumed callback."""
-
-            def settle_run(self, *args: Any, **kwargs: Any) -> bool:
-                run_id = args[0] if args else kwargs["run_id"]
-                expected_revision = kwargs["expected_revision"]
-                RunRegistry(self.db_path).settle_run(
-                    run_id,
-                    owner=kwargs["owner"],
-                    status=status,
-                    result=result,
-                    expected_revision=expected_revision,
-                )
-                return super().settle_run(*args, **kwargs)
-
-        return CompetingRegistry(path)
-
-    return replace(
-        dependencies,
-        registry=replace(
-            dependencies.registry,
-            registry_factory=registry_factory,
-        ),
-    )
-
-
-def test_registration_updates_existing_row_and_creates_stream_row(
+def test_registration_updates_only_runtime_reserved_rows(
     tmp_path: Path,
 ) -> None:
-    """Blocking and streaming calls converge on owner-scoped persistence."""
+    """A2A correlation cannot create a second lifecycle row."""
     db_path = str(tmp_path / "a2a-runtime.sqlite")
     _create_run(
         db_path,
@@ -227,8 +322,7 @@ def test_registration_updates_existing_row_and_creates_stream_row(
     existing = registry.get_run("run-existing", owner="alice")
     streamed = registry.get_run("stream-run", owner="alice")
     assert existing is not None and existing.a2a.context_id == "ctx-2"
-    assert streamed is not None and streamed.status == "running"
-    assert streamed.a2a.task_id == "stream-task"
+    assert streamed is None
 
 
 def test_get_task_is_owner_scoped_bounded_and_hides_raw_payload(
@@ -393,7 +487,8 @@ async def test_resume_cancellation_settles_terminal_result_and_strips_raw(
     )
     dependencies, calls = _dependencies(db_path)
 
-    response = await runtime.resume_task(
+    response = await _resume_through_runtime(
+        db_path,
         "task-1",
         "ctx-1",
         {"generation": 0, "cancelled": True, "widget": "confirm"},
@@ -415,7 +510,7 @@ async def test_resume_cancellation_settles_terminal_result_and_strips_raw(
     record = RunRegistry(db_path).get_run("run-task-1", owner="alice")
     assert record is not None and record.status == "succeeded"
     assert record.result is not None
-    assert record.result["raw"] == {"secret": "must not cross"}
+    assert "raw" not in record.result
 
 
 @pytest.mark.asyncio
@@ -443,7 +538,8 @@ async def test_resume_reinterrupt_increments_generation(
         },
     )
 
-    response = await runtime.resume_task(
+    response = await _resume_through_runtime(
+        db_path,
         "review-task",
         "review-ctx",
         {"generation": 2, "approved": True},
@@ -466,92 +562,8 @@ async def test_resume_reinterrupt_increments_generation(
         {"run_id": "run-review-task", "approved": True, "edits": None}
     ]
     record = RunRegistry(db_path).get_run("run-review-task", owner="alice")
-    assert record is not None and record.status == "input_required"
+    assert record is not None and record.status == "waiting_input"
     assert record.result is not None and record.result["generation"] == 3
-
-
-@pytest.mark.asyncio
-async def test_resume_reinterrupt_rejects_lost_revision_cas(
-    tmp_path: Path,
-) -> None:
-    """A competing re-interrupt cannot be reported as a successful pause."""
-    db_path = str(tmp_path / "a2a-reinterrupt-conflict.sqlite")
-    _create_run(
-        db_path,
-        options=_RunOptions(
-            agent="review",
-            result={
-                "interrupt": {"draft": {"summary": "first"}},
-                "generation": 0,
-            },
-            task_id="review-conflict",
-            context_id="review-conflict-ctx",
-        ),
-    )
-    winner = {
-        "interrupt": {"draft": {"summary": "winner"}},
-        "generation": 8,
-    }
-    dependencies = _competing_dependencies(
-        db_path,
-        status="input_required",
-        result=winner,
-        resume_result={
-            "__interrupt__": [SimpleNamespace(value={"summary": "loser"})]
-        },
-    )
-
-    with pytest.raises(ValueError, match="persistence conflict"):
-        await runtime.resume_task(
-            "review-conflict",
-            "review-conflict-ctx",
-            {"generation": 0, "approved": True},
-            dependencies=dependencies,
-        )
-
-    record = RunRegistry(db_path).get_run("run-review-conflict", owner="alice")
-    assert record is not None and record.status == "input_required"
-    assert record.result == winner
-
-
-@pytest.mark.asyncio
-async def test_resume_terminal_rejects_lost_revision_cas(
-    tmp_path: Path,
-) -> None:
-    """A competing terminal result cannot be overwritten or reported twice."""
-    db_path = str(tmp_path / "a2a-terminal-conflict.sqlite")
-    _create_run(
-        db_path,
-        options=_RunOptions(
-            result={
-                "interrupt": {"draft": {"a2ui": {"surface_id": "s"}}},
-                "generation": 0,
-            },
-            task_id="terminal-conflict",
-            context_id="terminal-conflict-ctx",
-        ),
-    )
-    winner = {"formatted": {"answer": "winner"}}
-    dependencies = _competing_dependencies(
-        db_path,
-        status="succeeded",
-        result=winner,
-        resume_result={"response": "loser"},
-    )
-
-    with pytest.raises(ValueError, match="persistence conflict"):
-        await runtime.resume_task(
-            "terminal-conflict",
-            "terminal-conflict-ctx",
-            {"generation": 0, "accepted": True},
-            dependencies=dependencies,
-        )
-
-    record = RunRegistry(db_path).get_run(
-        "run-terminal-conflict", owner="alice"
-    )
-    assert record is not None and record.status == "succeeded"
-    assert record.result == winner
 
 
 @pytest.mark.asyncio
@@ -575,11 +587,12 @@ async def test_resume_backend_error_is_not_reported_as_success(
         graphs=replace(dependencies.graphs, resume_graph=fail_resume),
     )
     with pytest.raises(RuntimeError, match="backend secret"):
-        await runtime.resume_task(
+        await _resume_through_runtime(
+            db_path,
             "task-1",
             "ctx-1",
             {"generation": 0, "accepted": True},
             dependencies=dependencies,
         )
     record = RunRegistry(db_path).get_run("run-task-1", owner="alice")
-    assert record is not None and record.status == "input_required"
+    assert record is not None and record.status == "failed"

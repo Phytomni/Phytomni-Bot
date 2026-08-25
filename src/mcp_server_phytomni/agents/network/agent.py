@@ -24,11 +24,12 @@ from ...common.prompts import get_prompt
 from ...config.defaults import GeneNetworkConfig, resolve_compute_resource
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
+from ...runtime.artifact_roles import append_artifact_manifest_contract
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ...runtime.locale import SupportedLocale
 from ...runtime.result_run_layout import (
+    is_unallocated_default_output_dir,
     result_child_output_dir,
-    reusable_caller_output_dir,
 )
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
@@ -64,6 +65,10 @@ from ..shared.remote_analysis import (
     REMOTE_SUBMISSION_ERRORS,
     accepted_submission,
     rejected_submission,
+)
+from .public_trace import (
+    publish_gene_network_target_validation,
+    publish_gene_network_workflow_selection,
 )
 
 logger = logging.getLogger(__name__)
@@ -278,6 +283,7 @@ class GeneNetworkAgents:
         Returns:
             Dict containing task_id and output_dir.
         """
+        publish_gene_network_workflow_selection(analysis_type)
         goal_description, meta, data_list = self._analysis_prompt_parts(
             analysis_type,
             species_code,
@@ -317,7 +323,9 @@ class GeneNetworkAgents:
             goal_path,
             {"to_id": to_id},
         )
-        meta = get_prompt(self.gene_network_config.PROMPT_FILE, meta_path)
+        meta = append_artifact_manifest_contract(
+            get_prompt(self.gene_network_config.PROMPT_FILE, meta_path)
+        )
         data_list = get_data_list(
             self.gene_network_config.DEEPGENOME_DATA,
             analysis_type,
@@ -338,19 +346,27 @@ class GeneNetworkAgents:
         Returns:
             State update with network tasks and counters initialized.
         """
+        to_id = state.get("to_id")
+        species_code = state.get("species_code")
+        if isinstance(to_id, str) and isinstance(species_code, str):
+            publish_gene_network_target_validation(to_id, species_code)
         run_identity = RunIdentity.create(
             user_id=state.get("user_id"),
             scope="gene_network_task",
         )
-        output_dir = reusable_caller_output_dir(
-            str(state.get("output_dir") or ""),
-            str(self.gene_network_config.OUTPUT_DIR or ""),
-        ) or await create_output_dir(
-            user_id=run_identity.user_id,
-            task="gene_network_task",
-            bucket_name=self.gene_network_config.BUCKET_NAME,
-            run_identity=run_identity,
-        )
+        output_dir = str(state.get("output_dir") or "")
+        if is_unallocated_default_output_dir(
+            output_dir,
+            self.gene_network_config.OUTPUT_DIR,
+        ):
+            output_dir = ""
+        if not output_dir:
+            output_dir = await create_output_dir(
+                user_id=run_identity.user_id,
+                task="gene_network_task",
+                bucket_name=self.gene_network_config.BUCKET_NAME,
+                run_identity=run_identity,
+            )
         tasks = [
             {
                 "analysis_type": "gene_network_analysis",

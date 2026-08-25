@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-08-23",
+  "source": "configured_analysis_platform_via_existing_status_and_log_wrappers",
+  "raw_payload_retained": false,
+  "provider_identity_retained": false,
+  "terminal_status_snapshot": {
+    "availability": "available",
+    "status": "SUCCEEDED",
+    "top_level_fields": {
+      "create_time": "string",
+      "dag": "object",
+      "description": "string",
+      "finish_time": "string",
+      "id": "string_private",
+      "io_acc_expected_usage": "number",
+      "labels": "array",
+      "name": "string_private",
+      "node_labels": "array",
+      "output_dir": "string_private",
+      "priority": "number",
+      "start_time": "string",
+      "status": "status_enum",
+      "still_running_tasks": "array",
+      "task_runtime_info": "array",
+      "tasks": "array_private",
+      "timeout": "number",
+      "tool_info": "object_private",
+      "user_name": "string_private"
+    },
+    "public_status_allowlist": [
+      "PENDING",
+      "SUBMITTED",
+      "RUNNING",
+      "SUCCEEDED",
+      "FAILED",
+      "CANCELLED",
+      "TIMED_OUT"
+    ]
+  },
+  "terminal_log_snapshot": {
+    "availability": "available",
+    "transport_shape": "full_snapshot",
+    "top_level_fields": {
+      "count": "number",
+      "log_storage_link": "string_private_url",
+      "logs": "array"
+    },
+    "record_fields": {
+      "collect_time": "string",
+      "content": "string_private_unbounded"
+    },
+    "observed_record_count": 4351,
+    "provider_cursor": false,
+    "stable_record_identity": false,
+    "public_raw_content_allowed": false
+  },
+  "behavioral_cases": [
+    {
+      "name": "append",
+      "input": "previous snapshot is an exact prefix of the next snapshot",
+      "required_adapter_result": "emit only the bounded suffix"
+    },
+    {
+      "name": "repeat",
+      "input": "the next snapshot repeats records in the overlap window",
+      "required_adapter_result": "emit no duplicate normalized records"
+    },
+    {
+      "name": "truncation_or_rotation",
+      "input": "snapshot count decreases or the previous prefix no longer matches",
+      "required_adapter_result": "recover from the bounded overlap identity window without replaying the full snapshot"
+    },
+    {
+      "name": "terminal",
+      "input": "authoritative status is a terminal allowlisted value",
+      "required_adapter_result": "settle lifecycle independently of trace ingestion"
+    },
+    {
+      "name": "unavailable",
+      "input": "status or log transport returns no valid payload",
+      "required_adapter_result": "return a typed unavailable observation; trace failure does not change analysis outcome"
+    }
+  ],
+  "privacy_notes": [
+    "dag, task, app, resource, input, output, tool, user, path, and URL fields are private",
+    "content is never copied, summarized, or exposed by the generic adapter",
+    "unknown fields and record forms remain private diagnostics"
+  ]
+}
