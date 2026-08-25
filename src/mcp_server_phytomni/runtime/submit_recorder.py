@@ -14,21 +14,18 @@ shell rather than carrying registry-write logic alongside it.
 
 import functools
 import logging
-import re
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from ..storage.path_policy import IdFactory
 from .execution_defaults import empty_execution_projection
+from .execution_instrumentation_v2 import current_execution_boundary
 from .request_context import (
     bind_accepted_task_ids,
     bind_recorder_degraded,
     bind_run_id,
     current_pre_recorded_task_id,
-    current_request_id,
     current_request_user,
     current_run_id,
 )
@@ -36,7 +33,7 @@ from .result_run_layout import (
     RESULT_DELIVERY_AGENTS,
     result_run_root_from_child,
 )
-from .run_registry import RunOutcome, RunRegistry, RunRequestInfo, RunSpec
+from .run_registry import RunRegistry
 from .submission_outcome import (
     project_submission_warnings,
     task_output_pairs_from_records,
@@ -44,7 +41,6 @@ from .submission_outcome import (
 from .task_manager import (
     RunContext,
     Submission,
-    TaskManager,
     resolve_tasks_db_path,
 )
 
@@ -60,30 +56,6 @@ SubmissionTuple = tuple[str, str, str | None, str | None]
 SubmissionExtractor = Callable[
     [Mapping[str, Any]], tuple[SubmissionTuple, ...]
 ]
-
-
-@dataclass(frozen=True, slots=True)
-class _ChildSubmissionRecordRequest:
-    """Inputs needed to persist accepted child submissions."""
-
-    manager: TaskManager
-    submissions: tuple[SubmissionTuple, ...]
-    run_id: str
-    user_id: str
-    agent: str
-    now: str
-
-
-@dataclass(frozen=True, slots=True)
-class _SubmittedTaskPersistRequest:
-    """Inputs needed to persist one submit-handler registry write."""
-
-    result: dict[str, Any]
-    agent: str
-    accepted_submissions: tuple[SubmissionTuple, ...]
-    submissions: tuple[SubmissionTuple, ...]
-    bound_run_id: str | None
-    user_id: str
 
 
 def _extract_single_submission(
@@ -209,229 +181,28 @@ def extract_task_submissions(
     return extractor(result) if extractor is not None else ()
 
 
-_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
-
-
-def _bounded_kind(value: object, *, fallback: str) -> str:
-    """Return a contract kind, else the agent slug, else empty."""
-    if isinstance(value, str) and _KIND_PATTERN.fullmatch(value):
-        return value
-    if _KIND_PATTERN.fullmatch(fallback):
-        return fallback
-    return ""
-
-
-def _bounded_error_code(value: object) -> str | None:
-    """Return a bounded error code, dropping traceback-like strings."""
-    if isinstance(value, str) and _KIND_PATTERN.fullmatch(value):
-        return value
-    return None
-
-
-def _list_mapping_items(value: object) -> tuple[Mapping[str, Any], ...]:
-    """Return mapping rows from a list payload, else empty."""
-    if not isinstance(value, list):
-        return ()
-    return tuple(item for item in value if isinstance(item, Mapping))
-
-
-def _nested_submission_items(
-    result: Mapping[str, Any], agent: str
-) -> tuple[Mapping[str, Any], ...]:
-    """Return per-child payload mappings used to recover kind/error_code."""
-    if agent == "design":
-        return _list_mapping_items(result.get("design_task_result"))
-    if agent == "network":
-        nested = result.get("network_task")
-        return (nested,) if isinstance(nested, Mapping) else ()
-    if agent == "research":
-        return _list_mapping_items(result.get("research_submissions"))
-    if agent in {"analyst", "deep_genome"}:
-        return (result,)
-    return ()
-
-
-def _kind_from_item(item: Mapping[str, Any], *, fallback: str) -> str:
-    """Prefer an explicit kind or analysis_type over the agent slug."""
-    for key in ("kind", "analysis_type", "task_name"):
-        value = item.get(key)
-        if isinstance(value, str) and _KIND_PATTERN.fullmatch(value):
-            return value
-    return _bounded_kind(None, fallback=fallback)
-
-
-def _is_doomed_mapping(item: Mapping[str, Any]) -> bool:
-    """Return whether one nested child is destined to fail locally."""
-    if item.get("accepted") is False:
-        return True
-    if isinstance(item.get("_submission_rejected"), Mapping):
-        return True
-    status = item.get("status")
-    return isinstance(status, str) and status.lower() in {"failed", "error"}
-
-
-def _rejection_records(
-    result: Mapping[str, Any],
-) -> tuple[Mapping[str, Any], ...]:
-    """Return safe rejection records from the wrapper or phytomni_state."""
-    records: list[Mapping[str, Any]] = []
-    sources = [result.get("submission_rejections")]
-    state = result.get("phytomni_state")
-    if isinstance(state, Mapping):
-        sources.append(state.get("submission_rejections"))
-    for source in sources:
-        if not isinstance(source, list):
-            continue
-        records.extend(item for item in source if isinstance(item, Mapping))
-    return tuple(records)
-
-
-def _doomed_child_rows(
-    result: Mapping[str, Any], agent: str
-) -> tuple[dict[str, Any], ...]:
-    """Project doomed children into execution.tasks without pollable ids."""
-    rows: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for item in _nested_submission_items(result, agent):
-        if not _is_doomed_mapping(item):
-            continue
-        task_id = item.get("task_id")
-        if not isinstance(task_id, str) or not task_id:
-            task_id = item.get("id")
-        rejected = item.get("_submission_rejected")
-        error_code = item.get("error_code")
-        if isinstance(rejected, Mapping):
-            nested_code = rejected.get("code")
-            if error_code is None:
-                error_code = nested_code
-        if not isinstance(task_id, str) or not task_id:
-            kind = _kind_from_item(item, fallback=agent)
-            task_id = f"rejected-{kind}"
-        if task_id in seen:
-            continue
-        seen.add(task_id)
-        rows.append(
-            {
-                "id": task_id,
-                "accepted": False,
-                "status": "failed",
-                "kind": _kind_from_item(item, fallback=agent),
-                "error_code": _bounded_error_code(error_code),
-            }
-        )
-    if rows:
-        return tuple(rows)
-    for index, item in enumerate(_rejection_records(result)):
-        code = item.get("code")
-        goal = item.get("goal")
-        kind = _bounded_kind(goal, fallback=agent)
-        task_id = item.get("task_id")
-        if not isinstance(task_id, str) or not task_id:
-            task_id = f"rejected-{kind}-{index}"
-        if task_id in seen:
-            continue
-        seen.add(task_id)
-        rows.append(
-            {
-                "id": task_id,
-                "accepted": False,
-                "status": "failed",
-                "kind": kind,
-                "error_code": _bounded_error_code(code),
-            }
-        )
-    return tuple(rows)
-
-
-def _kinds_for_submissions(
-    result: Mapping[str, Any],
-    submissions: tuple[SubmissionTuple, ...],
-    agent: str,
-) -> tuple[str, ...]:
-    """Resolve one bounded kind per accepted submission."""
-    by_id: dict[str, str] = {}
-    for item in _nested_submission_items(result, agent):
-        task_id = item.get("task_id")
-        if isinstance(task_id, str) and task_id:
-            by_id[task_id] = _kind_from_item(item, fallback=agent)
-    if agent == "research":
-        task_ids = result.get("task_ids")
-        if isinstance(task_ids, Mapping):
-            for name, task_id in task_ids.items():
-                if isinstance(name, str) and isinstance(task_id, str):
-                    by_id.setdefault(
-                        task_id, _bounded_kind(name, fallback=agent)
-                    )
-    return tuple(
-        by_id.get(task_id, _bounded_kind(None, fallback=agent))
-        for task_id, _output_dir, _fingerprint, _source in submissions
-    )
-
-
-def _in_flight_result(
-    submissions: tuple[SubmissionTuple, ...],
-    agent: str,
-    *,
-    kinds: tuple[str, ...] | None = None,
-    error_codes: tuple[str | None, ...] | None = None,
-    accepted: tuple[bool, ...] | None = None,
-) -> list[dict[str, Any]]:
-    """Build execution.tasks rows for an in-flight umbrella run."""
-    if kinds is not None and len(kinds) != len(submissions):
-        raise ValueError("kinds must match submissions")
-    if error_codes is not None and len(error_codes) != len(submissions):
-        raise ValueError("error_codes must match submissions")
-    if accepted is not None and len(accepted) != len(submissions):
-        raise ValueError("accepted flags must match submissions")
-    rows: list[dict[str, Any]] = []
-    for index, (task_id, _output_dir, _fingerprint, _source) in enumerate(
-        submissions
-    ):
-        kind_value = agent if kinds is None else kinds[index]
-        is_accepted = True if accepted is None else accepted[index]
-        error_code = None
-        if not is_accepted:
-            if error_codes is not None:
-                error_code = _bounded_error_code(error_codes[index])
-            status = "failed"
-        else:
-            status = "submitted"
-        rows.append(
-            {
-                "id": task_id,
-                "accepted": is_accepted,
-                "status": status,
-                "kind": _bounded_kind(kind_value, fallback=agent),
-                "error_code": error_code,
-            }
-        )
-    return rows
-
-
 def _initial_submission_result(
     result: Mapping[str, Any],
     submissions: tuple[SubmissionTuple, ...],
     agent: str,
 ) -> dict[str, Any]:
     """Build the in-flight result envelope seeded before child writes."""
-    doomed = _doomed_child_rows(result, agent)
-    doomed_ids = {row["id"] for row in doomed}
-    accepted_submissions = tuple(
-        item for item in submissions if item[0] not in doomed_ids
-    )
-    kinds = _kinds_for_submissions(result, accepted_submissions, agent)
-    task_rows = _in_flight_result(accepted_submissions, agent, kinds=kinds)
-    task_rows.extend(doomed)
+    task_rows = [
+        {
+            "id": task_id,
+            "accepted": True,
+            "status": "submitted",
+        }
+        for task_id, _output_dir, _fingerprint, _source in submissions
+    ]
     if agent in RESULT_DELIVERY_AGENTS:
         child_outputs = [
             output_dir
-            for _task_id, output_dir, _fingerprint, _source in (
-                accepted_submissions
-            )
+            for _task_id, output_dir, _fingerprint, _source in submissions
             if "/children/" in output_dir
         ]
         if child_outputs:
-            if len(child_outputs) != len(accepted_submissions):
+            if len(child_outputs) != len(submissions):
                 raise ValueError("result children must share one run root")
             output_roots = {
                 result_run_root_from_child(output_dir)
@@ -443,16 +214,12 @@ def _initial_submission_result(
         else:
             output_dirs = [
                 output_dir
-                for _task_id, output_dir, _fingerprint, _source in (
-                    accepted_submissions
-                )
+                for _task_id, output_dir, _fingerprint, _source in submissions
             ]
     else:
         output_dirs = [
             output_dir
-            for _task_id, output_dir, _fingerprint, _source in (
-                accepted_submissions
-            )
+            for _task_id, output_dir, _fingerprint, _source in submissions
         ]
     initial_result = empty_execution_projection(
         result_archive_required=agent in RESULT_DELIVERY_AGENTS
@@ -464,20 +231,6 @@ def _initial_submission_result(
         initial_result["execution"]["warnings"] = warnings
         initial_result["execution"]["tracking"] = {"degraded": True}
     return initial_result
-
-
-def _record_child_submissions(
-    request: _ChildSubmissionRecordRequest,
-) -> None:
-    """Record accepted child submissions under one explicit run."""
-    for submission in _build_child_submissions(
-        submissions=request.submissions,
-        run_id=request.run_id,
-        user_id=request.user_id,
-        agent=request.agent,
-        now=request.now,
-    ):
-        request.manager.record(submission)
 
 
 def _build_child_submissions(
@@ -514,87 +267,12 @@ def _build_child_submissions(
     )
 
 
-def _persist_submitted_task(request: _SubmittedTaskPersistRequest) -> None:
-    """Write one submit-handler envelope into the local run registry."""
-    now = datetime.now(UTC).isoformat()
-    db_path = resolve_tasks_db_path()
-    try:
-        initial_result = _initial_submission_result(
-            request.result, request.accepted_submissions, request.agent
-        )
-        registry = RunRegistry(db_path)
-        bound_run_id = request.bound_run_id
-        if bound_run_id is not None:
-            child_submissions = _build_child_submissions(
-                submissions=request.accepted_submissions,
-                run_id=bound_run_id,
-                user_id=request.user_id,
-                agent=request.agent,
-                now=now,
-            )
-            if not registry.record_reserved_submissions(
-                bound_run_id,
-                owner=request.user_id,
-                agent=request.agent,
-                submissions=child_submissions,
-                result=initial_result,
-                now=now,
-            ):
-                bind_recorder_degraded(True)
-            return
-
-        run_id = IdFactory().new_id("run", request.agent)
-        registry.create_run(
-            RunSpec(
-                run_id=run_id,
-                user_id=request.user_id,
-                agent=request.agent,
-                origin="remote",
-            ),
-            outcome=RunOutcome(result=initial_result),
-            request_info=RunRequestInfo(request_id=current_request_id()),
-        )
-        _record_child_submissions(
-            _ChildSubmissionRecordRequest(
-                manager=TaskManager(db_path),
-                submissions=request.accepted_submissions,
-                run_id=run_id,
-                user_id=request.user_id,
-                agent=request.agent,
-                now=now,
-            )
-        )
-        bind_run_id(run_id)
-        logger.info(
-            "Analyst run correlated",
-            extra={
-                "request_id": current_request_id(),
-                "run_id": run_id,
-                "task_count": len(request.submissions),
-                "agent": request.agent,
-            },
-        )
-    except (sqlite3.Error, OSError, ValueError) as exc:
-        logger.error(
-            "Failed to persist remote submission",
-            extra={
-                "agent": request.agent,
-                "run_id": request.bound_run_id,
-                "task_count": len(request.submissions),
-                "error_type": type(exc).__name__,
-            },
-        )
-        bind_recorder_degraded(True)
-
-
 def record_submitted_task(result: Any, *, agent: str) -> None:
     """Persist submitted tasks plus their owning run row.
 
-    Mints a fresh ``run_id`` via ``IdFactory().new_id("run", agent)``,
-    writes one ``runs`` row (``origin="remote"``, ``status="running"``)
-    via ``RunRegistry.create_run``, then writes one child task row per
-    extracted task id — all sharing the same ``run_id`` so
-    ``RunRegistry.reconcile`` can join them by ``tasks.run_id``.
+    Requires the public Runtime to reserve the run before business dispatch,
+    then records child task rows under that exact run identity. It never
+    mints or creates a fallback run.
     Best-effort: a registry / SQLite / OS error must never break an
     already-successful remote submission. On such a failure the
     chokepoint (1) logs only safe identifiers and the exception class,
@@ -633,35 +311,75 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     if result.get("dedup_hit") is True:
         return
     submissions = extract_task_submissions(result, agent)
-    doomed = _doomed_child_rows(result, agent)
-    doomed_ids = {row["id"] for row in doomed}
-    accepted_submissions = tuple(
-        item for item in submissions if item[0] not in doomed_ids
-    )
-    if not accepted_submissions and not doomed:
+    if not submissions:
         return
-    accepted_task_ids = tuple(
-        task_id for task_id, *_rest in accepted_submissions
-    )
+    accepted_task_ids = tuple(task_id for task_id, *_rest in submissions)
     bind_accepted_task_ids(accepted_task_ids)
+    boundary = current_execution_boundary()
+    bound_run_id = current_run_id()
+    if bound_run_id is None and boundary is not None:
+        bound_run_id = boundary.context.run_id
     if (
         agent == "deep_genome"
-        and current_run_id() is not None
+        and bound_run_id is not None
         and current_pre_recorded_task_id() is not None
-        and len(accepted_submissions) == 1
-        and accepted_submissions[0][0] == current_pre_recorded_task_id()
+        and len(submissions) == 1
+        and submissions[0][0] == current_pre_recorded_task_id()
     ):
         return
-    _persist_submitted_task(
-        _SubmittedTaskPersistRequest(
-            result=result,
-            agent=agent,
-            accepted_submissions=accepted_submissions,
-            submissions=submissions,
-            bound_run_id=current_run_id(),
-            user_id=current_request_user() or "anonymous",
+    if bound_run_id is None:
+        logger.error(
+            "Remote submission missing execution Runtime",
+            extra={
+                "agent": agent,
+                "task_count": len(submissions),
+            },
         )
+        bind_recorder_degraded(True)
+        return
+    user_id = current_request_user() or (
+        boundary.context.owner_ref if boundary is not None else "anonymous"
     )
+    now = datetime.now(UTC).isoformat()
+    db_path = resolve_tasks_db_path()
+    # Seed the run row with the same canonical envelope shape reconciliation
+    # writes later so a client polling ``GET /v1/runs/{id}`` while the run is
+    # still in flight sees empty scientific content and submitted execution
+    # rows without a field-ownership transition at terminal settlement.
+    try:
+        initial_result = _initial_submission_result(result, submissions, agent)
+        registry = RunRegistry(db_path)
+        child_submissions = _build_child_submissions(
+            submissions=submissions,
+            run_id=bound_run_id,
+            user_id=user_id,
+            agent=agent,
+            now=now,
+        )
+        if not registry.record_reserved_submissions(
+            bound_run_id,
+            owner=user_id,
+            agent=agent,
+            submissions=child_submissions,
+            result=initial_result,
+            now=now,
+        ):
+            bind_recorder_degraded(True)
+        else:
+            bind_run_id(bound_run_id)
+        return
+    except (sqlite3.Error, OSError, ValueError) as exc:
+        logger.error(
+            "Failed to persist remote submission",
+            extra={
+                "agent": agent,
+                "run_id": bound_run_id,
+                "task_count": len(submissions),
+                "error_type": type(exc).__name__,
+            },
+        )
+        bind_recorder_degraded(True)
+        return
 
 
 def records_submission(

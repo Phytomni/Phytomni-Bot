@@ -1,42 +1,54 @@
 {
-  "nodes": [
-    {
-      "name": "__start__",
-      "kind": "boundary"
-    },
-    {
-      "name": "extract_region_codes_node",
-      "kind": "node"
-    },
-    {
-      "name": "submit_vci_task_node",
-      "kind": "node"
-    },
-    {
-      "name": "__end__",
-      "kind": "boundary"
-    }
-  ],
+  "classification": "internal",
+  "driver": "remote_task",
   "edges": [
     {
+      "conditional": false,
       "source": "__start__",
-      "target": "extract_region_codes_node",
-      "conditional": false
+      "target": "extract_region_codes_node"
     },
     {
+      "conditional": true,
       "source": "extract_region_codes_node",
-      "target": "__end__",
-      "conditional": true
+      "target": "__end__"
     },
     {
+      "conditional": true,
       "source": "extract_region_codes_node",
-      "target": "submit_vci_task_node",
-      "conditional": true
+      "target": "submit_vci_task_node"
     },
     {
+      "conditional": false,
       "source": "submit_vci_task_node",
-      "target": "__end__",
-      "conditional": false
+      "target": "__end__"
     }
-  ]
+  ],
+  "graph_id": "environment",
+  "lifecycle": [
+    "asynchronous"
+  ],
+  "nodes": [
+    {
+      "kind": "boundary",
+      "name": "__start__"
+    },
+    {
+      "kind": "node",
+      "name": "extract_region_codes_node"
+    },
+    {
+      "kind": "node",
+      "name": "submit_vci_task_node"
+    },
+    {
+      "kind": "boundary",
+      "name": "__end__"
+    }
+  ],
+  "public_agent": null,
+  "remote_providers": [
+    "vci_task_platform"
+  ],
+  "subgraph_dependencies": [],
+  "topology": "serial"
 }

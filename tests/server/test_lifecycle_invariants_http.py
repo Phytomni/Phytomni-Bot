@@ -32,8 +32,17 @@ from mcp_server_phytomni.api.lifecycle_contract import canonicalize_run_record
 from mcp_server_phytomni.runtime.checkpoint_backend import (
     build_default_checkpointer,
 )
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import ExecutionStatus
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
 from mcp_server_phytomni.runtime.request_context import (
-    current_run_id,
     request_context,
 )
 from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
@@ -44,6 +53,36 @@ from mcp_server_phytomni.runtime.submit_recorder import (
 )
 
 pytestmark = pytest.mark.server
+
+
+def _reserve_remote_fixture(
+    db_path: str,
+    *,
+    run_id: str,
+    owner: str,
+    agent: str = "analyst",
+) -> None:
+    """Reserve the one canonical Runtime row used by submit recording."""
+    execution_id = f"turn-{run_id}"
+    reservations = SQLiteExecutionReservationRepository(
+        db_path,
+        run_id_factory=lambda: run_id,
+    )
+    reservations.reserve(
+        owner=owner,
+        execution_id=execution_id,
+        fingerprint_version=1,
+        fingerprint=f"fixture:{execution_id}",
+        command=ExecutionCommand(agent_slug=agent, arguments={}),
+    )
+    assert reservations.record_observation(
+        owner=owner,
+        execution_id=execution_id,
+        status=ExecutionStatus.RUNNING,
+        tracking_health="healthy",
+        cancellation_state="unsupported",
+        next_attempt_at=None,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -345,7 +384,7 @@ def _assert_restart_run_persisted(tasks_db_path: str, run_id: str) -> None:
     """Verify the first process wrote the input-required registry row."""
     record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
     assert record is not None
-    assert record.status == "input_required"
+    assert record.status == "waiting_input"
 
 
 async def _resume_restart_review(
@@ -404,13 +443,17 @@ async def test_sync_persistence_failure_is_not_success(
     async def fake(_args: Any) -> dict[str, Any]:
         return {"answer": "ok", "doc_list": []}
 
-    def fail_create_run(*_args: Any, **_kwargs: Any) -> None:
+    def fail_terminal_settlement(*_args: Any, **_kwargs: Any) -> bool:
         raise sqlite3.OperationalError("private database failure")
 
     install_tool_handler(
         monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
     )
-    monkeypatch.setattr(RunRegistry, "create_run", fail_create_run)
+    monkeypatch.setattr(
+        SQLiteExecutionReservationRepository,
+        "settle_terminal",
+        fail_terminal_settlement,
+    )
 
     response = await post_native_run(
         api_client,
@@ -463,14 +506,18 @@ def test_resolve_remote_run_uses_durable_owner_scoped_row(
     tasks_db_path: str,
 ) -> None:
     """A durable owner row supplies the canonical run and task identities."""
-    with request_context("owner-1", "request-1"):
+    run_id = "run-owner-1"
+    _reserve_remote_fixture(
+        tasks_db_path,
+        run_id=run_id,
+        owner="owner-1",
+    )
+    with request_context("owner-1", "request-1", run_id):
         record_submitted_task(
             {"task_id": "durable-1", "output_dir": "tenant/out"},
             agent="analyst",
         )
-        run_id = current_run_id()
 
-    assert run_id is not None
     resolved = run_lifecycle.resolve_remote_run(
         "owner-1",
         run_id=run_id,
@@ -491,14 +538,18 @@ def test_resolve_remote_run_missing_row_degrades_without_leaking_owner(
     tasks_db_path: str,
 ) -> None:
     """A missing owner-scoped row retains only this request's accepted ids."""
-    with request_context("owner-1", "request-1"):
+    run_id = "run-owner-1-private"
+    _reserve_remote_fixture(
+        tasks_db_path,
+        run_id=run_id,
+        owner="owner-1",
+    )
+    with request_context("owner-1", "request-1", run_id):
         record_submitted_task(
             {"task_id": "owner-1-task", "output_dir": "tenant/out"},
             agent="analyst",
         )
-        run_id = current_run_id()
 
-    assert run_id is not None
     resolved = run_lifecycle.resolve_remote_run(
         "owner-2",
         run_id=run_id,
@@ -522,7 +573,7 @@ async def test_remote_http_response_keeps_run_identity_byte_identical(
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """A background response reserves identity before child attachment."""
+    """A remote response exposes one Runtime identity and accepted child."""
 
     async def fake(_args: Any) -> dict[str, Any]:
         return {"task_id": "accepted-healthy", "output_dir": "tenant/out"}
@@ -548,7 +599,7 @@ async def test_remote_http_response_keeps_run_identity_byte_identical(
     assert response.status_code == 202
     body = response.json()
     assert body["id"] == body["run_id"]
-    assert body["task_ids"] == []
+    assert body["task_ids"] == ["accepted-healthy"]
     assert "degraded_tracking" not in body
     run_id = body["run_id"]
     for _ in range(100):
@@ -566,7 +617,7 @@ async def test_remote_tracking_failure_returns_safe_failed_projection(
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Reserved runs fail closed when child persistence cannot be tracked."""
+    """Accepted work retains its Runtime identity when V1 tracking degrades."""
 
     def _raising_record(*_args: Any, **_kwargs: Any) -> None:
         raise sqlite3.OperationalError("closed")
@@ -593,16 +644,13 @@ async def test_remote_tracking_failure_returns_safe_failed_projection(
     assert response.status_code == 202
     body = response.json()
     assert body["id"] == body["run_id"]
-    assert body["task_ids"] == []
-    record = await wait_for_status(
-        api_app_module.resolve_tasks_db_path(), body["run_id"], "failed"
+    assert body["task_ids"] == ["accepted-1"]
+    assert body["degraded_tracking"] is True
+    record = RunRegistry(api_app_module.resolve_tasks_db_path()).get_run(
+        body["run_id"], owner="u1"
     )
-    assert record.error == "background_submission_tracking_failed"
-    assert record.task_ids == ()
-    assert record.result is not None
-    assert record.result["execution"]["tasks"] == [
-        {"id": "accepted-1", "accepted": True, "status": "submitted"}
-    ]
+    assert record is not None
+    assert record.status == "running"
     assert "closed" not in str(record.result)
 
 
@@ -639,7 +687,8 @@ async def test_remote_post_acceptance_failure_is_safe_error(
     record = await wait_for_status(
         api_app_module.resolve_tasks_db_path(), body["run_id"], "failed"
     )
-    assert record.error == "background_submission_failed"
+    assert record.error is None
+    assert "tenant/out" not in str(record.result)
 
 
 async def test_background_resolver_failure_settles_reserved_run(
@@ -684,7 +733,7 @@ async def test_background_resolver_failure_settles_reserved_run(
         api_app_module.resolve_tasks_db_path(), run_id, "failed"
     )
     assert record.task_ids == ()
-    assert record.error == "background_submission_failed"
+    assert record.error is None
     assert called["handler"] is False
     assert "private resolver failure" not in str(record.result)
 
@@ -720,7 +769,7 @@ async def test_background_handler_failure_settles_reserved_run(
     record = await wait_for_status(
         api_app_module.resolve_tasks_db_path(), run_id, "failed"
     )
-    assert record.error == "background_submission_failed"
+    assert record.error is None
     assert not record.task_ids
     assert "private handler failure" not in str(record.result)
 
@@ -800,9 +849,16 @@ async def test_review_a2ui_survives_client_and_registry_reload(
     finally:
         await second[1].conn.close()
 
-    assert (
-        RunRegistry(tasks_db_path)
-        .list_a2ui_actions(owner="u1", run_id=run_id)[0]
-        .outcome
-        == "succeeded"
+    registry = RunRegistry(tasks_db_path)
+    assert registry.list_a2ui_actions(owner="u1", run_id=run_id) == []
+    record = registry.get_run(run_id, owner="u1")
+    assert record is not None and record.status == "succeeded"
+    execution_id = record.request_info.execution_id
+    assert execution_id is not None
+    events = SQLiteExecutionJournal(tasks_db_path).list_events(
+        execution_id, owner="u1", limit=100
     )
+    assert events is not None
+    assert [event.type.value for event in events.items].count(
+        "execution.succeeded"
+    ) == 1

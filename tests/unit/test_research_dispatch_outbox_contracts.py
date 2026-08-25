@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import sqlite3
 from datetime import datetime
 
@@ -90,8 +89,8 @@ async def test_outbox_recovery_limit_zero_is_side_effect_free(
 
 
 @pytest.mark.asyncio
-async def test_outbox_acceptance_schedules_async_attachment(tmp_path) -> None:
-    """Async attachment callbacks are scheduled after durable acceptance."""
+async def test_outbox_acceptance_awaits_async_attachment(tmp_path) -> None:
+    """Durable attachment completes before acceptance is returned."""
     store = _store(tmp_path)
     record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
         0
@@ -110,7 +109,6 @@ async def test_outbox_acceptance_schedules_async_attachment(tmp_path) -> None:
         authority_verifier=_authority_verifier,
         attach_task=attach,
     ).dispatch_once(record.dispatch_id, "worker")
-    await asyncio.sleep(0)
     assert outcome.state == "accepted"
     assert attached == ["task-async"]
 

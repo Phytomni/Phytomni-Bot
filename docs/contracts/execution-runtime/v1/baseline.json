@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "purpose": "Immutable baseline for the pre-V2 execution surfaces. This fixture records contracts to preserve or adapt; it is not a new write authority.",
+  "message_command": {
+    "web_route": "POST /api/v1/conversations/{conversation_id}/messages",
+    "content_type": "multipart/form-data",
+    "request_fields": [
+      "query",
+      "id",
+      "tool",
+      "mode",
+      "client_turn_id",
+      "attachments"
+    ],
+    "execution_header": "X-Phyto-Client-Turn-Id",
+    "response_status": 200,
+    "response_data_fields": [
+      "id",
+      "tool_name",
+      "answer",
+      "follow_up_questions",
+      "status",
+      "upload_path",
+      "download_path",
+      "server_file_path",
+      "compute_resource",
+      "reaction_type",
+      "dialogue_id",
+      "bot_run_id",
+      "request_id"
+    ],
+    "lifetime": "request remains open through Bot routing or execution"
+  },
+  "execution_identity": {
+    "source_field": "client_turn_id",
+    "public_field": "execution_id",
+    "bot_transport_header": "X-Phyto-Execution-Id",
+    "owner_scope": true,
+    "run_id_is_internal_correlation": true
+  },
+  "lifecycle": {
+    "web_route": "GET /api/v1/async-tasks/{message_id}/lifecycle",
+    "fields": [
+      "task_id",
+      "run_id",
+      "agent",
+      "phase",
+      "terminal",
+      "reconciliation",
+      "error_code",
+      "tracking_degraded",
+      "report",
+      "artifacts"
+    ],
+    "current_behavior": "may reconcile a Bot run for non-terminal rows"
+  },
+  "event_history": {
+    "web_execution_routes": [
+      "GET /api/v1/executions/{execution_id}/events",
+      "GET /api/v1/executions/{execution_id}/event-projection",
+      "GET /api/v1/executions/{execution_id}/events/stream",
+      "GET /api/v1/executions/{execution_id}/events/{event_id}",
+      "GET /api/v1/executions/{execution_id}/targets/{kind}/{target_id}"
+    ],
+    "bot_run_routes": [
+      "GET /v1/runs/{run_id}/events",
+      "GET /v1/runs/{run_id}/event-projection",
+      "GET /v1/runs/{run_id}/events/stream",
+      "GET /v1/runs/{run_id}/events/{event_id}"
+    ],
+    "bot_execution_routes": [
+      "GET /v1/executions/{execution_id}/events",
+      "GET /v1/executions/{execution_id}/event-projection",
+      "GET /v1/executions/{execution_id}/events/stream",
+      "GET /v1/executions/{execution_id}/events/{event_id}"
+    ],
+    "journal_key": "run_id",
+    "sequence": "run-local monotonic integer",
+    "stream_events": ["execution_event", "execution_gap"],
+    "heartbeat": ": heartbeat"
+  },
+  "actions_and_cancellation": {
+    "bot_routes": [
+      "POST /v1/runs/{run_id}/a2ui-actions",
+      "POST /v1/runs/{run_id}/resume",
+      "POST /v1/runs/{run_id}/cancel"
+    ],
+    "web_routes": [
+      "POST /api/v1/conversations/{conversation_id}/a2ui-actions"
+    ]
+  },
+  "capability_sources": [
+    "docs/contracts/agents/public-agent-catalog.v1.json",
+    "docs/contracts/execution-events/v1/fixtures.json"
+  ],
+  "regression_evidence": [
+    "Phytomni-Web/apps/server/service/api_service/execution_events_test.go",
+    "Phytomni-Web/apps/server/http/handler/api_handler/query_stream_test.go",
+    "Phytomni-Web/apps/server/service/api_service/agent_task_lifecycle_test.go",
+    "Phytomni-Web/apps/server/service/api_service/bot_projection_store_test.go",
+    "tests/server/test_execution_event_api.py",
+    "tests/unit/test_run_registry_execution_events.py"
+  ]
+}

@@ -46,8 +46,15 @@ from ...runtime.agent_registry import (
 )
 from ...runtime.conversation_context.projection import agent_thread_id
 from ...runtime.conversation_context.store import StoredTurn
-from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from ...runtime.langgraph_runner import (
+    ainvoke_graph,
+    ensure_checkpointer,
+    invoke_graph,
+)
 from ...runtime.locale import SupportedLocale
+from ...runtime.operation_instrumentation_v2 import (
+    instrument_operation_invocation,
+)
 from ...runtime.resume import aresume_graph, detect_interrupt
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
@@ -311,9 +318,20 @@ class DeepResearchAgent(
         (``draft_reduce_node`` still iterates a string per dimension;
         per-task failure detail surfaces in ``raw.phytomni_state``).
         """
-        task_index = state["task_index"]
+        task_index = int(state.get("task_index") or 0)
+        chat_app = CHAT_APP
         try:
-            chat_output = await CHAT_APP.ainvoke(state["chat_payload"])
+            chat_output = await instrument_operation_invocation(
+                "review.draft_dimension",
+                lambda: invoke_graph(chat_app, state["chat_payload"]),
+                detail={
+                    "ordinal": task_index + 1,
+                    "total": max(
+                        1,
+                        int(state.get("dimension_total") or task_index + 1),
+                    ),
+                },
+            )
             content = message_content(extract_chat_response(chat_output))
             return {
                 "draft_indexed_results": [(task_index, content)],
@@ -373,6 +391,7 @@ class DeepResearchAgent(
                 "draft_worker_node",
                 {
                     "task_index": i,
+                    "dimension_total": len(state["dimension_params"]),
                     "subtopic": param["subtopic"],
                     "knowledge": param["knowledge"],
                     "chat_payload": build_chat_input(
@@ -424,7 +443,7 @@ class DeepResearchAgent(
         """
         task_index = state["task_index"]
         try:
-            chat_output = await CHAT_APP.ainvoke(state["chat_payload"])
+            chat_output = await invoke_graph(CHAT_APP, state["chat_payload"])
             content = message_content(extract_chat_response(chat_output))
             return {
                 "review_indexed_results": [(task_index, content)],
@@ -564,6 +583,8 @@ class DeepResearchAgent(
                 draft_content=draft_content,
                 review_content=review_content,
                 raw_doc_list=raw_doc_list,
+                original_query=str(state.get("original_user_query") or ""),
+                subtopic=str(state.get("subtopic") or ""),
             )
             return {
                 "revised_indexed_results": [
@@ -646,6 +667,7 @@ class DeepResearchAgent(
         drafts = state["draft_contents"]
         reviews = state["review_contents"]
         raw_doc_list = state["all_raw_doc_list"]
+        original_query = state["original_user_query"]
         return [
             Send(
                 "revised_worker_node",
@@ -655,6 +677,7 @@ class DeepResearchAgent(
                     "draft_content": drafts[i],
                     "review_content": reviews[i],
                     "raw_doc_list": raw_doc_list,
+                    "original_user_query": original_query,
                     "locale": resolve_agent_locale(state.get("locale")),
                 },
             )
@@ -707,6 +730,7 @@ class DeepResearchAgent(
             # Inherited from ParallelDispatchState
             "analysis_type": "",
             "task_index": None,
+            "dimension_total": None,
             "task_ids": {},
             "completed_count": 0,
             "error": None,

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -56,6 +57,43 @@ async def test_http_lifespan_starts_and_clears_outbound_runtime(
         assert active is True
     assert active is False
     assert events == ["init", "close"]
+
+
+@pytest.mark.asyncio
+async def test_http_lifespan_owns_execution_supervisor_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remote recovery runs independently of lifecycle/read requests."""
+    started = asyncio.Event()
+    stopped = asyncio.Event()
+
+    async def supervisor(*, db_path: str, stop: asyncio.Event) -> None:
+        assert db_path
+        started.set()
+        await stop.wait()
+        stopped.set()
+
+    monkeypatch.setattr(
+        app_support, "validate_citation_database", lambda: None
+    )
+    monkeypatch.setattr(app_support, "init_outbound_runtime", _async_noop)
+    monkeypatch.setattr(app_support, "aclose_outbound_runtime", _async_noop)
+    monkeypatch.setattr(
+        app_support, "refresh_research_relay_capability", _async_noop
+    )
+    monkeypatch.setattr(
+        app_support, "ensure_research_input_runtime", lambda: None
+    )
+    monkeypatch.setattr(app_support, "recover_registered_startup", _async_noop)
+    monkeypatch.setattr(app_support, "aclose_gauss_pool", _async_noop)
+    monkeypatch.setattr(
+        app_support, "run_execution_supervisor_service", supervisor
+    )
+
+    http_lifespan = getattr(app_support, "_http_lifespan")
+    async with http_lifespan(FastAPI()):
+        await asyncio.wait_for(started.wait(), timeout=1)
+    await asyncio.wait_for(stopped.wait(), timeout=1)
 
 
 @pytest.mark.asyncio

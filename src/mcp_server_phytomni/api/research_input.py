@@ -481,7 +481,11 @@ class ResearchRoutePreflight:
         admitted = (
             _admission_outcome(retry)
             if retry is not None
-            else admit_research_request(admission_request, context.store)
+            else admit_research_request(
+                admission_request,
+                context.store,
+                run_id=request.get("runtime_run_id"),
+            )
         )
         await launch_worker(
             context.worker_launcher,
@@ -740,7 +744,10 @@ def lookup_research_admission(
 
 
 def admit_research_request(
-    request: ResearchAdmissionRequest, store: ResearchInputStore
+    request: ResearchAdmissionRequest,
+    store: ResearchInputStore,
+    *,
+    run_id: str | None = None,
 ) -> ResearchAdmissionOutcome:
     """Atomically reserve a safe root run or return an exact replay."""
     query_digest, query_length = _validate_caller_preflight(request)
@@ -756,8 +763,13 @@ def admit_research_request(
         request, query_digest=query_digest, query_length=query_length
     )
     parsed = request.parsed_input
+    if run_id is not None and (not run_id or len(run_id) > 128):
+        raise research_input_failure(
+            "research_input_resolution_failed",
+            "Research execution identity is invalid.",
+        )
     reservation = store.reserve_admission(
-        run_id=IdFactory().new_id("run", "research"),
+        run_id=run_id or IdFactory().new_id("run", "research"),
         owner=request.owner,
         identity_digest=request.identity.canonical_digest,
         identity_kind=request.identity.kind,

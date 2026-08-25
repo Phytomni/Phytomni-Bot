@@ -16,26 +16,20 @@ from __future__ import annotations
 
 import importlib
 import logging
-import sqlite3
 from collections.abc import Mapping
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
 from ..agents.analyst.state import AnalystInput
-from ..agents.analyst.task_ops import task_delete, verified_reuse_task_ids
+from ..agents.analyst.task_ops import verified_reuse_task_ids
 from ..agents.shared.analysis import prepare_analyst_dispatch_context
 from ..agents.shared.analysis_requests import (
     build_analyst_analysis_request,
     build_analyst_prompt_parts,
 )
 from ..agents.shared.options import resolve_agent_locale
-from ..runtime.fingerprint_jobs import (
-    FingerprintClaim,
-    register_submitted_job,
-    try_attach_reuse_claim,
-)
-from ..runtime.request_context import current_request_user, current_run_id
+from ..runtime.langgraph_runner import invoke_graph
 from ..runtime.result_run_layout import result_run_root_from_child
 from ..runtime.task_dedup import (
     analyst_task_fingerprint,
@@ -45,11 +39,6 @@ from ..runtime.task_dedup import (
 from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
 
 logger = logging.getLogger(__name__)
-_ORPHAN_DELETE_ERRORS: tuple[type[Exception], ...] = (Exception,)
-_FINGERPRINT_PERSIST_ERRORS: tuple[type[Exception], ...] = (
-    sqlite3.Error,
-    OSError,
-)
 
 __all__ = [
     "build_analyst_dispatch_request",
@@ -93,10 +82,9 @@ def map_send_payload_to_analyst_input(
     constants ``submit_analyst_analysis`` hard-codes). ``query`` is
     set to the empty string because the preset-plan path inside the
     analyst graph never reads ``query`` once ``is_preset_plan`` is
-    True. ``is_polling`` is parameterised: the default is ``False`` so
-    standalone and chat/HTTP callers submit and let GetRun wait.
-    DeepGenome mounts pass an explicit value so its coordinator owns
-    remote waiting. Callers that opt in pass ``True``.
+    True. ``is_polling`` is parameterised and defaults to submit-return so
+    the shared execution runtime owns remote waiting. Legacy callers that
+    still require in-graph polling opt in explicitly.
 
     Args:
         payload: Request mapping with ``analysis_type`` / ``target_id``
@@ -104,9 +92,8 @@ def map_send_payload_to_analyst_input(
             plan meta string, and data list dict) / ``compute_resource``
             / optional ``output_dir``.
         is_polling: Whether the analyst graph should block until the
-            submitted task reaches a terminal state. Defaults to
-            ``False`` so GetRun owns remote waiting. Callers that opt
-            in pass ``True`` to enter ``pooling_node``.
+            submitted task reaches a terminal state. Defaults to ``False``
+            so the caller-owned execution runtime performs remote polling.
 
     Returns:
         An ``AnalystInput`` dict suitable for ``ainvoke`` on the
@@ -183,15 +170,6 @@ def map_analyst_output_to_dispatch_state(
     }
 
 
-def _stamp_analysis_type(
-    result: dict[str, Any], analysis_type: str
-) -> dict[str, Any]:
-    """Copy the producer analysis_type onto one Analyst submit dict."""
-    if not analysis_type or result.get("analysis_type"):
-        return result
-    return {**result, "analysis_type": analysis_type}
-
-
 async def submit_analyst_via_subgraph(
     analyst_agent: Any,
     config: Any,
@@ -227,9 +205,8 @@ async def submit_analyst_via_subgraph(
             description, preset plan meta string, and data list
             dict) / ``compute_resource`` / optional ``output_dir``.
         is_polling: Whether the analyst graph should block until the
-            submitted task reaches a terminal state. Defaults to
-            ``False`` so GetRun owns remote waiting. Callers that
-            opt in pass ``True`` to enter ``pooling_node``.
+            submitted task reaches a terminal state. Defaults to ``False``
+            so the caller-owned execution runtime performs remote polling.
 
     Returns:
         Dict containing ``task_id`` / ``output_dir`` / ``plan`` /
@@ -254,6 +231,7 @@ async def submit_analyst_via_subgraph(
         )
         if reused is not None:
             reused = _normalize_reused_submission(reused)
+            reused["analysis_type"] = context.analysis_type
             logger.info(
                 "Reusing prior %s task via fingerprint dedup "
                 "(caller task_id: %s, source_task_id: %s)",
@@ -267,7 +245,7 @@ async def submit_analyst_via_subgraph(
                 fingerprint,
                 source_task_id=reused["source_task_id"],
             )
-            return _stamp_analysis_type(reused, context.analysis_type)
+            return reused
     enriched_request = {
         **request,
         "output_dir": context.output_dir,
@@ -282,14 +260,18 @@ async def submit_analyst_via_subgraph(
     logger.info(
         "Submitting %s task via analyst subgraph", context.analysis_type
     )
-    final_state = await analyst_agent.app.ainvoke(
-        analyst_input, config=runnable_config
+    final_state = await invoke_graph(
+        analyst_agent.app, analyst_input, config=runnable_config
     )
-    result = _stamp_analysis_type(
-        map_analyst_output_to_dispatch_state(final_state),
-        context.analysis_type,
-    )
-    await _persist_subgraph_fingerprint(result, fingerprint, is_polling)
+    result = map_analyst_output_to_dispatch_state(final_state)
+    result["analysis_type"] = context.analysis_type
+    task_id = result.get("task_id")
+    if isinstance(task_id, str) and task_id and fingerprint is not None:
+        record_dispatch_submission(
+            task_id,
+            str(result.get("output_dir") or ""),
+            fingerprint,
+        )
     logger.info(
         "%s task completed via subgraph (task_id: %s)",
         context.analysis_type,
@@ -386,8 +368,9 @@ async def _reuse_prior_dispatch(
     Returns:
         The reuse dict on a verified-live hit, otherwise ``None``.
     """
-    db_path = resolve_tasks_db_path()
-    prior = TaskManager(db_path).get_task_by_fingerprint(fingerprint)
+    prior = TaskManager(resolve_tasks_db_path()).get_task_by_fingerprint(
+        fingerprint
+    )
     if prior is None:
         return None
     if not should_reuse_prior_task(prior["status"] or ""):
@@ -396,19 +379,9 @@ async def _reuse_prior_dispatch(
         prior,
         require_terminal_success=require_terminal_success,
     )
-    claim = try_attach_reuse_claim(
-        db_path,
-        fingerprint=fingerprint,
-        prior=prior,
-        reuse_ids=reuse_ids,
-        identity=(
-            _claim_run_id(reuse_ids[0] if reuse_ids else ""),
-            _claim_user_id(),
-        ),
-    )
-    if claim is None:
+    if reuse_ids is None:
         return None
-    caller_task_id, source_task_id = claim
+    caller_task_id, source_task_id = reuse_ids
     return {
         "task_id": caller_task_id,
         "output_dir": prior["output_dir"],
@@ -417,71 +390,3 @@ async def _reuse_prior_dispatch(
         "task_status": prior["status"],
         "source_task_id": source_task_id,
     }
-
-
-def _claim_run_id(claimant_task_id: str) -> str:
-    """Bind a claim to the request run, or the caller-owned task id."""
-    return current_run_id() or claimant_task_id
-
-
-def _claim_user_id() -> str:
-    """Bind a claim to the request user, or the anonymous MCP owner."""
-    return current_request_user() or "anonymous"
-
-
-async def _persist_subgraph_fingerprint(
-    result: Mapping[str, Any],
-    fingerprint: str | None,
-    force_new: bool,
-) -> None:
-    """Record a new fingerprint job when the subgraph minted a task id."""
-    task_id = result.get("task_id")
-    if not (isinstance(task_id, str) and task_id and fingerprint is not None):
-        return
-    output_dir = str(result.get("output_dir") or "")
-    try:
-        await _record_submitted_fingerprint_job(
-            fingerprint,
-            task_id,
-            output_dir,
-            force_new=force_new,
-        )
-    except _FINGERPRINT_PERSIST_ERRORS:
-        logger.warning("Failed to persist fingerprint job for %s", task_id)
-    record_dispatch_submission(task_id, output_dir, fingerprint)
-
-
-async def _record_submitted_fingerprint_job(
-    fingerprint: str,
-    task_id: str,
-    output_dir: str,
-    *,
-    force_new: bool,
-) -> None:
-    """Persist a new generation and best-effort drop a raced duplicate."""
-    registered = register_submitted_job(
-        resolve_tasks_db_path(),
-        FingerprintClaim(
-            fingerprint=fingerprint,
-            ei_task_id=task_id,
-            output_dir=output_dir,
-            claimant_task_id=task_id,
-            run_id=_claim_run_id(task_id),
-            user_id=_claim_user_id(),
-        ),
-        force_new=force_new,
-    )
-    orphan = registered.orphan_ei_task_id
-    if not orphan:
-        return
-    logger.warning(
-        "Dropping duplicate fingerprint job after a lost submit race"
-    )
-    try:
-        await task_delete(orphan)
-    except _ORPHAN_DELETE_ERRORS as exc:
-        logger.warning(
-            "Could not terminate a raced duplicate fingerprint job; "
-            "error_type=%s",
-            type(exc).__name__,
-        )

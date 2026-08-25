@@ -23,6 +23,7 @@ from ...common.responses import (
     message_content,
     parse_follow_up_questions,
 )
+from ...mcp.progress_events import emit_progress
 from ...runtime.memory import MemoryGraphContext
 from ..shared.conversation_messages import build_model_messages
 from ..shared.memory_context import memory_context_for_graph
@@ -85,6 +86,7 @@ async def generate_node(
     ``chat_kwargs`` still gates the call to limit concurrent LLM
     requests, preserving the legacy concurrency contract.
     """
+    emit_progress("responding", 0, detail="generating response")
     chat_kwargs = dict(state.get("chat_kwargs") or {})
     options = _chat_options(chat_kwargs)
     system_prompt = _apply_locale_instruction(
@@ -119,6 +121,7 @@ async def follow_up_node(
     ``state["response"]["choices"][0]["message"]["follow_up_questions"]``
     see the same field they always have.
     """
+    emit_progress("follow_up", 0, detail="generating follow-up questions")
     response = state.get("response")
     if response is None:
         return {}

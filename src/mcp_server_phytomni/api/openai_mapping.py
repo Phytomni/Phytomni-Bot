@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from ..mcp.result_formatting import AguiEvent
+from ..public_agent_catalog import PUBLIC_AGENT_CATALOG, model_to_tool
 from ..runtime.conversation_context.models import (
     MAX_CONTEXT_ITEMS,
     MAX_CONTEXT_TEXT_CHARS,
@@ -58,12 +59,7 @@ class ChatTurnInput:
 
 
 # Chat-like agents exposed through /v1/chat/completions.
-MODEL_TO_TOOL = {
-    "phyto-chat": "ChatAgent",
-    "phyto-knowledge": "KnowledgeAgent",
-    "phyto-review": "ReviewAgent",
-    "phyto-brief-gene": "BriefGeneAgent",
-}
+MODEL_TO_TOOL = model_to_tool()
 
 # Tools that support HTTP-side resolve_gene_id LLM preprocessing.
 # DeepGenome / DigitalDesign share BriefGene's canonical gene id
@@ -92,10 +88,7 @@ _RESOLVE_TO_ID_CAPABLE_TOOLS = {"GeneNetworkAgent"}
 # streaming primitive in ``invoke_tool_streamed`` would surface as a
 # 500 (``NotImplementedError``) at request time.
 _STREAM_CAPABLE_TOOLS = {
-    "ChatAgent",
-    "KnowledgeAgent",
-    "ReviewAgent",
-    "BriefGeneAgent",
+    item.tool for item in PUBLIC_AGENT_CATALOG if "streaming" in item.modes
 }
 
 

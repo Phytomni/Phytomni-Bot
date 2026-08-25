@@ -34,6 +34,7 @@ __all__ = [
     "ObsAccessOptions",
     "ObsObjectMetadataError",
     "ObsObjectNotFoundError",
+    "ObsListedObject",
     "ObsStreamOptions",
     "head_object_metadata",
     "put_object_bytes",
@@ -45,6 +46,7 @@ __all__ = [
     "iter_object_chunks",
     "list_object_keys",
     "list_object_keys_page",
+    "list_object_metadata_page",
 ]
 
 _LIST_MAX_KEYS = 1000
@@ -61,6 +63,14 @@ class ObsObjectAlreadyExistsError(FileExistsError):
 
 class ObsObjectMetadataError(OSError):
     """Raised when an exact-key OBS metadata read cannot be trusted."""
+
+
+@dataclass(frozen=True, slots=True)
+class ObsListedObject:
+    """One object identity and optional size returned by OBS LIST."""
+
+    key: str
+    size_bytes: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -566,6 +576,7 @@ def list_object_keys_page(
     marker: Any | None,
     *,
     access: ObsAccessOptions | None = None,
+    max_keys: int = _LIST_MAX_KEYS,
 ) -> tuple[list[str], str | None]:
     """Return one SDK list page and its next marker, if any.
 
@@ -573,24 +584,54 @@ def list_object_keys_page(
     outbound lease. The returned keys remain normalized to the requested
     bucket prefix; directory markers are excluded like ``list_object_keys``.
     """
+    objects, next_marker = list_object_metadata_page(
+        bucket,
+        prefix,
+        marker,
+        access=access,
+        max_keys=max_keys,
+    )
+    return [item.key for item in objects], next_marker
+
+
+def list_object_metadata_page(
+    bucket: str,
+    prefix: str,
+    marker: Any | None,
+    *,
+    access: ObsAccessOptions | None = None,
+    max_keys: int = _LIST_MAX_KEYS,
+) -> tuple[list[ObsListedObject], str | None]:
+    """Return one LIST page including sizes already supplied by OBS."""
+    if max_keys < 1 or max_keys > _LIST_MAX_KEYS:
+        raise ValueError("max_keys must be between 1 and 1000")
     safe_prefix = normalize_obs_object_key(prefix, bucket)
     resolved_access = _resolve_access(access)
     response = _resolve_client(resolved_access.client).listObjects(
         bucketName=bucket,
         prefix=safe_prefix,
         marker=marker,
-        max_keys=_LIST_MAX_KEYS,
+        max_keys=max_keys,
     )
     _require_ok(response, "list")
-    keys = [
-        item.key
+    objects = [
+        ObsListedObject(
+            key=normalize_obs_object_key(str(item.key), bucket),
+            size_bytes=(
+                int(item.size)
+                if isinstance(getattr(item, "size", None), int)
+                and not isinstance(item.size, bool)
+                and item.size >= 0
+                else None
+            ),
+        )
         for item in response.body.contents
         if not item.key.endswith("/")
     ]
     next_marker = (
         response.body.next_marker if response.body.is_truncated else None
     )
-    return keys, next_marker
+    return objects, next_marker
 
 
 def _resolve_client(client: Any | None) -> Any:

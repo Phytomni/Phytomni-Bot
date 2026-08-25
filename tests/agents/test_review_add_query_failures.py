@@ -83,7 +83,7 @@ async def test_feedback_rag_silently_continues_with_main_evidence(
         is_follow_up: bool,
     ) -> list[dict[str, Any]]:
         del self, is_generate, is_follow_up
-        if user_query == "q-mid":
+        if "q-mid" in user_query:
             raise RuntimeError("boom")
         return []
 
@@ -128,7 +128,12 @@ async def test_feedback_rag_fails_when_all_evidence_is_lost(
         is_follow_up: bool,
     ) -> list[dict[str, Any]]:
         del self, is_generate, is_follow_up
-        raise RuntimeError(call_messages[user_query])
+        message = next(
+            value
+            for query, value in call_messages.items()
+            if query in user_query
+        )
+        raise RuntimeError(message)
 
     monkeypatch.setattr(KnowledgeAgent, "arun", fake_arun)
 
@@ -164,7 +169,7 @@ async def test_feedback_rag_uses_mixed_supplementary_evidence_silently(
         is_follow_up: bool,
     ) -> list[dict[str, Any]]:
         del self, is_generate, is_follow_up
-        if user_query == "private-failed-query":
+        if "private-failed-query" in user_query:
             raise RuntimeError("sensitive endpoint details")
         return [
             {
@@ -221,7 +226,7 @@ async def test_feedback_rag_propagates_gathered_cancellation(
         is_follow_up: bool,
     ) -> list[dict[str, Any]]:
         del self, is_generate, is_follow_up
-        if user_query == "cancel-query":
+        if "cancel-query" in user_query:
             raise asyncio.CancelledError()
         return []
 

@@ -78,7 +78,13 @@ def test_route_retrieve_tasks_returns_n_sends(
     """``route_retrieve_tasks`` returns one Send per research dimension."""
     agent = _build_agent(monkeypatch)
     dimensions = ["photosynthesis", "chlorophyll", "stomatal conductance"]
-    state = cast(DeepResearchState, {"research_dimensions": dimensions})
+    state = cast(
+        DeepResearchState,
+        {
+            "original_user_query": "How do plant leaves regulate drought?",
+            "research_dimensions": dimensions,
+        },
+    )
     sends = agent.route_retrieve_tasks(state)
 
     assert len(sends) == 3
@@ -88,7 +94,8 @@ def test_route_retrieve_tasks_returns_n_sends(
         assert send.arg["task_index"] == i
         assert send.arg["dimension"] == dim
         payload = send.arg["knowledge_payload"]
-        assert payload["user_query"] == dim
+        assert "How do plant leaves regulate drought?" in payload["user_query"]
+        assert dim in payload["user_query"]
         assert payload["is_generate"] is False
         assert payload["is_follow_up"] is False
 
@@ -357,13 +364,93 @@ async def test_retrieve_reduce_accepts_valid_empty_successes(
         },
     )
 
+    with pytest.raises(McpError, match="No sufficiently relevant evidence"):
+        await agent.retrieve_reduce_node(state)
+
+
+async def test_retrieve_reduce_excludes_off_domain_and_duplicate_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only accepted plant evidence enters prompt and citation authority."""
+    agent = _build_agent(monkeypatch)
+    original_query = (
+        "How does single-cell RNA sequencing reveal heterogeneous plant "
+        "cell-type responses to biotic and abiotic stress?"
+    )
+    relevant = {
+        "chunk_id": "plant-root-1",
+        "title": "Plant root single-cell RNA responses to drought stress",
+        "content": "Arabidopsis cell types show heterogeneous abiotic "
+        "stress responses.",
+        "doi": "10.1000/root",
+    }
+    duplicate = {
+        **relevant,
+        "chunk_id": "plant-root-2",
+        "doi": "https://doi.org/10.1000/ROOT",
+    }
+    off_domain = {
+        "chunk_id": "mouse-1",
+        "title": "Single-cell sequencing of mouse embryonic stem cells",
+        "content": "Murine cell-state heterogeneity.",
+    }
+    state = cast(
+        DeepResearchState,
+        {
+            "original_user_query": original_query,
+            "research_dimensions": [
+                "Cell-type-specific abiotic stress",
+                "Single-cell transcriptional mechanisms",
+            ],
+            "total_length": 0,
+            "retrieve_indexed_results": [
+                (0, [off_domain, relevant]),
+                (1, [duplicate]),
+            ],
+            "retrieve_failed_indices": [],
+        },
+    )
+
     result = await agent.retrieve_reduce_node(state)
 
-    assert result["all_raw_doc_list"] == []
-    assert result["dimension_params"] == [
-        {"subtopic": "d0", "knowledge": ""},
-        {"subtopic": "d1", "knowledge": ""},
+    assert [doc["chunk_id"] for doc in result["all_raw_doc_list"]] == [
+        "plant-root-1"
     ]
+    assert "mouse embryonic" not in result["dimension_params"][0]["knowledge"]
+    assert result["dimension_params"][1]["knowledge"] == ""
+
+
+async def test_retrieve_reduce_fails_when_every_returned_doc_is_off_domain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Successful provider output cannot authorize an unrelated review."""
+    agent = _build_agent(monkeypatch)
+    state = cast(
+        DeepResearchState,
+        {
+            "original_user_query": (
+                "How does scRNA-seq reveal plant cell responses to drought?"
+            ),
+            "research_dimensions": ["Single-cell stress responses"],
+            "total_length": 0,
+            "retrieve_indexed_results": [
+                (
+                    0,
+                    [
+                        {
+                            "chunk_id": "yeast-1",
+                            "title": "Single-cell chromatin in budding yeast",
+                            "content": "Saccharomyces cell-state variation.",
+                        }
+                    ],
+                )
+            ],
+            "retrieve_failed_indices": [],
+        },
+    )
+
+    with pytest.raises(McpError, match="No sufficiently relevant evidence"):
+        await agent.retrieve_reduce_node(state)
 
 
 @pytest.mark.parametrize(

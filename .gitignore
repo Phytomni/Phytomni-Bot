@@ -256,5 +256,14 @@ e2e/.coverage*
 e2e/output/
 demo_data/output/
 
+# Scoped local build/test/runtime outputs (never reviewable source)
+.codex-tmp-review-debug/
+.codex-test-cache/
+.codex-runtime/
+.gocache/
+coverage/
+test-results/
+**/node_modules/.vite/
+
 # Agent-routing evaluation artifacts
 evaluation/agent_routing/results/

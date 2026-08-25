@@ -19,6 +19,7 @@ from typing import Any, cast
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from ...runtime.langgraph_runner import invoke_graph
 from ...runtime.memory import MemoryGraphContext
 from ..knowledge.agent import KnowledgeAgent
 from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
@@ -79,7 +80,7 @@ def make_knowledge_node_wrapper(
 
     async def _knowledge_node(state: Any) -> dict[str, Any]:
         ki = cast(KnowledgeInput, build_input_fn(state))
-        ko = await knowledge_app.ainvoke(ki)
+        ko = await invoke_graph(knowledge_app, ki)
         return {response_key: extract_output_fn(ko)}
 
     return _knowledge_node

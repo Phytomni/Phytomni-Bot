@@ -5,15 +5,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import asyncio
+import json
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from importlib import import_module
-from typing import Any, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from ...mcp.result_formatting import resolve_debug, strip_agent_result
+from ...runtime.execution_event_limits import DEFAULT_EXECUTION_EVENT_LIMITS
+from ...runtime.execution_events import ExecutionEventV1, RunEventProjectionV1
+from ...runtime.execution_v1_projection_v2 import (
+    V1ExecutionCompatibilityReader,
+)
+from ...runtime.run_registry import RunRegistry
 from .. import run_lifecycle
 from ..a2ui_limits import (
     A2uiPayloadError,
@@ -23,8 +32,11 @@ from ..a2ui_limits import (
 )
 from ..auth import ApiPrincipal
 from ..schemas import ResumeRequest
-from ..stream_log import iter_run_stream
 from . import _paging_values
+
+EXECUTION_EVENT_HEARTBEAT_POLL_TICKS = 60
+EXECUTION_REGISTRATION_WAIT_SECONDS = 30.0
+EXECUTION_REGISTRATION_POLL_SECONDS = 0.25
 
 
 def _tasks_db_path() -> str:
@@ -130,6 +142,30 @@ class RunPagingQuery(TypedDict):
     debug: bool
 
 
+class ExecutionEventPageResponse(BaseModel):
+    """Finite V1 response envelope for resumable event history."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    run_id: str = Field(min_length=1, max_length=128)
+    items: tuple[ExecutionEventV1, ...]
+    next_after_seq: int = Field(ge=0)
+    has_more: bool
+
+
+class ExecutionEventCorrelationPageResponse(ExecutionEventPageResponse):
+    """Event page addressed by the browser-known execution identity."""
+
+    execution_id: str = Field(min_length=1, max_length=128)
+
+
+class ExecutionEventCorrelationProjectionResponse(RunEventProjectionV1):
+    """Projection addressed by the browser-known execution identity."""
+
+    execution_id: str = Field(min_length=1, max_length=128)
+
+
 # FastAPI needs these fields to remain flat query parameters so the public
 # OpenAPI document and request coercion stay byte-compatible with the legacy
 # route. The aggregation helper is intentionally narrow and tested below.
@@ -175,21 +211,83 @@ def _register_status_routes(
 ) -> None:
     """Register logs and single-run status routes in public order."""
 
-    @app.get("/v1/runs/{run_id}/stream")
-    async def get_run_stream(
-        run_id: str,
-        after: int = 0,
-        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
-    ) -> StreamingResponse:
-        """Replay buffered AG-UI frames, then tail the live producer."""
-        del principal
-        await dependencies.projection.fetch_owner_run(run_id, debug=False)
-        frames = iter_run_stream(run_id, after)
-        if frames is None:
-            raise HTTPException(
-                status_code=404, detail=f"run stream not found: {run_id}"
+    def owned_execution_run_id(execution_id: str, owner: str) -> str:
+        record = RunRegistry(_tasks_db_path()).get_run_by_execution_id(
+            execution_id,
+            owner=owner,
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail="resource not found")
+        return record.spec.run_id
+
+    async def await_owned_execution_run_id(
+        execution_id: str,
+        owner: str,
+        request: Request,
+    ) -> str:
+        deadline = (
+            asyncio.get_running_loop().time()
+            + EXECUTION_REGISTRATION_WAIT_SECONDS
+        )
+        while True:
+            record = RunRegistry(_tasks_db_path()).get_run_by_execution_id(
+                execution_id,
+                owner=owner,
             )
-        return StreamingResponse(frames, media_type="text/event-stream")
+            if record is not None:
+                return record.spec.run_id
+            if await request.is_disconnected():
+                raise HTTPException(
+                    status_code=404, detail="resource not found"
+                )
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise HTTPException(
+                    status_code=404, detail="resource not found"
+                )
+            await asyncio.sleep(
+                min(EXECUTION_REGISTRATION_POLL_SECONDS, remaining)
+            )
+
+    @app.get(
+        "/v1/executions/{execution_id}/events",
+        response_model=ExecutionEventCorrelationPageResponse,
+    )
+    async def get_execution_events(
+        execution_id: str,
+        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
+        after_seq: int = Query(default=0, ge=0),
+        limit: int = Query(
+            default=DEFAULT_EXECUTION_EVENT_LIMITS.default_page_size,
+            ge=1,
+            le=DEFAULT_EXECUTION_EVENT_LIMITS.max_page_size,
+        ),
+    ) -> JSONResponse:
+        """Resolve an owned public execution identity to its root ledger."""
+        owner = (
+            principal.user_id
+            or dependencies.context.current_user()
+            or "anonymous"
+        )
+        run_id = owned_execution_run_id(execution_id, owner)
+        page = V1ExecutionCompatibilityReader(_tasks_db_path()).list_events(
+            run_id,
+            owner=owner,
+            after_seq=after_seq,
+            limit=limit,
+        )
+        if page is None:
+            raise HTTPException(status_code=404, detail="resource not found")
+        return JSONResponse(
+            {
+                "schema_version": 1,
+                "execution_id": execution_id,
+                "run_id": run_id,
+                "items": [item.to_public_dict() for item in page.items],
+                "next_after_seq": page.next_after_seq,
+                "has_more": page.has_more,
+            }
+        )
 
     @app.get("/v1/runs/{run_id}/logs")
     async def get_run_logs(
@@ -209,6 +307,391 @@ def _register_status_routes(
                 run_id, resolve_debug(debug)
             )
         )
+
+    @app.get(
+        "/v1/runs/{run_id}/events",
+        response_model=ExecutionEventPageResponse,
+    )
+    async def get_run_events(
+        run_id: str,
+        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
+        after_seq: int = Query(default=0, ge=0),
+        limit: int = Query(
+            default=DEFAULT_EXECUTION_EVENT_LIMITS.default_page_size,
+            ge=1,
+            le=DEFAULT_EXECUTION_EVENT_LIMITS.max_page_size,
+        ),
+    ) -> JSONResponse:
+        """Return one bounded, owner-scoped page of committed run events."""
+        owner = (
+            principal.user_id
+            or dependencies.context.current_user()
+            or "anonymous"
+        )
+        page = V1ExecutionCompatibilityReader(_tasks_db_path()).list_events(
+            run_id,
+            owner=owner,
+            after_seq=after_seq,
+            limit=limit,
+        )
+        if page is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return JSONResponse(
+            {
+                "schema_version": 1,
+                "run_id": run_id,
+                "items": [item.to_public_dict() for item in page.items],
+                "next_after_seq": page.next_after_seq,
+                "has_more": page.has_more,
+            }
+        )
+
+    @app.get(
+        "/v1/runs/{run_id}/event-projection",
+        response_model=RunEventProjectionV1,
+    )
+    async def get_run_event_projection(
+        run_id: str,
+        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
+    ) -> JSONResponse:
+        """Return the replaceable projection, rebuilding from history."""
+        owner = (
+            principal.user_id
+            or dependencies.context.current_user()
+            or "anonymous"
+        )
+        projection = V1ExecutionCompatibilityReader(
+            _tasks_db_path()
+        ).get_projection(run_id, owner=owner)
+        if projection is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return JSONResponse(projection.to_public_dict())
+
+    @app.get("/v1/runs/{run_id}/events/stream")
+    async def stream_run_events(
+        run_id: str,
+        request: Request,
+        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
+        after_seq: int | None = Query(default=None, ge=0),
+        last_event_id: str | None = Header(
+            default=None,
+            alias="Last-Event-ID",
+        ),
+    ) -> StreamingResponse:
+        """Drain committed events, then follow commits with resumable ids."""
+        owner = (
+            principal.user_id
+            or dependencies.context.current_user()
+            or "anonymous"
+        )
+        cursor = _resolve_event_cursor(after_seq, last_event_id)
+        store = V1ExecutionCompatibilityReader(_tasks_db_path())
+        initial = store.list_events(
+            run_id,
+            owner=owner,
+            after_seq=cursor,
+            limit=1,
+        )
+        if initial is None:
+            raise HTTPException(status_code=404, detail="run not found")
+
+        async def follow() -> AsyncIterator[str]:
+            current = cursor
+            delivered = 0
+            gap_reported = False
+            idle_polls = 0
+            while True:
+                page = store.list_events(
+                    run_id,
+                    owner=owner,
+                    after_seq=current,
+                    limit=DEFAULT_EXECUTION_EVENT_LIMITS.max_page_size,
+                )
+                if page is None:
+                    return
+                if page.items:
+                    idle_polls = 0
+                    first_seq = page.items[0].seq
+                    if first_seq > current + 1 and not gap_reported:
+                        yield _sse_frame(
+                            event="execution_gap",
+                            data={
+                                "schema_version": 1,
+                                "run_id": run_id,
+                                "after_seq": current,
+                                "next_available_seq": first_seq,
+                                "reason": "history_pruned_or_gap",
+                            },
+                        )
+                        gap_reported = True
+                    for item in page.items:
+                        delivered += 1
+                        if delivered > (
+                            DEFAULT_EXECUTION_EVENT_LIMITS.max_live_backlog
+                        ):
+                            yield _sse_frame(
+                                event="execution_gap",
+                                data={
+                                    "schema_version": 1,
+                                    "run_id": run_id,
+                                    "after_seq": current,
+                                    "next_available_seq": item.seq,
+                                    "reason": "backlog_exceeded",
+                                },
+                            )
+                            return
+                        current = item.seq
+                        yield _sse_frame(
+                            event="execution_event",
+                            data=item.to_public_dict(),
+                            event_id=item.seq,
+                        )
+                    continue
+                projection = store.get_projection(run_id, owner=owner)
+                if (
+                    projection is None
+                    or (
+                        projection.terminal is not None
+                        and current >= projection.latest_seq
+                    )
+                    or await request.is_disconnected()
+                ):
+                    return
+                idle_polls += 1
+                if idle_polls >= EXECUTION_EVENT_HEARTBEAT_POLL_TICKS:
+                    yield ": heartbeat\n\n"
+                    idle_polls = 0
+                await asyncio.sleep(0.25)
+
+        return StreamingResponse(
+            follow(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @app.get(
+        "/v1/runs/{run_id}/events/{event_id}",
+        response_model=ExecutionEventV1,
+    )
+    async def get_run_event_detail(
+        run_id: str,
+        event_id: str,
+        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
+    ) -> JSONResponse:
+        """Return one typed event only through its owner-visible parent run."""
+        owner = (
+            principal.user_id
+            or dependencies.context.current_user()
+            or "anonymous"
+        )
+        event = V1ExecutionCompatibilityReader(_tasks_db_path()).get_event(
+            run_id,
+            event_id,
+            owner=owner,
+        )
+        if event is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return JSONResponse(event.to_public_dict())
+
+    def _resolve_event_cursor(
+        after_seq: int | None,
+        last_event_id: str | None,
+    ) -> int:
+        if after_seq is not None:
+            return after_seq
+        if last_event_id is None or not last_event_id.strip():
+            return 0
+        try:
+            cursor = int(last_event_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail="invalid event cursor"
+            ) from exc
+        if cursor < 0:
+            raise HTTPException(status_code=400, detail="invalid event cursor")
+        return cursor
+
+    def _sse_frame(
+        *,
+        event: str,
+        data: dict[str, Any],
+        event_id: int | None = None,
+    ) -> str:
+        lines = [] if event_id is None else [f"id: {event_id}"]
+        lines.extend(
+            (
+                f"event: {event}",
+                "data: "
+                + json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+                "",
+                "",
+            )
+        )
+        return "\n".join(lines)
+
+    @app.get(
+        "/v1/executions/{execution_id}/event-projection",
+        response_model=ExecutionEventCorrelationProjectionResponse,
+    )
+    async def get_execution_event_projection(
+        execution_id: str,
+        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
+    ) -> JSONResponse:
+        """Resolve one execution identity to its root event projection."""
+        owner = (
+            principal.user_id
+            or dependencies.context.current_user()
+            or "anonymous"
+        )
+        run_id = owned_execution_run_id(execution_id, owner)
+        projection = V1ExecutionCompatibilityReader(
+            _tasks_db_path()
+        ).get_projection(run_id, owner=owner)
+        if projection is None:
+            raise HTTPException(status_code=404, detail="resource not found")
+        return JSONResponse(
+            {
+                **projection.to_public_dict(),
+                "execution_id": execution_id,
+            }
+        )
+
+    @app.get("/v1/executions/{execution_id}/events/stream")
+    async def stream_execution_events(
+        execution_id: str,
+        request: Request,
+        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
+        after_seq: int | None = Query(default=None, ge=0),
+        last_event_id: str | None = Header(
+            default=None,
+            alias="Last-Event-ID",
+        ),
+    ) -> StreamingResponse:
+        """Follow the root ledger through a browser-known execution id."""
+        owner = (
+            principal.user_id
+            or dependencies.context.current_user()
+            or "anonymous"
+        )
+        run_id = await await_owned_execution_run_id(
+            execution_id,
+            owner,
+            request,
+        )
+        cursor = _resolve_event_cursor(after_seq, last_event_id)
+        store = V1ExecutionCompatibilityReader(_tasks_db_path())
+        if (
+            store.list_events(run_id, owner=owner, after_seq=cursor, limit=1)
+            is None
+        ):
+            raise HTTPException(status_code=404, detail="resource not found")
+
+        async def follow() -> AsyncIterator[str]:
+            current = cursor
+            delivered = 0
+            gap_reported = False
+            idle_polls = 0
+            while True:
+                page = store.list_events(
+                    run_id,
+                    owner=owner,
+                    after_seq=current,
+                    limit=DEFAULT_EXECUTION_EVENT_LIMITS.max_page_size,
+                )
+                if page is None:
+                    return
+                if page.items:
+                    idle_polls = 0
+                    first_seq = page.items[0].seq
+                    if first_seq > current + 1 and not gap_reported:
+                        yield _sse_frame(
+                            event="execution_gap",
+                            data={
+                                "schema_version": 1,
+                                "execution_id": execution_id,
+                                "run_id": run_id,
+                                "after_seq": current,
+                                "next_available_seq": first_seq,
+                                "reason": "history_pruned_or_gap",
+                            },
+                        )
+                        gap_reported = True
+                    for item in page.items:
+                        delivered += 1
+                        if delivered > (
+                            DEFAULT_EXECUTION_EVENT_LIMITS.max_live_backlog
+                        ):
+                            yield _sse_frame(
+                                event="execution_gap",
+                                data={
+                                    "schema_version": 1,
+                                    "execution_id": execution_id,
+                                    "run_id": run_id,
+                                    "after_seq": current,
+                                    "next_available_seq": item.seq,
+                                    "reason": "backlog_exceeded",
+                                },
+                            )
+                            return
+                        current = item.seq
+                        yield _sse_frame(
+                            event="execution_event",
+                            data=item.to_public_dict(),
+                            event_id=item.seq,
+                        )
+                    continue
+                projection = store.get_projection(run_id, owner=owner)
+                if (
+                    projection is None
+                    or (
+                        projection.terminal is not None
+                        and current >= projection.latest_seq
+                    )
+                    or await request.is_disconnected()
+                ):
+                    return
+                idle_polls += 1
+                if idle_polls >= EXECUTION_EVENT_HEARTBEAT_POLL_TICKS:
+                    yield ": heartbeat\n\n"
+                    idle_polls = 0
+                await asyncio.sleep(0.25)
+
+        return StreamingResponse(
+            follow(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @app.get(
+        "/v1/executions/{execution_id}/events/{event_id}",
+        response_model=ExecutionEventV1,
+    )
+    async def get_execution_event_detail(
+        execution_id: str,
+        event_id: str,
+        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
+    ) -> JSONResponse:
+        """Read one event through its owner-scoped execution binding."""
+        owner = (
+            principal.user_id
+            or dependencies.context.current_user()
+            or "anonymous"
+        )
+        run_id = owned_execution_run_id(execution_id, owner)
+        event = V1ExecutionCompatibilityReader(_tasks_db_path()).get_event(
+            run_id,
+            event_id,
+            owner=owner,
+        )
+        if event is None:
+            raise HTTPException(status_code=404, detail="resource not found")
+        return JSONResponse(event.to_public_dict())
 
     @app.get("/v1/runs/{run_id}")
     async def get_run(
@@ -249,7 +732,7 @@ def _register_status_routes(
         principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
         expected_revision: int | None = None,
     ) -> JSONResponse:
-        """Cancel an owner-scoped run and last-claim platform jobs."""
+        """Cancel an owner-scoped Research run before remote dispatch."""
         owner = (
             principal.user_id
             or dependencies.context.current_user()
@@ -257,7 +740,7 @@ def _register_status_routes(
         )
         callback = dependencies.projection.cancel_research_run
         if callback is None:
-            body = await run_lifecycle.cancel_owner_run(
+            body = await run_lifecycle.cancel_research_run(
                 run_id,
                 owner=owner,
                 expected_revision=expected_revision,

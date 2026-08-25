@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from tests.support.logging_helpers import capture_non_propagating_logger
 from tests.support.outbound_fakes import (
     QueueTransport,
     RecordingResources,
@@ -110,26 +111,23 @@ async def test_cleanup_failure_still_closes_outbound_resources(
 @pytest.mark.asyncio
 async def test_lifecycle_logs_one_safe_startup_and_shutdown_summary(
     caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Lifecycle summaries expose capacities and final counters only once."""
     logger_name = "mcp_server_phytomni.runtime.outbound.lifecycle"
     caplog.set_level(logging.INFO, logger=logger_name)
-    monkeypatch.setattr(
-        logging.getLogger("mcp_server_phytomni"), "propagate", True
-    )
     resources = RecordingResources()
-    runtime = await init_outbound_runtime(
-        _config(
-            OUTBOUND_LLM_CONCURRENCY=2,
-            OUTBOUND_OBS_CONCURRENCY=0,
-        ),
-        factories=resources.factories(),
-    )
+    with capture_non_propagating_logger(logger_name, caplog.handler):
+        runtime = await init_outbound_runtime(
+            _config(
+                OUTBOUND_LLM_CONCURRENCY=2,
+                OUTBOUND_OBS_CONCURRENCY=0,
+            ),
+            factories=resources.factories(),
+        )
 
-    async with runtime.pools.lease(OutboundPoolName.LLM):
-        pass
-    await aclose_outbound_runtime()
+        async with runtime.pools.lease(OutboundPoolName.LLM):
+            pass
+        await aclose_outbound_runtime()
 
     messages = [record.getMessage() for record in caplog.records]
     startup = [

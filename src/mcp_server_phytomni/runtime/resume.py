@@ -20,7 +20,7 @@ from typing import Any, TypedDict
 from langgraph.types import Command
 from mcp.types import ClientCapabilities, ElicitationCapability
 
-from .langgraph_runner import build_runnable_config
+from .langgraph_runner import build_runnable_config, invoke_graph
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +140,8 @@ async def aresume_graph(
         raise NoCheckpointError(
             f"No checkpoint found for thread " f"{thread_id!r}"
         )
-    return await app.ainvoke(
+    return await invoke_graph(
+        app,
         Command(resume=resume_payload),
         config=config,
     )

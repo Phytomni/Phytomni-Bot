@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from tests.server.test_query_route import (
@@ -31,17 +31,18 @@ from tests.server.test_query_route import (
 )
 from tests.support.chat_fakes import install_chat_handler
 from tests.support.expert_router_fakes import patch_expert_router
+from tests.support.handler_fakes import review_success_result
 
 import mcp_server_phytomni.api.a2a.messages as a2a_messages
 from mcp_server_phytomni.agents.expert import ToolSelectionError
 from mcp_server_phytomni.agents.expert import router as expert_router
-from mcp_server_phytomni.api.agent_run_support import (
-    running_agent_run_response,
-)
+from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.config.defaults import ApiConfig, ServerConfig
-from mcp_server_phytomni.mcp.formatting.agui import run_finished, run_started
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 from mcp_server_phytomni.runtime.upload_registry import (
     UploadMetadata,
@@ -49,41 +50,8 @@ from mcp_server_phytomni.runtime.upload_registry import (
 )
 from mcp_server_phytomni.storage.obs_storage import obs_path_from_key
 
-_STREAM_EXPERT_SLUGS = frozenset({"chat", "knowledge", "brief_gene"})
-
-
-def _patch_expert_dispatch_seams(
-    monkeypatch: pytest.MonkeyPatch,
-    invoked: list[dict[str, Any]],
-) -> None:
-    """Capture blocking invoke and stream-family Expert dispatch."""
-
-    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
-        invoked.append(kwargs)
-        return (
-            {
-                "id": f"route-{kwargs['agent']}",
-                "object": "agent.run",
-                "agent": kwargs["agent"],
-                "status": "succeeded",
-                "task_ids": [],
-                "result": empty_agent_result(),
-            },
-            200,
-        )
-
-    async def fake_stream(**kwargs: Any) -> tuple[dict[str, Any], int]:
-        invoked.append({"agent": kwargs["slug"], **kwargs})
-        return running_agent_run_response(
-            run_id=f"route-{kwargs['slug']}",
-            agent=kwargs["slug"],
-        )
-
-    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
-    monkeypatch.setattr(api_app, "_start_routed_expert_stream", fake_stream)
-
-
 pytestmark = pytest.mark.server
+
 
 _FORCED_NON_RESEARCH_CASES = tuple(
     case for case in _FORCED_ROUTE_CASES if case[0] != "InSilicoResearchAgent"
@@ -111,12 +79,14 @@ async def test_route_sync_agent_returns_resolved_slug(
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """A routed Knowledge stream returns its resolved slug and attachments.
+    """A routed sync agent returns its resolved slug + formatted envelope.
 
     Locks HR-1 (``agent`` is the resolved slug, never ``"expert"``) and
-    confirms the verbatim obs attachment reaches the knowledge stream.
+    HR-2 (the ``result.formatted`` block ships, with the ``references``
+    key present for the cited KnowledgeAgent). Also confirms the verbatim
+    obs attachment reaches the obs-capable knowledge tool.
     """
-    started: list[dict[str, Any]] = []
+    captured: dict[str, Any] = {}
     path = obs_path_from_key(
         ServerConfig().BUCKET_NAME,
         f"{ApiConfig().API_UPLOAD_PREFIX.strip('/')}/u1/expert/"
@@ -136,19 +106,15 @@ async def test_route_sync_agent_returns_resolved_slug(
         )
     )
 
-    async def prepared_stream(
-        _selected_tool: str,
-        selected_arguments: dict[str, Any],
-        *,
-        run_id: str,
-        dialogue_id: str | None,
-        **_kwargs: Any,
-    ) -> AsyncIterator[Any]:
-        started.append(selected_arguments)
-        yield run_started(run_id, dialogue_id)
-        yield run_finished(run_id)
+    async def fake(args: Any) -> dict[str, Any]:
+        captured["args"] = args
+        return {"answer": "rice answer", "doc_list": []}
 
-    monkeypatch.setattr(api_app, "prepare_tool_stream", prepared_stream)
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.KNOWLEDGE_AGENT.value,
+        fake,
+    )
     _patch_select(
         monkeypatch,
         ToolSelection("KnowledgeAgent", {"user_query": "rice drought"}),
@@ -163,29 +129,31 @@ async def test_route_sync_agent_returns_resolved_slug(
             "allowed_tools": ["KnowledgeAgent"],
         },
     )
-    assert response.status_code == 202
+    assert response.status_code == 200
     body = response.json()
     assert body["object"] == "agent.run"
     assert body["agent"] == "knowledge"
-    assert body["status"] == "running"
+    assert body["status"] == "succeeded"
     assert body["task_ids"] == []
-    assert body["id"] == body["run_id"]
-    assert started[0]["obs_file_list"] == [path]
-    assert started[0]["user_query"] == "rice drought"
+    formatted = body["result"]["formatted"]
+    assert "answer" in formatted
+    assert "references" in formatted
+    # The verbatim attachment reached the obs-capable tool.
+    assert captured["args"].obs_file_list == [path]
+    assert captured["args"].user_query == "rice drought"
 
-    record = RunRegistry(tasks_db_path).get_run(body["run_id"], owner="u1")
-    assert record is not None
+    record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
     assert record.spec.agent == "knowledge"
     assert record.spec.origin == "local"
 
 
-async def test_route_remote_agent_returns_reserved_run_before_child_ids(
+async def test_route_remote_agent_returns_provider_acknowledgement(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """A routed remote agent returns its umbrella before child persistence."""
+    """A routed remote agent returns its canonical provider acknowledgement."""
 
     async def fake(args: Any) -> dict[str, Any]:
         _ = args
@@ -221,8 +189,10 @@ async def test_route_remote_agent_returns_reserved_run_before_child_ids(
     assert body["agent"] == "analyst"
     assert body["status"] == "running"
     assert body["id"] == body["run_id"]
-    assert body["task_ids"] == []
-    assert body["result"] == empty_agent_result()
+    assert body["task_ids"] == ["T-A"]
+    assert body["result"]["execution"]["tasks"] == [
+        {"id": "T-A", "accepted": True}
+    ]
     request_id = response.headers["X-Request-Id"]
 
     record = await _wait_for_run_children(
@@ -282,7 +252,7 @@ async def test_route_passes_constraints_to_selector_and_forces_agent(
             "forced_tool": "DataAgent",
         },
     )
-    assert response.status_code == 202
+    assert response.status_code == 200
     assert captured == {
         "user_query": "Compare drought candidates",
         "history": [{"role": "user", "content": "rice"}],
@@ -290,7 +260,6 @@ async def test_route_passes_constraints_to_selector_and_forces_agent(
         "forced_tool": "DataAgent",
     }
     assert response.json()["agent"] == "data"
-    assert response.json()["status"] == "running"
 
 
 @pytest.mark.parametrize("case", _FORCED_NON_RESEARCH_CASES)
@@ -307,7 +276,22 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
     ) == tuple(case[0] for case in _FORCED_ROUTE_CASES)
     selector_call: dict[str, Any] = {}
     invoked: list[dict[str, Any]] = []
-    _patch_expert_dispatch_seams(monkeypatch, invoked)
+
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        invoked.append(kwargs)
+        return (
+            {
+                "id": f"route-{kwargs['agent']}",
+                "object": "agent.run",
+                "agent": kwargs["agent"],
+                "status": "succeeded",
+                "task_ids": [],
+                "result": empty_agent_result(),
+            },
+            200,
+        )
+
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
     _patch_select(
         monkeypatch,
         ToolSelection(tool_name, arguments),
@@ -324,8 +308,7 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
         },
     )
 
-    expected_status = 202 if slug in _STREAM_EXPERT_SLUGS else 200
-    assert response.status_code == expected_status
+    assert response.status_code == 200
     assert len(invoked) == 1 and invoked[0]["agent"] == slug
     assert selector_call == {
         "user_query": "q",
@@ -336,27 +319,15 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
 
 
 @pytest.mark.parametrize("case", _BACKGROUND_NON_RESEARCH_CASES)
-async def test_expert_background_selection_launches_one_reserved_worker(
+async def test_expert_asynchronous_selection_uses_canonical_runtime(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
     case: tuple[str, str, dict[str, Any], dict[str, Any], set[str]],
 ) -> None:
-    """Each background Expert selection uses one shared launcher call."""
+    """Each asynchronous Expert selection returns its canonical run."""
     tool_name, slug, arguments, result, expected_task_ids = case
-    launched: list[str] = []
-    real_launch = api_app.launch_background_submission
-
-    def capture_launch(
-        reservation: Any, operation: Any, **kwargs: Any
-    ) -> None:
-        launched.append(reservation.agent)
-        real_launch(reservation, operation, **kwargs)
-
-    monkeypatch.setattr(
-        api_app, "launch_background_submission", capture_launch
-    )
 
     async def fake(_args: Any) -> dict[str, Any]:
         return result
@@ -386,9 +357,10 @@ async def test_expert_background_selection_launches_one_reserved_worker(
     assert response.json()["agent"] == slug
     assert response.json()["status"] == "running"
     assert response.json()["id"] == response.json()["run_id"]
-    assert response.json()["task_ids"] == []
-    assert response.json()["result"] == empty_agent_result()
-    assert launched == [slug]
+    assert set(response.json()["task_ids"]) == expected_task_ids
+    assert {
+        task["id"] for task in response.json()["result"]["execution"]["tasks"]
+    } == expected_task_ids
     await _wait_for_run_children(
         tasks_db_path,
         response.json()["run_id"],
@@ -397,28 +369,35 @@ async def test_expert_background_selection_launches_one_reserved_worker(
 
 
 @pytest.mark.parametrize("case", _SYNC_EXPERT_CASES)
-async def test_expert_stream_selection_skips_background_launcher(
+async def test_expert_synchronous_selection_uses_canonical_runtime(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     case: tuple[str, str, dict[str, Any]],
 ) -> None:
-    """Stream-family Expert selections persist a running run without launch."""
+    """Synchronous Expert selections retain their business result contract."""
     tool_name, slug, arguments = case
-    launched: list[str] = []
-    real_launch = api_app.launch_background_submission
+    if slug == "review":
 
-    def capture_launch(
-        reservation: Any, operation: Any, **kwargs: Any
-    ) -> None:
-        launched.append(reservation.agent)
-        real_launch(reservation, operation, **kwargs)
+        async def fake_review(**_kwargs: Any) -> Any:
+            return ReviewExecution(
+                run_id="expert-review-sync",
+                status="succeeded",
+                result=review_success_result(),
+            )
 
-    monkeypatch.setattr(
-        api_app, "launch_background_submission", capture_launch
-    )
-    invoked: list[dict[str, Any]] = []
-    _patch_expert_dispatch_seams(monkeypatch, invoked)
+        monkeypatch.setattr(api_app, "_run_review_with_interrupt", fake_review)
+    else:
+        _stub_tool_handler(
+            monkeypatch,
+            {
+                "chat": server.PhytomniAgents.CHAT_AGENT.value,
+                "knowledge": server.PhytomniAgents.KNOWLEDGE_AGENT.value,
+                "data": server.PhytomniAgents.DATA_AGENT.value,
+                "brief_gene": server.PhytomniAgents.BRIEF_GENE_AGENT.value,
+            }[slug],
+            {"answer": "ok", "doc_list": []},
+        )
     _patch_select(monkeypatch, ToolSelection(tool_name, arguments))
 
     response = await _post_query_route(
@@ -431,12 +410,10 @@ async def test_expert_stream_selection_skips_background_launcher(
         },
     )
 
-    assert response.status_code == 202
+    assert response.status_code == 200
     body = response.json()
     assert body["agent"] == slug
-    assert body["status"] == "running"
-    assert not launched
-    assert len(invoked) == 1 and invoked[0]["agent"] == slug
+    assert body["status"] == "succeeded"
 
 
 async def test_route_autonomous_dispatches_one_allowed_tool(
@@ -447,7 +424,22 @@ async def test_route_autonomous_dispatches_one_allowed_tool(
     """Autonomous routing makes one constrained selection and dispatch."""
     captured: dict[str, Any] = {}
     invoked: list[dict[str, Any]] = []
-    _patch_expert_dispatch_seams(monkeypatch, invoked)
+
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        invoked.append(kwargs)
+        return (
+            {
+                "id": "route-chat",
+                "object": "agent.run",
+                "agent": kwargs["agent"],
+                "status": "succeeded",
+                "task_ids": [],
+                "result": empty_agent_result(),
+            },
+            200,
+        )
+
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
     patch_expert_router(
         monkeypatch,
         expert_router,
@@ -464,10 +456,10 @@ async def test_route_autonomous_dispatches_one_allowed_tool(
         },
     )
 
-    assert response.status_code == 202
+    assert response.status_code == 200
     assert len(invoked) == 1
     assert invoked[0]["agent"] == "chat"
-    assert captured["tool_choice"] == "auto"
+    assert captured["tool_choice"] == "required"
     assert [tool["function"]["name"] for tool in captured["tools"]] == [
         "ReviewAgent",
         "ChatAgent",
@@ -509,31 +501,15 @@ async def test_literal_agent_mention_stays_on_chat_surface(
 @pytest.mark.parametrize(
     "case",
     [
-        (
-            _router_completion(empty_choices=True),
-            ["DataAgent", "KnowledgeAgent"],
-            None,
-        ),
-        (
-            _router_completion(),
-            ["DataAgent", "KnowledgeAgent"],
-            None,
-        ),
+        (_router_completion(empty_choices=True), ["DataAgent"], None),
+        (_router_completion(), ["DataAgent"], None),
         (
             _router_completion(("ChatAgent", "{}"), ("DataAgent", "{}")),
             ["ChatAgent", "DataAgent"],
             None,
         ),
-        (
-            _router_completion(("MissingAgent", "{}")),
-            ["ChatAgent", "KnowledgeAgent"],
-            None,
-        ),
-        (
-            _router_completion(("DataAgent", "{}")),
-            ["ChatAgent", "KnowledgeAgent"],
-            None,
-        ),
+        (_router_completion(("MissingAgent", "{}")), ["ChatAgent"], None),
+        (_router_completion(("DataAgent", "{}")), ["ChatAgent"], None),
     ],
     ids=(
         "decline-no-chat",
@@ -558,8 +534,9 @@ async def test_route_strict_failures_never_invoke_agent(
     ``test_route_strict_decline_dispatches_chat_when_allowed``.
 
     A forced route is intentionally NOT a failure case here: a pinned
-    ``@agent`` skips the routing model and dispatches the forced tool
-    (see ``test_route_forced_tool_skips_routing_model``).
+    ``@agent`` is coerced to the forced tool and does dispatch even when the
+    model returns a different or empty tool call (see
+    ``test_route_forced_mismatch_coerces_and_dispatches``).
     """
     completion, allowed_tools, forced_tool = case
     invoked = 0
@@ -590,19 +567,41 @@ async def test_route_strict_failures_never_invoke_agent(
         }
 
 
-async def test_route_forced_tool_skips_routing_model(
+async def test_route_forced_mismatch_coerces_and_dispatches(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A pinned tool dispatches without calling the routing model."""
+    """A forced route coerces a mismatched model pick to the forced tool.
+
+    On an endpoint that rejects a named ``tool_choice`` the router downgrades
+    to ``"auto"`` and the model may autonomously pick a different tool. The
+    pinned ``@agent`` still wins: the mismatched selection is coerced to the
+    forced tool and dispatched to its native slug rather than surfacing a 502.
+    """
     invoked: list[dict[str, Any]] = []
 
-    async def explode(**_kwargs: Any) -> object:
-        raise AssertionError("forced route must not call the routing model")
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        invoked.append(kwargs)
+        return (
+            {
+                "id": f"route-{kwargs['agent']}",
+                "object": "agent.run",
+                "agent": kwargs["agent"],
+                "status": "succeeded",
+                "task_ids": [],
+                "result": empty_agent_result(),
+            },
+            200,
+        )
 
-    _patch_expert_dispatch_seams(monkeypatch, invoked)
-    monkeypatch.setattr(expert_router, "complete_expert_routing", explode)
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+    # Real router: the model picks DataAgent, but the caller forced Knowledge.
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _router_completion(("DataAgent", '{"user_query":"q"}')),
+    )
 
     response = await _post_query_route(
         api_client,
@@ -614,37 +613,7 @@ async def test_route_forced_tool_skips_routing_model(
         },
     )
 
-    assert response.status_code == 202
-    assert len(invoked) == 1
-    assert invoked[0]["agent"] == "knowledge"
-
-
-async def test_route_singleton_allowlist_skips_routing_model(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """One authorized tool dispatches without calling the routing model."""
-    invoked: list[dict[str, Any]] = []
-
-    async def explode(**_kwargs: Any) -> object:
-        raise AssertionError(
-            "singleton allowlist must not call the routing model"
-        )
-
-    _patch_expert_dispatch_seams(monkeypatch, invoked)
-    monkeypatch.setattr(expert_router, "complete_expert_routing", explode)
-
-    response = await _post_query_route(
-        api_client,
-        issued_api_key,
-        {
-            "user_query": "q",
-            "allowed_tools": ["KnowledgeAgent"],
-        },
-    )
-
-    assert response.status_code == 202
+    assert response.status_code == 200
     assert len(invoked) == 1
     assert invoked[0]["agent"] == "knowledge"
 
@@ -659,8 +628,8 @@ async def test_route_singleton_allowlist_skips_routing_model(
         ("BriefGeneAgent", "brief_gene", False),
         ("AnalystAgent", "analyst", True),
         ("DeepGenomeAgent", "deep_genome", False),
-        ("DigitalDesignAgent", "design", False),
-        ("GeneNetworkAgent", "network", False),
+        ("DigitalDesignAgent", "design", True),
+        ("GeneNetworkAgent", "network", True),
     ],
 )
 async def test_route_attachment_forwarding_follows_capability_matrix(
@@ -673,13 +642,14 @@ async def test_route_attachment_forwarding_follows_capability_matrix(
     """Expert forwarding follows the registry's exact ten-tool matrix."""
     tool_name, slug, forwarded = case
     captured: dict[str, dict[str, Any]] = {}
+    registry = UploadRegistry(tasks_db_path)
     file_id = "expert-context"
     path = obs_path_from_key(
         ServerConfig().BUCKET_NAME,
         f"{ApiConfig().API_UPLOAD_PREFIX.strip('/')}/u1/expert/"
         f"{file_id}/context.pdf",
     )
-    UploadRegistry(tasks_db_path).record(
+    registry.record(
         UploadMetadata(
             file_id=file_id,
             user_id="u1",
@@ -709,14 +679,7 @@ async def test_route_attachment_forwarding_follows_capability_matrix(
             200,
         )
 
-    async def fake_stream(
-        *, slug: str, arguments: dict[str, Any], **_kwargs: Any
-    ) -> tuple[dict[str, Any], int]:
-        captured[slug] = arguments
-        return running_agent_run_response(run_id="r1", agent=slug)
-
     monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
-    monkeypatch.setattr(api_app, "_start_routed_expert_stream", fake_stream)
     _patch_select(
         monkeypatch,
         ToolSelection(
@@ -734,9 +697,7 @@ async def test_route_attachment_forwarding_follows_capability_matrix(
         },
     )
     if forwarded:
-        assert response.status_code == (
-            202 if slug in _STREAM_EXPERT_SLUGS else 200
-        )
+        assert response.status_code == 200
         assert captured[slug]["obs_file_list"] == [path]
     else:
         assert response.status_code == 422
@@ -897,12 +858,13 @@ async def test_legacy_a2a_no_selection_cannot_relax_strict_route(
     assert response.status_code == 502
     assert response.json()["error"]["code"] == ("routing_contract_violation")
     assert captured == {
-        "tool_choice": "auto",
+        "tool_choice": "required",
         "allowed_order": ("DataAgent", "KnowledgeAgent"),
     }
     assert legacy_calls == ["legacy question"]
     assert invoked == 0
-    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
+    records = RunRegistry(tasks_db_path).list_runs(owner="u1")
+    assert records == []
 
 
 async def test_route_unknown_tool_returns_502(
@@ -931,3 +893,54 @@ async def test_route_unknown_tool_returns_502(
     )
     assert response.status_code == 502
     assert invoked == 0
+
+
+async def test_route_invalid_arguments_returns_400_and_records_failure(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """LLM-extracted arguments that fail the agent schema -> 400.
+
+    The KnowledgeAgent schema requires ``user_query``; an empty argument
+    object makes ``invoke_tool_enveloped`` raise ``McpError`` with
+    ``INVALID_PARAMS``, which the route maps to 400 rather than letting it
+    fall through to the generic 500 handler.
+    """
+    invoked = 0
+
+    async def forbidden_handler(_args: Any) -> dict[str, Any]:
+        nonlocal invoked
+        invoked += 1
+        raise AssertionError("agent invocation must not run")
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.KNOWLEDGE_AGENT.value,
+        forbidden_handler,
+    )
+    _patch_select(monkeypatch, ToolSelection("KnowledgeAgent", {}))
+    response = await _post_query_route(
+        api_client,
+        issued_api_key,
+        {"user_query": "rice", "allowed_tools": ["KnowledgeAgent"]},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == (
+        "selected_agent_invalid_argument"
+    )
+    assert response.json()["error"]["stage"] == "dispatch_validation"
+    assert response.json()["error"]["retryable"] is False
+    assert invoked == 0
+    records = RunRegistry(tasks_db_path).list_runs(owner="u1")
+    assert len(records) == 1
+    record = records[0]
+    assert record.spec.agent == "knowledge"
+    assert record.status == "failed"
+    assert record.request_info.execution_id
+    projection = SQLiteExecutionJournal(tasks_db_path).get_projection(
+        record.request_info.execution_id, owner="u1"
+    )
+    assert projection.status.value == "failed"
+    assert projection.terminal is not None

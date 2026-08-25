@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from ipaddress import IPv6Address
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Annotated, Any, Literal
 from unicodedata import category
 from urllib.parse import urlsplit, urlunsplit
@@ -209,7 +209,7 @@ class _InteropTargetBase(BaseModel):
         found = _embedded_credential_field(data)
         if found is not None:
             raise ValueError(
-                "target contains embedded credential field " f"{found!r}"
+                f"target contains embedded credential field {found!r}"
             )
         return data
 
@@ -248,7 +248,12 @@ class MCPStdioTarget(_InteropTargetBase):
     @classmethod
     def _validate_command(cls, value: str) -> str:
         """Require an absolute path without testing filesystem existence."""
-        if "\x00" in value or not Path(value).is_absolute():
+        is_absolute = (
+            Path(value).is_absolute()
+            or PurePosixPath(value).is_absolute()
+            or PureWindowsPath(value).is_absolute()
+        )
+        if "\x00" in value or not is_absolute:
             raise ValueError("stdio command must be an absolute path")
         return value
 

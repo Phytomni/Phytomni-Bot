@@ -22,8 +22,19 @@ from mcp_server_phytomni import server
 from mcp_server_phytomni.mcp.result_formatting import (
     build_tool_result_envelope,
 )
+from mcp_server_phytomni.runtime.execution_event_sink import (
+    bind_execution_event_sink,
+)
 
 pytestmark = pytest.mark.server
+
+
+class _EventRecorder:
+    def __init__(self) -> None:
+        self.intents: list[Any] = []
+
+    def emit(self, intent: Any) -> None:
+        self.intents.append(intent)
 
 
 async def test_invoke_tool_raw_returns_unwrapped_payload(
@@ -50,6 +61,70 @@ async def test_invoke_tool_raw_returns_unwrapped_payload(
 
     assert isinstance(captured["args"], server.ChatAgent)
     assert payload == {"answer": "hello", "files": []}
+
+
+async def test_invoke_tool_raw_emits_safe_shared_boundary_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_handler(_args: Any) -> dict[str, bool]:
+        return {"private": True}
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake_handler,
+    )
+    recorder = _EventRecorder()
+
+    with bind_execution_event_sink(recorder):
+        await server.invoke_tool_raw(
+            server.PhytomniAgents.CHAT_AGENT,
+            {"user_query": "secret query", "obs_file_list": []},
+        )
+
+    assert [intent.kind for intent in recorder.intents] == [
+        "tool.started",
+        "tool.completed",
+    ]
+    assert recorder.intents[0].payload.tool_key == "ChatAgent"
+    assert recorder.intents[1].payload.duration_ms >= 0
+    serialized = repr(
+        [intent.model_dump(mode="json") for intent in recorder.intents]
+    )
+    assert "secret query" not in serialized
+    assert "private" not in serialized
+
+
+async def test_invoke_tool_raw_classifies_failure_without_exception_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_handler(_args: Any) -> None:
+        raise RuntimeError("credential=do-not-persist")
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake_handler,
+    )
+    recorder = _EventRecorder()
+
+    with (
+        bind_execution_event_sink(recorder),
+        pytest.raises(RuntimeError, match="do-not-persist"),
+    ):
+        await server.invoke_tool_raw(
+            server.PhytomniAgents.CHAT_AGENT,
+            {"user_query": "hello", "obs_file_list": []},
+        )
+
+    assert [intent.kind for intent in recorder.intents] == [
+        "tool.started",
+        "tool.failed",
+    ]
+    assert recorder.intents[-1].payload.code == "tool_execution_failed"
+    assert "do-not-persist" not in repr(
+        recorder.intents[-1].model_dump(mode="json")
+    )
 
 
 async def test_invoke_tool_raw_rejects_unknown_tool() -> None:

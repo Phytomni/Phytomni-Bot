@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from langgraph.graph.state import CompiledStateGraph
 
 from ...common.responses import message_content
+from ...runtime.langgraph_runner import invoke_graph
 
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
@@ -156,7 +157,7 @@ def make_brief_gene_mount_node(
             "locale": state.get("locale"),
         }
         try:
-            brief_output = await brief_gene_app.ainvoke(brief_input)
+            brief_output = await invoke_graph(brief_gene_app, brief_input)
             if not isinstance(brief_output, dict):
                 raise TypeError("BriefGene output is not an object")
             projected = _project_brief_gene_output(brief_output, gene_id)

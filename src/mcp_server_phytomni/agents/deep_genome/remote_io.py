@@ -22,6 +22,9 @@ from typing import Any, TypedDict, Unpack
 
 from ...config.relay_mode import relay_mode_enabled
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
+from ...runtime.provider_instrumentation_v2 import (
+    instrument_provider_cancellation,
+)
 from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
@@ -224,10 +227,14 @@ class DeepGenomeRemoteIO:
         """Best-effort terminate only the caller-owned remote task id."""
         delete = self.hook("task_delete", task_delete)
         try:
-            await delete(
-                submission.submitted_task_id,
-                timeout=getattr(self.config, "TIMEOUT", 600.0),
-                **self.analysis_request_kwargs(),
+            await instrument_provider_cancellation(
+                provider_kind="analysis_task_platform",
+                provider_task_id=submission.submitted_task_id,
+                call=lambda: delete(
+                    submission.submitted_task_id,
+                    timeout=getattr(self.config, "TIMEOUT", 600.0),
+                    **self.analysis_request_kwargs(),
+                ),
             )
         except _BEST_EFFORT_ERRORS as exc:
             logger.warning(

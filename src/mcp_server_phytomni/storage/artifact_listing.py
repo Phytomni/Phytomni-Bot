@@ -13,6 +13,8 @@ mid-iteration once it has started yielding.
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,8 +22,10 @@ from typing import Any
 from mcp_server_phytomni.runtime.outbound import ObsProfileName
 from mcp_server_phytomni.storage.obs_relay_ops import (
     ObsAccessOptions,
+    ObsListedObject,
     list_object_keys,
     list_object_keys_page,
+    list_object_metadata_page,
     object_size,
 )
 from mcp_server_phytomni.storage.obs_storage import (
@@ -39,6 +43,8 @@ __all__ = [
     "list_artifact_paths",
     "list_artifact_paths_with_runtime",
 ]
+
+_ARTIFACT_MANIFEST_NAME = ".phytomni-artifacts.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,18 +110,23 @@ async def list_artifact_objects_with_runtime(
     limit: int | None = None,
 ) -> list[ListedArtifactObject]:
     """List output objects with a separate OBS lease per SDK request."""
-    base_key = normalize_obs_object_key(output_dir, bucket_name).rstrip("/")
+    if limit is not None and limit < 1:
+        raise ValueError("artifact object limit must be positive")
+    object_key = normalize_obs_object_key(output_dir, bucket_name)
+    base_key = object_key.rstrip("/")
     if obsfs_bucket_available(bucket_name, mount_root):
         dir_path = obsfs_path_for(output_dir, bucket_name, mount_root)
         if dir_path.is_dir():
-            return _list_obsfs_objects(
+            mounted_objects = _list_obsfs_objects(
                 dir_path,
                 base_key=base_key,
                 bucket_name=bucket_name,
                 limit=limit,
+                preferred_relative_paths=(_ARTIFACT_MANIFEST_NAME,),
             )
+            return mounted_objects
     prefix = f"{base_key}/" if base_key else ""
-    keys = await _list_sdk_keys_with_runtime(
+    listed = await _list_sdk_object_metadata_with_runtime(
         bucket_name,
         prefix,
         obs_runtime=obs_runtime,
@@ -123,22 +134,24 @@ async def list_artifact_objects_with_runtime(
         limit=limit,
     )
     objects: list[ListedArtifactObject] = []
-    for key in keys:
-        safe_key = normalize_obs_object_key(key, bucket_name)
+    for item in listed:
+        safe_key = normalize_obs_object_key(item.key, bucket_name)
         relative_path = _relative_output_path(safe_key, base_key)
         if relative_path is None:
             continue
-        size_bytes = await obs_runtime.run(
-            ObsProfileName.PRIMARY,
-            lambda client, safe_key=safe_key: object_size(
-                bucket_name,
-                safe_key,
-                access=ObsAccessOptions(
-                    client=client,
-                    mount_root=mount_root,
+        size_bytes = item.size_bytes
+        if size_bytes is None:
+            size_bytes = await obs_runtime.run(
+                ObsProfileName.PRIMARY,
+                lambda client, safe_key=safe_key: object_size(
+                    bucket_name,
+                    safe_key,
+                    access=ObsAccessOptions(
+                        client=client,
+                        mount_root=mount_root,
+                    ),
                 ),
-            ),
-        )
+            )
         download_ref = obs_path_from_key(bucket_name, safe_key)
         objects.append(
             ListedArtifactObject(
@@ -153,23 +166,59 @@ async def list_artifact_objects_with_runtime(
     return objects
 
 
+async def _list_sdk_object_metadata_with_runtime(
+    bucket_name: str,
+    prefix: str,
+    *,
+    obs_runtime: Any,
+    mount_root: str,
+    limit: int | None,
+) -> list[ObsListedObject]:
+    """Fetch bounded LIST metadata without N sequential object HEADs."""
+    objects: list[ObsListedObject] = []
+    marker: str | None = None
+    while True:
+        remaining = None if limit is None else limit - len(objects)
+        if remaining is not None and remaining <= 0:
+            return objects
+        max_keys = 1000 if remaining is None else min(remaining, 1000)
+        page, marker = await obs_runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client, marker=marker, max_keys=max_keys: (
+                list_object_metadata_page(
+                    bucket_name,
+                    prefix,
+                    marker,
+                    access=ObsAccessOptions(
+                        client=client,
+                        mount_root=mount_root,
+                    ),
+                    max_keys=max_keys,
+                )
+            ),
+        )
+        objects.extend(page)
+        if limit is not None and len(objects) >= limit:
+            return objects[:limit]
+        if marker is None:
+            return objects
+
+
 def _list_obsfs_objects(
     directory: Path,
     *,
     base_key: str,
     bucket_name: str,
     limit: int | None = None,
+    preferred_relative_paths: tuple[str, ...] = (),
 ) -> list[ListedArtifactObject]:
     """Build object records from one confined obsfs directory."""
     dir_path = directory
     resolved_dir_path = dir_path.resolve()
     objects: list[ListedArtifactObject] = []
-    paths = (
-        dir_path.rglob("*")
-        if limit is not None
-        else sorted(dir_path.rglob("*"))
-    )
-    for path in paths:
+    preferred: set[str] = set()
+    for relative in preferred_relative_paths:
+        path = dir_path / relative
         if path.is_symlink() or not path.is_file():
             continue
         resolved_path = path.resolve()
@@ -177,7 +226,36 @@ def _list_obsfs_objects(
             resolved_path.relative_to(resolved_dir_path)
         except ValueError:
             continue
+        object_key = f"{base_key}/{relative}" if base_key else relative
+        download_ref = obs_path_from_key(bucket_name, object_key)
+        objects.append(
+            ListedArtifactObject(
+                relative_path=relative,
+                source_path=str(path),
+                size_bytes=resolved_path.stat().st_size,
+                download_ref=download_ref,
+            )
+        )
+        preferred.add(relative)
+        if limit is not None and len(objects) >= limit:
+            return objects
+    paths: Iterator[Path]
+    if limit is None:
+        paths = iter(sorted(dir_path.rglob("*")))
+    else:
+        paths = _iter_obsfs_files_bounded(dir_path)
+    bounded_walk = limit is not None
+    for path in paths:
+        if not bounded_walk and (path.is_symlink() or not path.is_file()):
+            continue
         relative_path = path.relative_to(dir_path).as_posix()
+        if relative_path in preferred:
+            continue
+        resolved_path = path.resolve()
+        try:
+            resolved_path.relative_to(resolved_dir_path)
+        except ValueError:
+            continue
         object_key = (
             f"{base_key}/{relative_path}" if base_key else relative_path
         )
@@ -191,8 +269,21 @@ def _list_obsfs_objects(
             )
         )
         if limit is not None and len(objects) >= limit:
-            return objects
+            break
     return objects
+
+
+def _iter_obsfs_files_bounded(directory: Path) -> Iterator[Path]:
+    """Walk mounted output lazily so callers can stop at their hard cap."""
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if entry.is_symlink():
+                continue
+            if entry.is_file(follow_symlinks=False):
+                yield Path(entry.path)
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                yield from _iter_obsfs_files_bounded(Path(entry.path))
 
 
 def _list_sdk_objects(

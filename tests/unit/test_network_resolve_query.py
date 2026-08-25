@@ -134,6 +134,42 @@ async def test_resolver_defaults_bare_to_id_to_rice_without_llm(
     ]
 
 
+def test_route_hint_recognizes_documented_network_question() -> None:
+    """A valid embedded TO id plus network intent is an offline route hint."""
+    result = nw_module.resolve_network_route_hint(
+        "Please help me to analysis the hormone regulatory network in the "
+        "traits of TO:0000011"
+    )
+
+    assert result is not None
+    assert result.to_id == "TO:0000011"
+    assert result.species_code == "osa"
+    assert result.candidates == [
+        GeneNetworkToIdCandidate(
+            to_id="TO:0000011",
+            confidence=1.0,
+            species_code="osa",
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "query",
+    (
+        "What does TO:0000011 mean?",
+        "What trait is TO:0000011?",
+        "解释 TO:0000011 这个性状",
+        "Please compare TO:0000011 with TO:0000207",
+        "Please analyse the regulatory network for TO:9999999",
+    ),
+)
+def test_route_hint_rejects_ambiguous_or_non_network_questions(
+    query: str,
+) -> None:
+    """The deterministic hint stays narrow and never guesses an invalid id."""
+    assert nw_module.resolve_network_route_hint(query) is None
+
+
 async def test_resolver_rejects_unknown_bare_to_id_without_llm(
     monkeypatch: pytest.MonkeyPatch,
     configs: tuple[GeneNetworkConfig, SensitiveConfig],

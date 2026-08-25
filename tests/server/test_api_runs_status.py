@@ -543,12 +543,12 @@ async def test_get_zero_child_live_background_run_remains_running(
         deregister_live_task(run_id)
 
 
-async def test_get_zero_child_orphan_background_run_settles_safe_failure(
+async def test_get_zero_child_orphan_background_run_is_a_pure_read(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
-    """A missing detached worker becomes a generic terminal failure."""
+    """A GET never settles a missing worker outside the supervisor."""
     run_id = "run-orphan-background"
     registry = RunRegistry(tasks_db_path)
     registry.reserve_run(
@@ -578,25 +578,25 @@ async def test_get_zero_child_orphan_background_run_settles_safe_failure(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "failed"
-    assert body["error"] == "run failed"
+    assert body["status"] == "running"
     assert body["query"] == "safe public query"
     record = registry.get_run(run_id, owner="u1")
     assert record is not None
-    assert record.error == "background_submission_worker_lost"
+    assert record.status == "running"
+    assert record.error == "error-sentinel: /private/input.fa"
     assert "query-sentinel" not in response.text
     assert "/private/input.fa" not in response.text
     assert "Bearer sentinel" not in response.text
     assert "error-sentinel" not in response.text
 
 
-async def test_get_run_reconciles_non_terminal_to_terminal(
+async def test_get_run_does_not_reconcile_non_terminal_children(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A running run polls its children once and settles as succeeded."""
+    """A running GET projects state without executing supervisor work."""
     registry = RunRegistry(tasks_db_path)
     manager = TaskManager(tasks_db_path)
     ctx = RunContext(
@@ -627,8 +627,11 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
 
     output_dirs = {"t-1": "/obs/x", "t-2": "/obs/y"}
 
+    reconciled: list[str] = []
+
     async def fake(task_id: str) -> dict[str, Any]:
         """Return a terminal success for every child task with output_dir."""
+        reconciled.append(task_id)
         return {
             "task_id": task_id,
             "status": "succeeded",
@@ -653,29 +656,13 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "succeeded"
+    assert body["status"] == "running"
     assert body["origin"] == "remote"
     assert sorted(body["task_ids"]) == ["t-1", "t-2"]
-    assert body["expires_at"] is not None
-    # The public terminal projection keeps accepted work identity but never
-    # leaks the registry's live task rows or tenant artifact paths.
-    execution = body["result"]["execution"]
-    assert execution["tasks"] == [
-        {"id": "t-1", "accepted": True, "status": "succeeded"},
-        {"id": "t-2", "accepted": True, "status": "succeeded"},
-    ]
-    assert execution["artifacts"] == []
-    assert "task_results" not in body["result"]
-    assert "live_status" not in body["result"]
-    # WO-1 contract: an analyst-class terminal run always has a nonblank
-    # report answer, even when no validated scientific artifact is present.
-    answer = body["result"]["formatted"]["answer"]
-    assert answer.startswith("The analysis reached a terminal outcome")
-    assert body["result"]["execution"]["report"]["state"] == "degraded"
-    assert body["result"]["formatted"]["metadata"]["report"] == (
-        body["result"]["execution"]["report"]
-    )
-    assert body["answer"] == answer
+    assert reconciled == []
+    record = registry.get_run("run-r-1", owner="u1")
+    assert record is not None
+    assert record.status == "running"
 
 
 async def test_get_deep_genome_run_refreshes_intermediate_snapshot(

@@ -99,7 +99,7 @@ _EXPECTED_NETWORK_OPERATIONS: Counter[_CallSite] = Counter(
         ): 1,
         (
             "mcp_server_phytomni/storage/obs_relay_ops.py",
-            "list_object_keys_page",
+            "list_object_metadata_page",
             "_resolve_client(resolved_access.client).listObjects",
         ): 1,
         (

@@ -37,6 +37,7 @@ from ...runtime.locale import (
     locale_instruction,
 )
 from ...runtime.outbound import OutboundPoolName, current_outbound_runtime
+from ..network.resolve_query import resolve_network_route_hint
 from .routing_observability import (
     ExpertProviderAttemptResult,
     elapsed_ms,
@@ -241,11 +242,27 @@ async def select_expert_tool(
     request = _build_routing_request(
         agent_openai_tool_specs(), options.allowed_tools, options.forced_tool
     )
-    skipped = _deterministic_selection(
-        request, options.forced_tool, user_query
+    deterministic = _deterministic_selection(
+        request,
+        options.forced_tool,
+        user_query,
     )
-    if skipped is not None:
-        return skipped
+    if deterministic is not None:
+        return deterministic
+    if (
+        options.forced_tool is None
+        and "GeneNetworkAgent" in options.allowed_tools
+    ):
+        network_hint = resolve_network_route_hint(user_query)
+        if network_hint is not None:
+            return ToolSelection(
+                tool_name="GeneNetworkAgent",
+                arguments={
+                    "species_code": network_hint.species_code,
+                    "to_id": network_hint.to_id,
+                },
+            )
+
     messages = [
         {"role": "system", "content": locale_instruction(options.locale)},
         *(dict(turn) for turn in history),

@@ -1,51 +1,64 @@
 {
-  "nodes": [
-    {
-      "name": "__start__",
-      "kind": "boundary"
-    },
-    {
-      "name": "prepare_context_node",
-      "kind": "node"
-    },
-    {
-      "name": "generate_node",
-      "kind": "node"
-    },
-    {
-      "name": "follow_up_node",
-      "kind": "node"
-    },
-    {
-      "name": "__end__",
-      "kind": "boundary"
-    }
-  ],
+  "classification": "public",
+  "driver": "local_graph",
   "edges": [
     {
+      "conditional": false,
       "source": "__start__",
-      "target": "prepare_context_node",
-      "conditional": false
+      "target": "prepare_context_node"
     },
     {
+      "conditional": true,
       "source": "generate_node",
-      "target": "__end__",
-      "conditional": true
+      "target": "__end__"
     },
     {
+      "conditional": true,
       "source": "generate_node",
-      "target": "follow_up_node",
-      "conditional": true
+      "target": "follow_up_node"
     },
     {
+      "conditional": false,
       "source": "prepare_context_node",
-      "target": "generate_node",
-      "conditional": false
+      "target": "generate_node"
     },
     {
+      "conditional": false,
       "source": "follow_up_node",
-      "target": "__end__",
-      "conditional": false
+      "target": "__end__"
     }
-  ]
+  ],
+  "graph_id": "chat",
+  "lifecycle": [
+    "synchronous",
+    "streaming"
+  ],
+  "nodes": [
+    {
+      "kind": "boundary",
+      "name": "__start__"
+    },
+    {
+      "kind": "node",
+      "name": "prepare_context_node"
+    },
+    {
+      "kind": "node",
+      "name": "generate_node"
+    },
+    {
+      "kind": "node",
+      "name": "follow_up_node"
+    },
+    {
+      "kind": "boundary",
+      "name": "__end__"
+    }
+  ],
+  "public_agent": "ChatAgent",
+  "remote_providers": [
+    "model_provider"
+  ],
+  "subgraph_dependencies": [],
+  "topology": "conditional"
 }

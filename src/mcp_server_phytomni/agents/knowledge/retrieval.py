@@ -23,6 +23,9 @@ from ...common.lists import split_list
 from ...common.relay_client import RelayRequestOptions, current_relay_client
 from ...config.relay_mode import relay_mode_enabled
 from ...func_cache import LONG_TTL_SECONDS, func_cache
+from ...runtime.operation_instrumentation_v2 import (
+    instrument_operation_invocation,
+)
 from ...runtime.outbound import OutboundPoolName, current_outbound_runtime
 from .retrieval_options import (
     KNOWLEDGE_CONFIG,
@@ -176,9 +179,24 @@ async def retrieve(user_query: str, **kwargs: Any) -> dict[str, Any]:
         top_n=options.page_size,
         score_threshold=options.score_threshold,
     )
-    return await _retrieve_cached(
-        cache_key,
-        options=options,
+
+    async def retrieve_cached() -> dict[str, Any]:
+        return dict(
+            await _retrieve_cached(
+                cache_key,
+                options=options,
+            )
+        )
+
+    return await instrument_operation_invocation(
+        "knowledge.search",
+        retrieve_cached,
+        detail={
+            "repository_count": 1 + len(payload.extra_repo_ids or ()),
+        },
+        detail_from_result=lambda result: {
+            "result_count": len(result["doc_list"]),
+        },
     )
 
 

@@ -14,6 +14,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from ..public_agent_catalog import PUBLIC_AGENT_CATALOG
 from ..runtime.locale import SupportedLocale
 
 _LOCALE_DESCRIPTION = (
@@ -804,57 +805,13 @@ class PhytomniAgents(StrEnum):
 # other.
 AGENT_TOOL_DEFINITIONS: tuple[
     tuple[PhytomniAgents, PhytomniAgents, type[BaseModel]], ...
-] = (
+] = tuple(
     (
-        PhytomniAgents.CHAT_AGENT,
-        PhytomniAgents.CHAT_AGENT_DESCRIPTION,
-        ChatAgent,
-    ),
-    (
-        PhytomniAgents.KNOWLEDGE_AGENT,
-        PhytomniAgents.KNOWLEDGE_AGENT_DESCRIPTION,
-        KnowledgeAgent,
-    ),
-    (
-        PhytomniAgents.DATA_AGENT,
-        PhytomniAgents.DATA_AGENT_DESCRIPTION,
-        DataAgent,
-    ),
-    (
-        PhytomniAgents.ANALYST_AGENT,
-        PhytomniAgents.ANALYST_AGENT_DESCRIPTION,
-        AnalystAgent,
-    ),
-    (
-        PhytomniAgents.REVIEW_AGENT,
-        PhytomniAgents.REVIEW_AGENT_DESCRIPTION,
-        ReviewAgent,
-    ),
-    (
-        PhytomniAgents.BRIEF_GENE_AGENT,
-        PhytomniAgents.BRIEF_GENE_AGENT_DESCRIPTION,
-        BriefGeneAgent,
-    ),
-    (
-        PhytomniAgents.DEEP_GENOME_AGENT,
-        PhytomniAgents.DEEP_GENOME_AGENT_DESCRIPTION,
-        DeepGenomeAgent,
-    ),
-    (
-        PhytomniAgents.IN_SILICO_RESEARCH_AGENT,
-        PhytomniAgents.IN_SILICO_RESEARCH_AGENT_DESCRIPTION,
-        InSilicoResearchAgent,
-    ),
-    (
-        PhytomniAgents.DIGITAL_DESIGN_AGENT,
-        PhytomniAgents.DIGITAL_DESIGN_AGENT_DESCRIPTION,
-        DigitalDesignAgent,
-    ),
-    (
-        PhytomniAgents.GENE_NETWORK_AGENT,
-        PhytomniAgents.GENE_NETWORK_AGENT_DESCRIPTION,
-        GeneNetworkAgent,
-    ),
+        getattr(PhytomniAgents, item.enum_key),
+        getattr(PhytomniAgents, f"{item.enum_key}_DESCRIPTION"),
+        globals()[item.schema],
+    )
+    for item in PUBLIC_AGENT_CATALOG
 )
 
 

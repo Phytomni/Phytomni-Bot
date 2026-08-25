@@ -14,6 +14,31 @@
       },
       "datasets": null,
       "expert_forwarding": true
+    },
+    "execution_events": {
+      "major_version": 1,
+      "resumable_history": true,
+      "custom_event": "phyto.run_event",
+      "target_kinds": [
+        "event",
+        "artifact",
+        "report",
+        "todo",
+        "preview",
+        "download",
+        "trace"
+      ]
+    },
+    "work_trace": {
+      "major_version": 1,
+      "state": "supported",
+      "features": {
+        "lifecycle": "supported",
+        "semantic_phases": "supported",
+        "semantic_tools": "supported",
+        "public_reasoning": "unsupported",
+        "trace_target": "unsupported"
+      }
     }
   },
   "knowledge": {
@@ -31,6 +56,31 @@
       },
       "datasets": null,
       "expert_forwarding": true
+    },
+    "execution_events": {
+      "major_version": 1,
+      "resumable_history": true,
+      "custom_event": "phyto.run_event",
+      "target_kinds": [
+        "event",
+        "artifact",
+        "report",
+        "todo",
+        "preview",
+        "download",
+        "trace"
+      ]
+    },
+    "work_trace": {
+      "major_version": 1,
+      "state": "supported",
+      "features": {
+        "lifecycle": "supported",
+        "semantic_phases": "supported",
+        "semantic_tools": "supported",
+        "public_reasoning": "unsupported",
+        "trace_target": "unsupported"
+      }
     }
   },
   "data": {
@@ -43,6 +93,31 @@
       "document_context": null,
       "datasets": null,
       "expert_forwarding": false
+    },
+    "execution_events": {
+      "major_version": 1,
+      "resumable_history": true,
+      "custom_event": "phyto.run_event",
+      "target_kinds": [
+        "event",
+        "artifact",
+        "report",
+        "todo",
+        "preview",
+        "download",
+        "trace"
+      ]
+    },
+    "work_trace": {
+      "major_version": 1,
+      "state": "supported",
+      "features": {
+        "lifecycle": "supported",
+        "semantic_phases": "supported",
+        "semantic_tools": "supported",
+        "public_reasoning": "unsupported",
+        "trace_target": "unsupported"
+      }
     }
   },
   "review": {
@@ -60,6 +135,31 @@
       },
       "datasets": null,
       "expert_forwarding": true
+    },
+    "execution_events": {
+      "major_version": 1,
+      "resumable_history": true,
+      "custom_event": "phyto.run_event",
+      "target_kinds": [
+        "event",
+        "artifact",
+        "report",
+        "todo",
+        "preview",
+        "download",
+        "trace"
+      ]
+    },
+    "work_trace": {
+      "major_version": 1,
+      "state": "supported",
+      "features": {
+        "lifecycle": "supported",
+        "semantic_phases": "supported",
+        "semantic_tools": "supported",
+        "public_reasoning": "unsupported",
+        "trace_target": "unsupported"
+      }
     }
   },
   "brief_gene": {
@@ -72,6 +172,31 @@
       "document_context": null,
       "datasets": null,
       "expert_forwarding": false
+    },
+    "execution_events": {
+      "major_version": 1,
+      "resumable_history": true,
+      "custom_event": "phyto.run_event",
+      "target_kinds": [
+        "event",
+        "artifact",
+        "report",
+        "todo",
+        "preview",
+        "download",
+        "trace"
+      ]
+    },
+    "work_trace": {
+      "major_version": 1,
+      "state": "supported",
+      "features": {
+        "lifecycle": "supported",
+        "semantic_phases": "supported",
+        "semantic_tools": "supported",
+        "public_reasoning": "unsupported",
+        "trace_target": "unsupported"
+      }
     }
   },
   "analyst": {
@@ -96,6 +221,36 @@
         "max_total_bytes": 107374182400
       },
       "expert_forwarding": false
+    },
+    "execution_events": {
+      "major_version": 1,
+      "resumable_history": true,
+      "custom_event": "phyto.run_event",
+      "target_kinds": [
+        "event",
+        "artifact",
+        "report",
+        "todo",
+        "preview",
+        "download",
+        "trace"
+      ]
+    },
+    "work_trace": {
+      "major_version": 1,
+      "state": "supported",
+      "features": {
+        "lifecycle": "supported",
+        "semantic_phases": "supported",
+        "semantic_tools": "supported",
+        "public_reasoning": "unsupported",
+        "trace_target": "supported"
+      },
+      "target": {
+        "kind": "trace",
+        "major_version": 1
+      },
+      "detail_endpoint": "/v2/executions/{execution_id}/targets/trace/{target_id}"
     }
   },
   "deep_genome": {
@@ -111,6 +266,36 @@
       "document_context": null,
       "datasets": null,
       "expert_forwarding": false
+    },
+    "execution_events": {
+      "major_version": 1,
+      "resumable_history": true,
+      "custom_event": "phyto.run_event",
+      "target_kinds": [
+        "event",
+        "artifact",
+        "report",
+        "todo",
+        "preview",
+        "download",
+        "trace"
+      ]
+    },
+    "work_trace": {
+      "major_version": 1,
+      "state": "supported",
+      "features": {
+        "lifecycle": "supported",
+        "semantic_phases": "supported",
+        "semantic_tools": "supported",
+        "public_reasoning": "unsupported",
+        "trace_target": "supported"
+      },
+      "target": {
+        "kind": "trace",
+        "major_version": 1
+      },
+      "detail_endpoint": "/v2/executions/{execution_id}/targets/trace/{target_id}"
     }
   },
   "research": {
@@ -135,6 +320,36 @@
         "max_total_bytes": 107374182400
       },
       "expert_forwarding": false
+    },
+    "execution_events": {
+      "major_version": 1,
+      "resumable_history": true,
+      "custom_event": "phyto.run_event",
+      "target_kinds": [
+        "event",
+        "artifact",
+        "report",
+        "todo",
+        "preview",
+        "download",
+        "trace"
+      ]
+    },
+    "work_trace": {
+      "major_version": 1,
+      "state": "supported",
+      "features": {
+        "lifecycle": "supported",
+        "semantic_phases": "supported",
+        "semantic_tools": "supported",
+        "public_reasoning": "unsupported",
+        "trace_target": "supported"
+      },
+      "target": {
+        "kind": "trace",
+        "major_version": 1
+      },
+      "detail_endpoint": "/v2/executions/{execution_id}/targets/trace/{target_id}"
     }
   },
   "design": {
@@ -149,6 +364,36 @@
       "document_context": null,
       "datasets": null,
       "expert_forwarding": false
+    },
+    "execution_events": {
+      "major_version": 1,
+      "resumable_history": true,
+      "custom_event": "phyto.run_event",
+      "target_kinds": [
+        "event",
+        "artifact",
+        "report",
+        "todo",
+        "preview",
+        "download",
+        "trace"
+      ]
+    },
+    "work_trace": {
+      "major_version": 1,
+      "state": "supported",
+      "features": {
+        "lifecycle": "supported",
+        "semantic_phases": "supported",
+        "semantic_tools": "supported",
+        "public_reasoning": "unsupported",
+        "trace_target": "supported"
+      },
+      "target": {
+        "kind": "trace",
+        "major_version": 1
+      },
+      "detail_endpoint": "/v2/executions/{execution_id}/targets/trace/{target_id}"
     }
   },
   "network": {
@@ -163,6 +408,36 @@
       "document_context": null,
       "datasets": null,
       "expert_forwarding": false
+    },
+    "execution_events": {
+      "major_version": 1,
+      "resumable_history": true,
+      "custom_event": "phyto.run_event",
+      "target_kinds": [
+        "event",
+        "artifact",
+        "report",
+        "todo",
+        "preview",
+        "download",
+        "trace"
+      ]
+    },
+    "work_trace": {
+      "major_version": 1,
+      "state": "supported",
+      "features": {
+        "lifecycle": "supported",
+        "semantic_phases": "supported",
+        "semantic_tools": "supported",
+        "public_reasoning": "supported",
+        "trace_target": "supported"
+      },
+      "target": {
+        "kind": "trace",
+        "major_version": 1
+      },
+      "detail_endpoint": "/v2/executions/{execution_id}/targets/trace/{target_id}"
     }
   }
 }

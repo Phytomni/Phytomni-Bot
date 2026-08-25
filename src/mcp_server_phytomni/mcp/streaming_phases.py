@@ -23,6 +23,7 @@ from collections.abc import (
 )
 from typing import Any, TypedDict, cast
 
+from ..public_agent_catalog import PUBLIC_AGENT_CATALOG
 from ..runtime.cleanup import run_bounded_cleanup
 from .schemas import PhytomniAgents
 
@@ -109,7 +110,41 @@ _PHASE_MAP: dict[str, dict[str, str]] = {
     },
 }
 
+_DECLARED_PHASES_BY_TOOL: dict[str, tuple[str, ...]] = {
+    item.tool: item.todo_phases for item in PUBLIC_AGENT_CATALOG
+}
+
 
 def phase_for(agent: str, node: str) -> str | None:
     """Return the semantic phase for one node, or None to drop it."""
     return _PHASE_MAP.get(agent, {}).get(node)
+
+
+def declared_phases_for(agent: str) -> tuple[str, ...]:
+    """Return the catalog-owned semantic plan, or empty when unknown."""
+    return _DECLARED_PHASES_BY_TOOL.get(agent, ())
+
+
+def todo_snapshot_for_phase(
+    agent: str,
+    active_phase: str | None,
+    *,
+    completed: bool = False,
+) -> tuple[dict[str, str], ...]:
+    """Project a declared semantic plan without exposing graph node names."""
+    phases = declared_phases_for(agent)
+    if not phases:
+        return ()
+    active_index = phases.index(active_phase) if active_phase in phases else -1
+    return tuple(
+        {
+            "id": phase,
+            "label_key": f"chat.execution.todoPhase.{phase}",
+            "status": (
+                "completed"
+                if completed or (active_index >= 0 and index < active_index)
+                else "in_progress" if index == active_index else "pending"
+            ),
+        }
+        for index, phase in enumerate(phases)
+    )

@@ -21,6 +21,13 @@ from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.a2a.executor import A2ARequestHandler
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
+    invoke_public_agent,
+)
+from mcp_server_phytomni.runtime.execution_instrumentation_v2 import (
+    current_execution_boundary,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import ExecutionStatus
 from mcp_server_phytomni.runtime.run_registry import (
     A2ACorrelation,
     RunOutcome,
@@ -216,16 +223,58 @@ async def test_a2a_resume_checks_generation_and_reuses_resume_kernel(
         return db
 
     monkeypatch.setattr(api_app_module, "resolve_tasks_db_path", db_path)
-    RunRegistry(db).create_run(
-        RunSpec("run-a2a-resume", "anonymous", "review", "local"),
-        outcome=RunOutcome(
-            status="input_required",
-            result={
-                "interrupt": {"draft": {"summary": "draft"}},
-                "generation": 0,
-            },
-        ),
-        a2a=A2ACorrelation(task_id="task-resume", context_id="ctx-resume"),
+
+    async def seed_pause(
+        *,
+        run_id: str,
+        execution_id: str,
+        task_id: str,
+        generation: int,
+    ) -> None:
+        async def pause() -> tuple[dict[str, object], int]:
+            boundary = current_execution_boundary(required=True)
+            assert boundary is not None
+            registry = RunRegistry(db)
+            assert registry.update_request_info(
+                run_id,
+                owner="anonymous",
+                request_info=RunRequestInfo(execution_id=execution_id),
+            )
+            assert registry.update_a2a_correlation(
+                run_id,
+                owner="anonymous",
+                correlation=A2ACorrelation(
+                    task_id=task_id,
+                    context_id="ctx-resume",
+                ),
+            )
+            assert registry.update_active_result(
+                run_id,
+                owner="anonymous",
+                result={
+                    "interrupt": {"draft": {"summary": "draft"}},
+                    "generation": generation,
+                },
+            )
+            return {"status": "input_required"}, 200
+
+        await invoke_public_agent(
+            db_path=db,
+            owner="anonymous",
+            execution_id=execution_id,
+            agent_slug="review",
+            arguments={"query": "review"},
+            transport="a2a_test",
+            call=pause,
+            run_id=run_id,
+            status_mapper=lambda _value: ExecutionStatus.WAITING_INPUT,
+        )
+
+    await seed_pause(
+        run_id="run-a2a-resume",
+        execution_id="turn-a2a-resume",
+        task_id="task-resume",
+        generation=0,
     )
     resumed: list[dict[str, object]] = []
 
@@ -262,20 +311,15 @@ async def test_a2a_resume_checks_generation_and_reuses_resume_kernel(
     assert resumed == [
         {"run_id": "run-a2a-resume", "approved": True, "edits": None}
     ]
-    RunRegistry(db).create_run(
-        RunSpec("run-a2a-resume", "anonymous", "review", "local"),
-        outcome=RunOutcome(
-            status="input_required",
-            result={
-                "interrupt": {"draft": {"summary": "next"}},
-                "generation": 1,
-            },
-        ),
-        a2a=A2ACorrelation(task_id="task-resume", context_id="ctx-resume"),
+    await seed_pause(
+        run_id="run-a2a-stale",
+        execution_id="turn-a2a-stale",
+        task_id="task-stale",
+        generation=1,
     )
     with pytest.raises(ValueError, match="generation mismatch"):
         await resume_a2a_task(
-            "task-resume",
+            "task-stale",
             "ctx-resume",
             {"generation": 0, "approved": True},
         )

@@ -15,7 +15,6 @@ from mcp_server_phytomni.api import run_lifecycle as lifecycle_module
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
-    RunRequestInfo,
     RunSpec,
 )
 
@@ -47,63 +46,6 @@ def test_run_lifecycle_projection_preserves_statuses(
     assert projected["answer"] == "answer"
 
 
-def test_run_lifecycle_stream_settlement_and_owner_scope(
-    tmp_path: Any,
-) -> None:
-    """Streaming settlement preserves request info and owner isolation."""
-    db_path = str(tmp_path / "runs.db")
-    request_info = RunRequestInfo(
-        dialogue_id="dialogue-1",
-        query="plant height",
-        tool_name="ChatAgent",
-        model="phyto-chat",
-    )
-    lifecycle_module.create_running_stream_run(
-        "run-stream",
-        "chat",
-        "alice",
-        request_info,
-        db_path=db_path,
-    )
-    lifecycle_module.stamp_remote_request_info(
-        run_id="run-stream",
-        owner="alice",
-        request_info=request_info,
-        db_path=db_path,
-    )
-    purges: list[bool] = []
-    lifecycle_module.settle_stream_run(
-        "run-stream",
-        "bob",
-        "failed",
-        {"error": "foreign"},
-        context=lifecycle_module.RunLifecycleContext(
-            db_path=db_path,
-            purge=lambda: purges.append(True),
-        ),
-    )
-    untouched = RunRegistry(db_path).get_run("run-stream", owner="alice")
-    assert untouched is not None
-    assert untouched.status == "running"
-    lifecycle_module.settle_stream_run(
-        "run-stream",
-        "alice",
-        "succeeded",
-        {"answer": "done"},
-        expected_revision=0,
-        context=lifecycle_module.RunLifecycleContext(
-            db_path=db_path,
-            purge=lambda: purges.append(True),
-        ),
-    )
-    settled = RunRegistry(db_path).get_run("run-stream", owner="alice")
-    assert settled is not None
-    assert settled.status == "succeeded"
-    assert settled.result == {"answer": "done"}
-    assert settled.request_info.dialogue_id == "dialogue-1"
-    assert len(purges) == 2
-
-
 async def test_run_lifecycle_owner_lookup_and_task_log_projection(
     tmp_path: Any,
 ) -> None:
@@ -127,6 +69,30 @@ async def test_run_lifecycle_owner_lookup_and_task_log_projection(
             "missing", owner="alice", db_path=db_path
         )
     assert missing.value.status_code == 404
+
+    class PureReadRegistry:
+        def __init__(self, _path: str) -> None:
+            self.inner = RunRegistry(db_path)
+
+        def get_run(self, target: str, *, owner: str):
+            return self.inner.get_run(target, owner=owner)
+
+        async def reconcile(self, *_args: Any, **_kwargs: Any) -> Any:
+            raise AssertionError("GET must not reconcile")
+
+    first = await lifecycle_module.fetch_owner_run(
+        "run-logs",
+        owner="alice",
+        db_path=db_path,
+        registry_factory=PureReadRegistry,
+    )
+    second = await lifecycle_module.fetch_owner_run(
+        "run-logs",
+        owner="alice",
+        db_path=db_path,
+        registry_factory=PureReadRegistry,
+    )
+    assert first == second
 
     async def fetch(_run_id: str) -> dict[str, Any]:
         return {"task_ids": ["task-1"]}

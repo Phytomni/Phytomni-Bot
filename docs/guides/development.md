@@ -169,6 +169,32 @@ CI Pylint semantics and the local hook gate:
 ./scripts/validate_local.sh
 ```
 
+### Generated-artifact and dirty-worktree discipline
+
+Keep tool-owned output outside reviewable source. Point Go caches, Codex test
+state, and local service state at repository-scoped ignored directories such
+as `.gocache/`, `.codex-test-cache/`, and `.codex-runtime/`; coverage and test
+reporters must use `coverage/` or `test-results/`. Vite's tool-owned cache is
+allowed only below `node_modules/.vite/`.
+
+Before handoff, run the read-only inventory:
+
+```bash
+python scripts/check_generated_artifacts.py --check
+```
+
+The command fails only for a tracked or unignored generated artifact. Its
+`untracked_business_source` list is deliberately separate: every listed
+source, migration, specification, fixture, or lockfile remains a review item
+and must never be removed by a cleanup command. Report the complete dirty
+worktree and distinguish pre-existing user changes from the current change.
+
+Cleanup is an explicit, non-destructive operator action. First inspect the
+inventory and resolve each absolute target inside the repository; then remove
+only a confirmed ignored cache/output directory. Never run a recursive clean,
+`git clean`, reset, checkout, or broad glob against a dirty worktree as part of
+validation or handoff.
+
 The `Makefile` adds a scoped gate for faster feedback:
 
 ```bash

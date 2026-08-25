@@ -42,6 +42,14 @@ def test_result_run_root_from_child_requires_the_scoped_layout() -> None:
             )
 
 
+def test_result_run_root_from_child_accepts_native_windows_path() -> None:
+    """Local result paths remain valid with the host path separator."""
+    assert (
+        result_run_root_from_child(r"D:\work\results\run-1\children\part-001")
+        == r"D:\work\results\run-1"
+    )
+
+
 def test_result_child_output_dir_rejects_the_upper_bound() -> None:
     """The helper rejects indexes beyond the bounded child range."""
     assert result_child_output_dir("obs://bucket/run", 198).endswith(

@@ -2,7 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Durable claim and resume runtime for HTTP A2UI uplinks."""
+"""Runtime-owned resume handling for HTTP A2UI uplinks."""
 
 from __future__ import annotations
 
@@ -20,20 +20,20 @@ from ..agents.shared.a2ui import (
     validate_a2ui_surface,
 )
 from ..mcp.result_formatting import strip_agent_result
+from ..runtime.checkpoint_instrumentation_v2 import (
+    record_projected_input_required,
+)
 from ..runtime.error_types import LOCAL_DURABLE_ERRORS
-from ..runtime.execution_defaults import empty_execution_projection
+from ..runtime.execution_instrumentation_v2 import current_execution_boundary
 from ..runtime.locale import (
     bind_effective_locale,
     resolve_effective_locale,
 )
 from ..runtime.resume import NoCheckpointError, detect_interrupt
 from ..runtime.run_registry import (
-    A2UIActionClaim,
-    A2UIActionConflict,
     RunRecord,
     RunRegistry,
 )
-from ..storage.path_policy import IdFactory
 from . import run_lifecycle
 from .a2ui_projection import (
     ReviewSurfaceProjectionError,
@@ -45,14 +45,8 @@ from .a2ui_projection import (
     review_interrupt_result,
     submitted_a2ui_value,
 )
-from .a2ui_review_persistence import (
+from .a2ui_projection import (
     review_projection_error as _review_projection_error,
-)
-from .a2ui_review_persistence import (
-    settle_review_pause as _settle_review_pause,
-)
-from .a2ui_review_persistence import (
-    settle_review_projection_failure as _settle_review_projection_failure,
 )
 from .lifecycle_contract import (
     SafeApiError,
@@ -69,18 +63,6 @@ _LOGGER = logging.getLogger(__name__)
 _PERSISTENCE_ERRORS = LOCAL_DURABLE_ERRORS
 
 
-def _failed_resume_result() -> dict[str, Any]:
-    """Return a safe failure payload without retaining backend exceptions."""
-    result = empty_execution_projection(degraded=True)
-    result["formatted"] = {"answer": ""}
-    result["execution"]["warnings"] = [
-        {"code": "a2ui_resume_failed", "retryable": False}
-    ]
-    result["raw"] = None
-    result["error"] = "a2ui resume failed"
-    return result
-
-
 def _checkpoint_error() -> SafeApiError:
     """Return the stable error for a missing durable pause checkpoint."""
     return SafeApiError(
@@ -91,118 +73,10 @@ def _checkpoint_error() -> SafeApiError:
     )
 
 
-def _action_conflict_error() -> SafeApiError:
-    """Return the stable error for a previously-consumed input request."""
-    return SafeApiError(
-        status_code=409,
-        code=SafeErrorCode.A2UI_ACTION_CONFLICT.value,
-        message="This input request has already been handled.",
-        stage="resume_claim",
-    )
-
-
-def _complete_claim_best_effort(
-    claim: A2UIActionClaim,
-    *,
-    owner: str,
-    registry: RunRegistry,
-    outcome: str,
-) -> None:
-    """Record a claimed outcome without masking the original failure."""
-    try:
-        completed = registry.complete_a2ui_action(
-            claim,
-            owner=owner,
-            outcome=outcome,
-        )
-    except _PERSISTENCE_ERRORS as exc:
-        _LOGGER.error(
-            "a2ui action audit completion failed (%s)",
-            exc.__class__.__name__,
-        )
-        return
-    if completed is not True:
-        _LOGGER.error("a2ui action audit completion returned false")
-
-
-def _complete_claim_or_raise(
-    claim: A2UIActionClaim,
-    *,
-    owner: str,
-    registry: RunRegistry,
-    outcome: str,
-) -> None:
-    """Require durable completion for a claimed successful transition."""
-    try:
-        completed = registry.complete_a2ui_action(
-            claim,
-            owner=owner,
-            outcome=outcome,
-        )
-    except _PERSISTENCE_ERRORS as exc:
-        raise run_lifecycle.RunPersistenceError(
-            "a2ui action audit completion failed"
-        ) from exc
-    if completed is not True:
-        raise run_lifecycle.RunPersistenceError(
-            "a2ui action audit completion returned false"
-        )
-
-
-def _settle_failed_resume(
-    registry: RunRegistry,
-    *,
-    run_id: str,
-    owner: str,
-    expected_revision: int,
-) -> None:
-    """Best-effort failed settlement after a claimed resume breaks."""
-    try:
-        persisted = registry.settle_run(
-            run_id,
-            owner=owner,
-            status="failed",
-            result=_failed_resume_result(),
-            expected_revision=expected_revision,
-        )
-    except _PERSISTENCE_ERRORS as exc:
-        _LOGGER.error(
-            "a2ui failed settlement raised (%s)", exc.__class__.__name__
-        )
-        return
-    if persisted is not True:
-        _LOGGER.error("a2ui failed settlement returned false")
-
-
-def _settle_claim_failure(
-    claim: A2UIActionClaim,
-    *,
-    registry: RunRegistry,
-    owner: str,
-    run_id: str,
-    expected_revision: int,
-) -> None:
-    """Best-effort audit and run settlement after a claimed failure."""
-    _complete_claim_best_effort(
-        claim,
-        owner=owner,
-        registry=registry,
-        outcome="failed",
-    )
-    _settle_failed_resume(
-        registry,
-        run_id=run_id,
-        owner=owner,
-        expected_revision=expected_revision,
-    )
-
-
 @dataclass(frozen=True, slots=True)
-class _ClaimedGraphRequest:
-    """Inputs needed to invoke one already-claimed graph resume."""
+class _GraphResumeRequest:
+    """Inputs needed to invoke one Runtime-authorized graph resume."""
 
-    claim: A2UIActionClaim
-    context: Any
     run_id: str
     graph: Any
     payload: Mapping[str, Any]
@@ -210,10 +84,10 @@ class _ClaimedGraphRequest:
     failure_detail: str
 
 
-async def _invoke_claimed_graph(
-    request: _ClaimedGraphRequest,
+async def _invoke_graph(
+    request: _GraphResumeRequest,
 ) -> dict[str, Any]:
-    """Invoke a claimed graph and durably settle failures."""
+    """Invoke a graph; the outer Runtime owns every lifecycle transition."""
     try:
         return await request.resume_graph(
             request.graph,
@@ -221,22 +95,8 @@ async def _invoke_claimed_graph(
             request.payload,
         )
     except NoCheckpointError as exc:
-        _settle_claim_failure(
-            request.claim,
-            registry=request.context.registry,
-            owner=request.context.owner,
-            run_id=request.run_id,
-            expected_revision=request.context.revision,
-        )
         raise _checkpoint_error() from exc
     except Exception as exc:
-        _settle_claim_failure(
-            request.claim,
-            registry=request.context.registry,
-            owner=request.context.owner,
-            run_id=request.run_id,
-            expected_revision=request.context.revision,
-        )
         _LOGGER.error(
             "%s for run %s (%s)",
             request.failure_detail,
@@ -256,7 +116,7 @@ def open_surface_for_action(
     widget: str,
 ) -> Mapping[str, Any]:
     """Return the open A2UI draft surface or raise an HTTP conflict."""
-    if record.status != "input_required":
+    if record.status not in {"input_required", "waiting_input"}:
         raise HTTPException(
             status_code=409,
             detail="run is not awaiting input",
@@ -316,7 +176,6 @@ class _ActionContext:
     resume_payload: dict[str, Any]
     graph: Any
     registry: RunRegistry
-    revision: int
 
 
 def _prepare_action_context(
@@ -343,10 +202,6 @@ def _prepare_action_context(
             status_code=400,
             detail="unsupported agent for a2ui",
         )
-    if record.status != "input_required" and registry.list_a2ui_actions(
-        owner=owner, run_id=run_id
-    ):
-        raise A2UIActionConflict("surface has already been claimed")
     surface = open_surface_for_action(
         record,
         surface_id=body.surface_id,
@@ -362,6 +217,16 @@ def _prepare_action_context(
             graph = dependencies.graphs.review_graph()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    boundary = current_execution_boundary()
+    if (
+        boundary is None
+        or boundary.context.run_id != run_id
+        or boundary.context.execution_id != record.request_info.execution_id
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="legacy A2UI execution is read-only",
+        )
     return _ActionContext(
         owner=owner,
         agent=agent,
@@ -369,7 +234,6 @@ def _prepare_action_context(
         resume_payload=resume_payload,
         graph=graph,
         registry=registry,
-        revision=record.revision,
     )
 
 
@@ -383,12 +247,11 @@ def _settled_action_interrupt(
     if context.agent == "chat":
         interrupt_dict = dict(interrupt)
         try:
-            persisted = context.registry.settle_run(
+            result = chat_interrupt_result(interrupt_dict)
+            persisted = context.registry.update_active_result(
                 run_id,
                 owner=context.owner,
-                status="input_required",
-                result=chat_interrupt_result(interrupt_dict),
-                expected_revision=context.revision,
+                result=result,
             )
         except _PERSISTENCE_ERRORS as exc:
             raise run_lifecycle.RunPersistenceError(
@@ -398,6 +261,7 @@ def _settled_action_interrupt(
             raise run_lifecycle.RunPersistenceError(
                 "chat A2UI pause persistence failed"
             )
+        record_projected_input_required(result)
         return (
             chat_interrupt_body(run_id=run_id, interrupt=interrupt_dict),
             200,
@@ -405,22 +269,18 @@ def _settled_action_interrupt(
     try:
         interrupt_dict = project_review_interrupt(interrupt)
         pause_result = review_interrupt_result(interrupt_dict)
-        _settle_review_pause(
-            context.registry,
-            run_id=run_id,
+        persisted = context.registry.update_active_result(
+            run_id,
             owner=context.owner,
             result=pause_result,
-            expected_revision=context.revision,
         )
+        if persisted is not True:
+            raise run_lifecycle.RunPersistenceError(
+                "review A2UI pause persistence failed"
+            )
     except ReviewSurfaceProjectionError as exc:
-        _settle_review_projection_failure(
-            context.registry,
-            run_id=run_id,
-            owner=context.owner,
-            existing=True,
-            expected_revision=context.revision,
-        )
         raise _review_projection_error() from exc
+    record_projected_input_required(pause_result)
     return (
         review_interrupt_body(thread_id=run_id, interrupt=interrupt_dict),
         200,
@@ -454,34 +314,23 @@ def _review_reinterrupt_response(
     context: Any,
     thread_id: str,
     interrupt: Mapping[str, Any],
-    claim: A2UIActionClaim,
 ) -> tuple[dict[str, Any], int]:
-    """Persist a fresh Review surface and complete the prior claim."""
+    """Persist a fresh Review surface under the active Runtime operation."""
     try:
         interrupt_dict = project_review_interrupt(interrupt)
         pause_result = review_interrupt_result(interrupt_dict)
-        _settle_review_pause(
-            context.registry,
-            run_id=thread_id,
+        persisted = context.registry.update_active_result(
+            thread_id,
             owner=context.owner,
             result=pause_result,
-            expected_revision=context.revision,
         )
+        if persisted is not True:
+            raise run_lifecycle.RunPersistenceError(
+                "review A2UI pause persistence failed"
+            )
     except ReviewSurfaceProjectionError as exc:
-        _settle_review_projection_failure(
-            context.registry,
-            run_id=thread_id,
-            owner=context.owner,
-            existing=True,
-            expected_revision=context.revision,
-        )
         raise _review_projection_error() from exc
-    _complete_claim_or_raise(
-        claim,
-        owner=context.owner,
-        registry=context.registry,
-        outcome="input_required",
-    )
+    record_projected_input_required(pause_result)
     return (
         review_interrupt_body(
             thread_id=thread_id,
@@ -498,36 +347,19 @@ async def resume_a2ui_run(
     debug: bool,
     dependencies: A2UIRuntimeDependencies,
 ) -> tuple[dict[str, Any], int]:
-    """Resume a Chat or Review A2UI action and settle its owner-scoped row."""
+    """Resume a Chat or Review action inside its canonical Runtime boundary."""
     if run_id != body.run_id:
         raise HTTPException(status_code=400, detail="run_id mismatch")
 
-    try:
-        context = _prepare_action_context(
-            run_id=run_id,
-            body=body,
-            dependencies=dependencies,
-        )
-    except A2UIActionConflict as exc:
-        raise _action_conflict_error() from exc
+    context = _prepare_action_context(
+        run_id=run_id,
+        body=body,
+        dependencies=dependencies,
+    )
     if not await dependencies.graphs.has_checkpoint(context.graph, run_id):
         raise _checkpoint_error()
-    try:
-        claim = context.registry.claim_a2ui_action(
-            run_id=run_id,
-            owner=context.owner,
-            surface_id=body.surface_id,
-            widget=body.widget,
-            action_id=body.action_id,
-            channel="a2ui",
-        )
-    except A2UIActionConflict as exc:
-        raise _action_conflict_error() from exc
-
-    final_state = await _invoke_claimed_graph(
-        _ClaimedGraphRequest(
-            claim=claim,
-            context=context,
+    final_state = await _invoke_graph(
+        _GraphResumeRequest(
             run_id=run_id,
             graph=context.graph,
             payload=context.resume_payload,
@@ -535,81 +367,29 @@ async def resume_a2ui_run(
             failure_detail="a2ui resume failed",
         )
     )
-
-    try:
-        interrupt_after = detect_interrupt(final_state, run_id)
-        if interrupt_after is not None:
-            response = _settled_action_interrupt(
-                run_id=run_id,
-                context=context,
-                interrupt=interrupt_after,
-            )
-            _complete_claim_or_raise(
-                claim,
-                owner=context.owner,
-                registry=context.registry,
-                outcome="input_required",
-            )
-            return response
-
-        result = _terminal_action_result(
+    interrupt_after = detect_interrupt(final_state, run_id)
+    if interrupt_after is not None:
+        return _settled_action_interrupt(
+            run_id=run_id,
             context=context,
-            final_state=final_state,
-            format_review_result=dependencies.persistence.format_review_result,
+            interrupt=interrupt_after,
         )
-        try:
-            persisted = context.registry.settle_run(
-                run_id,
-                owner=context.owner,
-                status="succeeded",
-                result=result,
-                expected_revision=context.revision,
-            )
-        except _PERSISTENCE_ERRORS as exc:
-            raise run_lifecycle.RunPersistenceError(
-                "a2ui terminal result persistence failed"
-            ) from exc
-        if persisted is not True:
-            raise run_lifecycle.RunPersistenceError(
-                "a2ui terminal result persistence failed"
-            )
-        _complete_claim_or_raise(
-            claim,
-            owner=context.owner,
-            registry=context.registry,
-            outcome="succeeded",
-        )
-        response_result = result if debug else strip_agent_result(result)
-        return (
-            run_lifecycle.agent_run_response(
-                run_id=run_id,
-                agent=context.agent,
-                status="succeeded",
-                result=response_result,
-            ),
-            200,
-        )
-    except SafeApiError:
-        _settle_claim_failure(
-            claim,
-            registry=context.registry,
-            owner=context.owner,
+
+    result = _terminal_action_result(
+        context=context,
+        final_state=final_state,
+        format_review_result=dependencies.persistence.format_review_result,
+    )
+    response_result = result if debug else strip_agent_result(result)
+    return (
+        run_lifecycle.agent_run_response(
             run_id=run_id,
-            expected_revision=context.revision,
-        )
-        raise
-    except run_lifecycle.RunPersistenceError as exc:
-        _settle_claim_failure(
-            claim,
-            registry=context.registry,
-            owner=context.owner,
-            run_id=run_id,
-            expected_revision=context.revision,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="a2ui resume failed",
-        ) from exc
+            agent=context.agent,
+            status="succeeded",
+            result=response_result,
+        ),
+        200,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -666,7 +446,6 @@ class _ReviewResumeContext:
     owner: str
     registry: RunRegistry
     prior_surface: Mapping[str, Any] | None
-    revision: int
 
 
 def _prepare_review_resume_context(
@@ -686,9 +465,7 @@ def _prepare_review_resume_context(
             detail=f"run not found: {thread_id}",
         )
     _bind_record_locale(record, registry=registry, owner=owner)
-    if record.status != "input_required":
-        if registry.list_a2ui_actions(owner=owner, run_id=thread_id):
-            raise A2UIActionConflict("surface has already been claimed")
+    if record.status not in {"input_required", "waiting_input"}:
         raise HTTPException(
             status_code=409,
             detail="run is not awaiting input",
@@ -703,11 +480,20 @@ def _prepare_review_resume_context(
         validate_a2ui_surface(candidate)
     except (TypeError, ValueError) as exc:
         raise _checkpoint_error() from exc
+    boundary = current_execution_boundary()
+    if (
+        boundary is None
+        or boundary.context.run_id != thread_id
+        or boundary.context.execution_id != record.request_info.execution_id
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="legacy A2UI execution is read-only",
+        )
     return _ReviewResumeContext(
         owner=owner,
         registry=registry,
         prior_surface=dict(candidate),
-        revision=record.revision,
     )
 
 
@@ -718,39 +504,19 @@ async def resume_review_run(
     debug: bool,
     dependencies: A2UIRuntimeDependencies,
 ) -> tuple[dict[str, Any], int]:
-    """Resume a ReviewAgent run and preserve the dual transport contract."""
-    try:
-        context = _prepare_review_resume_context(
-            thread_id=thread_id,
-            dependencies=dependencies,
-        )
-    except A2UIActionConflict as exc:
-        raise _action_conflict_error() from exc
+    """Resume a ReviewAgent run through its canonical Runtime operation."""
+    context = _prepare_review_resume_context(
+        thread_id=thread_id,
+        dependencies=dependencies,
+    )
     graph = dependencies.graphs.review_graph()
     if not await dependencies.graphs.has_checkpoint(graph, thread_id):
         raise _checkpoint_error()
     prior_surface = context.prior_surface
     assert prior_surface is not None
-    surface = validate_a2ui_surface(prior_surface)
-    try:
-        claim = context.registry.claim_a2ui_action(
-            run_id=thread_id,
-            owner=context.owner,
-            surface_id=surface.surface_id,
-            widget=surface.widget,
-            action_id=(
-                dependencies.persistence.current_request_id()
-                or IdFactory().new_id("action", "classic")
-            ),
-            channel="classic",
-        )
-    except A2UIActionConflict as exc:
-        raise _action_conflict_error() from exc
-
-    final_state = await _invoke_claimed_graph(
-        _ClaimedGraphRequest(
-            claim=claim,
-            context=context,
+    validate_a2ui_surface(prior_surface)
+    final_state = await _invoke_graph(
+        _GraphResumeRequest(
             run_id=thread_id,
             graph=graph,
             payload={"approved": payload.approved, "edits": payload.edits},
@@ -758,73 +524,27 @@ async def resume_review_run(
             failure_detail="review resume failed",
         )
     )
-
-    try:
-        interrupt = detect_interrupt(final_state, thread_id)
-        if interrupt is not None:
-            return _review_reinterrupt_response(
-                context=context,
-                thread_id=thread_id,
-                interrupt=interrupt,
-                claim=claim,
-            )
-        result = dependencies.persistence.format_review_result(final_state)
-        result = {
-            **result,
-            "a2ui": submitted_a2ui_value(
-                prior_surface,
-                {"approved": payload.approved},
-            ),
-        }
-        try:
-            persisted = context.registry.settle_run(
-                thread_id,
-                owner=context.owner,
-                status="succeeded",
-                result=result,
-                expected_revision=context.revision,
-            )
-        except _PERSISTENCE_ERRORS as exc:
-            raise run_lifecycle.RunPersistenceError(
-                "review terminal result persistence failed"
-            ) from exc
-        if persisted is not True:
-            raise run_lifecycle.RunPersistenceError(
-                "review terminal result persistence failed"
-            )
-        _complete_claim_or_raise(
-            claim,
-            owner=context.owner,
-            registry=context.registry,
-            outcome="succeeded",
+    interrupt = detect_interrupt(final_state, thread_id)
+    if interrupt is not None:
+        return _review_reinterrupt_response(
+            context=context,
+            thread_id=thread_id,
+            interrupt=interrupt,
         )
-        execution = ReviewExecution(
-            run_id=thread_id,
-            status="succeeded",
-            result=result,
-        )
-        return review_run_body(execution, debug=debug), 200
-    except SafeApiError:
-        _settle_claim_failure(
-            claim,
-            registry=context.registry,
-            owner=context.owner,
-            run_id=thread_id,
-            expected_revision=context.revision,
-        )
-        raise
-    except run_lifecycle.RunPersistenceError as exc:
-        _settle_claim_failure(
-            claim,
-            registry=context.registry,
-            owner=context.owner,
-            run_id=thread_id,
-            expected_revision=context.revision,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="review resume failed",
-        ) from exc
+    result = dependencies.persistence.format_review_result(final_state)
+    result = {
+        **result,
+        "a2ui": submitted_a2ui_value(
+            prior_surface,
+            {"approved": payload.approved},
+        ),
+    }
+    execution = ReviewExecution(
+        run_id=thread_id,
+        status="succeeded",
+        result=result,
+    )
+    return review_run_body(execution, debug=debug), 200
 
 
 __all__ = [

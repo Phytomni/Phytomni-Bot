@@ -30,6 +30,10 @@ from ...graphs.review_to_knowledge_adapters import (
     extract_review_knowledge_response,
 )
 from ...mcp.progress_events import emit_progress
+from ...runtime.langgraph_runner import invoke_graph
+from ...runtime.operation_instrumentation_v2 import (
+    instrument_operation_invocation,
+)
 from ...storage.downloads import download_upload_context
 from ..knowledge.retrieval_result import (
     RetrievalProtocolError,
@@ -39,6 +43,11 @@ from .evidence_filter import (
     compose_review_retrieve_query,
     extract_review_query_terms,
     review_document_permitted,
+)
+from .evidence_quality import (
+    compose_review_retrieval_query,
+    no_relevant_evidence_error,
+    select_review_evidence,
 )
 from .helpers import _format_doc_fragment
 
@@ -322,10 +331,23 @@ class ReviewPlanningMixin:
         """
 
         async def _retrieve_worker(state: DeepResearchState) -> dict[str, Any]:
-            task_index = state["task_index"]
+            task_index = int(state.get("task_index") or 0)
             try:
-                knowledge_output = await knowledge_app.ainvoke(
-                    state["knowledge_payload"]
+                knowledge_output = await instrument_operation_invocation(
+                    "review.retrieve_dimension",
+                    lambda: invoke_graph(
+                        knowledge_app,
+                        state["knowledge_payload"],
+                    ),
+                    detail={
+                        "ordinal": task_index + 1,
+                        "total": max(
+                            1,
+                            int(
+                                state.get("dimension_total") or task_index + 1
+                            ),
+                        ),
+                    },
                 )
                 docs = extract_review_knowledge_response(knowledge_output)
                 return {
@@ -390,16 +412,24 @@ class ReviewPlanningMixin:
         dimension_length = (
             self.review_config.MAX_TOKENS - state["total_length"]
         ) / max(1, len(dimensions))
-        user_query = str(state.get("original_user_query") or "")
+        original_query = str(state.get("original_user_query") or "")
+        seen_evidence: set[str] = set()
         dimension_params: list[dict[str, str]] = []
+
         for index, dimension in enumerate(dimensions):
             result = indexed_by_index.get(index, [])
+            selected_result = select_review_evidence(
+                original_query=original_query,
+                dimension=dimension,
+                documents=result,
+                seen_identities=seen_evidence,
+            )
             fragments = self._dimension_fragments(
-                result,
+                selected_result,
                 accumulator,
                 state["total_length"] + dimension_length * (index + 1),
                 query_terms=extract_review_query_terms(
-                    f"{user_query} {dimension}"
+                    f"{original_query} {dimension}"
                 ),
             )
             dimension_params.append(
@@ -408,6 +438,10 @@ class ReviewPlanningMixin:
                     "knowledge": "\n\n".join(fragments),
                 }
             )
+
+        if not accumulator.raw_docs:
+            raise no_relevant_evidence_error()
+
         return dimension_params
 
     def route_retrieve_tasks(
@@ -415,21 +449,25 @@ class ReviewPlanningMixin:
     ) -> list[Send]:
         """Build N Send payloads, one per research dimension."""
         dimensions = state["research_dimensions"]
+        search_queries = state.get("search_queries") or []
         repo_id_dict = self.review_config.REPO_ID_DICT
-        user_query = str(state.get("original_user_query") or "")
-        planned_queries = state.get("search_queries") or []
+        original_query = str(state.get("original_user_query") or "")
         return [
             Send(
                 "retrieve_worker_node",
                 {
                     "task_index": i,
+                    "dimension_total": len(dimensions),
                     "dimension": dim,
                     "knowledge_payload": build_review_knowledge_input(
-                        dimension=_retrieve_query_for_dimension(
-                            user_query,
-                            dim,
-                            planned_queries,
-                            i,
+                        dimension=compose_review_retrieval_query(
+                            original_query=original_query,
+                            dimension=dim,
+                            supplementary_query=(
+                                str(search_queries[i])
+                                if i < len(search_queries)
+                                else None
+                            ),
                         ),
                         repo_id_dict=repo_id_dict,
                         locale=state.get("locale"),

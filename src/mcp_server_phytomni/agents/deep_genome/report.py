@@ -34,6 +34,7 @@ from ...runtime.deep_genome_store import (
     DeepGenomeTransitionError,
 )
 from ...runtime.error_types import LOCAL_DURABLE_ERRORS
+from ...runtime.langgraph_runner import invoke_graph
 from ...runtime.locale import SupportedLocale
 from ...runtime.task_manager import resolve_tasks_db_path
 from ...storage.path_policy import RunIdentity
@@ -351,14 +352,15 @@ class DeepGenomeReportMixin:
             Chat completion dict matching the historical
             ``knowledge_agent.arun`` return shape.
         """
-        knowledge_output = await self._agents.knowledge_app.ainvoke(
+        knowledge_output = await invoke_graph(
+            self._agents.knowledge_app,
             {
                 "user_query": user_query,
                 "repo_id_dict": repo_id_dict,
                 "is_generate": True,
                 "is_follow_up": False,
                 "locale": resolve_agent_locale(locale),
-            }
+            },
         )
         return knowledge_output["final_response"]
 
@@ -387,10 +389,11 @@ class DeepGenomeReportMixin:
             **self._chat_kwargs(),
             "locale": resolve_agent_locale(locale),
         }
-        chat_output = await _cached_chat_app().ainvoke(
+        chat_output = await invoke_graph(
+            _cached_chat_app(),
             build_chat_input(
                 user_query=user_query, chat_kwargs=chat_kwargs_bag
-            )
+            ),
         )
         return extract_chat_response(chat_output)
 

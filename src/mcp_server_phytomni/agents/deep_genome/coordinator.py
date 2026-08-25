@@ -20,6 +20,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...runtime.deep_genome_store import RemoteSubmission
+from ...runtime.provider_instrumentation_v2 import (
+    instrument_provider_observation,
+)
 
 __all__ = [
     "RemoteSubmission",
@@ -437,6 +440,12 @@ async def _poll_work_item(
 
         remote_status = _remote_status(remote_payload)
         local_status = _REMOTE_TO_LOCAL.get(remote_status or "")
+        await instrument_provider_observation(
+            provider_kind="analysis_task_platform",
+            provider_task_id=submission.submitted_task_id,
+            source_revision=None,
+            observed_status=local_status or "failed",
+        )
         if local_status in {"pending", "running"}:
             await _emit_transition(
                 transition_sink,

@@ -1,4 +1,6 @@
 {
+  "classification": "public",
+  "driver": "local_graph",
   "edges": [
     {
       "conditional": true,
@@ -46,6 +48,10 @@
       "target": "__end__"
     }
   ],
+  "graph_id": "data",
+  "lifecycle": [
+    "synchronous"
+  ],
   "nodes": [
     {
       "kind": "boundary",
@@ -83,5 +89,15 @@
       "kind": "boundary",
       "name": "__end__"
     }
-  ]
+  ],
+  "public_agent": "DataAgent",
+  "remote_providers": [
+    "retrieval_service",
+    "nl2sql_service"
+  ],
+  "subgraph_dependencies": [
+    "knowledge",
+    "chat"
+  ],
+  "topology": "serial"
 }

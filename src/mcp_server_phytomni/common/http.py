@@ -28,6 +28,8 @@ from httpx import (
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
+from ..runtime.provider_instrumentation_v2 import record_provider_retry
+
 logger = logging.getLogger(__name__)
 
 # Transient transport faults worth retrying: connect / read / write /
@@ -163,7 +165,13 @@ async def retry_http_status_or_raise(
         and exc.response.status_code in retriable_codes
         and attempt < max_retries
     ):
-        await asyncio.sleep((2**attempt) + uniform(0, 1))
+        delay = (2**attempt) + uniform(0, 1)
+        status_code = exc.response.status_code
+        record_provider_retry(
+            delay_ms=max(0, int(delay * 1000)),
+            code=f"provider_http_{status_code}",
+        )
+        await asyncio.sleep(delay)
         return True
     status_code = exc.response.status_code if exc.response is not None else 0
     logger.error(
@@ -206,7 +214,12 @@ async def retry_network_or_raise(
         McpError: Raised when max retries exceeded.
     """
     if attempt < max_retries:
-        await asyncio.sleep(1.5**attempt)
+        delay = 1.5**attempt
+        record_provider_retry(
+            delay_ms=max(0, int(delay * 1000)),
+            code="provider_transport_error",
+        )
+        await asyncio.sleep(delay)
         return True
     logger.error(
         "upstream transport request failed exception=%s retries=%d",

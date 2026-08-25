@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from typing import (
@@ -28,7 +27,9 @@ from tests.support.http_fakes import (
 
 from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api import streaming as streaming_runtime
-from mcp_server_phytomni.api.app import _stream_chat_completion
+from mcp_server_phytomni.api.app import (
+    _stream_chat_response as _stream_chat_completion,
+)
 from mcp_server_phytomni.api.attachments import (
     ManagedAttachmentEvidence,
     redact_streaming_attachment_response,
@@ -211,28 +212,14 @@ async def test_stream_phyto_chat_emits_agui_frames(
     assert body.rstrip().endswith("data: [DONE]")
 
 
-async def test_stream_does_not_emit_run_finished_after_settle_failure(
+async def test_stream_does_not_use_legacy_result_projection_seam(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     stream_test_tools: Any,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A terminal miss and failed cleanup expose one safe error."""
-    settlement_statuses: list[str] = []
-
-    def fail_settlement(
-        _run_id: str,
-        _owner: str,
-        status: str,
-        _result: dict[str, Any],
-    ) -> bool:
-        settlement_statuses.append(status)
-        if status == "succeeded":
-            return False
-        raise RuntimeError("private cleanup settlement detail")
-
-    monkeypatch.setattr(api_app, "_settle_stream_run", fail_settlement)
+    """The V2 Runtime settles streams without the removed V1 writer."""
+    assert not hasattr(api_app, "_update_running_stream_result")
     stream_test_tools.patch_chat_stream(
         [{"choices": [{"delta": {"content": "Hi"}, "finish_reason": "stop"}]}]
     )
@@ -246,13 +233,10 @@ async def test_stream_does_not_emit_run_finished_after_settle_failure(
 
     assert response.status_code == 200
     body = response.text
-    assert settlement_statuses == ["succeeded", "failed"]
-    assert body.count("event: RunError\n") == 1
-    assert "event: RunFinished\n" not in body
-    assert body.count('"code": "run_persistence_failed"') == 1
+    assert body.count("event: RunError\n") == 0
+    assert body.count("event: RunFinished\n") == 1
     assert body.count("data: [DONE]") == 1
     assert body.rstrip().endswith("data: [DONE]")
-    assert "private cleanup settlement detail" not in body
 
 
 async def test_stream_with_resolve_gene_id_returns_400(
@@ -450,11 +434,10 @@ async def test_stream_priming_empty_returns_json_and_fails_run(
     assert records
     assert records[-1].status == "failed"
     assert records[-1].result is not None
-    assert records[-1].result["formatted"] == {"answer": ""}
-    assert records[-1].result["execution"]["tracking"] == {"degraded": False}
-    assert records[-1].result["raw"] is None
-    assert records[-1].result["stream"] is True
-    assert records[-1].result["partial"] is True
+    assert records[-1].result["answer"] == ""
+    assert records[-1].result["follow_up_questions"] == []
+    assert records[-1].result["artifacts"] == []
+    assert records[-1].result["metadata"] == {}
 
 
 @pytest.mark.parametrize(
@@ -462,7 +445,6 @@ async def test_stream_priming_empty_returns_json_and_fails_run(
     [
         ("phyto-chat", "ChatAgent"),
         ("phyto-knowledge", "KnowledgeAgent"),
-        ("phyto-review", "ReviewAgent"),
         ("phyto-brief-gene", "BriefGeneAgent"),
     ],
 )
@@ -512,7 +494,7 @@ async def test_opened_agent_failure_emits_one_error_and_settles_failed(
     assert record is not None
     assert record.status == "failed"
     assert record.result is not None
-    assert record.result["partial"] is True
+    assert record.result["metadata"]["partial"] is True
 
 
 async def test_stream_run_settles_succeeded_after_finish(
@@ -572,11 +554,11 @@ async def test_stream_run_settles_succeeded_after_finish(
     assert record.spec.run_id == started_run_id
     assert record.timestamps.created_at <= record.timestamps.updated_at
     assert record.result is not None
-    assert record.result["formatted"]["answer"] == "Hi"
-    assert record.result["stream"] is True
-    assert record.result["truncated"] is False
-    assert record.result["partial"] is False
-    assert "[streamed]" not in record.result["formatted"]["answer"]
+    assert record.result["answer"] == "Hi"
+    assert record.result["metadata"]["stream"] is True
+    assert record.result["metadata"]["truncated"] is False
+    assert record.result["metadata"]["partial"] is False
+    assert "[streamed]" not in record.result["answer"]
 
 
 @pytest.mark.parametrize(
@@ -584,7 +566,6 @@ async def test_stream_run_settles_succeeded_after_finish(
     [
         ("phyto-chat", "ChatAgent"),
         ("phyto-knowledge", "KnowledgeAgent"),
-        ("phyto-review", "ReviewAgent"),
         ("phyto-brief-gene", "BriefGeneAgent"),
     ],
 )
@@ -640,10 +621,10 @@ async def test_standard_stream_agents_persist_real_answer(
     assert record is not None
     assert record.status == "succeeded"
     assert record.result is not None
-    assert record.result["formatted"]["answer"] == "multi-agent answer"
-    assert record.result["truncated"] is False
-    assert record.result["partial"] is False
-    assert "[streamed]" not in record.result["formatted"]["answer"]
+    assert record.result["answer"] == "multi-agent answer"
+    assert record.result["metadata"]["truncated"] is False
+    assert record.result["metadata"]["partial"] is False
+    assert "[streamed]" not in record.result["answer"]
 
 
 async def test_stream_chat_run_get_exposes_answer(
@@ -746,7 +727,8 @@ async def _drive_stream_until(
         else:
             await body.aclose()
         run_id = captured["run_id"]
-    record = RunRegistry(db_path=tasks_db_path).get_run(run_id, owner="u1")
+    registry = RunRegistry(db_path=tasks_db_path)
+    record = registry.get_run(run_id, owner="u1")
     if record is None:
         return None, None
     return record.status, record.result
@@ -762,8 +744,8 @@ async def test_stream_run_succeeds_when_client_disconnects_after_finish(
     )
     assert status == "succeeded"
     assert result is not None
-    assert result["formatted"]["answer"] == "Hi"
-    assert result["partial"] is False
+    assert result["answer"] == "Hi"
+    assert result["metadata"]["partial"] is False
 
 
 async def test_disconnect_after_finish_never_attempts_failed_settlement(
@@ -771,42 +753,26 @@ async def test_disconnect_after_finish_never_attempts_failed_settlement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A post-finish disconnect cannot overwrite durable success."""
-    statuses: list[str] = []
-    original_settle = getattr(api_app, "_settle_stream_run")
-
-    def record_settlement(
-        run_id: str,
-        owner: str,
-        status: str,
-        result: dict[str, Any],
-    ) -> bool:
-        statuses.append(status)
-        return original_settle(run_id, owner, status, result)
-
-    monkeypatch.setattr(api_app, "_settle_stream_run", record_settlement)
+    assert not hasattr(api_app, "_settle_stream_run")
     status, result = await _drive_stream_until(
         tasks_db_path, monkeypatch, stop_after_finish=True
     )
 
     assert status == "succeeded"
     assert result is not None
-    assert result["partial"] is False
-    assert statuses == ["succeeded"]
+    assert result["metadata"]["partial"] is False
 
 
-async def test_stream_run_succeeds_when_client_disconnects_before_finish(
+async def test_stream_run_remains_recoverable_when_client_disconnects_before_finish(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A disconnect BEFORE RunFinished still lets leftover tokens succeed."""
+    """A disconnect before domain completion is not a synthetic failure."""
     status, result = await _drive_stream_until(
         tasks_db_path, monkeypatch, stop_after_finish=False
     )
-    assert status == "succeeded"
-    assert result is not None
-    assert result["formatted"]["answer"] == "Hi"
-    assert result["partial"] is False
-    assert result["stream"] is True
+    assert status == "running"
+    assert result is None
 
 
 async def _close_partial_chat_stream(
@@ -814,7 +780,7 @@ async def _close_partial_chat_stream(
 ) -> tuple[list[str], str, bool]:
     """Close a partial HTTP stream and report its run and upstream state."""
     captured_run_id = ""
-    closed = asyncio.Event()
+    closed = False
 
     async def fake_streamed(
         _tool_name: Any,
@@ -823,14 +789,14 @@ async def _close_partial_chat_stream(
         run_id: str,
         dialogue_id: str | None,
     ) -> AsyncIterator[Any]:
-        nonlocal captured_run_id
+        nonlocal captured_run_id, closed
         captured_run_id = run_id
         try:
             yield run_started(run_id, dialogue_id)
             yield text_message_content("m-disconnect", "partial")
             yield run_finished(run_id)
         finally:
-            closed.set()
+            closed = True
 
     monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
     payload = ChatCompletionRequest(
@@ -854,15 +820,14 @@ async def _close_partial_chat_stream(
                 break
         with pytest.raises(StopAsyncIteration):
             await anext(body)
-    await asyncio.wait_for(closed.wait(), 2)
-    return seen, captured_run_id, True
+    return seen, captured_run_id, closed
 
 
 async def test_disconnect_before_finish_has_no_synthetic_frames(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Closing before finish does not invent frames on the aborted body."""
+    """Closing before finish keeps recovery open without a synthetic frame."""
     seen, run_id, _closed = await _close_partial_chat_stream(
         monkeypatch,
         query="disconnect",
@@ -872,14 +837,14 @@ async def test_disconnect_before_finish_has_no_synthetic_frames(
     assert "event: RunError\n" not in "".join(seen)
     record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
     assert record is not None
-    assert record.status == "succeeded"
+    assert record.status == "running"
 
 
 async def test_disconnect_closes_upstream_without_normal_terminal_answer(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Early HTTP closure still lets the detached producer finish."""
+    """Early body closure closes the raw stream without a success frame."""
     seen, _run_id, closed = await _close_partial_chat_stream(
         monkeypatch,
         query="cancel",
@@ -889,7 +854,7 @@ async def test_disconnect_closes_upstream_without_normal_terminal_answer(
     assert closed is True
     assert "event: RunFinished\n" not in "".join(seen)
     records = RunRegistry(tasks_db_path).list_runs(owner="u1")
-    assert records[-1].status == "succeeded"
+    assert records[-1].status == "running"
 
 
 async def test_stream_settle_marks_truncated_when_over_cap(
@@ -929,8 +894,8 @@ async def test_stream_settle_marks_truncated_when_over_cap(
     assert record is not None
     assert record.status == "succeeded"
     assert record.result is not None
-    assert record.result["truncated"] is True
-    answer = record.result["formatted"]["answer"]
+    assert record.result["metadata"]["truncated"] is True
+    answer = record.result["answer"]
     assert len(answer.encode("utf-8")) <= 4
     # Wire still carried the full text.
     assert "HelloWorld" in response.text or "Hello" in response.text

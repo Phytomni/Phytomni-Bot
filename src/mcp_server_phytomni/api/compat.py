@@ -26,6 +26,7 @@ from ..mcp.stream_lifecycle import PrimedAguiStream, StreamLifecycleState
 from ..runtime.run_registry import RunRecord
 from ..storage.path_policy import IdFactory
 from . import a2ui_runtime, run_lifecycle, streaming
+from .lifecycle_contract import SafeApiError, SafeErrorCode
 from .relay.audit_filter import redact_body_text
 from .schemas import A2uiActionRequest, ChatCompletionRequest, ChatStreamCall
 
@@ -183,12 +184,66 @@ async def _resume_a2ui_run(
     debug: bool = False,
 ) -> tuple[dict[str, Any], int]:
     """Compatibility seam for the Web A2UI action resume runtime."""
-    return await a2ui_runtime.resume_a2ui_run(
-        run_id=run_id,
-        body=body,
-        debug=debug,
-        dependencies=_a2ui_runtime_dependencies(),
-    )
+
+    async def resume_domain() -> tuple[dict[str, Any], int]:
+        return await a2ui_runtime.resume_a2ui_run(
+            run_id=run_id,
+            body=body,
+            debug=debug,
+            dependencies=_a2ui_runtime_dependencies(),
+        )
+
+    app = _app_module()
+    path = app.resolve_tasks_db_path()
+    owner = app.current_request_user() or "anonymous"
+    record = app.RunRegistry(path).get_run(run_id, owner=owner)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+    execution_id = record.request_info.execution_id
+    if execution_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="legacy A2UI execution is read-only",
+        )
+    if record.spec.agent not in {"chat", "review"}:
+        raise HTTPException(
+            status_code=400, detail="unsupported agent for a2ui"
+        )
+    try:
+        reservation = app.SQLiteExecutionReservationRepository(path).get(
+            owner=owner,
+            execution_id=execution_id,
+        )
+    except app.ExecutionReservationNotFoundError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="execution runtime reservation is unavailable",
+        ) from exc
+    try:
+        return await app.invoke_public_agent_operation(
+            db_path=path,
+            owner=owner,
+            execution_id=execution_id,
+            agent_slug=record.spec.agent,
+            operation="resume",
+            action_id=body.action_id,
+            expected_revision=reservation.supervisor_revision,
+            arguments=body.model_dump(mode="json"),
+            transport="a2ui_resume",
+            call=resume_domain,
+        )
+    except app.ExecutionReservationConflictError as exc:
+        if str(exc) == "execution_terminal":
+            raise HTTPException(
+                status_code=409,
+                detail="run is not awaiting input",
+            ) from exc
+        raise SafeApiError(
+            status_code=409,
+            code=SafeErrorCode.A2UI_ACTION_CONFLICT.value,
+            message="This input request has already been handled.",
+            stage="resume_action",
+        ) from exc
 
 
 def _stream_setup_error(exc: Exception, *, priming: bool) -> HTTPException:
@@ -244,8 +299,6 @@ def _a2ui_runtime_dependencies() -> a2ui_runtime.A2UIRuntimeDependencies:
             current_user=app.current_request_user,
             current_request_id=app.current_request_id,
             tasks_db_path=app.resolve_tasks_db_path,
-            create_stream_run=_app_attr("_create_running_stream_run"),
-            settle_stream_run=_app_attr("_settle_stream_run"),
             format_review_result=_app_attr("_format_review_result"),
         ),
         stream=a2ui_runtime.A2UIStreamDependencies(
@@ -253,22 +306,6 @@ def _a2ui_runtime_dependencies() -> a2ui_runtime.A2UIRuntimeDependencies:
             failed_stream_result=_app_attr("_failed_stream_result"),
             project_stream=_app_attr("_project_primed_stream"),
         ),
-    )
-
-
-def _settle_a2ui_stream_failure(
-    run_id: str,
-    owner: str,
-    settled_terminal: list[bool],
-    expected_revision: int,
-) -> None:
-    """Compatibility seam for failed A2UI stream settlement."""
-    a2ui_runtime.settle_a2ui_stream_failure(
-        run_id,
-        owner,
-        settled_terminal,
-        dependencies=_a2ui_runtime_dependencies(),
-        expected_revision=expected_revision,
     )
 
 
@@ -298,8 +335,6 @@ def _streaming_dependencies() -> streaming.StreamingDependencies:
             runtime=_a2ui_runtime_dependencies,
         ),
         persistence=streaming.StreamingPersistenceDependencies(
-            create_running_stream_run=_app_attr("_create_running_stream_run"),
-            settle_stream_run=_app_attr("_settle_stream_run"),
             stream_answer_max_bytes=_app_attr("_stream_answer_max_bytes"),
         ),
     )
@@ -310,12 +345,14 @@ async def _stream_chat_a2ui_confirm(
     arguments: dict[str, Any],
     payload: ChatCompletionRequest,
     user_query: str,
+    runtime_run_id: str,
 ) -> StreamingResponse:
     """Compatibility seam for the Chat A2UI stream runtime."""
     return await streaming.stream_chat_a2ui_confirm(
         arguments=arguments,
         payload=payload,
         user_query=user_query,
+        runtime_run_id=runtime_run_id,
         dependencies=_streaming_dependencies(),
     )
 
@@ -325,12 +362,14 @@ async def _stream_review_a2ui_pause(
     arguments: dict[str, Any],
     payload: ChatCompletionRequest,
     user_query: str,
+    runtime_run_id: str,
 ) -> StreamingResponse:
     """Compatibility seam for the Review A2UI stream runtime."""
     return await streaming.stream_review_a2ui_pause(
         arguments=arguments,
         payload=payload,
         user_query=user_query,
+        runtime_run_id=runtime_run_id,
         dependencies=_streaming_dependencies(),
     )
 
@@ -367,7 +406,6 @@ __all__ = [
     "_resume_paused_run",
     "_run_record_to_dict",
     "_schedule_run_gc",
-    "_settle_a2ui_stream_failure",
     "_stream_agent_slug",
     "_stream_chat_a2ui_confirm",
     "_stream_chat_completion",

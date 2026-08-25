@@ -10,6 +10,7 @@ follow_up_questions preserved, stream rejection, and unknown model.
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID
@@ -50,6 +51,10 @@ from mcp_server_phytomni.runtime.conversation_context.models import (
 )
 from mcp_server_phytomni.runtime.conversation_context.projection import (
     agent_thread_id as context_agent_thread_id,
+)
+from mcp_server_phytomni.runtime.execution_event_sink import emit_decision_note
+from mcp_server_phytomni.runtime.execution_v1_projection_v2 import (
+    V1ExecutionCompatibilityReader,
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
@@ -110,6 +115,42 @@ async def test_review_chat_completion_passes_effective_timeout(
     assert response.status_code == 200
     assert response.json()["run_id"] == "review-timeout-probe"
     assert captured["timeout"] == 30000.0
+
+
+async def test_review_chat_forwards_execution_identity_into_run_metadata(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    execution_id = "turn-review-550e8400-e29b-41d4-a716-446655440098"
+    captured: dict[str, Any] = {}
+
+    async def fake_run_review(**kwargs: Any) -> ReviewExecution:
+        captured.update(kwargs)
+        return ReviewExecution(
+            run_id="review-correlated",
+            status="succeeded",
+            result=review_success_result(),
+        )
+
+    monkeypatch.setattr(
+        api_app_module, "_run_review_with_interrupt", fake_run_review
+    )
+    response = await api_client.post(
+        "/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {issued_api_key}",
+            "X-Phyto-Execution-Id": execution_id,
+        },
+        json={
+            "model": "phyto-review",
+            "messages": [{"role": "user", "content": "review this"}],
+            "debug": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["request_info"].execution_id == execution_id
 
 
 async def test_chat_completions_passthrough(
@@ -831,6 +872,63 @@ async def test_chat_completions_exposes_run_id_matching_runs_listing(
     assert record.spec.run_id == completion_run_id
 
 
+async def test_chat_completion_reserves_public_execution_before_handler(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    execution_id = "turn-chat-550e8400-e29b-41d4-a716-446655440004"
+    observed: dict[str, str] = {}
+
+    async def handler(_args: Any) -> dict[str, Any]:
+        record = RunRegistry(tasks_db_path).get_run_by_execution_id(
+            execution_id,
+            owner="u1",
+        )
+        assert record is not None
+        observed["run_id"] = record.spec.run_id
+        observed["status"] = record.status
+        emit_decision_note("Routing completed.")
+        return {"answer": "ok", "doc_list": []}
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        handler,
+    )
+    response = await api_client.post(
+        "/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {issued_api_key}",
+            "X-Phyto-Execution-Id": execution_id,
+        },
+        json={
+            "model": "phyto-chat",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+    assert response.status_code == 200
+    assert observed["status"] == "running"
+    assert response.json()["run_id"] == observed["run_id"]
+    page = V1ExecutionCompatibilityReader(tasks_db_path).list_events(
+        observed["run_id"], owner="u1", after_seq=0, limit=20
+    )
+    assert page is not None
+    kinds = [item.kind for item in page.items]
+    assert kinds[0] == "run.accepted"
+    assert "run.started" in kinds
+    assert "tool.started" in kinds
+    assert "decision.note" in kinds
+    assert "tool.completed" in kinds
+    assert kinds[-1] == "run.succeeded"
+    with sqlite3.connect(tasks_db_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM run_events WHERE run_id = ?",
+            (observed["run_id"],),
+        ).fetchone() == (0,)
+
+
 async def test_chat_completions_run_id_survives_default_strip(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -860,27 +958,14 @@ async def test_chat_completions_run_id_survives_default_strip(
     assert "raw" not in body
 
 
-async def test_chat_completions_degraded_tracking_on_persistence_failure(
+async def test_chat_completions_does_not_use_legacy_sync_run_writer(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Registry write failure surfaces ``degraded_tracking: True``.
-
-    AF-004 acceptance: when ``_record_sync_run`` returns ``None``
-    (SQLite / OS failure), the chat completion still succeeds (HTTP
-    200) but the response advertises ``run_id: null`` and
-    ``degraded_tracking: true`` so the client knows the run row was
-    not persisted. Mirrors the remote-agent ``degraded_tracking``
-    signal.
-    """
+    """The V1 sync writer is no longer a second persistence authority."""
     install_chat_handler(monkeypatch, {})
-    monkeypatch.setattr(
-        "mcp_server_phytomni.api.app._record_sync_run",
-        lambda **_: None,
-    )
-
     response = await chat_completion(
         api_client,
         issued_api_key,
@@ -889,5 +974,5 @@ async def test_chat_completions_degraded_tracking_on_persistence_failure(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["run_id"] is None
-    assert body["degraded_tracking"] is True
+    assert isinstance(body["run_id"], str)
+    assert body.get("degraded_tracking") is not True

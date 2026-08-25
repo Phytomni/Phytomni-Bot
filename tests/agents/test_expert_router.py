@@ -108,6 +108,77 @@ async def test_strict_router_offers_allowed_tools_in_request_order(
     assert captured["tool_choice"] == "auto"
 
 
+async def test_strict_router_prefers_unambiguous_network_domain_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A documented TO network request must not depend on LLM routing luck."""
+    captured: dict[str, Any] = {}
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        captured,
+    )
+
+    result = await select_agent_tool(
+        (
+            "Please help me to analysis the hormone regulatory network "
+            "in the traits of TO:0000011"
+        ),
+        allowed_tools=["ChatAgent", "GeneNetworkAgent"],
+    )
+
+    assert result == ToolSelection(
+        "GeneNetworkAgent",
+        {"species_code": "osa", "to_id": "TO:0000011"},
+    )
+    assert captured == {}
+
+
+async def test_strict_router_keeps_forced_tool_over_network_domain_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit caller pin remains authoritative over domain hints."""
+    captured: dict[str, Any] = {}
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        captured,
+    )
+
+    result = await select_agent_tool(
+        "Analyse the regulatory network for TO:0000011",
+        allowed_tools=["ChatAgent", "GeneNetworkAgent"],
+        forced_tool="ChatAgent",
+    )
+
+    assert result == ToolSelection(
+        "ChatAgent",
+        {"user_query": "Analyse the regulatory network for TO:0000011"},
+    )
+    assert not captured
+
+
+async def test_network_domain_hint_still_validates_strict_allowlist() -> None:
+    """Domain preselection must not bypass the strict routing contract."""
+
+    async def should_not_run(**_kwargs: Any) -> object:
+        raise AssertionError("provider completion must not run")
+
+    with pytest.raises(ToolSelectionError, match="allowed tool"):
+        await select_expert_tool(
+            user_query="Analyse the regulatory network for TO:0000011",
+            history=[],
+            options=ExpertRoutingOptions(
+                allowed_tools=("GeneNetworkAgent", "GeneNetworkAgent"),
+                forced_tool=None,
+                locale="en-US",
+                completion=should_not_run,
+            ),
+        )
+
+
 async def test_strict_router_forces_requested_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

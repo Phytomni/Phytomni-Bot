@@ -40,6 +40,11 @@ from ...config.relay_mode import (
 )
 from ...config.settings import get_sensitive_config
 from ...func_cache import LONG_TTL_SECONDS, func_cache
+from ...runtime.execution_instrumentation_v2 import (
+    instrument_model_invocation,
+    record_model_attempt_started,
+    record_model_retry,
+)
 from ...runtime.langgraph_runner import ainvoke_graph
 from ...runtime.locale import (
     SupportedLocale,
@@ -585,6 +590,21 @@ async def _run_phyto_chat(
     messages: list[dict[str, str]],
     options: dict[str, Any],
 ) -> dict[str, Any]:
+    """Run the shared retry loop as one grouped public model operation."""
+
+    async def run_attempts() -> dict[str, Any]:
+        return await _run_phyto_chat_attempts(messages, options)
+
+    return await instrument_model_invocation(
+        run_attempts,
+        max_attempts=options["max_retries"] + 1,
+    )
+
+
+async def _run_phyto_chat_attempts(
+    messages: list[dict[str, str]],
+    options: dict[str, Any],
+) -> dict[str, Any]:
     """Call the Phyto chat endpoint with retry handling.
 
     Thin dispatcher around ``run_phyto_chat_cached`` that owns the
@@ -595,6 +615,8 @@ async def _run_phyto_chat(
     exhausted or the failure is non-retriable.
     """
     for attempt in range(options["max_retries"] + 1):
+        if attempt > 0:
+            record_model_attempt_started(attempt + 1)
         try:
             return await run_phyto_chat_cached(
                 messages=messages,
@@ -621,6 +643,10 @@ async def _run_phyto_chat(
                 retriable_codes=options["retriable_codes"],
                 message="Failed to generate from Phyto",
             ):
+                record_model_retry(
+                    delay_ms=0,
+                    code="model_rate_limited",
+                )
                 continue
         except (ConnectError, TimeoutException, APIConnectionError) as exc:
             if await retry_network_or_raise(
@@ -628,6 +654,10 @@ async def _run_phyto_chat(
                 attempt=attempt,
                 max_retries=options["max_retries"],
             ):
+                record_model_retry(
+                    delay_ms=0,
+                    code="model_transport_retry",
+                )
                 continue
         except InvalidChatCompletionError as exc:
             if await retry_network_or_raise(
@@ -636,6 +666,10 @@ async def _run_phyto_chat(
                 max_retries=options["max_retries"],
                 message="Failed to generate from Phyto",
             ):
+                record_model_retry(
+                    delay_ms=0,
+                    code="model_invalid_response",
+                )
                 continue
     # Unreachable: every loop iteration either returns from the try
     # block or raises through a retry helper on the final attempt. A
@@ -644,7 +678,7 @@ async def _run_phyto_chat(
     # path) into a loud crash instead of a silent None propagating
     # through downstream agents.
     raise RuntimeError(
-        "_run_phyto_chat fell through the retry loop; "
+        "_run_phyto_chat_attempts fell through the retry loop; "
         "retry helpers must raise on the last attempt"
     )
 

@@ -232,8 +232,8 @@ def test_memory_config_defaults_disabled_and_supports_prefixed_aliases(
 
     default = ApiConfig()
     assert default.MEMORY_ENABLED is False
-    assert str(default.MEMORY_DB_PATH).endswith(
-        ".cache/phytomni/memory.sqlite"
+    assert Path(default.MEMORY_DB_PATH) == Path(
+        ".cache", "phytomni", "memory.sqlite"
     )
 
     monkeypatch.setenv("PHYTOMNI_MEMORY_ENABLED", "1")

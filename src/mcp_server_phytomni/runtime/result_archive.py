@@ -25,6 +25,7 @@ from ..storage.obs_relay_ops import (
     put_object_file,
 )
 from .artifact_roles import ARCHIVE_ELIGIBLE_ROLES, ArtifactRole
+from .operation_instrumentation_v2 import instrument_operation_invocation
 from .outbound import ObsProfileName
 
 __all__ = [
@@ -324,6 +325,30 @@ def build_and_publish_result_archive(
 
 
 async def build_and_publish_result_archive_with_runtime(
+    inventory: ResultArchiveInventory,
+    *,
+    agent: str,
+    summary_markdown: str,
+    obs_runtime: Any,
+) -> str:
+    """Instrument deterministic archive generation as one safe operation."""
+
+    async def publish_archive() -> str:
+        return await _build_and_publish_result_archive_with_runtime(
+            inventory,
+            agent=agent,
+            summary_markdown=summary_markdown,
+            obs_runtime=obs_runtime,
+        )
+
+    return await instrument_operation_invocation(
+        "artifact.package",
+        publish_archive,
+        detail={"artifact_count": len(inventory.members)},
+    )
+
+
+async def _build_and_publish_result_archive_with_runtime(
     inventory: ResultArchiveInventory,
     *,
     agent: str,

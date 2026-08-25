@@ -16,6 +16,17 @@ from ...runtime.langgraph_runner import make_async_router
 from ..shared.chat_subgraph import make_chat_after_router, mount_chat_node
 
 
+def _review_chat_operation(
+    state: Any,
+) -> tuple[str, dict[str, int]] | None:
+    """Give only the report-synthesis chat call a Review presenter."""
+    if state.get("pending_post") != "summary_post_node":
+        return None
+    dimensions = state.get("research_dimensions")
+    total = len(dimensions) if isinstance(dimensions, list) else 0
+    return "review.final_synthesis", {"total": total}
+
+
 def wire_review_graph(
     agent: Any, workflow: StateGraph, knowledge_app: Any
 ) -> None:
@@ -27,7 +38,7 @@ def wire_review_graph(
     workflow.add_node("follow_up_prep_node", agent.follow_up_prep_node)
     workflow.add_node("follow_up_post_node", agent.follow_up_post_node)
     workflow.add_node("approval_node", agent.approval_node)
-    mount_chat_node(workflow)
+    mount_chat_node(workflow, operation_resolver=_review_chat_operation)
 
     if knowledge_app is None:
         raise RuntimeError(

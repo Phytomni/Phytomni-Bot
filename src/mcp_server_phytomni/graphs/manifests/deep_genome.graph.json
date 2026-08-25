@@ -1,4 +1,6 @@
 {
+  "classification": "public",
+  "driver": "hybrid",
   "edges": [
     {
       "conditional": true,
@@ -181,6 +183,10 @@
       "target": "__end__"
     }
   ],
+  "graph_id": "deep_genome",
+  "lifecycle": [
+    "asynchronous"
+  ],
   "nodes": [
     {
       "kind": "boundary",
@@ -266,5 +272,17 @@
       "kind": "boundary",
       "name": "__end__"
     }
-  ]
+  ],
+  "public_agent": "DeepGenomeAgent",
+  "remote_providers": [
+    "analysis_task_platform",
+    "object_storage"
+  ],
+  "subgraph_dependencies": [
+    "brief_gene",
+    "analyst",
+    "design",
+    "evolution"
+  ],
+  "topology": "hybrid"
 }

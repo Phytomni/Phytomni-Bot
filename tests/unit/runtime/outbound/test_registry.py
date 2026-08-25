@@ -9,6 +9,7 @@ import asyncio
 import logging
 
 import pytest
+from tests.support.logging_helpers import capture_non_propagating_logger
 from tests.support.outbound_fakes import (
     bounded_await,
     bounded_wait_for_event,
@@ -422,37 +423,34 @@ async def test_counters_only_increase_across_leases() -> None:
 @pytest.mark.asyncio
 async def test_terminal_logs_publish_safe_cumulative_outcome_counters(
     caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Terminal observations expose counters without caller-owned values."""
     registry = OutboundPoolRegistry(_capacities(llm=1), wait_warn_seconds=0.01)
     logger_name = "mcp_server_phytomni.runtime.outbound.registry"
     caplog.set_level(logging.INFO, logger=logger_name)
-    monkeypatch.setattr(
-        logging.getLogger("mcp_server_phytomni"), "propagate", True
-    )
 
-    async with registry.lease(OutboundPoolName.LLM):
-        pass
-
-    marker = "https://secret.invalid/query-user-run-task"
-    with pytest.raises(RuntimeError, match="secret.invalid"):
+    with capture_non_propagating_logger(logger_name, caplog.handler):
         async with registry.lease(OutboundPoolName.LLM):
-            raise RuntimeError(marker)
+            pass
 
-    entered = asyncio.Event()
+        marker = "https://secret.invalid/query-user-run-task"
+        with pytest.raises(RuntimeError, match="secret.invalid"):
+            async with registry.lease(OutboundPoolName.LLM):
+                raise RuntimeError(marker)
 
-    async def cancel_in_flight() -> None:
-        """Hold one lease until the caller cancels the task."""
-        async with registry.lease(OutboundPoolName.LLM):
-            entered.set()
-            await asyncio.Event().wait()
+        entered = asyncio.Event()
 
-    task = asyncio.create_task(cancel_in_flight(), name=marker)
-    await entered.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+        async def cancel_in_flight() -> None:
+            """Hold one lease until the caller cancels the task."""
+            async with registry.lease(OutboundPoolName.LLM):
+                entered.set()
+                await asyncio.Event().wait()
+
+        task = asyncio.create_task(cancel_in_flight(), name=marker)
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
     terminal = [
         record.getMessage()

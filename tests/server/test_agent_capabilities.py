@@ -39,6 +39,7 @@ from mcp_server_phytomni.api.agent_capabilities import (
     get_attachment_capability,
     required_attachment_channels,
     serialize_agent_capability,
+    serialize_execution_runtime_capability,
 )
 from mcp_server_phytomni.api.openai_mapping import (
     tool_accepts_obs,
@@ -54,11 +55,6 @@ from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 from mcp_server_phytomni.runtime.attachment_assets import (
     ResolvedAsset,
     ResolvedAttachmentBundle,
-)
-from mcp_server_phytomni.runtime.resumable_uploads import (
-    MAX_UPLOAD_BYTES,
-    MAX_UPLOAD_FILES,
-    MAX_UPLOAD_TOTAL_BYTES,
 )
 
 pytestmark = pytest.mark.server
@@ -85,8 +81,8 @@ _EXPECTED_ATTACHMENTS = {
     "research": (True, True, False),
     "brief_gene": (False, False, False),
     "deep_genome": (False, False, False),
-    "design": (False, False, False),
-    "network": (False, False, False),
+    "design": (True, False, False),
+    "network": (True, False, False),
 }
 
 _PUBLIC_CHANNEL_KEYS = {
@@ -131,6 +127,21 @@ def test_capability_descriptors_are_explicit_and_json_compatible() -> None:
     assert get_agent_capability("chat").interactive is True
     assert get_agent_capability("review").interactive is True
     assert get_agent_capability("data").streaming is False
+    execution_events = serialize_agent_capability("chat")["execution_events"]
+    assert execution_events == {
+        "major_version": 1,
+        "resumable_history": True,
+        "custom_event": "phyto.run_event",
+        "target_kinds": [
+            "event",
+            "artifact",
+            "report",
+            "todo",
+            "preview",
+            "download",
+            "trace",
+        ],
+    }
 
     deep_genome = serialize_agent_capability("deep_genome")
     assert deep_genome["report_states"] == ["intermediate", "final"]
@@ -144,6 +155,190 @@ def test_capability_descriptors_are_explicit_and_json_compatible() -> None:
         assert capability["report_states"] == ["final"]
         assert capability["artifacts"] is True
         assert capability["degraded_outcomes"] is True
+
+
+def test_execution_event_capability_follows_production_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Bot-first rollback stops both production and capability discovery."""
+    monkeypatch.setenv("PHYTOMNI_EXECUTION_EVENTS_ENABLED", "false")
+
+    assert serialize_agent_capability("chat")["execution_events"] == {}
+
+
+def test_execution_runtime_capability_is_complete_and_bounded() -> None:
+    """Web can negotiate the V2 runtime without duplicating Bot constants."""
+    capability = serialize_execution_runtime_capability()
+    capability.pop("operation_records")
+
+    assert capability == {
+        "execution_runtime_major": 1,
+        "execution_journal_major": 2,
+        "stable_execution_identity": True,
+        "async_message_admission": True,
+        "content_resume": True,
+        "actions": True,
+        "cancellation": True,
+        "drivers": [
+            "local_graph",
+            "remote_task",
+            "remote_fanout",
+            "resumable_graph",
+            "hybrid",
+        ],
+        "target_kinds": [
+            "event",
+            "artifact",
+            "report",
+            "todo",
+            "preview",
+            "download",
+            "trace",
+        ],
+        "limits": {
+            "default_event_page": 50,
+            "max_event_page": 200,
+            "max_events_per_execution": 10_000,
+            "max_live_backlog": 1_000,
+            "max_event_bytes": 16_384,
+            "max_content_delta_bytes": 16_384,
+            "max_todo_items": 100,
+            "heartbeat_seconds": 15,
+        },
+        "compatibility": {
+            "state": "read_only",
+            "v1_read_projection": True,
+            "v1_write_authority": False,
+        },
+    }
+
+
+def test_execution_runtime_capability_advertises_operation_records() -> None:
+    capability = serialize_execution_runtime_capability()["operation_records"]
+
+    assert capability["major_version"] == 1
+    assert capability["grouping_key"] == "work_unit_id"
+    assert capability["attempt_history"] is True
+    assert capability["unknown_presenter"] == {
+        "operation_key": "operation.unknown",
+        "label_key": "execution.operation.generic",
+        "fallback_label": "Internal operation",
+        "semantic_kind": "operation",
+        "allowed_detail_fields": {},
+        "counter_units": [],
+        "target_kinds": [],
+    }
+    assert capability["execution_log_artifact_role"] == "execution_log"
+    assert capability["liveness_clocks"] == [
+        "last_execution_fact_at",
+        "last_provider_contact_at",
+        "last_stream_contact_at",
+    ]
+    assert capability["limits"] == {
+        "max_operations_per_run": 256,
+        "max_attempt_history_per_operation": 8,
+        "max_detail_fields_per_operation": 16,
+        "liveness_coalesce_ms": 30_000,
+        "max_execution_log_bytes": 1_048_576,
+    }
+    assert {
+        presenter["operation_key"] for presenter in capability["presenters"]
+    } == {
+        "analyst.collect_outputs",
+        "analyst.prepare_analysis",
+        "analyst.run_workflow",
+        "artifact.package",
+        "data.query",
+        "deep_genome.experiment_protocol",
+        "deep_genome.gather_context",
+        "deep_genome.prepare_plan",
+        "deep_genome.run_analysis_branches",
+        "deep_genome.synthesize_results",
+        "deep_genome.workflow",
+        "design.consolidate_candidates",
+        "design.package_outputs",
+        "design.run_branches",
+        "design.validate_target",
+        "gene_network.infer_network",
+        "gene_network.prepare_inputs",
+        "gene_network.rank_regulators",
+        "gene_network.synthesize_results",
+        "gene_network.validate_target",
+        "knowledge.search",
+        "model.generate",
+        "remote.analysis",
+        "remote.reconcile",
+        "remote.submit",
+        "research.collect_evidence",
+        "research.decompose_objectives",
+        "research.dispatch_work",
+        "research.package_outputs",
+        "research.synthesize_results",
+        "review.citation_check",
+        "review.draft_dimension",
+        "review.final_synthesis",
+        "review.retrieve_dimension",
+        "tool.analyst",
+        "tool.brief_gene",
+        "tool.chat",
+        "tool.data",
+        "tool.deep_genome",
+        "tool.design",
+        "tool.knowledge",
+        "tool.network",
+        "tool.research",
+        "tool.review",
+    }
+
+
+def test_agent_work_trace_capability_is_truthful_for_every_agent() -> None:
+    network = serialize_agent_capability("network")["work_trace"]
+    assert network == {
+        "major_version": 1,
+        "state": "supported",
+        "features": {
+            "lifecycle": "supported",
+            "semantic_phases": "supported",
+            "semantic_tools": "supported",
+            "public_reasoning": "supported",
+            "trace_target": "supported",
+        },
+        "target": {"kind": "trace", "major_version": 1},
+        "detail_endpoint": (
+            "/v2/executions/{execution_id}/targets/trace/{target_id}"
+        ),
+    }
+    for slug in ("analyst", "deep_genome", "research", "design"):
+        work_trace = serialize_agent_capability(slug)["work_trace"]
+        assert work_trace["state"] == "supported"
+        assert work_trace["features"] == {
+            "lifecycle": "supported",
+            "semantic_phases": "supported",
+            "semantic_tools": "supported",
+            "public_reasoning": "unsupported",
+            "trace_target": "supported",
+        }
+        assert work_trace["target"] == {
+            "kind": "trace",
+            "major_version": 1,
+        }
+        assert work_trace["detail_endpoint"].endswith(
+            "/targets/trace/{target_id}"
+        )
+
+    for slug in ("chat", "knowledge", "data", "review", "brief_gene"):
+        work_trace = serialize_agent_capability(slug)["work_trace"]
+        assert work_trace == {
+            "major_version": 1,
+            "state": "supported",
+            "features": {
+                "lifecycle": "supported",
+                "semantic_phases": "supported",
+                "semantic_tools": "supported",
+                "public_reasoning": "unsupported",
+                "trace_target": "unsupported",
+            },
+        }
 
 
 def test_result_archive_protocol_requires_direct_storage(
@@ -270,6 +465,9 @@ async def test_agent_catalog_keeps_generic_capabilities_config_independent(
                 remote_agent_slugs=frozenset(),
                 legacy_aliases={},
                 serialize_capability=serialize_agent_capability,
+                serialize_execution_runtime=(
+                    serialize_execution_runtime_capability
+                ),
             ),
             upload=SimpleNamespace(
                 serialize_file_upload_capability=lambda: {},
@@ -292,6 +490,10 @@ async def test_agent_catalog_keeps_generic_capabilities_config_independent(
 
     assert first.status_code == second.status_code == 200
     assert json.loads(first.body)["data"] == json.loads(second.body)["data"]
+    assert (
+        json.loads(first.body)["execution_runtime"]["execution_journal_major"]
+        == 2
+    )
 
 
 @pytest.mark.parametrize(
@@ -310,6 +512,8 @@ async def test_agent_catalog_keeps_generic_capabilities_config_independent(
                     "review",
                     "analyst",
                     "research",
+                    "design",
+                    "network",
                 }
             ),
         ),
@@ -364,14 +568,14 @@ def test_expert_attachment_filter_intersects_capability() -> None:
     assert filter_tools_for_expert_attachments(
         allowed_tools=allowed,
         requirement=ExpertAttachmentRequirement(managed_assets=True),
-    ) == ("AnalystAgent", "ChatAgent")
+    ) == ("DigitalDesignAgent", "AnalystAgent", "ChatAgent")
     assert filter_tools_for_expert_attachments(
         allowed_tools=("unknown-tool", *allowed),
         requirement=ExpertAttachmentRequirement(
             managed_assets=True,
             legacy_documents=True,
         ),
-    ) == ("AnalystAgent", "ChatAgent")
+    ) == ("DigitalDesignAgent", "AnalystAgent", "ChatAgent")
 
 
 def test_required_attachment_channels_follow_bundle_partitions() -> None:
@@ -434,7 +638,7 @@ def test_capability_golden_is_byte_stable() -> None:
     assert json.loads(golden) == actual
     assert golden == json.dumps(actual, ensure_ascii=False, indent=2) + "\n"
     assert hashlib.sha256(golden.encode("utf-8")).hexdigest() == (
-        "253df83201432390647449448be19218782f62211ce514b7900a31a66a03218c"
+        "f3275947e386d16005acd89cfc227c18bee47ada57ab047325ba89b37152853d"
     )
 
 
@@ -443,18 +647,20 @@ def test_attachment_limits_are_public_and_exact() -> None:
     for slug, channel in (
         ("chat", "document_context"),
         ("analyst", "datasets"),
+        ("design", "document_context"),
+        ("network", "document_context"),
     ):
         limits = serialize_agent_capability(slug)["attachments"][channel]
-        assert limits["max_file_bytes"] == MAX_UPLOAD_BYTES
-        assert limits["max_files"] == MAX_UPLOAD_FILES
-        assert limits["max_total_bytes"] == MAX_UPLOAD_TOTAL_BYTES
+        assert limits["max_file_bytes"] == 26_214_400
+        assert limits["max_files"] == 10
+        assert limits["max_total_bytes"] == 52_428_800
 
 
 @pytest.mark.parametrize("slug", ["design", "network"])
-def test_design_and_network_accept_no_attachment_channels(slug: str) -> None:
-    """Design and Network do not advertise document or dataset inputs."""
+def test_design_and_network_accept_only_document_context(slug: str) -> None:
+    """The two added channels do not enable datasets or Expert forwarding."""
     attachments = serialize_agent_capability(slug)["attachments"]
-    assert attachments["document_context"] is None
+    assert attachments["document_context"] is not None
     assert attachments["datasets"] is None
     assert attachments["expert_forwarding"] is False
 

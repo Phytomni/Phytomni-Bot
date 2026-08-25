@@ -18,7 +18,6 @@ import logging
 import os
 import sqlite3
 import threading
-import time
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -26,7 +25,6 @@ from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
 
-from ..agents.analyst.task_ops import task_delete
 from ..agents.research.recovery_support import (
     cancel_registered_research_tasks,
     revoke_registered_research_run,
@@ -34,18 +32,12 @@ from ..agents.research.recovery_support import (
 from ..mcp.formatting.models import ResultDelivery
 from ..mcp.formatting.redaction import strip_agent_result
 from ..runtime.async_utils import wait_for_thread_event
-from ..runtime.background_submission import BACKGROUND_RUNTIME_ERRORS
 from ..runtime.checkpoint_backend import build_default_checkpointer
 from ..runtime.conversation_context.store import ConversationContextStore
 from ..runtime.deep_genome_store import DeepGenomeStore
 from ..runtime.deep_genome_store_projection import snapshot_to_canonical_result
-from ..runtime.fingerprint_jobs import cancel_run_claims, mark_job_terminal
-from ..runtime.live_tasks import (
-    is_live_running,
-    request_cancel,
-)
+from ..runtime.execution_event_producers import emit_run_settlement
 from ..runtime.research_input_store import (
-    TERMINAL_RUN_STATUSES,
     ResearchCancellationConflict,
     ResearchCancellationNotFound,
     ResearchCancellationUnsupported,
@@ -53,15 +45,12 @@ from ..runtime.research_input_store import (
 )
 from ..runtime.run_registry import (
     RunFilter,
-    RunOutcome,
     RunRecord,
     RunRegistry,
     RunRequestInfo,
-    local_run_spec,
 )
 from ..runtime.run_registry_delivery import result_delivery_from_result
 from ..runtime.task_manager import resolve_tasks_db_path
-from ..storage.path_policy import IdFactory
 from .lifecycle_contract import SafeApiError, project_research_lifecycle
 
 __all__ = [
@@ -71,9 +60,8 @@ __all__ = [
     "RunPersistenceError",
     "agent_run_response",
     "claim_run_gc",
-    "cancel_owner_run",
     "cancel_research_run",
-    "create_running_stream_run",
+    "attach_execution_request_info",
     "fetch_owner_run",
     "retry_owner_delivery",
     "list_owner_runs",
@@ -82,22 +70,16 @@ __all__ = [
     "purge_expired_runs_best_effort",
     "purge_expired_runs_best_effort_async",
     "reconcile_run_task_logs",
-    "record_sync_run",
     "release_run_gc",
     "resolve_remote_run",
     "run_record_to_dict",
     "schedule_run_gc",
-    "settle_stream_run",
     "stamp_remote_request_info",
 ]
 
 
 _LOGGER = logging.getLogger(__name__)
-_RUN_GC_CAUGHT = BACKGROUND_RUNTIME_ERRORS
-_CANCEL_WAIT_SECONDS = 2.0
-_CANCEL_POLL_SECONDS = 0.02
-_TERMINAL_CANCEL_BLOCKED = frozenset({"succeeded", "failed"})
-_EI_DELETE_ERRORS: tuple[type[Exception], ...] = (Exception,)
+_RUN_GC_CAUGHT: tuple[type[Exception], ...] = (Exception,)
 _RUN_GC_LOCK = threading.Lock()
 _RUN_GC_ACTIVE = threading.Event()
 
@@ -514,15 +496,7 @@ def project_deep_genome_run(
             value = existing_result.get(private_key)
             if value is not None:
                 result[private_key] = value
-    # Owner cancel settles the run row first. A still-running umbrella
-    # snapshot must not hide that terminal so /cancel can return cancelled.
-    if (
-        record.status in {"cancelled", "failed", "succeeded"}
-        and snapshot.status == "running"
-    ):
-        payload["status"] = record.status
-    else:
-        payload["status"] = snapshot.status
+    payload["status"] = snapshot.status
     payload["result"] = result
     payload["answer"] = extract_answer(result)
     if _result_tracking_is_degraded(result):
@@ -577,147 +551,12 @@ async def fetch_owner_run(
     db_path: str | None = None,
     registry_factory: RegistryFactory = RunRegistry,
 ) -> dict[str, Any]:
-    """Reconcile and flatten one owner-scoped run, or raise HTTP 404."""
+    """Purely read and flatten one owner-scoped run, or raise HTTP 404."""
     registry = registry_factory(_database_path(db_path))
     record = registry.get_run(run_id, owner=owner)
     if record is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-    if record.spec.agent == "deep_genome":
-        return project_public_run_record(record, debug=debug, db_path=db_path)
-    record = await registry.reconcile(run_id, owner=owner)
-    if record is None:
-        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-    if (
-        record.spec.agent == "research"
-        and record.status in TERMINAL_RUN_STATUSES
-    ):
-        await revoke_registered_research_run(run_id)
     return project_public_run_record(record, debug=debug, db_path=db_path)
-
-
-async def _await_cancelled_workers(keys: Sequence[str]) -> None:
-    """Give in-process workers a bounded window to settle a cancel."""
-    deadline = time.monotonic() + _CANCEL_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        if not any(is_live_running(key) for key in keys if key):
-            return
-        await asyncio.sleep(_CANCEL_POLL_SECONDS)
-
-
-async def _terminate_last_claim_jobs(
-    db_path: str, ei_task_ids: Sequence[str]
-) -> None:
-    """Best-effort terminate EI jobs whose last claim just detached."""
-    for ei_task_id in ei_task_ids:
-        try:
-            await task_delete(ei_task_id)
-        except _EI_DELETE_ERRORS as exc:
-            _LOGGER.warning(
-                "EI terminate unavailable after cancel; error_type=%s",
-                type(exc).__name__,
-            )
-        mark_job_terminal(db_path, ei_task_id, "cancelled")
-
-
-async def cancel_owner_run(
-    run_id: str,
-    *,
-    owner: str,
-    expected_revision: int | None = None,
-    db_path: str | None = None,
-    registry_factory: RegistryFactory = RunRegistry,
-) -> dict[str, Any]:
-    """Cancel one owner-scoped run and last-claim EI jobs."""
-    path = _database_path(db_path)
-    registry = registry_factory(path)
-    current = registry.get_run(run_id, owner=owner)
-    if current is None:
-        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-    if current.status in _TERMINAL_CANCEL_BLOCKED:
-        raise SafeApiError(
-            status_code=409,
-            code="run_state_conflict",
-            message="Run cancellation is no longer available.",
-            stage="execution",
-            retryable=False,
-        )
-    worker_keys = (run_id, *current.task_ids)
-    for key in worker_keys:
-        request_cancel(key)
-    await _await_cancelled_workers(worker_keys)
-    current = registry.get_run(run_id, owner=owner)
-    if current is None:
-        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-    if current.status != "cancelled":
-        await _settle_owner_cancel(
-            registry,
-            current,
-            identity=(run_id, owner, path),
-            expected_revision=expected_revision,
-        )
-    claims = cancel_run_claims(path, run_id=run_id, user_id=owner)
-    await _terminate_last_claim_jobs(path, claims.terminate_ei_ids)
-    updated = registry.get_run(run_id, owner=owner)
-    if updated is None:
-        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-    return project_public_run_record(updated, db_path=path)
-
-
-async def _settle_owner_cancel(
-    registry: RunRegistry,
-    current: Any,
-    *,
-    identity: tuple[str, str, str],
-    expected_revision: int | None,
-) -> None:
-    """Settle a non-cancelled owner run after workers have been signalled."""
-    run_id, owner, path = identity
-    revision = (
-        current.revision if expected_revision is None else expected_revision
-    )
-    if current.spec.agent == "research":
-        try:
-            ResearchInputStore(path).cancel_research_run(
-                run_id, owner, revision
-            )
-        except ResearchCancellationNotFound as exc:
-            raise HTTPException(
-                status_code=404, detail=f"run not found: {run_id}"
-            ) from exc
-        except ResearchCancellationUnsupported as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except ResearchCancellationConflict as exc:
-            raise SafeApiError(
-                status_code=409,
-                code="research_cancel_conflict",
-                message="Research run cancellation is no longer available.",
-                stage="execution",
-                retryable=False,
-            ) from exc
-        cancel_registered_research_tasks(run_id)
-        await revoke_registered_research_run(run_id)
-        return
-    settled = registry.settle_run(
-        run_id,
-        owner=owner,
-        status="cancelled",
-        result=current.result,
-        error=None,
-        expected_revision=revision,
-    )
-    if settled:
-        return
-    latest = registry.get_run(run_id, owner=owner)
-    if latest is None:
-        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-    if latest.status != "cancelled":
-        raise SafeApiError(
-            status_code=409,
-            code="run_state_conflict",
-            message="Run cancellation is no longer available.",
-            stage="execution",
-            retryable=False,
-        )
 
 
 async def cancel_research_run(
@@ -728,14 +567,49 @@ async def cancel_research_run(
     db_path: str | None = None,
     registry_factory: RegistryFactory = RunRegistry,
 ) -> dict[str, Any]:
-    """Compatibility alias for owner-scoped run cancellation."""
-    return await cancel_owner_run(
-        run_id,
-        owner=owner,
-        expected_revision=expected_revision,
-        db_path=db_path,
-        registry_factory=registry_factory,
+    """Cancel one owner-scoped Research run before a remote send."""
+    path = _database_path(db_path)
+    registry = registry_factory(path)
+    current = registry.get_run(run_id, owner=owner)
+    if current is None:
+        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+    if current.spec.agent != "research":
+        raise HTTPException(
+            status_code=409,
+            detail="run cancellation is not supported for this agent",
+        )
+    revision = (
+        current.revision if expected_revision is None else expected_revision
     )
+    try:
+        ResearchInputStore(path).cancel_research_run(run_id, owner, revision)
+    except ResearchCancellationNotFound as exc:
+        raise HTTPException(
+            status_code=404, detail=f"run not found: {run_id}"
+        ) from exc
+    except ResearchCancellationUnsupported as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ResearchCancellationConflict as exc:
+        raise SafeApiError(
+            status_code=409,
+            code="research_cancel_conflict",
+            message="Research run cancellation is no longer available.",
+            stage="execution",
+            retryable=False,
+        ) from exc
+    cancel_registered_research_tasks(run_id)
+    await revoke_registered_research_run(run_id)
+    updated = registry.get_run(run_id, owner=owner)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+    emit_run_settlement(
+        path,
+        run_id=run_id,
+        owner=owner,
+        status="cancelled",
+        revision=updated.revision,
+    )
+    return project_public_run_record(updated, db_path=path)
 
 
 def _public_result_delivery(delivery: ResultDelivery) -> dict[str, Any]:
@@ -845,87 +719,31 @@ def resolve_remote_run(
     )
 
 
-def record_sync_run(
+def attach_execution_request_info(
     *,
-    agent: str,
-    owner: str,
-    result: dict[str, Any],
-    request_info: RunRequestInfo | None = None,
-    db_path: str | None = None,
-) -> str:
-    """Persist a terminal local run or fail before public success."""
-    run_id = IdFactory().new_id("run", agent)
-    try:
-        RunRegistry(_database_path(db_path)).create_run(
-            local_run_spec(run_id, owner, agent),
-            outcome=RunOutcome(status="succeeded", result=result),
-            request_info=request_info,
-        )
-    except (sqlite3.Error, OSError) as exc:
-        _LOGGER.error(
-            "sync run persistence failed for agent %s (%s)",
-            agent,
-            exc.__class__.__name__,
-        )
-        raise RunPersistenceError("completed run persistence failed") from exc
-    return run_id
-
-
-def create_running_stream_run(
     run_id: str,
-    agent: str,
     owner: str,
     request_info: RunRequestInfo,
-    *,
     db_path: str | None = None,
 ) -> None:
-    """Write the initial owner-scoped running row for an HTTP stream."""
+    """Attach HTTP request metadata to a Runtime-owned execution row.
+
+    Runtime V2 reserves the canonical row before the native HTTP adapter runs.
+    The adapter enriches that same row instead of reserving or settling a
+    second compatibility execution.
+    """
     try:
-        RunRegistry(_database_path(db_path)).create_run(
-            local_run_spec(run_id, owner, agent),
-            outcome=RunOutcome(status="running"),
+        updated = RunRegistry(_database_path(db_path)).update_request_info(
+            run_id,
+            owner=owner,
             request_info=request_info,
         )
     except (sqlite3.Error, OSError) as exc:
-        _LOGGER.warning(
-            "stream run create failed for %s: %s",
-            agent,
-            exc.__class__.__name__,
-        )
-
-
-def settle_stream_run(
-    run_id: str,
-    owner: str,
-    status: str,
-    result: dict[str, Any],
-    *,
-    context: RunLifecycleContext | None = None,
-    **kwargs: Any,
-) -> bool:
-    """Settle an owner-scoped stream row and report durable success."""
-    expected_revision = kwargs.pop("expected_revision", None)
-    if kwargs:
-        raise TypeError("unexpected stream settlement keyword")
-    configured = context or RunLifecycleContext()
-    purge = configured.purge or purge_expired_runs_best_effort
-    try:
-        updated = RunRegistry(_database_path(configured.db_path)).settle_run(
-            run_id,
-            owner=owner,
-            status=status,
-            result=result,
-            expected_revision=expected_revision,
-        )
-    except (sqlite3.Error, OSError) as exc:
-        _LOGGER.error(
-            "stream run settlement failed for %s (%s)",
-            run_id,
-            exc.__class__.__name__,
-        )
-        updated = False
-    purge()
-    return updated
+        raise RunPersistenceError(
+            "execution request metadata persistence failed"
+        ) from exc
+    if not updated:
+        raise RunPersistenceError("execution reservation is unavailable")
 
 
 def stamp_remote_request_info(

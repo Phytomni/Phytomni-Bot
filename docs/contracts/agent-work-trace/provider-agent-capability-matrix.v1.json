@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "features": [
+    "lifecycle",
+    "semantic_phases",
+    "semantic_tools",
+    "public_reasoning",
+    "trace_target"
+  ],
+  "states": ["supported", "degraded", "unsupported"],
+  "agents": {
+    "network": {
+      "display_name": "Gene Network",
+      "provider": "analysis_task_platform",
+      "lifecycle": "supported",
+      "semantic_phases": "supported",
+      "semantic_tools": "supported",
+      "public_reasoning": "supported",
+      "trace_target": "supported",
+      "advertise_after": "real_producer_and_cross_service_acceptance"
+    },
+    "analyst": {
+      "display_name": "Analyst",
+      "provider": "analysis_task_platform",
+      "lifecycle": "supported",
+      "semantic_phases": "supported",
+      "semantic_tools": "supported",
+      "public_reasoning": "unsupported",
+      "trace_target": "supported",
+      "compatibility": "structured_provider_v2"
+    },
+    "deep_genome": {
+      "display_name": "Deep Genome",
+      "provider": "analysis_task_platform",
+      "lifecycle": "supported",
+      "semantic_phases": "supported",
+      "semantic_tools": "supported",
+      "public_reasoning": "unsupported",
+      "trace_target": "supported",
+      "compatibility": "structured_provider_v2"
+    },
+    "design": {
+      "display_name": "Digital Design",
+      "provider": "analysis_task_platform",
+      "lifecycle": "supported",
+      "semantic_phases": "supported",
+      "semantic_tools": "supported",
+      "public_reasoning": "unsupported",
+      "trace_target": "supported",
+      "compatibility": "structured_provider_v2"
+    },
+    "research": {
+      "display_name": "In Silico Research",
+      "provider": "analysis_task_platform",
+      "lifecycle": "supported",
+      "semantic_phases": "supported",
+      "semantic_tools": "supported",
+      "public_reasoning": "unsupported",
+      "trace_target": "supported",
+      "compatibility": "structured_provider_v2"
+    }
+  }
+}

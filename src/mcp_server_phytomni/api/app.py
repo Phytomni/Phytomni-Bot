@@ -9,11 +9,12 @@ Public functions: create_app.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-import sqlite3
 from collections.abc import Callable, Mapping
-from typing import Any, Unpack
+from dataclasses import replace
+from typing import Any, Unpack, cast
 
 from fastapi import (
     FastAPI,
@@ -49,11 +50,35 @@ from ..mcp.result_formatting import (
     strip_chat_completion,
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
+from ..public_agent_catalog import (
+    PUBLIC_AGENT_CATALOG,
+)
+from ..public_agent_catalog import (
+    agent_slug_to_tool as _catalog_slug_to_tool,
+)
+from ..public_agent_catalog import (
+    legacy_aliases as _catalog_legacy_aliases,
+)
+from ..public_agent_catalog import (
+    remote_agent_slugs as _catalog_remote_agent_slugs,
+)
 from ..runtime import request_context as _request_context
 from ..runtime import stage_trace as _stage_trace
 from ..runtime import task_reconcile as _task_reconcile
 from ..runtime.attachment_assets import ResolvedAttachmentBundle
-from ..runtime.background_policy import BACKGROUND_SUBMISSION_AGENT_SLUGS
+from ..runtime.execution_entrypoint_v2 import (
+    invoke_public_agent,
+    invoke_public_agent_operation,
+    invoke_public_agent_stream_response,
+)
+from ..runtime.execution_identity_v2 import new_execution_id
+from ..runtime.execution_instrumentation_v2 import current_execution_boundary
+from ..runtime.execution_journal_v2 import ExecutionStatus
+from ..runtime.execution_reservation_v2 import (
+    ExecutionReservationConflictError,
+    ExecutionReservationNotFoundError,
+    SQLiteExecutionReservationRepository,
+)
 from ..runtime.locale import current_effective_locale
 from ..runtime.resume import ahas_checkpoint as _runtime_has_checkpoint
 from ..runtime.run_registry import (
@@ -62,6 +87,7 @@ from ..runtime.run_registry import (
     RunRequestInfo,
 )
 from ..runtime.task_manager import resolve_tasks_db_path
+from ..storage.path_policy import IdFactory
 from ..version import __version__ as _package_version
 from . import a2ui_runtime, run_lifecycle
 from . import admin_auth as _admin_auth
@@ -135,12 +161,6 @@ def _compatibility_export(name: str) -> Any:
 
 _AgentRunPreparation = _compatibility_export("_AgentRunPreparation")
 _AgentRunPreflight = _compatibility_export("_AgentRunPreflight")
-_background_agent_run_response = _compatibility_export(
-    "_background_agent_run_response"
-)
-_execute_background_agent_run = _compatibility_export(
-    "_execute_background_agent_run"
-)
 _format_agent_run_result = _compatibility_export("_format_agent_run_result")
 _invoke_agent_run = _compatibility_export("_invoke_agent_run")
 _prepare_agent_run = _compatibility_export("_prepare_agent_run")
@@ -150,12 +170,8 @@ _remote_agent_run_response = _compatibility_export(
 )
 _resolve_remote_run = _compatibility_export("_resolve_remote_run")
 _sync_agent_run_response = _compatibility_export("_sync_agent_run_response")
-BackgroundSubmissionLaunchError = _agent_runs.BackgroundSubmissionLaunchError
-BackgroundSubmissionOutcome = _agent_runs.BackgroundSubmissionOutcome
 apply_runs_resolver = _agent_runs.apply_runs_resolver
 invoke_tool_enveloped = _agent_runs.invoke_tool_enveloped
-launch_background_submission = _agent_runs.launch_background_submission
-reserve_background_submission = _agent_runs.reserve_background_submission
 resolve_brief_gene_user_query = _agent_runs.resolve_brief_gene_user_query
 resolve_deep_genome_user_query = _agent_runs.resolve_deep_genome_user_query
 resolve_design_user_query = _agent_runs.resolve_design_user_query
@@ -206,6 +222,9 @@ _schedule_run_gc = getattr(_compat, "_schedule_run_gc")
 is_service_token_valid = _admin_auth.is_service_token_valid
 require_service_principal = _admin_auth.require_service_principal
 serialize_agent_capability = _agent_capabilities.serialize_agent_capability
+serialize_execution_runtime_capability = (
+    _agent_capabilities.serialize_execution_runtime_capability
+)
 serialize_file_upload_capability = (
     _agent_capabilities.serialize_file_upload_capability
 )
@@ -250,28 +269,14 @@ def __getattr__(name: str) -> Any:
 # stays inside the API layer and does not perturb the pure mapping
 # module that other API touch points already share.
 _MODEL_TO_AGENT_SLUG = {
-    "phyto-chat": "chat",
-    "phyto-knowledge": "knowledge",
-    "phyto-review": "review",
-    "phyto-brief-gene": "brief_gene",
+    item.model: item.slug for item in PUBLIC_AGENT_CATALOG if item.model
 }
 
 # Full ``slug -> MCP tool name`` map for the native ``/v1/agents``
 # endpoints. Slugs mirror the ``agents/<domain>/`` directory naming
 # so the run table speaks the same vocabulary as the in-process agent
 # packages.
-_AGENT_SLUG_TO_TOOL = {
-    "chat": "ChatAgent",
-    "knowledge": "KnowledgeAgent",
-    "data": "DataAgent",
-    "review": "ReviewAgent",
-    "brief_gene": "BriefGeneAgent",
-    "analyst": "AnalystAgent",
-    "deep_genome": "DeepGenomeAgent",
-    "research": "InSilicoResearchAgent",
-    "design": "DigitalDesignAgent",
-    "network": "GeneNetworkAgent",
-}
+_AGENT_SLUG_TO_TOOL = _catalog_slug_to_tool()
 
 # Inverse of ``_AGENT_SLUG_TO_TOOL``: the Expert router returns the MCP
 # tool name the LLM selected, which this maps back to the public agent
@@ -285,11 +290,8 @@ _TOOL_TO_AGENT_SLUG = {
 # ``records_submission`` chokepoint in ``runtime.submit_recorder`` to
 # write the runs row with ``origin="remote"`` and bind the freshly-minted
 # run id to ``current_run_id()`` so the API layer can recover it directly.
-_REMOTE_AGENT_SLUGS = frozenset(
-    {"analyst", "deep_genome", "research", "design", "network"}
-)
+_REMOTE_AGENT_SLUGS = _catalog_remote_agent_slugs()
 
-_BACKGROUND_SUBMISSION_AGENT_SLUGS = BACKGROUND_SUBMISSION_AGENT_SLUGS
 
 _EXPERT_STREAM_MODELS = {
     "chat": "phyto-chat",
@@ -304,18 +306,7 @@ _EXPERT_STREAM_MODELS = {
 # negotiation. Bot-added agents (brief_gene / design / network) ship
 # an empty list so the shape stays uniform and a future agent must
 # make an explicit declaration rather than silently inherit ``[]``.
-_LEGACY_ALIASES: dict[str, list[str]] = {
-    "ChatAgent": ["ChatAgent"],
-    "KnowledgeAgent": ["KnowledgeAgent", "KnowledgeAgents"],
-    "DataAgent": ["DataAgent", "DatabaseAgents"],
-    "ReviewAgent": ["ReviewAgent", "ReviewAgents"],
-    "BriefGeneAgent": [],
-    "AnalystAgent": ["AnalystAgent", "AnalysisAgents"],
-    "DeepGenomeAgent": ["DeepGenomeAgent"],
-    "InSilicoResearchAgent": ["InSilicoResearchAgent"],
-    "DigitalDesignAgent": [],
-    "GeneNetworkAgent": [],
-}
+_LEGACY_ALIASES: dict[str, list[str]] = _catalog_legacy_aliases()
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -374,21 +365,10 @@ async def _start_routed_expert_stream(
     )
 
 
-async def _route_expert_query(
+async def _select_expert_routing(
     payload: ExpertQueryRequest,
-    *,
-    debug: bool,
-    attachment_input: ResolvedAttachmentInput | None = None,
-    idempotency_key: str | None = None,
-    research_runtime_options: _agent_runs.ResearchHttpRuntimeOptions = (
-        _agent_runs.ResearchHttpRuntimeOptions()
-    ),
-) -> tuple[dict[str, Any], int]:
-    """Route one constrained Expert request to a native agent run."""
-    payload = restrict_expert_payload_for_research(
-        payload, ServerConfig().BUCKET_NAME
-    )
-    recorded_outcome = False
+) -> tuple[ToolSelection, str]:
+    """Run the one canonical Expert selector and resolve its public slug."""
     try:
         selection = await select_agent_tool(
             payload.user_query,
@@ -397,8 +377,6 @@ async def _route_expert_query(
             forced_tool=payload.forced_tool,
         )
     except ExpertRoutingDeclinedError as exc:
-        # An unforced decline is plain chat. Forced pins and callers that
-        # scoped ChatAgent out keep the sanitized contract failure.
         if payload.forced_tool is not None or "ChatAgent" not in (
             payload.allowed_tools
         ):
@@ -409,17 +387,17 @@ async def _route_expert_query(
                 error=exc,
             )
             raise _routing_contract_error() from exc
-        _record_v0_route_outcome(
-            ExpertRouteOutcome.DECLINED_CHAT_FALLBACK,
-            payload=payload,
-            http_status=202,
-            error=exc,
-        )
-        recorded_outcome = True
-        selection = ToolSelection(
-            tool_name="ChatAgent",
-            arguments={"user_query": payload.user_query},
-        )
+        else:
+            _record_v0_route_outcome(
+                ExpertRouteOutcome.DECLINED_CHAT_FALLBACK,
+                payload=payload,
+                http_status=202,
+                error=exc,
+            )
+            selection = ToolSelection(
+                tool_name="ChatAgent",
+                arguments={"user_query": payload.user_query},
+            )
     except ExpertRoutingContractError as exc:
         _record_v0_route_outcome(
             ExpertRouteOutcome.SELECTION_CONTRACT,
@@ -457,12 +435,25 @@ async def _route_expert_query(
             http_status=502,
         )
         raise _routing_contract_error()
-    if not recorded_outcome:
-        _record_v0_route_outcome(
-            ExpertRouteOutcome.SELECTED,
-            payload=payload,
-            http_status=200,
-        )
+    return selection, slug
+
+
+async def _route_expert_query(
+    payload: ExpertQueryRequest,
+    *,
+    debug: bool,
+    attachment_input: ResolvedAttachmentInput | None = None,
+    idempotency_key: str | None = None,
+    execution_id: str | None = None,
+    research_runtime_options: _agent_runs.ResearchHttpRuntimeOptions = (
+        _agent_runs.ResearchHttpRuntimeOptions()
+    ),
+) -> tuple[dict[str, Any], int]:
+    """Route one constrained Expert request to a native agent run."""
+    payload = restrict_expert_payload_for_research(
+        payload, ServerConfig().BUCKET_NAME
+    )
+    selection, slug = await _select_expert_routing(payload)
     request_json = json.dumps(
         {
             "agent": slug,
@@ -478,16 +469,20 @@ async def _route_expert_query(
         bundle=ResolvedAttachmentBundle(assets=()),
     )
     if selection.tool_name == "InSilicoResearchAgent":
-        return await _agent_runs.invoke_research_http_run(
-            build_expert_research_admission(
-                payload,
-                resolved,
-                idempotency_key=idempotency_key,
-                route_source="expert",
-            ),
+        admission = build_expert_research_admission(
+            payload,
+            resolved,
+            idempotency_key=idempotency_key,
+            route_source="expert",
+        )
+        return await _agent_runs.invoke_research_http_run_via_runtime(
+            admission,
             resolved.bundle,
+            arguments=selection.arguments,
             config=ApiConfig(),
             db_path=resolve_tasks_db_path(),
+            execution_id=execution_id,
+            transport="expert_router",
             runtime_options=research_runtime_options,
         )
     arguments, attachment_context = prepare_selected_expert_arguments(
@@ -519,6 +514,7 @@ async def _route_expert_query(
             request_json=request_json,
             debug=debug,
             attachment_evidence=attachment_context.evidence,
+            execution_id=execution_id,
         )
     except McpError as exc:
         if exc.error.code == INVALID_PARAMS:
@@ -631,12 +627,39 @@ async def _run_review_with_interrupt(
     request_info: RunRequestInfo,
     attachment_evidence: _attachments.ManagedAttachmentEvidence | None = None,
 ) -> _ReviewExecution:
-    """Compatibility seam for interrupt-aware Review execution."""
-    return await a2ui_runtime.run_review_with_interrupt(
+    """Execute Review through one Runtime, including direct OpenAI calls."""
+    execution_id = request_info.execution_id or new_execution_id()
+    effective_request = replace(request_info, execution_id=execution_id)
+
+    async def run_domain() -> _ReviewExecution:
+        return await a2ui_runtime.run_review_with_interrupt(
+            arguments=arguments,
+            request_info=effective_request,
+            dependencies=_a2ui_runtime_dependencies(),
+            attachment_evidence=attachment_evidence,
+        )
+
+    boundary = current_execution_boundary()
+    if boundary is not None:
+        return await run_domain()
+
+    def review_status(value: _ReviewExecution) -> ExecutionStatus:
+        if value.status == "input_required":
+            return ExecutionStatus.WAITING_INPUT
+        if value.status == "failed":
+            return ExecutionStatus.FAILED
+        return ExecutionStatus.SUCCEEDED
+
+    return await invoke_public_agent(
+        db_path=resolve_tasks_db_path(),
+        owner=current_request_user() or "anonymous",
+        execution_id=execution_id,
+        agent_slug="review",
         arguments=arguments,
-        request_info=request_info,
-        dependencies=_a2ui_runtime_dependencies(),
-        attachment_evidence=attachment_evidence,
+        transport="openai_blocking",
+        call=run_domain,
+        status_mapper=review_status,
+        public_result_mapper=lambda value: value.result or {},
     )
 
 
@@ -662,12 +685,62 @@ async def _resume_review_run(
     debug: bool = False,
 ) -> tuple[dict[str, Any], int]:
     """Compatibility seam for Review pause/resume execution."""
-    return await a2ui_runtime.resume_review_run(
-        thread_id=thread_id,
-        payload=payload,
-        debug=debug,
-        dependencies=_a2ui_runtime_dependencies(),
-    )
+    path = resolve_tasks_db_path()
+    owner = _request_context.current_request_user() or "anonymous"
+
+    async def resume_domain() -> tuple[dict[str, Any], int]:
+        return await a2ui_runtime.resume_review_run(
+            thread_id=thread_id,
+            payload=payload,
+            debug=debug,
+            dependencies=_a2ui_runtime_dependencies(),
+        )
+
+    record = RunRegistry(path).get_run(thread_id, owner=owner)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"run not found: {thread_id}",
+        )
+    execution_id = record.request_info.execution_id
+    if execution_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="legacy A2UI execution is read-only",
+        )
+    reservations = SQLiteExecutionReservationRepository(path)
+    try:
+        reservation = reservations.get(owner=owner, execution_id=execution_id)
+    except ExecutionReservationNotFoundError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="execution runtime reservation is unavailable",
+        ) from exc
+    if reservation.agent_slug != "review":
+        raise HTTPException(
+            status_code=409,
+            detail="execution runtime agent mismatch",
+        )
+    encoded = payload.model_dump_json().encode("utf-8")
+    action_hash = hashlib.sha256(encoded).hexdigest()[:16]
+    try:
+        return await invoke_public_agent_operation(
+            db_path=path,
+            owner=owner,
+            execution_id=execution_id,
+            agent_slug="review",
+            operation="resume",
+            action_id=f"review:{thread_id}:{action_hash}",
+            expected_revision=reservation.supervisor_revision,
+            arguments=payload.model_dump(mode="json"),
+            transport="resume",
+            call=resume_domain,
+        )
+    except ExecutionReservationConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="This input request has already been handled.",
+        ) from exc
 
 
 async def _review_chat_completion_response(
@@ -676,12 +749,13 @@ async def _review_chat_completion_response(
     arguments: Mapping[str, object],
     user_query: str,
     attachment_evidence: _attachments.ManagedAttachmentEvidence | None = None,
+    execution_id: str | None = None,
 ) -> JSONResponse:
     """Return the ReviewAgent non-stream chat response or interrupt body."""
     execution = await _run_review_with_interrupt(
         arguments=dict(arguments),
         request_info=a2ui_runtime.build_review_request_info(
-            payload, user_query
+            payload, user_query, execution_id=execution_id
         ),
         attachment_evidence=attachment_evidence,
     )
@@ -725,19 +799,80 @@ async def _stream_chat_response(
     """Validate and build a streaming chat response."""
     tool_name = request["tool_name"]
     payload = request["payload"]
-    if tool_name == "ReviewAgent":
-        return await _stream_review_a2ui_pause(
-            arguments=dict(request["arguments"]),
-            payload=payload,
-            user_query=request["user_query"],
+    agent_slug = _TOOL_TO_AGENT_SLUG.get(tool_name)
+    if agent_slug is None:
+        raise HTTPException(
+            status_code=404, detail=f"unknown tool: {tool_name}"
         )
-    if not tool_accepts_stream(tool_name):
+    if tool_name != "ReviewAgent" and not tool_accepts_stream(tool_name):
         raise HTTPException(
             status_code=400,
             detail=f"streaming is not supported for model {payload.model}",
         )
-    return await _stream_chat_completion(
-        **request,
+    path = resolve_tasks_db_path()
+    owner = _request_context.current_request_user() or "anonymous"
+    public_execution_id = request.get("execution_id") or new_execution_id()
+    runtime_run_id = IdFactory().new_id("run", agent_slug)
+    prepared_events = None
+    if tool_name != "ReviewAgent" and payload.conversation is None:
+        private_kwargs: dict[str, Any] = {}
+        conversation_messages = request.get("conversation_messages")
+        if conversation_messages:
+            private_kwargs["conversation_messages"] = conversation_messages
+        private_agent_state = request.get("private_agent_state")
+        if private_agent_state is not None:
+            private_kwargs["private_agent_state"] = private_agent_state
+        try:
+            prepared_events = prepare_tool_stream(
+                tool_name,
+                dict(request["arguments"]),
+                run_id=runtime_run_id,
+                dialogue_id=payload.dialogue_id,
+                **private_kwargs,
+            )
+        except Exception as exc:
+            raise _compat.streaming.stream_setup_error(
+                exc, priming=False
+            ) from exc
+
+    async def build_response(reserved_run_id: str) -> StreamingResponse:
+        RunRegistry(path).update_request_info(
+            reserved_run_id,
+            owner=owner,
+            request_info=RunRequestInfo(
+                dialogue_id=payload.dialogue_id,
+                request_id=_request_context.current_request_id(),
+                query=request["user_query"],
+                tool_name=tool_name,
+                model=payload.model,
+                request_json=payload.model_dump_json(),
+                locale=current_effective_locale(),
+                execution_id=public_execution_id,
+            ),
+        )
+        if tool_name == "ReviewAgent":
+            return await _stream_review_a2ui_pause(
+                arguments=dict(request["arguments"]),
+                payload=payload,
+                user_query=request["user_query"],
+                runtime_run_id=reserved_run_id,
+            )
+        stream_request = cast(ChatStreamCall, dict(request))
+        stream_request["runtime_run_id"] = reserved_run_id
+        if prepared_events is not None:
+            stream_request["runtime_prepared_events"] = prepared_events
+        return await _stream_chat_completion(**stream_request)
+
+    return await invoke_public_agent_stream_response(
+        db_path=path,
+        owner=owner,
+        execution_id=public_execution_id,
+        agent_slug=agent_slug,
+        arguments=dict(request["arguments"]),
+        transport="openai_stream",
+        call=build_response,
+        run_id=runtime_run_id,
+        allow_terminal_replay=payload.conversation is not None,
     )
 
 
@@ -788,23 +923,6 @@ async def _retry_owner_delivery(
         owner=current_request_user() or "anonymous",
         db_path=resolve_tasks_db_path(),
         registry_factory=registry_factory,
-    )
-
-
-def _record_sync_run(
-    *,
-    agent: str,
-    owner: str,
-    result: dict[str, Any],
-    request_info: RunRequestInfo | None = None,
-) -> str:
-    """Compatibility seam for terminal synchronous run creation."""
-    return run_lifecycle.record_sync_run(
-        agent=agent,
-        owner=owner,
-        result=result,
-        request_info=request_info,
-        db_path=resolve_tasks_db_path(),
     )
 
 
@@ -870,63 +988,61 @@ async def _resume_a2a_task(
     context_id: str,
     arguments: Mapping[str, Any],
 ) -> tuple[dict[str, Any], int] | None:
-    """Compatibility seam for owner-scoped A2A pause resumption."""
-    return await a2a_runtime.resume_task(
-        task_id,
-        context_id,
-        arguments,
-        dependencies=_a2a_runtime_dependencies().resume,
-    )
+    """Resume one A2A task through the canonical execution Runtime."""
+    path = resolve_tasks_db_path()
+    owner = current_request_user() or "anonymous"
+    record = RunRegistry(path).get_run_by_a2a_task(task_id, owner=owner)
+    if record is None:
+        return None
+    execution_id = record.request_info.execution_id
+    if execution_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="legacy A2A execution is read-only",
+        )
+    try:
+        reservation = SQLiteExecutionReservationRepository(path).get(
+            owner=owner,
+            execution_id=execution_id,
+        )
+    except ExecutionReservationNotFoundError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="execution runtime reservation is unavailable",
+        ) from exc
 
+    async def resume_domain() -> tuple[dict[str, Any], int] | None:
+        return await a2a_runtime.resume_task(
+            task_id,
+            context_id,
+            arguments,
+            dependencies=_a2a_runtime_dependencies().resume,
+        )
 
-def _create_running_stream_run(
-    run_id: str, agent: str, owner: str, request_info: RunRequestInfo
-) -> None:
-    """Compatibility seam for initial streaming run creation."""
-    run_lifecycle.create_running_stream_run(
-        run_id,
-        agent,
-        owner,
-        request_info,
-        db_path=resolve_tasks_db_path(),
+    encoded = json.dumps(
+        dict(arguments),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    action_hash = hashlib.sha256(encoded).hexdigest()[:16]
+    return await invoke_public_agent_operation(
+        db_path=path,
+        owner=owner,
+        execution_id=execution_id,
+        agent_slug=record.spec.agent,
+        operation="resume",
+        action_id=f"a2a:{task_id}:{action_hash}",
+        expected_revision=reservation.supervisor_revision,
+        arguments=dict(arguments),
+        transport="a2a_resume",
+        call=resume_domain,
     )
 
 
 def _stream_answer_max_bytes() -> int:
     """Return the resolved soft cap for streamed chat answer storage."""
     return resolve_stream_answer_max_bytes(ApiConfig().STREAM_ANSWER_MAX_BYTES)
-
-
-def _settle_stream_run(
-    run_id: str,
-    owner: str,
-    status: str,
-    result: dict[str, Any],
-    *,
-    expected_revision: int | None = None,
-) -> bool:
-    """Compatibility seam for streaming run settlement."""
-    if expected_revision is None:
-        try:
-            current = RunRegistry(resolve_tasks_db_path()).get_run(
-                run_id, owner=owner
-            )
-        except (sqlite3.Error, OSError):
-            return False
-        if current is None:
-            return False
-        expected_revision = current.revision
-    return run_lifecycle.settle_stream_run(
-        run_id,
-        owner,
-        status,
-        result,
-        expected_revision=expected_revision,
-        context=run_lifecycle.RunLifecycleContext(
-            db_path=resolve_tasks_db_path(),
-            purge=_purge_expired_runs_best_effort,
-        ),
-    )
 
 
 def _stamp_remote_request_info(

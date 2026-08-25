@@ -52,6 +52,7 @@ class ContextAgentRequest:
     obs_file_list: list[str] | None
     attachment_arguments: Mapping[str, Any] | None = None
     attachment_evidence: ManagedAttachmentEvidence | None = None
+    execution_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

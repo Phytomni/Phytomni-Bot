@@ -18,7 +18,7 @@ import asyncio
 import json
 import os
 from collections.abc import AsyncGenerator, Mapping
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
@@ -40,6 +40,27 @@ from ..interop.capabilities import DiscoveryError, DiscoveryResult
 from ..interop.models import InteropTarget
 from ..interop.registry import InteropRegistry
 from ..mcp.result_formatting import strip_agent_result
+from ..runtime.attachment_assets import ResolvedAttachmentBundle
+from ..runtime.conversation_context.models import ConversationEnvelopeV1
+from ..runtime.execution_command_dispatcher_v2 import (
+    run_execution_command_dispatcher,
+)
+from ..runtime.execution_command_reconciler_v2 import (
+    run_execution_command_reconciler,
+)
+from ..runtime.execution_entrypoint_v2 import (
+    CanonicalReservationIdentity,
+    bind_canonical_reservation_identity,
+    bind_routed_reservation_identity,
+)
+from ..runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from ..runtime.execution_runtime_contracts import ExecutionCommand
+from ..runtime.execution_supervisor_service_v2 import (
+    run_execution_supervisor_service,
+)
+from ..runtime.execution_supervisor_v2 import run_auxiliary_recovery
 from ..runtime.locale import (
     SupportedLocale,
     UnsupportedLocaleError,
@@ -61,10 +82,12 @@ from ..runtime.request_context import (
     bind_request_user,
     bind_run_id,
     current_request_id,
+    current_request_user,
     reset_request_var,
 )
 from ..runtime.run_registry import RunRequestInfo
 from ..runtime.stage_trace import bind_stage_trace
+from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
 from . import run_lifecycle
 from .lifecycle_contract import SafeApiError
@@ -73,6 +96,7 @@ from .research_input import ensure_research_input_runtime
 from .schemas import (
     ApiErrorDetail,
     ApiErrorResponse,
+    ExpertQueryRequest,
     MemoryAuditRecordResponse,
     MemoryResponse,
 )
@@ -359,6 +383,32 @@ async def _discover_interop_target(
     )
 
 
+def _execution_conversation_runtime(
+    value: object,
+) -> tuple[tuple[dict[str, str], ...], str | None, dict[str, Any] | None]:
+    """Validate private Web context and project only existing MCP seams."""
+    if value is None:
+        return (), None, None
+    envelope = ConversationEnvelopeV1.model_validate(value)
+    messages = tuple(
+        {"role": item.role, "content": str(item.content or item.summary)}
+        for item in envelope.history_delta
+        if item.role in {"user", "assistant"}
+        and bool(item.content or item.summary)
+    )
+    return (
+        messages,
+        str(envelope.conversation_key),
+        {"conversation_envelope": envelope.model_dump(mode="json")},
+    )
+
+
+def _execution_conversation_dispatch_kind(value: object) -> str:
+    """Select the existing context entrypoint without changing Agent logic."""
+    envelope = ConversationEnvelopeV1.model_validate(value)
+    return "expert" if envelope.mode == "expert" else "native"
+
+
 async def discover_interop_targets(
     registry: InteropRegistry,
     *,
@@ -469,8 +519,289 @@ async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
                 root_request_factory=root_request_factory,
                 asset_resolver_factory=asset_resolver_factory,
             )
-        await recover_registered_startup()
-        yield
+        await run_auxiliary_recovery(
+            name="research",
+            recover=recover_registered_startup,
+        )
+        dispatcher_stop = asyncio.Event()
+        reconciler_stop = asyncio.Event()
+        supervisor_stop = asyncio.Event()
+        mcp_app = import_module("mcp_server_phytomni.mcp.app")
+        attachment_inputs = import_module(
+            "mcp_server_phytomni.api.routes.attachment_inputs"
+        )
+
+        async def dispatch_invoke(
+            tool: str, arguments: dict[str, Any], **kwargs
+        ):
+            private_arguments = dict(arguments)
+            attachments = private_arguments.pop("__attachments", [])
+            conversation_value = private_arguments.pop("__conversation", None)
+            conversation_messages, agent_thread_id, private_state = (
+                _execution_conversation_runtime(conversation_value)
+            )
+            attachment_owner = private_arguments.pop(
+                "__attachment_owner", current_request_user() or ""
+            )
+            private_agent_slug = private_arguments.pop("__agent_slug", None)
+            claimed_agent_slug = kwargs.pop("agent_slug", None)
+            if (
+                private_agent_slug is not None
+                and private_agent_slug != claimed_agent_slug
+            ):
+                raise ValueError("invalid_canonical_execution_identity")
+            agent_slug = (
+                claimed_agent_slug
+                if isinstance(claimed_agent_slug, str)
+                else ""
+            )
+            if conversation_value is not None:
+                query = private_arguments.pop("__query", None)
+                allowed_tools = private_arguments.pop("__allowed_tools", None)
+                dialogue_id = private_arguments.pop("__dialogue_id", None)
+                forced_tool = private_arguments.pop("__forced_tool", None)
+                locale = private_arguments.pop("locale", "en-US")
+                if (
+                    _execution_conversation_dispatch_kind(conversation_value)
+                    == "expert"
+                ):
+                    if not isinstance(query, str) or not isinstance(
+                        allowed_tools, list
+                    ):
+                        raise ValueError("invalid_context_execution_command")
+                    payload = ExpertQueryRequest(
+                        user_query=query,
+                        attachments=attachments,
+                        owner_subject=attachment_owner,
+                        dialogue_id=(
+                            dialogue_id
+                            if isinstance(dialogue_id, str)
+                            else None
+                        ),
+                        allowed_tools=allowed_tools,
+                        forced_tool=(
+                            forced_tool
+                            if isinstance(forced_tool, str)
+                            else None
+                        ),
+                        locale=(
+                            locale if locale in {"en-US", "zh-CN"} else "en-US"
+                        ),
+                        conversation=conversation_value,
+                    )
+                    expert_context = import_module(
+                        "mcp_server_phytomni.api.routes.expert_context"
+                    )
+                    agent_routes = import_module(
+                        "mcp_server_phytomni.api.routes.agents"
+                    )
+                    execution_id = kwargs.get("execution_id")
+                    fingerprint_version = kwargs.get("fingerprint_version")
+                    fingerprint = kwargs.get("fingerprint")
+                    if (
+                        not agent_slug
+                        or not isinstance(execution_id, str)
+                        or not isinstance(fingerprint_version, int)
+                        or not isinstance(fingerprint, str)
+                    ):
+                        raise ValueError(
+                            "invalid_canonical_execution_identity"
+                        )
+                    canonical_identity = CanonicalReservationIdentity(
+                        owner=current_request_user() or "anonymous",
+                        execution_id=execution_id,
+                        fingerprint_version=fingerprint_version,
+                        fingerprint=fingerprint,
+                        command=ExecutionCommand(
+                            agent_slug=agent_slug,
+                            arguments=arguments,
+                        ),
+                    )
+                    with bind_canonical_reservation_identity(
+                        canonical_identity
+                    ):
+                        response = await expert_context.execute_context_expert(
+                            payload,
+                            _app.state.agent_route_dependencies,
+                            attachment_owner=attachment_owner,
+                            idempotency_key=execution_id,
+                            execution_id=execution_id,
+                            selected_arguments=private_arguments,
+                            helpers=expert_context.ExpertContextHelpers(
+                                invoke_context_agent=(
+                                    agent_routes._invoke_context_agent
+                                )
+                            ),
+                        )
+                    body = json.loads(response.body)
+                    stage = body.get("conversation_context")
+                    if isinstance(stage, dict):
+                        stage_recorded = SQLiteExecutionReservationRepository(
+                            str(resolve_tasks_db_path())
+                        ).record_context_stage(
+                            owner=current_request_user() or "anonymous",
+                            execution_id=kwargs["execution_id"],
+                            stage=stage,
+                        )
+                        if not stage_recorded:
+                            raise SafeApiError(
+                                status_code=503,
+                                code="context_stage_projection_pending",
+                                message="execution context projection is pending",
+                                stage="execution_context",
+                                retryable=True,
+                            )
+                        _app_attr("_LOGGER").info(
+                            "execution context stage recorded execution_id=%s",
+                            kwargs["execution_id"],
+                        )
+                    return body
+            resolved = attachment_inputs.ResolvedAttachmentInput(
+                attachment_owner=attachment_owner,
+                bundle=ResolvedAttachmentBundle(assets=()),
+            )
+            if attachments:
+                resolver_factory = getattr(
+                    _app.state,
+                    "research_input_asset_resolver_factory",
+                    None,
+                )
+                if resolver_factory is None:
+                    raise RuntimeError("asset_resolver_unavailable")
+                resolved = attachment_inputs.resolve_attachment_input(
+                    attachments,
+                    attachment_owner=attachment_owner,
+                    resolver=resolver_factory,
+                )
+            if tool == "ExpertRouter":
+                query = private_arguments.pop("__query", None)
+                allowed_tools = private_arguments.pop("__allowed_tools", None)
+                dialogue_id = private_arguments.pop("__dialogue_id", None)
+                locale = private_arguments.pop("locale", "en-US")
+                if not isinstance(query, str) or not isinstance(
+                    allowed_tools, list
+                ):
+                    raise ValueError("invalid_expert_router_command")
+                payload = ExpertQueryRequest(
+                    user_query=query,
+                    history=[dict(item) for item in conversation_messages],
+                    dialogue_id=(
+                        dialogue_id if isinstance(dialogue_id, str) else None
+                    ),
+                    allowed_tools=allowed_tools,
+                    locale=(
+                        locale if locale in {"en-US", "zh-CN"} else "en-US"
+                    ),
+                    conversation=conversation_value,
+                )
+                locale_token = bind_effective_locale(payload.locale or "en-US")
+                try:
+                    selection, selected_slug = await _app_attr(
+                        "_select_expert_routing"
+                    )(payload)
+                    selected_arguments, prepared = (
+                        attachment_inputs.prepare_selected_expert_arguments(
+                            agent=selected_slug,
+                            selected_arguments=selection.arguments,
+                            payload=payload,
+                            resolved_input=resolved,
+                            db_path=str(resolve_tasks_db_path()),
+                        )
+                    )
+                finally:
+                    reset_request_var(locale_token)
+                with bind_routed_reservation_identity(
+                    db_path=str(resolve_tasks_db_path()),
+                    owner=current_request_user() or "anonymous",
+                    execution_id=kwargs["execution_id"],
+                    command=ExecutionCommand(
+                        agent_slug=selected_slug,
+                        arguments=selected_arguments,
+                    ),
+                ):
+                    if prepared.evidence is not None:
+                        private_state = {
+                            **(private_state or {}),
+                            "managed_attachment_evidence": prepared.evidence,
+                        }
+                    return await mcp_app.invoke_tool_enveloped(
+                        selection.tool_name,
+                        selected_arguments,
+                        conversation_messages=conversation_messages,
+                        agent_thread_id=agent_thread_id,
+                        private_agent_state=private_state,
+                        **kwargs,
+                    )
+            if attachments:
+                private_arguments, prepared = (
+                    attachment_inputs.prepare_native_attachment_arguments(
+                        agent=agent_slug,
+                        arguments=private_arguments,
+                        resolved_input=resolved,
+                        db_path=str(resolve_tasks_db_path()),
+                    )
+                )
+                if prepared.evidence is not None:
+                    private_state = {
+                        **(private_state or {}),
+                        "managed_attachment_evidence": prepared.evidence,
+                    }
+            return await mcp_app.invoke_tool_enveloped(
+                tool,
+                private_arguments,
+                runtime_arguments=arguments,
+                conversation_messages=conversation_messages,
+                agent_thread_id=agent_thread_id,
+                private_agent_state=private_state,
+                **kwargs,
+            )
+
+        dispatcher = asyncio.create_task(
+            run_execution_command_dispatcher(
+                db_path=str(resolve_tasks_db_path()),
+                invoke=dispatch_invoke,
+                stop=dispatcher_stop,
+            ),
+            name="execution-command-dispatcher-v2",
+        )
+        reconciler = asyncio.create_task(
+            run_execution_command_reconciler(
+                db_path=str(resolve_tasks_db_path()),
+                stop=reconciler_stop,
+            ),
+            name="execution-command-reconciler-v2",
+        )
+        supervisor = asyncio.create_task(
+            run_execution_supervisor_service(
+                db_path=str(resolve_tasks_db_path()),
+                stop=supervisor_stop,
+            ),
+            name="execution-supervisor-v2",
+        )
+        try:
+            yield
+        finally:
+            dispatcher_stop.set()
+            reconciler_stop.set()
+            supervisor_stop.set()
+            try:
+                await asyncio.wait_for(dispatcher, timeout=5.0)
+            except TimeoutError:
+                dispatcher.cancel()
+                with suppress(asyncio.CancelledError):
+                    await dispatcher
+            try:
+                await asyncio.wait_for(reconciler, timeout=5.0)
+            except TimeoutError:
+                reconciler.cancel()
+                with suppress(asyncio.CancelledError):
+                    await reconciler
+            try:
+                await asyncio.wait_for(supervisor, timeout=5.0)
+            except TimeoutError:
+                supervisor.cancel()
+                with suppress(asyncio.CancelledError):
+                    await supervisor
     finally:
         await aclose_outbound_runtime()
         await aclose_gauss_pool()

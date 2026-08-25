@@ -361,7 +361,11 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
         response.json()["run_id"], owner="u1"
     )
     assert record is not None
-    assert record.request_info.request_json is None
+    assert json.loads(record.request_info.request_json or "{}") == {
+        "dialogue_id": None,
+        "locale": "en-US",
+        "route": slug,
+    }
     assert "dataset_description" not in (
         record.request_info.request_json or ""
     )

@@ -126,13 +126,27 @@ def _write_png(
 
 def _write_manifest(name: str, graph_app: Any, out_dir: Path) -> Path:
     """Write one agent's graph manifest as JSON under ``out_dir``."""
-    manifest = export_manifest(graph_app)
-    target = out_dir / f"{name}.json"
+    manifest = export_manifest(graph_app, graph_id=name)
+    target = out_dir / f"{name}.graph.json"
     target.write_text(
         json.dumps(manifest.model_dump(), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return target
+
+
+def _check_manifest(name: str, graph_app: Any, out_dir: Path) -> bool:
+    """Return whether the committed manifest matches a fresh export."""
+    target = out_dir / f"{name}.graph.json"
+    expected = (
+        json.dumps(
+            export_manifest(graph_app, graph_id=name).model_dump(),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    return target.is_file() and target.read_text(encoding="utf-8") == expected
 
 
 def _select_names(
@@ -189,6 +203,13 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "Directory is created if missing."
         ),
     )
+    parser.add_argument(
+        "--check-manifest",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Fail when a fresh graph export differs from DIR.",
+    )
     return parser
 
 
@@ -210,6 +231,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.manifest is not None:
         args.manifest.mkdir(parents=True, exist_ok=True)
 
+    drifted = False
     for name in names:
         graph_app = registry.get_or_compile(name)
         _print_mermaid(name, graph_app, args.xray)
@@ -219,8 +241,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.manifest is not None:
             written = _write_manifest(name, graph_app, args.manifest)
             print(f"[manifest] wrote {written}", file=sys.stderr)
+        if args.check_manifest is not None and not _check_manifest(
+            name, graph_app, args.check_manifest
+        ):
+            print(f"[manifest] drift: {name}", file=sys.stderr)
+            drifted = True
 
-    return 0
+    return 1 if drifted else 0
 
 
 if __name__ == "__main__":

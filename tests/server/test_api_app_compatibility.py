@@ -54,11 +54,19 @@ from mcp_server_phytomni.runtime.run_registry import (
 pytestmark = pytest.mark.server
 
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
-# Generated from ``_openapi_hash(create_app())`` after Design and
-# Network dropped ``obs_file_list``. ``_normalized_openapi`` removes
-# only unstable version/server fields.
+# Generated from ``_openapi_hash(create_app())`` after the intentional public
+# schema additions in 7321656 (locale), dd99f82 (dataset uploads), bcf20b6
+# (attachment capabilities), the strict Expert request boundary, the private
+# native conversation envelope, resumable attachment references, the
+# purpose-constrained upload contract in fd19dcbb, the unified attachment
+# contract in 97867888, the always-on conversation-context mutation
+# routes, and the always-on interop capabilities route. The
+# owner-scoped private execution-target content route is also part of this
+# literal public surface. The
+# ``_normalized_openapi`` helper removes only unstable version/server
+# fields.
 _OPENAPI_HASH = (
-    "7a90c10b6687b800883b07f74c0768d0865371d0180eac64b11d11cc775d12db"
+    "b2ce8dd497c322eb13737689059bc63075e1e1cb6b504284a92de63da519ad47"
 )
 
 
@@ -267,12 +275,12 @@ _DEFAULT_ROUTES = (
         "tombstone_context",
     ),
     _route(
-        "/v1/runs/{run_id}/stream",
+        "/v1/executions/{execution_id}/events",
         ("GET",),
         200,
-        None,
+        "ExecutionEventCorrelationPageResponse",
         ("agents",),
-        "get_run_stream",
+        "get_execution_events",
     ),
     _route(
         "/v1/runs/{run_id}/logs",
@@ -281,6 +289,62 @@ _DEFAULT_ROUTES = (
         None,
         ("agents",),
         "get_run_logs",
+    ),
+    _route(
+        "/v1/runs/{run_id}/events",
+        ("GET",),
+        200,
+        "ExecutionEventPageResponse",
+        ("agents",),
+        "get_run_events",
+    ),
+    _route(
+        "/v1/runs/{run_id}/event-projection",
+        ("GET",),
+        200,
+        "RunEventProjectionV1",
+        ("agents",),
+        "get_run_event_projection",
+    ),
+    _route(
+        "/v1/runs/{run_id}/events/stream",
+        ("GET",),
+        200,
+        None,
+        ("agents",),
+        "stream_run_events",
+    ),
+    _route(
+        "/v1/runs/{run_id}/events/{event_id}",
+        ("GET",),
+        200,
+        "ExecutionEventV1",
+        ("agents",),
+        "get_run_event_detail",
+    ),
+    _route(
+        "/v1/executions/{execution_id}/event-projection",
+        ("GET",),
+        200,
+        "ExecutionEventCorrelationProjectionResponse",
+        ("agents",),
+        "get_execution_event_projection",
+    ),
+    _route(
+        "/v1/executions/{execution_id}/events/stream",
+        ("GET",),
+        200,
+        None,
+        ("agents",),
+        "stream_execution_events",
+    ),
+    _route(
+        "/v1/executions/{execution_id}/events/{event_id}",
+        ("GET",),
+        200,
+        "ExecutionEventV1",
+        ("agents",),
+        "get_execution_event_detail",
     ),
     _route(
         "/v1/runs/{run_id}",
@@ -329,6 +393,86 @@ _DEFAULT_ROUTES = (
         None,
         ("agents",),
         "list_runs",
+    ),
+    _route(
+        "/v2/executions",
+        ("POST",),
+        202,
+        None,
+        ("service",),
+        "admit_execution",
+    ),
+    _route(
+        "/v2/executions/{execution_id}",
+        ("GET",),
+        200,
+        None,
+        ("service",),
+        "get_execution_snapshot",
+    ),
+    _route(
+        "/v2/executions/{execution_id}/events",
+        ("GET",),
+        200,
+        None,
+        ("service",),
+        "get_execution_events",
+    ),
+    _route(
+        "/v2/executions/{execution_id}/events/stream",
+        ("GET",),
+        200,
+        None,
+        ("service",),
+        "stream_execution_events",
+    ),
+    _route(
+        "/v2/executions/{execution_id}/events/{event_id}",
+        ("GET",),
+        200,
+        None,
+        ("service",),
+        "get_execution_event_detail",
+    ),
+    _route(
+        "/v2/executions/{execution_id}/operations/{operation_id}",
+        ("GET",),
+        200,
+        None,
+        ("service",),
+        "get_execution_operation_detail",
+    ),
+    _route(
+        "/v2/executions/{execution_id}/targets/{kind}/{target_id}",
+        ("GET",),
+        200,
+        None,
+        ("service",),
+        "get_execution_target",
+    ),
+    _route(
+        "/v2/executions/{execution_id}/targets/{kind}/{target_id}/content",
+        ("GET",),
+        200,
+        None,
+        ("service",),
+        "get_execution_target_content",
+    ),
+    _route(
+        "/v2/executions/{execution_id}/actions",
+        ("POST",),
+        200,
+        None,
+        ("service",),
+        "post_execution_action",
+    ),
+    _route(
+        "/v2/executions/{execution_id}/cancel",
+        ("POST",),
+        200,
+        None,
+        ("service",),
+        "cancel_execution",
     ),
     _route(
         "/v1/relay/healthz",
@@ -577,9 +721,9 @@ def _all_flag_routes() -> tuple[_RouteContract, ...]:
     return (
         _DEFAULT_ROUTES[:4]
         + _MEMORY_ROUTES
-        + _DEFAULT_ROUTES[4:29]
+        + _DEFAULT_ROUTES[4:46]
         + _A2A_ROUTES
-        + _DEFAULT_ROUTES[29:]
+        + _DEFAULT_ROUTES[46:]
     )
 
 
@@ -627,8 +771,8 @@ def test_default_application_contract_is_literal() -> None:
     document = _normalized_openapi(app)
     if os.environ.get("PHYTOMNI_DEPENDENCY_FLOOR") != "1":
         assert _openapi_hash(app) == _OPENAPI_HASH
-    assert len(document["paths"]) == 47
-    assert len(document["components"]["schemas"]) == 29
+    assert len(document["paths"]) == 64
+    assert len(document["components"]["schemas"]) == 58
     assert all(
         operation.get("operationId")
         for path_item in document["paths"].values()
@@ -654,7 +798,7 @@ def test_optional_application_contract_is_literal(
     app = create_app()
 
     assert _route_manifest(app) == _all_flag_routes()
-    assert len(app.openapi()["paths"]) == 53
+    assert len(app.openapi()["paths"]) == 70
     assert _original_lifespan_name(app) == "_http_lifespan"
 
 

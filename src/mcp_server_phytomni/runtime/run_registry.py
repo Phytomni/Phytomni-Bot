@@ -16,8 +16,15 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ..mcp.formatting.models import ResultDelivery
-from .background_policy import is_detached_background_run
 from .execution_defaults import empty_execution_projection
+from .execution_event_producers import (
+    emit_remote_artifacts,
+    emit_remote_progress,
+    emit_run_settlement,
+    emit_run_started,
+)
+from .execution_event_store import purge_execution_event_children
+from .execution_journal_schema import migrate_execution_journal_v2
 from .live_tasks import (
     is_live_running,
     register_live_task,
@@ -45,6 +52,7 @@ from .run_registry_models import (
     _CREATE_A2UI_ACTIONS_DDL,
     _CREATE_A2UI_OWNER_ACTION_INDEX,
     _CREATE_RUNS_DDL,
+    _CREATE_RUNS_EXECUTION_INDEX,
     _CREATE_RUNS_USER_INDEX,
     _CREATE_TASKS_RUN_INDEX,
     _NON_POLLABLE_RUN_STATUSES,
@@ -77,7 +85,6 @@ from .run_registry_protocols import (
 from .run_registry_reports import (
     ReportArtifactSources,
     _ReportSettlementRequest,
-    annotate_live_with_stored_tasks,
     attach_partial_child_degraded,
     mark_partial_child_failure,
     settle_report_terminal,
@@ -180,6 +187,7 @@ def purge_run_children(
     ids = tuple(run_ids)
     if not ids:
         return
+    purge_execution_event_children(connection, ids)
     purge_research_children(connection, ids)
     placeholders = ",".join("?" for _ in ids)
     for table in ("deep_genome_remote_tasks", "deep_genome_sections"):
@@ -217,6 +225,7 @@ class RunRegistry(RunRegistryViewsMixin):
         db_path: str | None = None,
         *,
         delivery_dependencies: ResultDeliveryDependencies | None = None,
+        expected_provider_join_lease_token: str | None = None,
     ) -> None:
         """Open or create the run registry at ``db_path``.
 
@@ -227,6 +236,14 @@ class RunRegistry(RunRegistryViewsMixin):
         self.db_path = db_path or resolve_tasks_db_path()
         self._delivery_dependencies = (
             delivery_dependencies or default_result_delivery_dependencies()
+        )
+        if expected_provider_join_lease_token is not None and (
+            not expected_provider_join_lease_token
+            or len(expected_provider_join_lease_token) > 128
+        ):
+            raise ValueError("invalid provider join lease token")
+        self._expected_provider_join_lease_token = (
+            expected_provider_join_lease_token
         )
         self._init_db()
 
@@ -264,10 +281,12 @@ class RunRegistry(RunRegistryViewsMixin):
                         f"ALTER TABLE runs ADD COLUMN {column} {column_type}"
                     )
             conn.execute(_CREATE_RUNS_USER_INDEX)
+            conn.execute(_CREATE_RUNS_EXECUTION_INDEX)
             conn.execute(_CREATE_TASKS_RUN_INDEX)
             conn.execute(_CREATE_A2A_TASK_INDEX)
             conn.execute(_CREATE_A2UI_ACTIONS_DDL)
             conn.execute(_CREATE_A2UI_OWNER_ACTION_INDEX)
+            migrate_execution_journal_v2(conn)
             conn.commit()
         except BaseException:
             if conn.in_transaction:
@@ -320,10 +339,10 @@ class RunRegistry(RunRegistryViewsMixin):
                     expires_at,
                     dialogue_id, request_id, query, tool_name, model,
                     request_json,
-                    locale,
+                    locale, external_execution_id,
                     a2a_task_id, a2a_context_id, a2a_message_id
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -344,10 +363,24 @@ class RunRegistry(RunRegistryViewsMixin):
                     info.model,
                     info.request_json,
                     info.locale,
+                    info.execution_id,
                     a2a_info.task_id,
                     a2a_info.context_id,
                     a2a_info.message_id,
                 ),
+            )
+        if status in _TERMINAL_RUN_STATUSES:
+            emit_run_started(
+                self.db_path,
+                run_id=spec.run_id,
+                owner=spec.user_id,
+            )
+            emit_run_settlement(
+                self.db_path,
+                run_id=spec.run_id,
+                owner=spec.user_id,
+                status=status,
+                revision=0,
             )
 
     def reserve_run(
@@ -367,11 +400,11 @@ class RunRegistry(RunRegistryViewsMixin):
                     result_json, error, created_at, updated_at,
                     expires_at,
                     dialogue_id, request_id, query, tool_name, model,
-                    request_json, locale,
+                    request_json, locale, external_execution_id,
                     a2a_task_id, a2a_context_id, a2a_message_id
                 ) VALUES (
                     ?, ?, ?, ?, 'running', ?, NULL, ?, ?, NULL,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -389,11 +422,17 @@ class RunRegistry(RunRegistryViewsMixin):
                     request_info.model,
                     request_info.request_json,
                     request_info.locale,
+                    request_info.execution_id,
                     request_info.a2a.task_id,
                     request_info.a2a.context_id,
                     request_info.a2a.message_id,
                 ),
             )
+        emit_run_started(
+            self.db_path,
+            run_id=spec.run_id,
+            owner=spec.user_id,
+        )
 
     def _record_reserved_submissions(
         self, request: _ReservedSubmissionRequest
@@ -520,7 +559,30 @@ class RunRegistry(RunRegistryViewsMixin):
         """Update the projection of an owned run only while it is running."""
         with sqlite_transaction(self.db_path) as conn:
             return replace_running_result(
-                conn, run_id=run_id, owner=owner, result=result
+                conn,
+                run_id=run_id,
+                owner=owner,
+                result=result,
+                expected_provider_join_lease_token=(
+                    self._expected_provider_join_lease_token
+                ),
+            )
+
+    def update_active_result(
+        self,
+        run_id: str,
+        *,
+        owner: str,
+        result: dict[str, Any],
+    ) -> bool:
+        """Update a Runtime-owned non-terminal result projection only."""
+        with sqlite_transaction(self.db_path) as conn:
+            return replace_running_result(
+                conn,
+                run_id=run_id,
+                owner=owner,
+                result=result,
+                statuses=("running", "input_required", "waiting_input"),
             )
 
     def transition_research_stage(
@@ -544,17 +606,19 @@ class RunRegistry(RunRegistryViewsMixin):
         ):
             return None
         now = _now_iso()
+        fence_clause, fence_parameters = self._provider_join_fence()
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
                 "UPDATE runs SET stage = ?, revision = revision + 1, "
                 "updated_at = ? WHERE run_id = ? AND user_id = ? "
-                "AND status = 'running' AND revision = ?",
+                "AND status = 'running' AND revision = ?" + fence_clause,
                 (
                     stage,
                     now,
                     current.spec.run_id,
                     current.spec.user_id,
                     current.revision,
+                    *fence_parameters,
                 ),
             )
             if cursor.rowcount != 1:
@@ -631,6 +695,7 @@ class RunRegistry(RunRegistryViewsMixin):
                     model = ?,
                     request_json = ?,
                     locale = ?,
+                    external_execution_id = ?,
                     updated_at = ?
                 WHERE run_id = ? AND user_id = ?
                 """,
@@ -642,6 +707,7 @@ class RunRegistry(RunRegistryViewsMixin):
                     request_info.model,
                     request_info.request_json,
                     request_info.locale,
+                    request_info.execution_id,
                     _now_iso(),
                     run_id,
                     owner,
@@ -706,7 +772,16 @@ class RunRegistry(RunRegistryViewsMixin):
                 parameters,
             )
             queue_grants(conn, request.run_id, now, cursor.rowcount)
-            return cursor.rowcount > 0
+            changed = cursor.rowcount > 0
+        if changed:
+            emit_run_settlement(
+                self.db_path,
+                run_id=request.run_id,
+                owner=request.owner,
+                status=request.status,
+                revision=request.expected_revision + 1,
+            )
+        return changed
 
     setattr(settle_run, "__signature__", _SETTLE_RUN_SIGNATURE)
 
@@ -770,29 +845,19 @@ class RunRegistry(RunRegistryViewsMixin):
             current.spec.run_id, owner=current.spec.user_id
         )
 
-    def _recover_detached_run(self, current: RunRecord) -> RunRecord | None:
-        """Recover a detached background run before polling children."""
-        if current.task_ids or not is_detached_background_run(
-            agent=current.spec.agent,
-            origin=current.spec.origin,
-        ):
-            return current
-        if is_live_running(current.spec.run_id):
-            return touch_running_run(self, current, "running")
-        recovered = self._settle_orphaned_run(current)
-        if recovered is None or recovered.status != "running":
-            return recovered
-        return recovered
-
     async def _reconcile_children(
         self, current: RunRecord, request: _ReconcileRequest
     ) -> RunRecord | None:
         """Poll children once and settle the resulting aggregate status."""
         live = [await reconcile_task(task_id) for task_id in current.task_ids]
-        live = annotate_live_with_stored_tasks(live, current.result)
-        new_status = _aggregate_status(
-            [str(row.get("status") or "") for row in live]
+        emit_remote_progress(
+            self.db_path,
+            run_id=current.spec.run_id,
+            owner=current.spec.user_id,
+            revision=current.revision,
+            task_rows=live,
         )
+        new_status = _aggregate_status([row["status"] for row in live])
         if new_status not in _TERMINAL_RUN_STATUSES:
             return touch_running_run(self, current, new_status, live)
         current, live, partial = mark_partial_child_failure(
@@ -877,9 +942,6 @@ class RunRegistry(RunRegistryViewsMixin):
             return resumed
         if current.status in _NON_POLLABLE_RUN_STATUSES:
             return current
-        current = self._recover_detached_run(current)
-        if current is None or current.status != "running":
-            return current
         return await self._reconcile_children(current, request)
 
     setattr(reconcile, "__signature__", _RECONCILE_SIGNATURE)
@@ -910,6 +972,27 @@ class RunRegistry(RunRegistryViewsMixin):
             purge_run_children(conn, expired)
         return len(expired)
 
+    def _touch_running(
+        self, current: RunRecord, status: str
+    ) -> RunRecord | None:
+        """Refresh only the still-running owner row, then return its winner."""
+        now = _now_iso()
+        fence_clause, fence_parameters = self._provider_join_fence()
+        with sqlite_transaction(self.db_path) as conn:
+            conn.execute(
+                "UPDATE runs SET status = ?, updated_at = ? "
+                "WHERE run_id = ? AND user_id = ? AND status = 'running'"
+                + fence_clause,
+                (
+                    status,
+                    now,
+                    current.spec.run_id,
+                    current.spec.user_id,
+                    *fence_parameters,
+                ),
+            )
+        return self.get_run(current.spec.run_id, owner=current.spec.user_id)
+
     def _settle_orphaned_run(self, current: RunRecord) -> RunRecord | None:
         """Fail only an owned running row that still has no owned child."""
         return self._settle_terminal(
@@ -932,11 +1015,13 @@ class RunRegistry(RunRegistryViewsMixin):
         """Cache a freshly-terminal run with TTL and result/error."""
         now = _now_iso()
         expires_at = _expires_at_for(outcome.status, now)
+        fence_clause, fence_parameters = self._provider_join_fence()
         query = (
             "UPDATE runs SET status = ?, result_json = ?, error = ?, "
             "stage = NULL, revision = revision + 1, updated_at = ?, "
             "expires_at = ? WHERE run_id = ? AND user_id = ? "
             "AND status = 'running' AND revision = ?"
+            + fence_clause
             + (_ZERO_OWNED_CHILD_SQL if require_zero_child else "")
         )
         with sqlite_transaction(self.db_path) as conn:
@@ -955,10 +1040,45 @@ class RunRegistry(RunRegistryViewsMixin):
                     current.spec.run_id,
                     current.spec.user_id,
                     current.revision,
+                    *fence_parameters,
                 ),
             )
             queue_grants(conn, current.spec.run_id, now, changed.rowcount)
-        return self.get_run(current.spec.run_id, owner=current.spec.user_id)
+            did_change = changed.rowcount > 0
+        settled = self.get_run(current.spec.run_id, owner=current.spec.user_id)
+        if did_change:
+            artifacts = (
+                outcome.result.get("artifacts", [])
+                if isinstance(outcome.result, dict)
+                else []
+            )
+            if isinstance(artifacts, list):
+                emit_remote_artifacts(
+                    self.db_path,
+                    run_id=current.spec.run_id,
+                    owner=current.spec.user_id,
+                    revision=current.revision + 1,
+                    artifacts=artifacts,
+                )
+            emit_run_settlement(
+                self.db_path,
+                run_id=current.spec.run_id,
+                owner=current.spec.user_id,
+                status=outcome.status,
+                revision=current.revision + 1,
+            )
+        return settled
+
+    def _provider_join_fence(self) -> tuple[str, tuple[str, ...]]:
+        """Return the optional domain-CAS clause for one join attempt."""
+        token = self._expected_provider_join_lease_token
+        if token is None:
+            return "", ()
+        return (
+            " AND execution_provider_join_lease_owner = ? "
+            "AND execution_provider_join_lease_expires_at > ?",
+            (token, _now_iso()),
+        )
 
 
 install_record_reserved_submissions_facade(RunRegistry)

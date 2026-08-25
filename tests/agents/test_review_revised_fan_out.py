@@ -64,6 +64,7 @@ def test_route_revised_tasks_returns_n_sends() -> None:
     state = cast(
         DeepResearchState,
         {
+            "original_user_query": "How do plant leaves respond to stress?",
             "research_dimensions": dimensions,
             "draft_contents": drafts,
             "review_contents": reviews,
@@ -81,6 +82,9 @@ def test_route_revised_tasks_returns_n_sends() -> None:
         # legacy ``revise_node`` pattern which forwarded the whole list
         # to each ``_feedback_rag`` call).
         assert send.arg["raw_doc_list"] == raw_doc_list
+        assert send.arg["original_user_query"] == (
+            "How do plant leaves respond to stress?"
+        )
 
 
 async def test_revised_worker_node_success_writes_indexed_result_and_add_docs(
@@ -120,6 +124,9 @@ async def test_revised_worker_node_success_writes_indexed_result_and_add_docs(
     ]
     assert "failures" not in result
     assert fake_feedback_rag.await_count == 1
+    call = fake_feedback_rag.await_args
+    assert call is not None
+    assert call.kwargs["subtopic"] == "auxin signalling"
 
 
 async def test_revised_worker_node_exception_writes_sentinel_and_failure(

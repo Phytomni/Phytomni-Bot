@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import inspect
 import json
@@ -441,7 +440,7 @@ class ResearchDispatchOutbox:
             return None
         verified = await self._verify_row(row)
         if verified is not None:
-            return self._accept_known(verified, task_id, now)
+            return await self._accept_known(verified, task_id, now)
         _mark_row(self.store, row.record, now, _AMBIGUOUS_OPTIONS)
         return _ambiguous(row.record.dispatch_id)
 
@@ -504,19 +503,19 @@ class ResearchDispatchOutbox:
             if queried is not None:
                 verified = await self._verify_row(sent)
                 if verified is not None:
-                    return self._accept_known(verified, queried, now)
+                    return await self._accept_known(verified, queried, now)
             _mark_row(self.store, sent.record, now, _AMBIGUOUS_OPTIONS)
             return _ambiguous(dispatch_id)
         task_id = _storage.task_id(response)
         if task_id is None:
             _mark_row(self.store, sent.record, now, _AMBIGUOUS_OPTIONS)
             return _ambiguous(dispatch_id)
-        return self._accept_known(sent, task_id, now)
+        return await self._accept_known(sent, task_id, now)
 
-    def _accept_known(
+    async def _accept_known(
         self, row: _OutboxRow, task_id: str, now: datetime | None = None
     ) -> ResearchDispatchDisposition:
-        return _accept_row(
+        return await _accept_row(
             self.store,
             row.record,
             task_id,
@@ -552,7 +551,7 @@ class ResearchDispatchOutbox:
         if known:
             verified = await self._verify_row(row)
             if verified is not None:
-                return self._accept_known(verified, known, now)
+                return await self._accept_known(verified, known, now)
             _mark_row(self.store, row.record, now, _AMBIGUOUS_OPTIONS)
             return _ambiguous(dispatch_id)
         verified = await self._verify_row(row)
@@ -563,7 +562,7 @@ class ResearchDispatchOutbox:
         if queried is None:
             _mark_row(self.store, row.record, now, _AMBIGUOUS_OPTIONS)
             return _ambiguous(dispatch_id)
-        return self._accept_known(verified, queried, now)
+        return await self._accept_known(verified, queried, now)
 
     async def _lookup_local(self, row: _OutboxRow) -> str | None:
         if self.options.local_lookup is not None:
@@ -801,7 +800,7 @@ def _mark_sent(
     return _load_row(store, row.record.dispatch_id)
 
 
-def _accept_row(
+async def _accept_row(
     store: ResearchInputStore,
     record: ResearchDispatchRecord,
     task_id: str,
@@ -872,7 +871,7 @@ def _accept_row(
             try:
                 result = attach_task(latest.record, task_id)
                 if inspect.isawaitable(result):
-                    _schedule_awaitable(result)
+                    await cast(Awaitable[object], result)
             except _OUTBOX_FAILURES:
                 pass
         state: DispositionState = (
@@ -964,14 +963,6 @@ async def _maybe_await(value: object) -> object:
     if inspect.isawaitable(value):
         return await cast(Awaitable[object], value)
     return value
-
-
-def _schedule_awaitable(value: Awaitable[object]) -> None:
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return
-    asyncio.ensure_future(value, loop=loop)
 
 
 def _canonical_json(value: object) -> str:

@@ -12,13 +12,10 @@ chokepoint-minted ``origin="remote"`` run_id read back via
 
 from __future__ import annotations
 
-import asyncio
-import json
 import sqlite3
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock
 
 import httpx
 import pytest
@@ -32,7 +29,6 @@ from tests.support.http_fakes import (
 from tests.support.resolver_fakes import (
     post_duplicate_attachment_run,
     post_native_run,
-    post_recorded_analyst_run,
 )
 from tests.support.resumable_asset_fakes import (
     BackgroundAssetCase,
@@ -42,26 +38,23 @@ from tests.support.resumable_asset_fakes import (
 from mcp_server_phytomni import server
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
-from mcp_server_phytomni.api.lifecycle_contract import (
-    canonicalize_run_record,
-    empty_agent_result,
-)
 from mcp_server_phytomni.mcp.result_formatting import FormattedToolResult
 from mcp_server_phytomni.mcp.schemas import (
     AGENT_TOOL_DEFINITIONS,
     PhytomniAgents,
 )
-from mcp_server_phytomni.runtime import (
-    submit_recorder as submit_recorder_module,
+from mcp_server_phytomni.runtime.execution_event_sink import (
+    emit_decision_note,
 )
-from mcp_server_phytomni.runtime.background_submission import (
-    BackgroundSubmissionLaunchError,
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
 )
-from mcp_server_phytomni.runtime.live_tasks import is_live_running
+from mcp_server_phytomni.runtime.execution_v1_projection_v2 import (
+    V1ExecutionCompatibilityReader,
+)
 from mcp_server_phytomni.runtime.run_registry import (
     RunRegistry,
 )
-from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
 pytestmark = pytest.mark.server
 
@@ -105,14 +98,6 @@ def test_native_run_projects_submission_warnings_into_execution() -> None:
 @dataclass(frozen=True)
 class _RemoteCase(BackgroundAssetCase):
     """One parametrize row for the remote-agent chokepoint contract."""
-
-
-@dataclass(frozen=True)
-class _LocalBlockingCase:
-    """One Data or Review run that must expose identity before work."""
-
-    slug: str
-    arguments: dict[str, Any]
 
 
 def _canonical_agent_slug(tool: PhytomniAgents) -> str:
@@ -344,6 +329,109 @@ async def test_agent_run_sync_writes_local_run(
     assert record.status == "succeeded"
 
 
+async def test_sync_agent_reserves_execution_run_before_tool_invocation(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """A blocking native request is observable before its answer returns."""
+    monkeypatch.setenv("PHYTOMNI_EXECUTION_EVENTS_ENABLED", "true")
+    execution_id = "turn-550e8400-e29b-41d4-a716-446655440002"
+    observed: dict[str, str] = {}
+
+    async def fake(_args: Any) -> dict[str, Any]:
+        current = RunRegistry(tasks_db_path).get_run_by_execution_id(
+            execution_id,
+            owner="u1",
+        )
+        assert current is not None
+        observed["run_id"] = current.spec.run_id
+        observed["status"] = current.status
+        emit_decision_note("The blocking run is observable.")
+        return {"answer": "ok", "doc_list": []}
+
+    install_tool_handler(
+        monkeypatch,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake,
+    )
+
+    response = await api_client.post(
+        "/v1/agents/chat/runs",
+        headers={
+            "Authorization": f"Bearer {issued_api_key}",
+            "X-Phyto-Execution-Id": execution_id,
+        },
+        json={"arguments": {"user_query": "hi", "obs_file_list": []}},
+    )
+
+    assert response.status_code == 200
+    assert observed["status"] == "running"
+    assert response.json()["run_id"] == observed["run_id"]
+    settled = RunRegistry(tasks_db_path).get_run_by_execution_id(
+        execution_id,
+        owner="u1",
+    )
+    assert settled is not None
+    assert settled.status == "succeeded"
+    page = V1ExecutionCompatibilityReader(tasks_db_path).list_events(
+        settled.spec.run_id,
+        owner="u1",
+        after_seq=0,
+        limit=20,
+    )
+    assert page is not None
+    assert [event.kind for event in page.items][:2] == [
+        "run.accepted",
+        "run.started",
+    ]
+    assert "decision.note" in [event.kind for event in page.items]
+    assert [event.kind for event in page.items][-1] == "run.succeeded"
+
+
+async def test_reserved_sync_agent_settles_failed_when_tool_raises(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    execution_id = "turn-550e8400-e29b-41d4-a716-446655440003"
+
+    async def fail(_args: Any) -> dict[str, Any]:
+        raise RuntimeError("private failure")
+
+    install_tool_handler(
+        monkeypatch,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fail,
+    )
+    with pytest.raises(RuntimeError, match="private failure"):
+        await api_client.post(
+            "/v1/agents/chat/runs",
+            headers={
+                "Authorization": f"Bearer {issued_api_key}",
+                "X-Phyto-Execution-Id": execution_id,
+            },
+            json={"arguments": {"user_query": "hi", "obs_file_list": []}},
+        )
+    record = RunRegistry(tasks_db_path).get_run_by_execution_id(
+        execution_id,
+        owner="u1",
+    )
+    assert record is not None
+    assert record.status == "failed"
+    page = V1ExecutionCompatibilityReader(tasks_db_path).list_events(
+        record.spec.run_id,
+        owner="u1",
+        after_seq=0,
+        limit=20,
+    )
+    assert page is not None
+    assert page.items[-1].kind == "run.failed"
+    assert "private failure" not in str(page.items[-1].payload)
+
+
 async def test_native_run_rejects_duplicate_attachments_before_handler(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -373,19 +461,17 @@ async def test_agent_run_sync_persistence_failure_returns_safe_500(
 
     fake = minimal_tool_handler("ok")
 
-    def fail_record_sync(**_kwargs: Any) -> str:
-        """Raise the app-level persistence failure without private leakage."""
-        raise api_app_module.run_lifecycle.RunPersistenceError(
-            "private persistence detail"
-        )
+    def fail_terminal_settlement(*_args: Any, **_kwargs: Any) -> bool:
+        """Raise at the canonical Runtime persistence authority."""
+        raise sqlite3.OperationalError("private persistence detail")
 
     install_tool_handler(
         monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
     )
     monkeypatch.setattr(
-        api_app_module,
-        "_record_sync_run",
-        fail_record_sync,
+        SQLiteExecutionReservationRepository,
+        "settle_terminal",
+        fail_terminal_settlement,
     )
 
     response = await post_native_run(
@@ -420,6 +506,16 @@ async def test_agent_run_sync_persistence_failure_returns_safe_500(
             {"user_query": "hi", "obs_file_list": []},
         ),
         (
+            "data",
+            server.PhytomniAgents.DATA_AGENT.value,
+            {"user_query": "count rice genes"},
+        ),
+        (
+            "review",
+            server.PhytomniAgents.REVIEW_AGENT.value,
+            {"user_query": "review this", "obs_file_list": []},
+        ),
+        (
             "brief_gene",
             server.PhytomniAgents.BRIEF_GENE_AGENT.value,
             {"user_query": "AT1G01010"},
@@ -435,11 +531,22 @@ async def test_native_sync_agents_keep_succeeded_envelope(
     """Established synchronous native runs never launch a worker."""
     slug, tool_name, arguments = case
 
-    background_launcher = Mock(name="background_launcher")
-    monkeypatch.setattr(
-        api_app_module, "launch_background_submission", background_launcher
-    )
-    install_tool_handler(monkeypatch, tool_name, minimal_tool_handler("ok"))
+    if slug == "review":
+
+        async def fake_review(**_kwargs: Any) -> Any:
+            return ReviewExecution(
+                run_id="native-review-sync",
+                status="succeeded",
+                result=review_success_result(),
+            )
+
+        monkeypatch.setattr(
+            api_app_module, "_run_review_with_interrupt", fake_review
+        )
+    else:
+        install_tool_handler(
+            monkeypatch, tool_name, minimal_tool_handler("ok")
+        )
     response = await post_native_run(
         api_client, issued_api_key, slug, arguments
     )
@@ -450,87 +557,6 @@ async def test_native_sync_agents_keep_succeeded_envelope(
     assert body["status"] == "succeeded"
     assert body["task_ids"] == []
     assert body["id"] == body["run_id"]
-    assert background_launcher.call_count == 0
-
-
-@pytest.mark.parametrize(
-    "case",
-    [
-        _LocalBlockingCase(
-            slug="data",
-            arguments={"user_query": "count rice genes"},
-        ),
-        _LocalBlockingCase(
-            slug="review",
-            arguments={"user_query": "review this", "obs_file_list": []},
-        ),
-    ],
-)
-async def test_native_local_run_exposes_id_before_gated_work_and_cancels(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-    case: _LocalBlockingCase,
-) -> None:
-    """Data and Review expose their real run before owner Stop."""
-    started = asyncio.Event()
-    release = asyncio.Event()
-
-    if case.slug == "review":
-
-        async def gated_review(**kwargs: Any) -> ReviewExecution:
-            started.set()
-            await release.wait()
-            return ReviewExecution(
-                run_id=kwargs["run_id"],
-                status="succeeded",
-                result=review_success_result(),
-            )
-
-        monkeypatch.setattr(
-            api_app_module, "_execute_review_with_run_id", gated_review
-        )
-    else:
-
-        async def gated_data(
-            _tool_name: str, _arguments: dict[str, Any]
-        ) -> Any:
-            started.set()
-            await release.wait()
-            return SimpleNamespace(
-                formatted=FormattedToolResult(answer="fake completed table"),
-                raw=None,
-            )
-
-        monkeypatch.setattr(
-            api_app_module, "invoke_tool_enveloped", gated_data
-        )
-
-    response = await post_native_run(
-        api_client, issued_api_key, case.slug, case.arguments
-    )
-    assert response.status_code == 202
-    body = response.json()
-    assert body["agent"] == case.slug
-    assert body["status"] == "running"
-    assert body["id"] == body["run_id"]
-    await asyncio.wait_for(started.wait(), timeout=1)
-
-    cancelled = await api_client.post(
-        f"/v1/runs/{body['run_id']}/cancel",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-    )
-    assert cancelled.status_code == 200
-    assert cancelled.json()["status"] == "cancelled"
-    release.set()
-    await asyncio.sleep(0)
-
-    record = RunRegistry(tasks_db_path).get_run(body["run_id"], owner="u1")
-    assert record is not None
-    assert record.status == "cancelled"
-    assert "fake completed" not in json.dumps(record.result)
-    assert not is_live_running(body["run_id"])
 
 
 async def test_agent_run_sync_persists_request_info(
@@ -587,21 +613,14 @@ _DESIGN_CASE = _RemoteCase(
     tool_name=server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
     stub_return={
         "design_task_result": [
-            {
-                "task_id": "T-D1",
-                "output_dir": "/obs/d1",
-                "analysis_type": "protein_structure_analysis",
-            },
-            {
-                "task_id": "T-D2",
-                "output_dir": "/obs/d2",
-                "analysis_type": "promoter_analysis",
-            },
+            {"task_id": "T-D1", "output_dir": "/obs/d1"},
+            {"task_id": "T-D2", "output_dir": "/obs/d2"},
         ]
     },
     arguments={
         "species_code": "ath",
         "gene_id": "AT1G01010",
+        "obs_file_list": [],
         "resolve_gene_id": False,
     },
     expected_task_ids={"T-D1", "T-D2"},
@@ -636,6 +655,7 @@ _BACKGROUND_CASES = [
             arguments={
                 "species_code": "osa",
                 "to_id": "TO:0000207",
+                "obs_file_list": [],
                 "resolve_to_id": False,
             },
             expected_task_ids={"T-N"},
@@ -650,139 +670,6 @@ _BACKGROUND_CASES = [
 
 
 @pytest.mark.parametrize("case", _BACKGROUND_CASES)
-async def test_background_agent_returns_reserved_run_before_handler_finishes(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-    case: _RemoteCase,
-) -> None:
-    """Return the reserved run while the handler remains in flight."""
-    release = asyncio.Event()
-    started = asyncio.Event()
-
-    async def slow_handler(_args: Any) -> dict[str, Any]:
-        started.set()
-        await release.wait()
-        return case.stub_return
-
-    install_tool_handler(
-        monkeypatch,
-        case.tool_name,
-        records_submission(case.slug)(slow_handler),
-    )
-    request_task = asyncio.create_task(
-        api_client.post(
-            f"/v1/agents/{case.slug}/runs",
-            headers={"Authorization": f"Bearer {issued_api_key}"},
-            json={"arguments": case.arguments},
-        )
-    )
-
-    await asyncio.wait_for(started.wait(), timeout=1)
-    response: httpx.Response | None = None
-    try:
-        response = await asyncio.wait_for(
-            asyncio.shield(request_task), timeout=1
-        )
-        returned_before_release = True
-    except TimeoutError:
-        returned_before_release = False
-    finally:
-        release.set()
-    if not returned_before_release:
-        response = await request_task
-
-    assert returned_before_release
-    assert response is not None
-    assert response.status_code == 202
-    body = response.json()
-    assert body["agent"] == case.slug
-    assert body["status"] == "running"
-    assert body["id"] == body["run_id"]
-    assert body["run_id"]
-    assert body["task_ids"] == []
-    assert body["result"] == empty_agent_result()
-    assert "degraded_tracking" not in body
-
-    registry = RunRegistry(tasks_db_path)
-    for _ in range(100):
-        record = registry.get_run(body["run_id"], owner="u1")
-        if (
-            record is not None
-            and set(record.task_ids) == case.expected_task_ids
-        ):
-            break
-        await asyncio.sleep(0)
-    else:
-        pytest.fail("background child tasks were not attached")
-
-    assert record is not None
-    assert record.spec.run_id == body["run_id"]
-    assert record.spec.agent == case.slug
-    assert record.status == "running"
-
-
-async def test_background_design_getrun_keeps_kind_after_worker(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-) -> None:
-    """After the worker's formatted update, GetRun still has five-key rows."""
-    case = _DESIGN_CASE
-
-    async def handler(_args: Any) -> dict[str, Any]:
-        return case.stub_return
-
-    install_tool_handler(
-        monkeypatch,
-        case.tool_name,
-        records_submission(case.slug)(handler),
-    )
-    response = await api_client.post(
-        f"/v1/agents/{case.slug}/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={"arguments": case.arguments},
-    )
-    assert response.status_code == 202
-    run_id = response.json()["run_id"]
-    registry = RunRegistry(tasks_db_path)
-    for _ in range(200):
-        record = registry.get_run(run_id, owner="u1")
-        if (
-            record is not None
-            and set(record.task_ids) == case.expected_task_ids
-            and not is_live_running(run_id)
-        ):
-            break
-        await asyncio.sleep(0)
-    else:
-        pytest.fail("background worker did not finish with children")
-
-    assert record is not None
-    canonical = canonicalize_run_record(
-        {
-            "run_id": run_id,
-            "agent": "design",
-            "status": record.status,
-            "task_ids": list(record.task_ids),
-            "result": record.result,
-        }
-    )
-    kinds = [
-        task.get("kind") for task in canonical["result"]["execution"]["tasks"]
-    ]
-    assert "protein_structure_analysis" in kinds
-    assert "promoter_analysis" in kinds
-    for task in canonical["result"]["execution"]["tasks"]:
-        assert "error_code" in task
-        assert "id" in task
-        assert "accepted" in task
-        assert "status" in task
-
-
-@pytest.mark.parametrize("case", _REMOTE_CASES)
 async def test_agent_run_remote_returns_chokepoint_run_id(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -823,166 +710,3 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
     # absence so a future regression that always-sets the flag does
     # not silently degrade every 202 response.
     assert "degraded_tracking" not in body
-
-
-async def test_background_run_settles_failed_when_recorder_fails(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-) -> None:
-    """A child persistence failure settles the reserved run failed."""
-
-    def _raising_persistence(*_args: Any, **_kwargs: Any) -> None:
-        """Simulate the persistence failure the contract handles."""
-        raise sqlite3.OperationalError("disk I/O error")
-
-    def _exploding_registry_factory(_db_path: str) -> SimpleNamespace:
-        """Stand in for ``RunRegistry(db_path)`` at either recorder seam."""
-        return SimpleNamespace(
-            create_run=_raising_persistence,
-            record_reserved_submissions=_raising_persistence,
-        )
-
-    monkeypatch.setattr(
-        submit_recorder_module, "RunRegistry", _exploding_registry_factory
-    )
-
-    async def fake(args: Any) -> dict[str, Any]:
-        """Return a canonical analyst submission payload."""
-        _ = args
-        return {"task_id": "T-degraded", "output_dir": "/obs/run"}
-
-    arguments = {
-        "goal_description": "test",
-        "data_list": {},
-        "obs_file_list": [],
-    }
-    response = await post_recorded_analyst_run(
-        monkeypatch=monkeypatch,
-        api_client=api_client,
-        issued_api_key=issued_api_key,
-        fake=fake,
-        arguments=arguments,
-    )
-
-    assert response.status_code == 202
-    body = response.json()
-    assert body["run_id"]
-    assert body["task_ids"] == []
-    assert "degraded_tracking" not in body
-    registry = RunRegistry(tasks_db_path)
-    for _ in range(100):
-        record = registry.get_run(body["run_id"], owner="u1")
-        if record is not None and record.status == "failed":
-            break
-        await asyncio.sleep(0)
-    else:
-        pytest.fail("background recorder failure did not settle")
-    assert record is not None
-    assert not record.task_ids
-    assert record.error == "background_submission_tracking_failed"
-
-
-async def test_background_debug_raw_never_persists_or_logs(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """A debug request cannot retain raw worker material in the run store."""
-    sentinels = (
-        "prompt-sentinel-background",
-        "model-sentinel-background",
-        "attachment-sentinel-background",
-    )
-
-    async def fake(_args: Any) -> dict[str, Any]:
-        return {
-            "task_id": "task-private-raw",
-            "output_dir": "/obs/run",
-            "prompt": sentinels[0],
-            "model_output": sentinels[1],
-            "attachment_contents": sentinels[2],
-        }
-
-    install_tool_handler(
-        monkeypatch,
-        server.PhytomniAgents.ANALYST_AGENT.value,
-        records_submission("analyst")(fake),
-    )
-    response = await api_client.post(
-        "/v1/agents/analyst/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "goal_description": "test",
-                "data_list": {},
-                "obs_file_list": [],
-            },
-            "debug": True,
-        },
-    )
-
-    assert response.status_code == 202
-    run_id = response.json()["run_id"]
-    registry = RunRegistry(tasks_db_path)
-    for _ in range(100):
-        record = registry.get_run(run_id, owner="u1")
-        if record is not None and record.task_ids == ("task-private-raw",):
-            break
-        await asyncio.sleep(0)
-    else:
-        pytest.fail("background debug run did not attach its task")
-
-    assert record is not None
-    assert record.result is not None
-    persisted = json.dumps(record.result)
-    assert "raw" not in record.result
-    for sentinel in sentinels:
-        assert sentinel not in persisted
-        assert sentinel not in caplog.text
-
-
-async def test_background_submission_launch_failure_is_safe(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Reservation failures return a stable error without private detail."""
-
-    def fail_reservation(**_kwargs: Any) -> None:
-        raise BackgroundSubmissionLaunchError("private path")
-
-    monkeypatch.setattr(
-        api_app_module,
-        "reserve_background_submission",
-        fail_reservation,
-        raising=False,
-    )
-
-    async def fake(_args: Any) -> dict[str, Any]:
-        return {"task_id": "T-never", "output_dir": "/obs/run"}
-
-    response = await post_recorded_analyst_run(
-        monkeypatch=monkeypatch,
-        api_client=api_client,
-        issued_api_key=issued_api_key,
-        fake=fake,
-        arguments={
-            "goal_description": "test",
-            "data_list": {},
-            "obs_file_list": [],
-        },
-    )
-
-    assert response.status_code == 500
-    assert response.json()["error"] == {
-        "code": "run_persistence_failed",
-        "message": "The background run could not be started.",
-        "stage": "submission_start",
-        "retryable": False,
-        "request_id": response.headers["x-request-id"],
-    }
-    assert "private path" not in response.text

@@ -72,6 +72,27 @@ class ApiConfig(ApiLimitsConfig):
     API_RATE_LIMIT_PER_MIN: int = 120
     API_RUN_TTL_OK_HOURS: int = 24
     API_RUN_TTL_FAIL_DAYS: int = 7
+    EXECUTION_EVENTS_ENABLED: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "EXECUTION_EVENTS_ENABLED",
+            "PHYTOMNI_EXECUTION_EVENTS_ENABLED",
+        ),
+    )
+    EXECUTION_V1_COMPAT_ENABLED: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "EXECUTION_V1_COMPAT_ENABLED",
+            "PHYTOMNI_EXECUTION_V1_COMPAT_ENABLED",
+        ),
+    )
+    EXECUTION_LOG_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "EXECUTION_LOG_ENABLED",
+            "PHYTOMNI_EXECUTION_LOG_ENABLED",
+        ),
+    )
     API_SERVICE_TOKEN: Annotated[
         SecretStr | None,
         Field(

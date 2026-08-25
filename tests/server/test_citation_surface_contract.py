@@ -428,10 +428,12 @@ async def test_cited_surfaces_share_one_complete_nature_contract(
 async def test_cited_metadata_failures_degrade_blocking_and_stream(
     citation_db_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
     case: _CitedSurfaceCase,
     failure_mode: str,
 ) -> None:
     """Every selected miss remains successful and title-only."""
+    _ = tasks_db_path
     _forbid_non_sqlite_calls(monkeypatch)
     _install_handler(monkeypatch, case.tool_name)
     _install_bounded_lookup(monkeypatch, citation_db_path)

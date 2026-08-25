@@ -493,7 +493,46 @@ def settle_delivery_ready(
                 target.owner,
             ),
         )
-        return cursor.rowcount == 1
+        changed = cursor.rowcount == 1
+    if changed:
+        _emit_ready_delivery_events(registry, target, archive)
+    return changed
+
+
+def _emit_ready_delivery_events(
+    registry: RunRegistry,
+    target: DeliveryRevision,
+    archive: ResultArchiveDescriptor,
+) -> None:
+    """Publish only opaque, safe archive metadata after durable settlement."""
+    from .execution_event_sink import DurableExecutionEventSink, event_intent
+    from .execution_event_store import SQLiteExecutionEventStore
+
+    sink = DurableExecutionEventSink(
+        SQLiteExecutionEventStore(registry.db_path),
+        run_id=target.run_id,
+        owner=target.owner,
+    )
+    sink.emit(
+        event_intent(
+            "artifact.published",
+            status="succeeded",
+            payload={
+                "name": archive.name,
+                "media_type": archive.media_type,
+                "size_bytes": archive.size_bytes,
+            },
+            target={"kind": "download", "id": archive.download_ref},
+            idempotency_key=f"delivery:{target.revision}:artifact",
+        )
+    )
+    sink.emit(
+        event_intent(
+            "run.succeeded",
+            status="succeeded",
+            idempotency_key=f"delivery:{target.revision}:terminal",
+        )
+    )
 
 
 def _result_mapping(raw: object) -> dict[str, object]:
@@ -582,12 +621,32 @@ def replace_running_result(
     run_id: str,
     owner: str,
     result: dict[str, Any],
+    statuses: tuple[str, ...] = ("running",),
+    expected_provider_join_lease_token: str | None = None,
 ) -> bool:
     """Write one running-row projection while carrying required delivery."""
+    if not statuses or any(
+        status not in {"running", "input_required", "waiting_input"}
+        for status in statuses
+    ):
+        raise ValueError("invalid active projection status")
+    placeholders = ",".join("?" for _status in statuses)
+    fence_clause = (
+        " AND execution_provider_join_lease_owner = ? "
+        "AND execution_provider_join_lease_expires_at > ?"
+        if expected_provider_join_lease_token is not None
+        else ""
+    )
+    fence_parameters = (
+        (expected_provider_join_lease_token, _now_iso())
+        if expected_provider_join_lease_token is not None
+        else ()
+    )
     row = conn.execute(
         "SELECT result_json FROM runs "
-        "WHERE run_id = ? AND user_id = ? AND status = 'running'",
-        (run_id, owner),
+        f"WHERE run_id = ? AND user_id = ? AND status IN ({placeholders})"
+        + fence_clause,
+        (run_id, owner, *statuses, *fence_parameters),
     ).fetchone()
     if row is None:
         return False
@@ -596,8 +655,16 @@ def replace_running_result(
     merged = carry_execution_tasks(stored, merged)
     cursor = conn.execute(
         "UPDATE runs SET result_json = ?, updated_at = ? "
-        "WHERE run_id = ? AND user_id = ? AND status = 'running'",
-        (json.dumps(merged), _now_iso(), run_id, owner),
+        f"WHERE run_id = ? AND user_id = ? AND status IN ({placeholders})"
+        + fence_clause,
+        (
+            json.dumps(merged),
+            _now_iso(),
+            run_id,
+            owner,
+            *statuses,
+            *fence_parameters,
+        ),
     )
     return cursor.rowcount == 1
 

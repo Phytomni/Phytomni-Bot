@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from langgraph.graph.state import CompiledStateGraph
 
 from ...runtime.deep_genome_store import DeepGenomeTrackingError
+from ...runtime.langgraph_runner import invoke_graph
 from .coordinator import RemoteSubmission, normalize_submission
 from .mount_common import degraded_analysis_delta
 
@@ -89,7 +90,9 @@ def make_evolution_mount_node(
             "locale": state.get("locale"),
         }
         try:
-            evo_output: dict[str, Any] = await evolution_app.ainvoke(evo_input)
+            evo_output: dict[str, Any] = await invoke_graph(
+                evolution_app, evo_input
+            )
             task = evo_output.get("evolution_agents_task")
             if not isinstance(task, dict):
                 raise ValueError("evolution submission is not an object")

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import re
 
-RESULT_DELIVERY_AGENTS = frozenset(
-    {"analyst", "research", "network", "design"}
-)
+from ..public_agent_catalog import result_delivery_agent_slugs
+
+RESULT_DELIVERY_AGENTS = result_delivery_agent_slugs()
 _CHILD_SEGMENT = re.compile(r"^part-(?:00[1-9]|0[1-9][0-9]|1[0-9]{2})$")
 
 
@@ -24,10 +24,12 @@ def result_child_output_dir(run_root: str, child_index: int) -> str:
 
 def result_run_root_from_child(child_dir: str) -> str:
     """Recover the umbrella root from one validated result child path."""
-    root, marker, part = child_dir.rstrip("/").rpartition("/children/")
-    if not marker or not root or _CHILD_SEGMENT.fullmatch(part) is None:
-        raise ValueError("output directory is not a result child")
-    return root
+    candidate = child_dir.rstrip("/\\")
+    for marker in ("/children/", "\\children\\"):
+        root, matched, part = candidate.rpartition(marker)
+        if matched and root and _CHILD_SEGMENT.fullmatch(part) is not None:
+            return root
+    raise ValueError("output directory is not a result child")
 
 
 def is_unallocated_default_output_dir(output_dir: str, default: str) -> bool:

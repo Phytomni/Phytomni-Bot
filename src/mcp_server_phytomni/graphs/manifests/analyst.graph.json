@@ -1,4 +1,6 @@
 {
+  "classification": "public",
+  "driver": "remote_task",
   "edges": [
     {
       "conditional": false,
@@ -151,6 +153,10 @@
       "target": "submit_node"
     }
   ],
+  "graph_id": "analyst",
+  "lifecycle": [
+    "asynchronous"
+  ],
   "nodes": [
     {
       "kind": "boundary",
@@ -228,5 +234,14 @@
       "kind": "boundary",
       "name": "__end__"
     }
-  ]
+  ],
+  "public_agent": "AnalystAgent",
+  "remote_providers": [
+    "analysis_task_platform"
+  ],
+  "subgraph_dependencies": [
+    "knowledge",
+    "chat"
+  ],
+  "topology": "serial"
 }

@@ -22,6 +22,7 @@ from ..agents.shared.conversation_messages import (
     normalize_conversation_messages,
 )
 from ..agents.shared.options import build_chat_kwargs
+from ..runtime.langgraph_runner import invoke_graph
 from ..runtime.locale import SupportedLocale, current_effective_locale
 
 
@@ -183,7 +184,7 @@ async def invoke_chat_content(
     chat_kwargs: Mapping[str, Any],
 ) -> str | None:
     """Invoke a compiled chat app and project its content string."""
-    output = await chat_app.ainvoke(
-        build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs)
+    output = await invoke_graph(
+        chat_app, build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs)
     )
     return extract_chat_content(output)

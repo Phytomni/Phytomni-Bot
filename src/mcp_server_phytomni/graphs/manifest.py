@@ -18,6 +18,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .architecture import GRAPH_ARCHITECTURE
+
 _BOUNDARY_NODES = frozenset({"__start__", "__end__"})
 
 
@@ -45,6 +47,16 @@ class GraphManifest(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    graph_id: str | None = None
+    classification: Literal["public", "internal", "unspecified"] = (
+        "unspecified"
+    )
+    public_agent: str | None = None
+    lifecycle: tuple[str, ...] = ()
+    subgraph_dependencies: tuple[str, ...] = ()
+    remote_providers: tuple[str, ...] = ()
+    driver: str | None = None
+    topology: str | None = None
     nodes: tuple[GraphNodeManifest, ...] = ()
     edges: tuple[GraphEdgeManifest, ...] = ()
 
@@ -74,7 +86,9 @@ def _node_kind(
     return "node"
 
 
-def export_manifest(compiled_app: Any) -> GraphManifest:
+def export_manifest(
+    compiled_app: Any, *, graph_id: str | None = None
+) -> GraphManifest:
     """Return a :class:`GraphManifest` reflecting a compiled LangGraph app.
 
     Args:
@@ -105,4 +119,22 @@ def export_manifest(compiled_app: Any) -> GraphManifest:
                 conditional=bool(getattr(edge, "conditional", False)),
             )
         )
-    return GraphManifest(nodes=tuple(nodes), edges=tuple(edges))
+    architecture = GRAPH_ARCHITECTURE.get(graph_id or "")
+    return GraphManifest(
+        graph_id=graph_id,
+        classification=(
+            architecture.classification if architecture else "unspecified"
+        ),
+        public_agent=architecture.public_agent if architecture else None,
+        lifecycle=architecture.lifecycle if architecture else (),
+        subgraph_dependencies=(
+            architecture.subgraph_dependencies if architecture else ()
+        ),
+        remote_providers=(
+            architecture.remote_providers if architecture else ()
+        ),
+        driver=architecture.driver if architecture else None,
+        topology=architecture.topology if architecture else None,
+        nodes=tuple(nodes),
+        edges=tuple(edges),
+    )

@@ -24,9 +24,11 @@ from ..graphs.chat_adapters import (
     extract_chat_response,
 )
 from ..mcp.formatting.models import ReportExecution
+from ..public_agent_catalog import result_delivery_agent_slugs
 from ..storage.downloads import download_obs_file
 from .artifact_roles import ArtifactRole, ClassifiedArtifact
 from .execution_models import ExecutionWarning
+from .langgraph_runner import invoke_graph
 from .locale import SupportedLocale, locale_instruction
 from .task_manager import TaskManager, resolve_tasks_db_path
 from .terminal_answer import TerminalAnswerContext
@@ -46,7 +48,7 @@ __all__ = [
     "synthesize_terminal_report",
 ]
 
-_TARGET_AGENTS = frozenset({"analyst", "research", "design", "network"})
+_TARGET_AGENTS = result_delivery_agent_slugs()
 _TEXT_EXTENSIONS = frozenset({".md", ".txt", ".json", ".csv", ".tsv", ".log"})
 _FIGURE_EXTENSIONS = frozenset(
     {".png", ".svg", ".jpg", ".jpeg", ".gif", ".webp", ".pdf"}
@@ -889,8 +891,9 @@ async def _summarize_with_chat(
         with_follow_up=False,
         locale=locale,
     )
-    chat_output = await _cached_chat_app().ainvoke(
-        build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs)
+    chat_output = await invoke_graph(
+        _cached_chat_app(),
+        build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs),
     )
     return message_content(extract_chat_response(chat_output))
 

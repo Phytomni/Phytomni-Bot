@@ -43,6 +43,7 @@ class AgentCatalogDependencies:
     remote_agent_slugs: frozenset[str]
     legacy_aliases: Mapping[str, list[str]]
     serialize_capability: Callable[[str], Any]
+    serialize_execution_runtime: Callable[[], Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +70,6 @@ class AgentChatExecutionDependencies:
 class AgentChatProjectionDependencies:
     """Run-registry and OpenAI response projection seams."""
 
-    record_sync_run: Callable[..., str | None]
     current_user: Callable[[], str | None]
     to_chat_completion: Callable[..., dict[str, Any]]
     strip_chat_completion: Callable[[dict[str, Any]], dict[str, Any]]
@@ -123,6 +123,7 @@ class ContextNativeExecutionRequest:
     attachment_owner: str
     request_json: str
     dependencies: AgentRouteDependencies
+    execution_id: str | None = None
 
 
 __all__ = [

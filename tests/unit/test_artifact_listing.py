@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 from tests.support.outbound_fakes import CountingObsRuntime
 
@@ -20,11 +23,15 @@ async def test_async_sdk_listing_leases_list_and_each_metadata_head(
 
     monkeypatch.setattr(
         artifact_listing,
-        "list_object_keys_page",
+        "list_object_metadata_page",
         lambda *_args, **_kwargs: (
             [
-                "agent_data/u1/run0/summary.csv",
-                "agent_data/u1/run0/figure.png",
+                artifact_listing.ObsListedObject(
+                    "agent_data/u1/run0/summary.csv", None
+                ),
+                artifact_listing.ObsListedObject(
+                    "agent_data/u1/run0/figure.png", None
+                ),
             ],
             None,
         ),
@@ -49,70 +56,150 @@ async def test_async_sdk_listing_leases_list_and_each_metadata_head(
     assert runtime.calls == 3
 
 
-async def test_async_sdk_listing_stops_list_and_heads_at_limit(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_async_sdk_listing_uses_sizes_from_list_response(
     tmp_path,
 ) -> None:
-    """A listing cap stops pagination and object HEADs while walking."""
-    runtime = CountingObsRuntime(object())
-    pages = [
-        (
-            [f"agent_data/u1/run0/f{index:03d}.csv" for index in range(3)],
-            "next-page",
-        ),
-        (
-            [f"agent_data/u1/run0/f{index:03d}.csv" for index in range(3, 6)],
-            None,
-        ),
-    ]
-    seen = {"pages": 0, "heads": 0}
+    """OBS LIST metadata avoids one sequential HEAD per result object."""
 
-    def fake_list_page(*_args: object, **_kwargs: object):
-        seen["pages"] += 1
-        return pages.pop(0)
+    def list_objects(**_kwargs):
+        return SimpleNamespace(
+            status=200,
+            body=SimpleNamespace(
+                contents=[
+                    SimpleNamespace(
+                        key="agent_data/u1/run0/summary.csv", size=37
+                    ),
+                    SimpleNamespace(
+                        key="agent_data/u1/run0/figure.png", size=41
+                    ),
+                ],
+                is_truncated=False,
+                next_marker=None,
+            ),
+        )
 
-    def fake_object_size(_bucket: str, _key: str, **_kwargs: object) -> int:
-        seen["heads"] += 1
-        return 37
+    def unexpected_head(**_kwargs):
+        raise AssertionError("LIST already returned object sizes")
 
-    monkeypatch.setattr(
-        artifact_listing,
-        "list_object_keys_page",
-        fake_list_page,
+    client = SimpleNamespace(
+        listObjects=list_objects,
+        getObjectMetadata=unexpected_head,
     )
-    monkeypatch.setattr(artifact_listing, "object_size", fake_object_size)
+    runtime = CountingObsRuntime(client)
 
     objects = await artifact_listing.list_artifact_objects_with_runtime(
         "/obs/phytomni/agent_data/u1/run0",
         bucket_name="phytomni",
         obs_runtime=runtime,
         mount_root=str(tmp_path),
-        limit=3,
     )
 
-    assert len(objects) == 3
-    assert seen["pages"] == 1
-    assert seen["heads"] == 3
-    assert runtime.calls == 4
+    assert [(item.relative_path, item.size_bytes) for item in objects] == [
+        ("summary.csv", 37),
+        ("figure.png", 41),
+    ]
+    assert runtime.calls == 1
 
 
-def test_obsfs_object_listing_stops_after_limit(tmp_path) -> None:
-    """Mounted listing stops after the requested file cap."""
+async def test_async_sdk_listing_requests_only_the_remaining_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """A bounded listing does not fetch a full 1000-object SDK page."""
+    requested: list[int | None] = []
+
+    def list_page(
+        _bucket,
+        prefix,
+        marker,
+        *,
+        access,
+        max_keys=None,
+    ):
+        del prefix, access
+        assert isinstance(max_keys, int)
+        requested.append(max_keys)
+        start = 0 if marker is None else int(marker)
+        objects = [
+            artifact_listing.ObsListedObject(
+                f"agent_data/u1/run0/{index}.txt", index
+            )
+            for index in range(start, start + int(max_keys))
+        ]
+        return objects, str(start + int(max_keys))
+
+    monkeypatch.setattr(
+        artifact_listing, "list_object_metadata_page", list_page
+    )
+    runtime = CountingObsRuntime(object())
+
+    objects = await artifact_listing.list_artifact_objects_with_runtime(
+        "/obs/phytomni/agent_data/u1/run0",
+        bucket_name="phytomni",
+        obs_runtime=runtime,
+        mount_root=str(tmp_path),
+        limit=201,
+    )
+
+    assert len(objects) == 201
+    assert requested == [201]
+
+
+async def test_async_obsfs_listing_stops_after_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Mounted output enumeration stats at most cap+1 file objects."""
     bucket = "phytomni"
-    mount_root = tmp_path
-    run_dir = mount_root / bucket / "agent_data" / "u1" / "run0"
+    run_dir = tmp_path / bucket / "agent_data" / "u1" / "run0"
     run_dir.mkdir(parents=True)
-    for index in range(5):
-        (run_dir / f"f{index}.txt").write_bytes(b"x")
+    for index in range(500):
+        (run_dir / f"{index:04}.txt").write_bytes(b"x")
+    manifest = run_dir / ".phytomni-artifacts.json"
+    manifest.write_text('{"artifacts": []}', encoding="utf-8")
 
-    objects = artifact_listing.list_artifact_objects(
+    original_scandir = artifact_listing.os.scandir
+
+    class ManifestLastScandir:
+        def __init__(self, path) -> None:
+            with original_scandir(path) as entries:
+                self._entries = sorted(
+                    entries, key=lambda entry: entry.name == manifest.name
+                )
+
+        def __enter__(self):
+            return iter(self._entries)
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+    monkeypatch.setattr(
+        artifact_listing.os,
+        "scandir",
+        lambda path: ManifestLastScandir(path),
+    )
+
+    visited: list[str] = []
+    original_stat = artifact_listing.Path.stat
+
+    def counting_stat(path, *args, **kwargs):
+        if path.parent == run_dir:
+            visited.append(path.name)
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(artifact_listing.Path, "stat", counting_stat)
+    objects = await artifact_listing.list_artifact_objects_with_runtime(
         f"/obs/{bucket}/agent_data/u1/run0",
         bucket_name=bucket,
-        mount_root=str(mount_root),
-        limit=2,
+        obs_runtime=CountingObsRuntime(object()),
+        mount_root=str(tmp_path),
+        limit=201,
     )
 
-    assert len(objects) == 2
+    assert len(objects) == 201
+    assert objects[0].relative_path == ".phytomni-artifacts.json"
+    assert any(item.relative_path == manifest.name for item in objects)
+    assert len(set(visited)) <= 201
 
 
 def test_obsfs_branch_lists_files_as_public_paths(tmp_path):
@@ -154,8 +241,12 @@ def test_obsfs_branch_lists_objects_with_actual_sizes(tmp_path):
     assert len(objects) == 1
     assert objects[0].relative_path == "summary.csv"
     assert objects[0].size_bytes == 5
-    assert objects[0].source_path.endswith(
-        "/phytomni/agent_data/u1/run0/summary.csv"
+    assert Path(objects[0].source_path).parts[-5:] == (
+        "phytomni",
+        "agent_data",
+        "u1",
+        "run0",
+        "summary.csv",
     )
     assert objects[0].download_ref == (
         "/obs/phytomni/agent_data/u1/run0/summary.csv"
@@ -293,82 +384,3 @@ def test_obsfs_enumeration_confines_to_requested_tenant_prefix(tmp_path):
 
     assert paths == ["/obs/phytomni/agent_data/user_data/ua/run0/mine.png"]
     assert all("/ub/" not in path for path in paths)
-
-
-def test_obsfs_path_listing_stops_after_limit(tmp_path) -> None:
-    """Mounted path listing stops after the requested file cap."""
-    bucket = "phytomni"
-    run_dir = tmp_path / bucket / "agent_data" / "u1" / "run0"
-    run_dir.mkdir(parents=True)
-    for index in range(4):
-        (run_dir / f"f{index}.txt").write_bytes(b"x")
-
-    paths = artifact_listing.list_artifact_paths(
-        f"/obs/{bucket}/agent_data/u1/run0",
-        bucket_name=bucket,
-        mount_root=str(tmp_path),
-        limit=2,
-    )
-
-    assert len(paths) == 2
-
-
-async def test_async_obsfs_listing_skips_sdk_when_mount_has_files(
-    tmp_path,
-) -> None:
-    """A mounted output dir is listed without taking an OBS SDK lease."""
-    bucket = "phytomni"
-    run_dir = tmp_path / bucket / "agent_data" / "u1" / "run0"
-    run_dir.mkdir(parents=True)
-    (run_dir / "summary.csv").write_bytes(b"x")
-    runtime = CountingObsRuntime(object())
-
-    objects = await artifact_listing.list_artifact_objects_with_runtime(
-        f"/obs/{bucket}/agent_data/u1/run0",
-        bucket_name=bucket,
-        obs_runtime=runtime,
-        mount_root=str(tmp_path),
-        limit=1,
-    )
-    paths = await artifact_listing.list_artifact_paths_with_runtime(
-        f"/obs/{bucket}/agent_data/u1/run0",
-        bucket_name=bucket,
-        obs_runtime=runtime,
-        mount_root=str(tmp_path),
-        limit=1,
-    )
-
-    assert [item.relative_path for item in objects] == ["summary.csv"]
-    assert paths == ["/obs/phytomni/agent_data/u1/run0/summary.csv"]
-    assert runtime.calls == 0
-
-
-def test_sdk_path_listing_stops_pagination_at_limit(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
-    """SDK path listing does not fetch the next page after the cap."""
-    pages = [
-        (
-            ["agent_data/u1/run0/a.txt", "agent_data/u1/run0/b.txt"],
-            "next-page",
-        ),
-        (["agent_data/u1/run0/c.txt"], None),
-    ]
-
-    def fake_page(*_args: object, **_kwargs: object):
-        return pages.pop(0)
-
-    monkeypatch.setattr(artifact_listing, "list_object_keys_page", fake_page)
-    paths = artifact_listing.list_artifact_paths(
-        "/obs/phytomni/agent_data/u1/run0",
-        bucket_name="phytomni",
-        client=object(),
-        mount_root=str(tmp_path),
-        limit=2,
-    )
-
-    assert paths == [
-        "/obs/phytomni/agent_data/u1/run0/a.txt",
-        "/obs/phytomni/agent_data/u1/run0/b.txt",
-    ]
-    assert pages == [(["agent_data/u1/run0/c.txt"], None)]

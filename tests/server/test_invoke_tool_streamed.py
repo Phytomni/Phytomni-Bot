@@ -38,6 +38,12 @@ from mcp_server_phytomni.mcp.schemas import PhytomniAgents
 pytestmark = pytest.mark.server
 
 
+@pytest.fixture(autouse=True)
+def _isolate_execution_runtime(tasks_db_path: str) -> None:
+    """Give every fixed stream id a per-test Runtime V2 database."""
+    _ = tasks_db_path
+
+
 def test_streaming_facade_reexports_chunk_model() -> None:
     """The streamed chunk class keeps one identity across import paths."""
     assert FormattedToolChunk is LeafFormattedToolChunk
@@ -119,6 +125,47 @@ async def test_chat_stream_emits_six_event_sequence(
     assert events[0].data["run_id"] == "run-x"
     assert events[2].data["delta"] == "Hel"
     assert events[-1].data["run_id"] == "run-x"
+
+
+async def test_mcp_stream_is_consumed_through_execution_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MCP keeps AG-UI presentation while Runtime owns its lifecycle."""
+    captured: dict[str, Any] = {}
+
+    async def fake_stream(**_kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        yield {"choices": [{"delta": {"content": "ok"}}]}
+
+    async def fake_runtime(**request: Any) -> Any:
+        captured.update(
+            {
+                "agent_slug": request["agent_slug"],
+                "transport": request["transport"],
+                "execution_id": request["execution_id"],
+            }
+        )
+        return await request["call"]("runtime-run")
+
+    monkeypatch.setattr(mcp_app, "stream_phyto_chat_chunks", fake_stream)
+    monkeypatch.setattr(
+        mcp_app, "invoke_public_agent_stream_response", fake_runtime
+    )
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path))
+
+    events = await _drain(
+        mcp_app.invoke_tool_streamed(
+            "ChatAgent",
+            {"user_query": "hi", "obs_file_list": []},
+            run_id="run-mcp",
+            dialogue_id=None,
+        )
+    )
+
+    assert [event.type for event in events][-1] == "RunFinished"
+    assert captured["agent_slug"] == "chat"
+    assert captured["transport"] == "mcp_stream"
+    assert captured["execution_id"].startswith("turn-")
 
 
 async def test_invoke_tool_streamed_reaches_primitive_with_standard_kwargs(

@@ -116,9 +116,6 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
             "stream_phyto_chat_chunks": 1,
         }
     ),
-    "mcp_server_phytomni/agents/deep_genome/agent.py": Counter(
-        {"DeepGenomeAgents._launch_reserved_workflow": 1}
-    ),
     "mcp_server_phytomni/agents/shared/citation_database.py": Counter(
         {
             "_connect_read_only": 1,
@@ -128,9 +125,6 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
     ),
     "mcp_server_phytomni/agents/shared/gauss.py": Counter(
         {"aclose_gauss_pool": 1}
-    ),
-    "mcp_server_phytomni/api/agent_run_support.py": Counter(
-        {"stream_run_id": 1}
     ),
     "mcp_server_phytomni/api/app_support.py": Counter({"_http_lifespan": 2}),
     "mcp_server_phytomni/api/openai_mapping.py": Counter(
@@ -155,15 +149,13 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
             "_stream": 1,
         }
     ),
-    "mcp_server_phytomni/api/streaming.py": Counter(
-        {"_produce_detached_stream": 3}
-    ),
     "mcp_server_phytomni/api/run_lifecycle.py": Counter(
         {
             "_close_checkpointer": 1,
             "_delete_review_candidate_checkpoints": 1,
         }
     ),
+    "mcp_server_phytomni/api/streaming.py": Counter({"_wrapped": 2}),
     "mcp_server_phytomni/common/reasoning_content.py": Counter(
         {"normalize_message_fields": 1}
     ),
@@ -218,9 +210,6 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
             "serve": 2,
         }
     ),
-    "mcp_server_phytomni/runtime/background_submission.py": Counter(
-        {"launch_background_submission": 1}
-    ),
     "mcp_server_phytomni/runtime/checkpoint_backend.py": Counter(
         {
             "_DirectSqliteConnection.close": 1,
@@ -253,6 +242,21 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
             "DeepGenomeTransitionMixin.fail_umbrella": 1,
             "DeepGenomeTransitionMixin.publish_final_report": 1,
         }
+    ),
+    "mcp_server_phytomni/runtime/execution_entrypoint_v2.py": Counter(
+        {"wrapped": 1}
+    ),
+    "mcp_server_phytomni/runtime/execution_event_store.py": Counter(
+        {
+            "SQLiteExecutionEventStore._init_db": 1,
+            "SQLiteExecutionEventStore.append": 1,
+            "SQLiteExecutionEventStore.list_events": 1,
+            "SQLiteExecutionEventStore.get_event": 1,
+            "SQLiteExecutionEventStore.get_projection": 1,
+        }
+    ),
+    "mcp_server_phytomni/runtime/langgraph_runner.py": Counter(
+        {"stream_graph": 1}
     ),
     "mcp_server_phytomni/runtime/memory/sqlite.py": Counter(
         {
@@ -327,12 +331,10 @@ _EXPECTED_CLOSE_PATH_DISPOSITIONS: dict[str, _CloseDisposition] = {
     "mcp_client_phytomni/client.py": "separate_client_process",
     "mcp_client_phytomni/http_client.py": "separate_client_process",
     "mcp_server_phytomni/agents/chat/service.py": "server_outbound_owner",
-    "mcp_server_phytomni/agents/deep_genome/agent.py": "local_not_outbound",
     "mcp_server_phytomni/agents/shared/citation_database.py": (
         "local_not_outbound"
     ),
     "mcp_server_phytomni/agents/shared/gauss.py": "native_asyncpg_pool",
-    "mcp_server_phytomni/api/agent_run_support.py": "downstream_iterator",
     "mcp_server_phytomni/api/app_support.py": "lifecycle_entrypoint",
     "mcp_server_phytomni/api/openai_mapping.py": "downstream_iterator",
     "mcp_server_phytomni/api/relay/forward.py": "server_outbound_owner",
@@ -346,9 +348,6 @@ _EXPECTED_CLOSE_PATH_DISPOSITIONS: dict[str, _CloseDisposition] = {
     "mcp_server_phytomni/interop/http_transport.py": "server_outbound_owner",
     "mcp_server_phytomni/interop/runtime.py": "server_outbound_owner",
     "mcp_server_phytomni/mcp/app.py": "lifecycle_entrypoint",
-    "mcp_server_phytomni/runtime/background_submission.py": (
-        "local_not_outbound"
-    ),
     "mcp_server_phytomni/runtime/checkpoint_backend.py": "local_not_outbound",
     "mcp_server_phytomni/runtime/conversation_context/review_lock.py": (
         "local_not_outbound"
@@ -358,6 +357,13 @@ _EXPECTED_CLOSE_PATH_DISPOSITIONS: dict[str, _CloseDisposition] = {
     "mcp_server_phytomni/runtime/deep_genome_transitions.py": (
         "local_not_outbound"
     ),
+    "mcp_server_phytomni/runtime/execution_entrypoint_v2.py": (
+        "downstream_iterator"
+    ),
+    "mcp_server_phytomni/runtime/execution_event_store.py": (
+        "local_not_outbound"
+    ),
+    "mcp_server_phytomni/runtime/langgraph_runner.py": ("downstream_iterator"),
     "mcp_server_phytomni/runtime/memory/sqlite.py": "local_not_outbound",
     "mcp_server_phytomni/runtime/outbound/http.py": "server_outbound_owner",
     "mcp_server_phytomni/runtime/outbound/lifecycle.py": (
@@ -422,7 +428,7 @@ def _outbound_close_owners() -> dict[str, Counter[str]]:
                 continue
             owners[_qualified_owner(node, parents)] += 1
         if owners:
-            found[str(path.relative_to(_SRC_ROOT))] = owners
+            found[path.relative_to(_SRC_ROOT).as_posix()] = owners
     return found
 
 

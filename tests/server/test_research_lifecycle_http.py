@@ -610,11 +610,11 @@ async def test_report_settlement_persists_report_assembly_stage(
     assert settled.stage is None
 
 
-async def test_terminal_reconcile_immediately_retries_grant_cleanup(
+async def test_lifecycle_read_does_not_reconcile_or_retry_grant_cleanup(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The HTTP read that settles Research also runs post-commit cleanup."""
+    """HTTP reads leave reconciliation and cleanup to background owners."""
     db_path = str(tmp_path / "runs.db")
     registry = RunRegistry(db_path)
     registry.create_run(
@@ -630,11 +630,9 @@ async def test_terminal_reconcile_immediately_retries_grant_cleanup(
         error="task_failed",
         expected_revision=running.revision,
     )
-    terminal = registry.get_run("run-terminal-cleanup", owner="u1")
-    assert terminal is not None
 
     class TransitionRegistry:
-        """Expose one running-to-terminal reconcile transition."""
+        """Fail if a pure read attempts the historical transition."""
 
         @staticmethod
         def get_run(_run_id: str, *, owner: str) -> Any:
@@ -644,9 +642,7 @@ async def test_terminal_reconcile_immediately_retries_grant_cleanup(
 
         @staticmethod
         async def reconcile(_run_id: str, *, owner: str) -> Any:
-            """Return the post-reconcile terminal record."""
-            del owner
-            return terminal
+            raise AssertionError((owner, _run_id))
 
     cleaned: list[str] = []
 
@@ -665,5 +661,5 @@ async def test_terminal_reconcile_immediately_retries_grant_cleanup(
         registry_factory=lambda _path: TransitionRegistry(),
     )
 
-    assert payload["status"] == "failed"
-    assert cleaned == ["run-terminal-cleanup"]
+    assert payload["status"] == "running"
+    assert cleaned == []

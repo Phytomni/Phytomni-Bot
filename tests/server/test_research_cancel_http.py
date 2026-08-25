@@ -12,6 +12,9 @@ import httpx
 import pytest
 from tests.support.sqlite import closed_sqlite_connection
 
+from mcp_server_phytomni.runtime.execution_event_store import (
+    SQLiteExecutionEventStore,
+)
 from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -86,6 +89,11 @@ async def test_cancel_research_run_is_owner_scoped_and_idempotent(
     assert first.status_code == second.status_code == 200
     assert first.json()["status"] == second.json()["status"] == "cancelled"
     assert first.json()["stage"] is None
+    events = SQLiteExecutionEventStore(tasks_db_path).list_events(
+        "run-http-cancel", owner="u1"
+    )
+    assert events is not None
+    assert [event.kind for event in events.items] == ["run.cancelled"]
 
 
 async def test_cancel_research_run_returns_safe_404_for_foreign_owner(

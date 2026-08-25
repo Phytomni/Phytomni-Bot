@@ -390,24 +390,12 @@ def test_research_http_admission_input_is_opaque_and_typed() -> None:
     assert request.route_source == "native"
 
 
-async def test_native_research_skips_generic_background_reservation(
+async def test_native_research_replays_the_canonical_admission(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Research admission owns its root row.
-
-    It never reserves a generic run.
-    """
-
-    def forbidden_reservation(**_kwargs: Any) -> Any:
-        raise AssertionError("generic background reservation was called")
-
-    monkeypatch.setattr(
-        api_app_module,
-        "reserve_background_submission",
-        forbidden_reservation,
-    )
+    """Research admission owns and replays its canonical root row."""
     headers = {
         "Authorization": f"Bearer {issued_api_key}",
         "Idempotency-Key": "native-research-1",

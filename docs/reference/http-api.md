@@ -261,6 +261,47 @@ keeps operator probes and does not repeat the full list.
   **Auth:** yes
   **Purpose:** Returns one owner-isolated run state.
 
+- **Method:** `GET`
+  **Path:** `/v1/runs/{run_id}/events`
+  **Auth:** yes
+  **Purpose:** Returns a bounded V1-compatible event page projected from the
+  canonical V2 journal for new executions.
+
+- **Method:** `GET`
+  **Path:** `/v1/runs/{run_id}/events/{event_id}`
+  **Auth:** yes
+  **Purpose:** Returns one owner-authorized V1-compatible event detail.
+
+- **Method:** `GET`
+  **Path:** `/v1/runs/{run_id}/events/stream`
+  **Auth:** yes
+  **Purpose:** Streams the owner-authorized compatibility event view.
+
+- **Method:** `GET`
+  **Path:** `/v1/runs/{run_id}/event-projection`
+  **Auth:** yes
+  **Purpose:** Returns the bounded compatibility projection for a run.
+
+- **Method:** `GET`
+  **Path:** `/v1/executions/{execution_id}/events`
+  **Auth:** yes
+  **Purpose:** Returns a bounded canonical V2 execution-event page.
+
+- **Method:** `GET`
+  **Path:** `/v1/executions/{execution_id}/events/{event_id}`
+  **Auth:** yes
+  **Purpose:** Returns one canonical owner-authorized execution event.
+
+- **Method:** `GET`
+  **Path:** `/v1/executions/{execution_id}/events/stream`
+  **Auth:** yes
+  **Purpose:** Streams committed V2 events, resumable content, and heartbeats.
+
+- **Method:** `GET`
+  **Path:** `/v1/executions/{execution_id}/event-projection`
+  **Auth:** yes
+  **Purpose:** Returns the current deterministic V2 execution projection.
+
 - **Method:** `POST`
   **Path:** `/v1/runs/{run_id}/cancel`
   **Auth:** yes

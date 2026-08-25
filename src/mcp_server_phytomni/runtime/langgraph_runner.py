@@ -6,13 +6,15 @@
 
 Classes: GraphRegistry.
 Functions: ensure_thread_id, build_runnable_config, ensure_checkpointer,
-    ainvoke_graph, capture_workflow_boundary, config_fingerprint.
+    invoke_graph, ainvoke_graph, capture_workflow_boundary, config_fingerprint.
 """
 
 import asyncio
+import inspect
 import json
 import os
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import nullcontext, suppress
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,6 +25,13 @@ from pydantic import SecretStr
 
 from ..storage.path_policy import IdFactory
 from .checkpoint_backend import build_default_checkpointer
+from .execution_instrumentation_v2 import (
+    ExecutionBoundary,
+    bind_execution_boundary,
+    current_execution_boundary,
+)
+from .execution_journal_v2 import SpanStatus, parse_execution_event_intent_v2
+from .execution_work_store_v2 import SpanSpec
 from .memory import (
     MemoryAccessor,
     current_memory_accessor,
@@ -54,6 +63,20 @@ SECRET_FIELD_NAMES = frozenset(
         "token",
     }
 )
+
+_PUBLIC_GRAPH_PHASE_BY_AGENT = {
+    "chat": "agent.chat.workflow",
+    "knowledge": "agent.knowledge.workflow",
+    "data": "agent.data.workflow",
+    "analyst": "agent.analyst.workflow",
+    "review": "agent.review.workflow",
+    "brief_gene": "agent.brief_gene.workflow",
+    "deep_genome": "agent.deep_genome.workflow",
+    "research": "agent.research.workflow",
+    "design": "agent.design.workflow",
+    "network": "agent.network.workflow",
+}
+_PRIVATE_GRAPH_FALLBACK_PHASE = "agent.workflow"
 
 
 def ensure_thread_id(thread_id: str | None = None) -> str:
@@ -156,10 +179,246 @@ async def ainvoke_graph(
         }
         if getattr(app, "context_schema", None) is not None:
             invoke_kwargs["context"] = {"memory_accessor": accessor}
-        return await app.ainvoke(
+        return await invoke_graph(
+            app,
             initial_state,
-            **invoke_kwargs,
+            config=invoke_kwargs.get("config"),
+            context=invoke_kwargs.get("context"),
         )
+
+
+async def invoke_graph(
+    app: Any,
+    initial_state: Any,
+    *,
+    config: Any | None = None,
+    context: Any | None = None,
+) -> Any:
+    """Invoke every LangGraph through one transport-neutral boundary.
+
+    Optional arguments are forwarded only when the caller supplied them, so
+    migrating a historical direct call does not silently add checkpoint or
+    runtime-context behavior. Shared semantic observation is attached here,
+    rather than copied into Agent nodes or transport handlers.
+    """
+    kwargs: dict[str, Any] = {}
+    if config is not None:
+        kwargs["config"] = config
+    if context is not None:
+        kwargs["context"] = context
+    boundary = current_execution_boundary()
+    graph_span = _start_graph_span(boundary)
+    nested_boundary = (
+        _nested_graph_boundary(boundary, graph_span)
+        if boundary is not None and graph_span is not None
+        else None
+    )
+    manager = (
+        bind_execution_boundary(
+            nested_boundary.context,
+            nested_boundary.services,
+        )
+        if nested_boundary is not None
+        else nullcontext()
+    )
+    try:
+        with manager:
+            result = await app.ainvoke(initial_state, **kwargs)
+    except BaseException:
+        _finish_graph_span(boundary, graph_span, succeeded=False)
+        raise
+    _finish_graph_span(boundary, graph_span, succeeded=True)
+    return result
+
+
+async def stream_graph(
+    app: Any,
+    initial_state: Any,
+    *,
+    stream_mode: Any,
+    subgraphs: bool = False,
+    config: Any | None = None,
+    context: Any | None = None,
+):
+    """Stream every LangGraph through the same instrumented boundary."""
+    kwargs: dict[str, Any] = {
+        "stream_mode": stream_mode,
+        "subgraphs": subgraphs,
+    }
+    if config is not None:
+        kwargs["config"] = config
+    if context is not None:
+        kwargs["context"] = context
+    boundary = current_execution_boundary()
+    graph_span = _start_graph_span(boundary)
+    nested_boundary = (
+        _nested_graph_boundary(boundary, graph_span)
+        if boundary is not None and graph_span is not None
+        else None
+    )
+    iterator = app.astream(initial_state, **kwargs).__aiter__()
+    completed = False
+    try:
+        while True:
+            manager = (
+                bind_execution_boundary(
+                    nested_boundary.context,
+                    nested_boundary.services,
+                )
+                if nested_boundary is not None
+                else nullcontext()
+            )
+            try:
+                with manager:
+                    item = await iterator.__anext__()
+            except StopAsyncIteration:
+                completed = True
+                break
+            yield item
+    except GeneratorExit:
+        # Closing a transport view is not an execution failure.
+        raise
+    except BaseException:
+        _finish_graph_span(boundary, graph_span, succeeded=False)
+        raise
+    finally:
+        closer = getattr(iterator, "aclose", None)
+        if callable(closer):
+            close_result = closer()
+            if inspect.isawaitable(close_result):
+                await close_result
+    if completed:
+        _finish_graph_span(boundary, graph_span, succeeded=True)
+
+
+def _start_graph_span(boundary: ExecutionBoundary | None) -> Any | None:
+    if boundary is None:
+        return None
+    context = boundary.context
+    phase = _PUBLIC_GRAPH_PHASE_BY_AGENT.get(
+        context.agent.slug, _PRIVATE_GRAPH_FALLBACK_PHASE
+    )
+    span_id = IdFactory().new_id("span")
+    try:
+        span = boundary.services.work.create_span(
+            SpanSpec(
+                owner=context.owner_ref,
+                execution_id=context.execution_id,
+                span_id=span_id,
+                parent_span_id=context.current_span_id,
+                kind="graph",
+                label_key=phase,
+                join_policy=None,
+            )
+        )
+        _append_graph_fact(
+            boundary,
+            span_id=span_id,
+            parent_span_id=context.current_span_id,
+            phase=phase,
+            event_type="span.created",
+            status="pending",
+        )
+        span = boundary.services.work.update_span_status(
+            context.execution_id,
+            span_id,
+            owner=context.owner_ref,
+            status=SpanStatus.RUNNING,
+            expected_revision=span.revision,
+        )
+        _append_graph_fact(
+            boundary,
+            span_id=span_id,
+            parent_span_id=context.current_span_id,
+            phase=phase,
+            event_type="span.started",
+            status="running",
+        )
+        return span
+    except Exception:
+        return None
+
+
+def _nested_graph_boundary(
+    boundary: ExecutionBoundary,
+    span: Any,
+) -> ExecutionBoundary:
+    return ExecutionBoundary(
+        context=boundary.context.nested(
+            agent=boundary.context.agent,
+            span_id=span.span_id,
+        ),
+        services=boundary.services,
+    )
+
+
+def _finish_graph_span(
+    boundary: ExecutionBoundary | None,
+    span: Any | None,
+    *,
+    succeeded: bool,
+) -> None:
+    if boundary is None or span is None:
+        return
+    phase = span.label_key
+    status = SpanStatus.SUCCEEDED if succeeded else SpanStatus.FAILED
+    event_type = "span.succeeded" if succeeded else "span.failed"
+    payload = (
+        {"phase": phase}
+        if succeeded
+        else {
+            "code": "graph_execution_failed",
+            "retryable": False,
+        }
+    )
+    with suppress(Exception):
+        boundary.services.work.update_span_status(
+            boundary.context.execution_id,
+            span.span_id,
+            owner=boundary.context.owner_ref,
+            status=status,
+            expected_revision=span.revision,
+        )
+        _append_graph_fact(
+            boundary,
+            span_id=span.span_id,
+            parent_span_id=span.parent_span_id,
+            phase=phase,
+            event_type=event_type,
+            status=status.value,
+            payload=payload,
+        )
+
+
+def _append_graph_fact(
+    boundary: ExecutionBoundary,
+    *,
+    span_id: str,
+    parent_span_id: str | None,
+    phase: str,
+    event_type: str,
+    status: str,
+    payload: dict[str, object] | None = None,
+) -> None:
+    boundary.services.journal.append(
+        boundary.context.execution_id,
+        owner=boundary.context.owner_ref,
+        intent=parse_execution_event_intent_v2(
+            {
+                "type": event_type,
+                "status": status,
+                "source": "graph",
+                "span_id": span_id,
+                "parent_span_id": parent_span_id,
+                "attempt": 1,
+                "summary": {
+                    "key": f"{phase}.{event_type.rsplit('.', 1)[-1]}",
+                    "text": f"Graph {event_type.rsplit('.', 1)[-1]}",
+                },
+                "public_payload": payload or {"phase": phase},
+            }
+        ),
+    )
 
 
 async def capture_workflow_boundary(

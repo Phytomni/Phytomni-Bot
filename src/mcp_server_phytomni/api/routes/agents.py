@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import asdict
 from typing import Any
@@ -23,7 +24,13 @@ from ...runtime.conversation_context.service import (
     AgentOutcome,
     AsyncAgentAcceptance,
 )
+from ...runtime.execution_identity_v2 import new_execution_id
+from ...runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
 from ...runtime.locale import SupportedLocale, current_effective_locale
+from ...runtime.request_context import current_request_id
+from ...runtime.run_registry import RunRegistry, RunRequestInfo
 from ...runtime.stage_trace import DataStage, trace_data_stage
 from .. import research_capabilities
 from ..advertised_protocols import serialize_protocols
@@ -103,6 +110,19 @@ AgentChatProjectionDependencies = _deps.AgentChatProjectionDependencies
 AgentContextDependencies = _deps.AgentContextDependencies
 AgentNativeDependencies = _deps.AgentNativeDependencies
 
+_EXECUTION_ID_HEADER = "X-Phyto-Execution-Id"
+_EXECUTION_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def _execution_id_from_request(request: Request) -> str:
+    """Read one bounded opaque execution identity from trusted transport."""
+    values = request.headers.getlist(_EXECUTION_ID_HEADER)
+    if not values:
+        return current_request_id() or new_execution_id()
+    if len(values) != 1 or not _EXECUTION_ID_PATTERN.fullmatch(values[0]):
+        raise HTTPException(status_code=400, detail="invalid execution id")
+    return values[0]
+
 
 def register_model_route(
     app: FastAPI, dependencies: AgentRouteDependencies
@@ -163,6 +183,7 @@ def _register_chat_route(
                 payload,
                 dependencies,
                 attachment_owner=attachment_owner,
+                execution_id=_execution_id_from_request(request),
             )
         resolved_input = resolve_attachment_input(
             payload.attachments,
@@ -195,6 +216,7 @@ def _register_chat_route(
                     user_query=prepared["user_query"],
                     conversation_messages=conversation_messages,
                     private_agent_state=private_agent_state,
+                    execution_id=_execution_id_from_request(request),
                 )
             )
             evidence = prepared["evidence"]
@@ -207,12 +229,14 @@ def _register_chat_route(
                 arguments=prepared["arguments"],
                 user_query=prepared["user_query"],
                 attachment_evidence=prepared["evidence"],
+                execution_id=_execution_id_from_request(request),
             )
         return await _finalize_ordinary_chat_response(
             payload,
             dependencies,
             tool_name=tool_name,
             prepared=prepared,
+            execution_id=_execution_id_from_request(request),
         )
 
 
@@ -240,13 +264,14 @@ async def _prepare_ordinary_chat_request(
         accept_language=request.headers.get("accept-language"),
         latest_user_query=turn.current_query,
     )
-    user_query, resolve_meta = (
-        await dependencies.chat.input.resolve_chat_query(
-            raw_query=turn.current_query,
-            resolve_flag=bool(payload.resolve_gene_id),
-            tool_name=tool_name,
-            brief_gene_resolver=dependencies.chat.input.brief_gene_resolver,
-        )
+    (
+        user_query,
+        resolve_meta,
+    ) = await dependencies.chat.input.resolve_chat_query(
+        raw_query=turn.current_query,
+        resolve_flag=bool(payload.resolve_gene_id),
+        tool_name=tool_name,
+        brief_gene_resolver=dependencies.chat.input.brief_gene_resolver,
     )
     arguments: dict[str, Any] = {
         "user_query": user_query,
@@ -275,6 +300,7 @@ async def _finalize_ordinary_chat_response(
     *,
     tool_name: str,
     prepared: Mapping[str, Any],
+    execution_id: str,
 ) -> JSONResponse:
     """Invoke one ordinary chat agent and project its redacted completion."""
     conversation_messages = (
@@ -287,11 +313,23 @@ async def _finalize_ordinary_chat_response(
         if tool_name == "KnowledgeAgent"
         else None
     )
+    agent_slug = dependencies.catalog.model_to_agent_slug.get(payload.model)
+    owner = dependencies.chat.projection.current_user() or "anonymous"
+    request_info = _chat_run_request_info(
+        payload,
+        prepared["user_query"],
+        tool_name,
+        current_effective_locale(),
+    )
+    request_info = _request_info_for_execution(request_info, execution_id)
     envelope = await dependencies.chat.execution.invoke_tool_enveloped(
         tool_name,
         prepared["arguments"],
         conversation_messages=conversation_messages,
         private_agent_state=private_agent_state,
+        execution_id=execution_id,
+        transport="openai_blocking",
+        db_path=dependencies.tasks_db_path(),
     )
     formatted_dict = _formatted_with_metadata(
         envelope, prepared["resolve_meta"]
@@ -307,22 +345,19 @@ async def _finalize_ordinary_chat_response(
             envelope_dict, evidence
         )
         formatted_dict = envelope_dict["formatted"]
-    agent_slug = dependencies.catalog.model_to_agent_slug.get(payload.model)
-    chat_run_id: str | None = None
-    if agent_slug is not None:
-        chat_run_id = dependencies.chat.projection.record_sync_run(
-            agent=agent_slug,
-            owner=dependencies.chat.projection.current_user() or "anonymous",
-            result=envelope_dict,
-            request_info=_chat_run_request_info(
-                payload,
-                prepared["user_query"],
-                tool_name,
-                current_effective_locale(),
-            ),
+    if agent_slug is None:
+        raise HTTPException(
+            status_code=404, detail="agent model is not public"
         )
-    if chat_run_id is None and agent_slug is not None:
-        envelope_dict["execution"]["tracking"] = {"degraded": True}
+    repository = SQLiteExecutionReservationRepository(
+        dependencies.tasks_db_path()
+    )
+    chat_run_id = repository.get(owner=owner, execution_id=execution_id).run_id
+    RunRegistry(dependencies.tasks_db_path()).update_request_info(
+        chat_run_id,
+        owner=owner,
+        request_info=request_info,
+    )
     completion = dependencies.chat.projection.to_chat_completion(
         formatted_dict,
         envelope_dict.get("raw"),
@@ -346,6 +381,7 @@ async def _execute_context_chat(
     dependencies: AgentRouteDependencies,
     *,
     attachment_owner: str,
+    execution_id: str,
 ) -> Response:
     """Execute an Instant V1 completion without flattening legacy messages."""
     envelope = payload.conversation
@@ -391,7 +427,12 @@ async def _execute_context_chat(
         if key in prepared_attachments
     }
     if payload.stream:
-        return await _stream_ctx(dependencies, payload, attachment_arguments)
+        return await _stream_ctx(
+            dependencies,
+            payload,
+            attachment_arguments,
+            execution_id=execution_id,
+        )
     context_request = ContextAgentRequest(
         dialogue_id=None,
         request_json="{}",
@@ -400,6 +441,7 @@ async def _execute_context_chat(
         attachment_arguments=attachment_arguments,
         attachment_evidence=attachment_context.evidence,
     )
+    owner = dependencies.chat.projection.current_user() or "anonymous"
 
     async def invoke(
         selected_agent_id: str,
@@ -413,15 +455,14 @@ async def _execute_context_chat(
             **(context_request.attachment_arguments or {}),
         }
         evidence = context_request.attachment_evidence
-        user_query, resolve_meta = (
-            await dependencies.chat.input.resolve_chat_query(
-                raw_query=arguments["user_query"],
-                resolve_flag=bool(payload.resolve_gene_id),
-                tool_name="ChatAgent",
-                brief_gene_resolver=(
-                    dependencies.chat.input.brief_gene_resolver
-                ),
-            )
+        (
+            user_query,
+            resolve_meta,
+        ) = await dependencies.chat.input.resolve_chat_query(
+            raw_query=arguments["user_query"],
+            resolve_flag=bool(payload.resolve_gene_id),
+            tool_name="ChatAgent",
+            brief_gene_resolver=(dependencies.chat.input.brief_gene_resolver),
         )
         arguments["user_query"] = user_query
         tool_envelope = (
@@ -430,6 +471,9 @@ async def _execute_context_chat(
                 arguments,
                 conversation_messages=dispatch.conversation_messages,
                 agent_thread_id=dispatch.agent_thread_id,
+                execution_id=execution_id,
+                transport="openai_context_blocking",
+                db_path=dependencies.tasks_db_path(),
             )
         )
         formatted_dict = _formatted_with_metadata(tool_envelope, resolve_meta)
@@ -443,19 +487,24 @@ async def _execute_context_chat(
                 envelope_dict, evidence
             )
             formatted_dict = envelope_dict["formatted"]
-        chat_run_id = dependencies.chat.projection.record_sync_run(
-            agent="chat",
-            owner=dependencies.chat.projection.current_user() or "anonymous",
-            result=envelope_dict,
-            request_info=_chat_run_request_info(
-                payload,
-                user_query,
-                "ChatAgent",
-                current_effective_locale(),
-            ),
+        chat_run_id: str | None
+        request_info = _chat_run_request_info(
+            payload,
+            user_query,
+            "ChatAgent",
+            current_effective_locale(),
         )
-        if chat_run_id is None:
-            envelope_dict["execution"]["tracking"] = {"degraded": True}
+        request_info = _request_info_for_execution(request_info, execution_id)
+        chat_run_id = (
+            SQLiteExecutionReservationRepository(dependencies.tasks_db_path())
+            .get(owner=owner, execution_id=execution_id)
+            .run_id
+        )
+        RunRegistry(dependencies.tasks_db_path()).update_request_info(
+            chat_run_id,
+            owner=owner,
+            request_info=request_info,
+        )
         completion = dependencies.chat.projection.to_chat_completion(
             formatted_dict,
             envelope_dict.get("raw"),
@@ -524,6 +573,24 @@ def _chat_run_request_info(
     )
 
 
+def _request_info_for_execution(
+    request_info: RunRequestInfo,
+    execution_id: str,
+) -> RunRequestInfo:
+    """Attach the canonical execution id without losing legacy correlations."""
+    return RunRequestInfo(
+        dialogue_id=request_info.dialogue_id,
+        request_id=request_info.request_id,
+        query=request_info.query,
+        tool_name=request_info.tool_name,
+        model=request_info.model,
+        request_json=request_info.request_json,
+        locale=request_info.locale,
+        a2a=request_info.a2a,
+        execution_id=execution_id,
+    )
+
+
 def _latest_argument_query(arguments: Mapping[str, Any]) -> str:
     """Find the latest nonblank user-facing query in native arguments."""
     for key in ("user_query", "query", "research_topic"):
@@ -558,6 +625,9 @@ def _register_native_routes(
         payload: dict[str, Any] = {
             "object": "list",
             "file_upload": file_upload,
+            "execution_runtime": (
+                dependencies.catalog.serialize_execution_runtime()
+            ),
             "data": [
                 {
                     "slug": slug,
@@ -640,6 +710,7 @@ def _register_native_routes(
                 arguments=arguments,
                 attachment_owner=attachment_owner,
                 dependencies=dependencies,
+                execution_id=_execution_id_from_request(request),
             )
         if payload.conversation is not None:
             return await _execute_context_native(
@@ -650,6 +721,7 @@ def _register_native_routes(
                     attachment_owner=attachment_owner,
                     request_json=request_json,
                     dependencies=dependencies,
+                    execution_id=_execution_id_from_request(request),
                 )
             )
         resolved_input = resolve_attachment_input(
@@ -670,6 +742,7 @@ def _register_native_routes(
             debug=dependencies.chat.projection.resolve_debug(payload.debug),
             request_json=request_json,
             attachment_evidence=attachment_context.evidence,
+            execution_id=_execution_id_from_request(request),
         )
         return JSONResponse(body, status_code=status_code)
 
@@ -692,6 +765,7 @@ def _register_native_routes(
                 dependencies,
                 attachment_owner=attachment_owner,
                 idempotency_key=request.headers.get("Idempotency-Key"),
+                execution_id=_execution_id_from_request(request),
             )
         payload = restrict_expert_payload_for_research(
             payload, ServerConfig().BUCKET_NAME
@@ -716,6 +790,7 @@ def _register_native_routes(
             debug=dependencies.chat.projection.resolve_debug(None),
             attachment_input=resolved_input,
             idempotency_key=request.headers.get("Idempotency-Key"),
+            execution_id=_execution_id_from_request(request),
         )
         return JSONResponse(body, status_code=status_code)
 
@@ -785,6 +860,7 @@ async def _execute_context_native(
         obs_file_list=None,
         attachment_arguments=attachment_arguments,
         attachment_evidence=attachment_context.evidence,
+        execution_id=request.execution_id,
     )
 
     async def invoke(
@@ -819,6 +895,7 @@ async def _execute_context_native(
             dialogue_id=payload.dialogue_id,
             request_json=context_request.request_json,
             debug=context_request.debug,
+            execution_id=context_request.execution_id,
         )
         return AsyncAgentAcceptance(body, status_code)
 
@@ -841,6 +918,7 @@ async def _execute_context_expert(
     *,
     attachment_owner: str,
     idempotency_key: str | None = None,
+    execution_id: str | None = None,
 ) -> JSONResponse:
     """Delegate Expert context execution to the extracted helper module."""
     return await execute_context_expert(
@@ -848,6 +926,7 @@ async def _execute_context_expert(
         dependencies,
         attachment_owner=attachment_owner,
         idempotency_key=idempotency_key,
+        execution_id=execution_id,
         helpers=ExpertContextHelpers(
             invoke_context_agent=_invoke_context_agent,
         ),
@@ -962,6 +1041,7 @@ async def _invoke_context_agent(
         "request_json": request.request_json,
         "debug": request.debug,
         "attachment_evidence": request.attachment_evidence,
+        "execution_id": request.execution_id,
     }
     if research_admission is not None:
         options["research_http_input"] = research_admission.request

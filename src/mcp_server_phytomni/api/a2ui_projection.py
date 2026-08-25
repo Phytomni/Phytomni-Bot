@@ -24,11 +24,25 @@ from ..agents.shared.a2ui import (
 )
 from ..agents.shared.intermediate_state import merge_intermediate_state
 from ..mcp.result_formatting import build_tool_result_envelope
-from .lifecycle_contract import build_agent_run_response
+from .lifecycle_contract import (
+    SafeApiError,
+    SafeErrorCode,
+    build_agent_run_response,
+)
 
 
 class ReviewSurfaceProjectionError(RuntimeError):
     """Raised when Review cannot produce a valid public pause surface."""
+
+
+def review_projection_error() -> SafeApiError:
+    """Return the stable public error for Review surface failures."""
+    return SafeApiError(
+        status_code=500,
+        code=SafeErrorCode.PROJECTION_FAILED.value,
+        message="review surface projection failed",
+        stage="projection",
+    )
 
 
 def chat_interrupt_result(interrupt: Mapping[str, Any]) -> dict[str, Any]:
@@ -177,6 +191,7 @@ __all__ = [
     "format_review_result",
     "project_review_interrupt",
     "ReviewSurfaceProjectionError",
+    "review_projection_error",
     "review_interrupt_body",
     "review_interrupt_result",
     "submitted_a2ui_value",

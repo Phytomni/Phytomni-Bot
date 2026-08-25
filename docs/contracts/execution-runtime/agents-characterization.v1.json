@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "comparison_policy": {
+    "exact": [
+      "public tool and slug",
+      "validation outcome and safe error classification",
+      "selected domain handler",
+      "tool/provider operation identities",
+      "branch and join decisions",
+      "result and artifact schemas",
+      "conversation-context mutations"
+    ],
+    "normalized": [
+      "prompt/template identity",
+      "query transformation",
+      "model-generated answer invariants",
+      "follow-up question invariants"
+    ],
+    "excluded": [
+      "timestamps",
+      "generated ids",
+      "token boundaries",
+      "execution lifecycle events added by V2",
+      "nondeterministic prose equality"
+    ]
+  },
+  "agents": [
+    {
+      "slug": "chat",
+      "tool": "ChatAgent",
+      "canonical_handler": "mcp.handlers.handle_chat_agent",
+      "target_driver": "local_graph",
+      "topology": "serial_conditional",
+      "business_invariants": ["document attachment projection", "chat prompt and tool routing", "answer/follow-up formatting"]
+    },
+    {
+      "slug": "knowledge",
+      "tool": "KnowledgeAgent",
+      "canonical_handler": "mcp.handlers.handle_knowledge_agent",
+      "target_driver": "local_graph",
+      "topology": "serial_nested",
+      "business_invariants": ["retrieval query construction", "knowledge failure classification", "citation/result formatting"]
+    },
+    {
+      "slug": "data",
+      "tool": "DataAgent",
+      "canonical_handler": "mcp.handlers.handle_data_agent",
+      "target_driver": "local_graph",
+      "topology": "serial_nested",
+      "business_invariants": ["database intent validation", "NL2SQL provider selection", "query verification and redaction"]
+    },
+    {
+      "slug": "analyst",
+      "tool": "AnalystAgent",
+      "canonical_handler": "mcp.handlers.handle_analyst_agent",
+      "target_driver": "remote_task",
+      "topology": "remote_single",
+      "business_invariants": ["analysis plan submission", "task deduplication", "report and artifact roles"]
+    },
+    {
+      "slug": "review",
+      "tool": "ReviewAgent",
+      "canonical_handler": "mcp.handlers.handle_review_agent",
+      "target_driver": "resumable_graph",
+      "topology": "parallel_resumable",
+      "business_invariants": ["research fan-out", "approval/input behavior", "citation and report synthesis"]
+    },
+    {
+      "slug": "brief_gene",
+      "tool": "BriefGeneAgent",
+      "canonical_handler": "mcp.handlers.handle_brief_gene_agent",
+      "target_driver": "local_graph",
+      "topology": "local_hybrid_parallel",
+      "business_invariants": ["gene identifier normalization", "annotation and knowledge evidence", "brief-gene report sections"]
+    },
+    {
+      "slug": "deep_genome",
+      "tool": "DeepGenomeAgent",
+      "canonical_handler": "mcp.handlers.handle_deep_genome_agent",
+      "target_driver": "hybrid",
+      "topology": "nested_remote_fanout",
+      "business_invariants": ["sub-analysis selection", "partial result handling", "terminal report and artifact publication"]
+    },
+    {
+      "slug": "research",
+      "tool": "InSilicoResearchAgent",
+      "canonical_handler": "mcp.handlers.handle_in_silico_research_agent",
+      "target_driver": "hybrid",
+      "topology": "durable_remote_hybrid",
+      "business_invariants": ["goal extraction", "research input resolution", "optional A2A policy", "report synthesis"]
+    },
+    {
+      "slug": "design",
+      "tool": "DigitalDesignAgent",
+      "canonical_handler": "mcp.handlers.handle_digital_design_agent",
+      "target_driver": "remote_fanout",
+      "topology": "remote_parallel",
+      "business_invariants": ["design request normalization", "provider task construction", "design result/artifact shaping"]
+    },
+    {
+      "slug": "network",
+      "tool": "GeneNetworkAgent",
+      "canonical_handler": "mcp.handlers.handle_gene_network_agent",
+      "target_driver": "remote_fanout",
+      "topology": "remote_parallel",
+      "business_invariants": ["network objective normalization", "provider task construction", "network result/artifact shaping"]
+    }
+  ]
+}

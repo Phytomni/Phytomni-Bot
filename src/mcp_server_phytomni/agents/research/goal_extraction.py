@@ -20,6 +20,7 @@ from ...graphs.chat_adapters import (
     build_chat_kwargs_for,
     extract_chat_response,
 )
+from ...runtime.langgraph_runner import invoke_graph
 from ...runtime.locale import SupportedLocale
 from ...storage.downloads import download_upload_context
 from .contracts import ResearchGoal, ResearchGoalBatch
@@ -149,8 +150,9 @@ async def _extract_goals_from_prompt(
         },
         locale=locale,
     )
-    chat_output = await dependencies.chat_app_factory().ainvoke(
-        build_chat_input(user_query=user_query, chat_kwargs=chat_kwargs)
+    chat_output = await invoke_graph(
+        dependencies.chat_app_factory(),
+        build_chat_input(user_query=user_query, chat_kwargs=chat_kwargs),
     )
     phyto_response = extract_chat_response(chat_output)
     if not phyto_response:

@@ -15,6 +15,7 @@ from sqlite3 import Connection, Cursor, Row
 from typing import Any, cast
 
 from . import research_input_store_support as _s
+from .execution_event_store import purge_execution_event_children
 from .research_input_store_support import (
     RESEARCH_GRANT_REVOKE_TABLE,
     _ResearchInputStoreBindings,
@@ -351,6 +352,7 @@ class ResearchInputStore(_ResearchInputStoreBindings):
     def purge_run(self, run_id: str) -> None:
         """Purge private and public run rows."""
         with sqlite_transaction(self.db_path) as connection:
+            purge_execution_event_children(connection, (run_id,))
             purge_research_children(connection, (run_id,))
             connection.execute("DELETE FROM tasks WHERE run_id = ?", (run_id,))
             connection.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
@@ -680,10 +682,32 @@ def _read_existing_admission(
 def _insert_admission(
     connection: Connection, request: Mapping[str, Any], now: str
 ) -> None:
-    connection.execute(
-        _RUN_INSERT_SQL,
-        (request["run_id"], request["owner"], now, now, request["locale"]),
-    )
+    existing_run = connection.execute(
+        "SELECT user_id, agent FROM runs WHERE run_id = ?",
+        (request["run_id"],),
+    ).fetchone()
+    if existing_run is None:
+        connection.execute(
+            _RUN_INSERT_SQL,
+            (
+                request["run_id"],
+                request["owner"],
+                now,
+                now,
+                request["locale"],
+            ),
+        )
+    elif (
+        existing_run["user_id"] != request["owner"]
+        or existing_run["agent"] != "research"
+    ):
+        raise sqlite3.IntegrityError("research runtime run mismatch")
+    else:
+        connection.execute(
+            "UPDATE runs SET locale = COALESCE(locale, ?), "
+            "stage = 'input_resolution', updated_at = ? WHERE run_id = ?",
+            (request["locale"], now, request["run_id"]),
+        )
     connection.execute(
         _BINDING_INSERT_SQL,
         (

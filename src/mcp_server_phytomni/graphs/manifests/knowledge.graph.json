@@ -1,4 +1,6 @@
 {
+  "classification": "public",
+  "driver": "local_graph",
   "edges": [
     {
       "conditional": true,
@@ -61,6 +63,11 @@
       "target": "__end__"
     }
   ],
+  "graph_id": "knowledge",
+  "lifecycle": [
+    "synchronous",
+    "streaming"
+  ],
   "nodes": [
     {
       "kind": "boundary",
@@ -98,5 +105,14 @@
       "kind": "boundary",
       "name": "__end__"
     }
-  ]
+  ],
+  "public_agent": "KnowledgeAgent",
+  "remote_providers": [
+    "retrieval_service",
+    "model_provider"
+  ],
+  "subgraph_dependencies": [
+    "chat"
+  ],
+  "topology": "conditional"
 }

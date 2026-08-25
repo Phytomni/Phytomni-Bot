@@ -541,6 +541,19 @@ class ConversationContextStore:
                 (_now(), key, turn_id),
             )
 
+    def discard_unstarted_turn(self, key: str, turn_id: str) -> bool:
+        """Release a routing claim before any Agent outcome can exist."""
+        with self._write() as connection:
+            result = connection.execute(
+                "DELETE FROM conversation_turns WHERE conversation_key=? "
+                "AND turn_id=? AND state='in_progress' "
+                "AND selected_agent_id IS NULL AND route_source IS NULL "
+                "AND result_json IS NULL AND delta_json IS NULL "
+                "AND ledger_version IS NULL",
+                (key, turn_id),
+            )
+        return result.rowcount == 1
+
     def _prepare_tombstone_candidates(
         self, connection: sqlite3.Connection, key: str, now: str
     ) -> set[str]:

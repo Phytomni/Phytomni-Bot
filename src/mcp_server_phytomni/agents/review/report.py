@@ -24,6 +24,9 @@ from typing import TYPE_CHECKING, Any
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
+from ...runtime.operation_instrumentation_v2 import (
+    instrument_operation_invocation,
+)
 from ..knowledge.retrieval_result import (
     RetrievalProtocolError,
     require_retrieval_docs,
@@ -32,6 +35,11 @@ from ..knowledge.retrieval_result import (
 from .evidence_filter import (
     extract_review_query_terms,
     review_document_permitted,
+)
+from .evidence_quality import (
+    compose_review_retrieval_query,
+    review_evidence_identity,
+    select_review_evidence,
 )
 from .helpers import (
     CITATION_PATTERN,
@@ -99,6 +107,9 @@ class SupplementaryResultContext:
     add_query_results: list[Any]
     add_doc_list: list[dict[str, Any]]
     draft_content: str
+    original_query: str = ""
+    subtopic: str = ""
+    seen_identities: set[str] | None = None
     query_terms: tuple[str, ...] = ()
 
 
@@ -139,6 +150,9 @@ class ReviewReportMixin:
         draft_content: str,
         review_content: str,
         raw_doc_list: list[dict[str, Any]],
+        *,
+        original_query: str = "",
+        subtopic: str = "",
     ) -> dict[str, Any]:
         """Run evidence feedback through the Review report seam."""
         return await self._feedback_rag(
@@ -146,6 +160,8 @@ class ReviewReportMixin:
             draft_content,
             review_content,
             raw_doc_list,
+            original_query=original_query,
+            subtopic=subtopic,
         )
 
     def format_supplementary_results(
@@ -161,6 +177,9 @@ class ReviewReportMixin:
         draft_content: str,
         review_content: str,
         raw_doc_list: list[dict[str, Any]],
+        *,
+        original_query: str = "",
+        subtopic: str = "",
     ) -> dict[str, Any]:
         """Retrieve additional evidence, revise, and audit citations.
 
@@ -178,18 +197,26 @@ class ReviewReportMixin:
         content_to_check = draft_content
 
         if (
-            not review_json.get("off_topic")
-            and review_json.get("has_critical_gaps", False)
+            review_json.get("has_critical_gaps", False)
+            and not review_json.get("off_topic", False)
             and add_queries
         ):
+            scoped_add_queries = [
+                compose_review_retrieval_query(
+                    original_query=original_query,
+                    dimension=subtopic,
+                    supplementary_query=str(query),
+                )
+                for query in add_queries[:3]
+            ]
             add_query_results = await asyncio.gather(
                 *[
                     self.ka.arun(
-                        user_query=str(query),
+                        user_query=query,
                         is_generate=False,
                         is_follow_up=False,
                     )
-                    for query in add_queries[:3]
+                    for query in scoped_add_queries
                 ],
                 return_exceptions=True,
             )
@@ -203,6 +230,13 @@ class ReviewReportMixin:
                     add_query_results=normalized_results,
                     add_doc_list=add_doc_list,
                     draft_content=draft_content,
+                    original_query=original_query,
+                    subtopic=subtopic,
+                    seen_identities={
+                        identity
+                        for document in raw_doc_list
+                        if (identity := review_evidence_identity(document))
+                    },
                 )
             )
             if failure_count and not raw_doc_list and not add_doc_list:
@@ -282,7 +316,17 @@ class ReviewReportMixin:
             *context.query_terms,
             *extract_review_query_terms(query),
         }
-        for doc in add_result:
+        selected_documents = select_review_evidence(
+            original_query=context.original_query,
+            dimension=(
+                f"{context.subtopic} {query}".strip()
+                if context.subtopic
+                else query
+            ),
+            documents=add_result,
+            seen_identities=context.seen_identities,
+        )
+        for doc in selected_documents:
             if valid_doc_count >= 3:
                 break
             if not isinstance(doc, dict):
@@ -330,26 +374,40 @@ class ReviewReportMixin:
         current_batch_docs: dict[str, str] = {}
         current_batch_doc_len = 0
 
-        async def run_citation_check(batch_docs: dict[str, str]) -> None:
+        async def run_citation_check(
+            batch_docs: dict[str, str],
+            *,
+            ordinal: int,
+            total: int,
+        ) -> None:
             nonlocal content_to_check
             if not batch_docs:
                 return
-            check_response = await self._chat(
-                get_prompt(
-                    self.review_config.PROMPT_FILE,
-                    "user/deep_research_check",
-                    {
-                        "input_text": content_to_check,
-                        "source_docs_json": json.dumps(
-                            batch_docs, ensure_ascii=False
-                        ),
-                    },
+
+            async def check_batch() -> Any:
+                return await self._chat(
+                    get_prompt(
+                        self.review_config.PROMPT_FILE,
+                        "user/deep_research_check",
+                        {
+                            "input_text": content_to_check,
+                            "source_docs_json": json.dumps(
+                                batch_docs, ensure_ascii=False
+                            ),
+                        },
+                    )
                 )
+
+            check_response = await instrument_operation_invocation(
+                "review.citation_check",
+                check_batch,
+                detail={"ordinal": ordinal, "total": total},
             )
             checked_text = message_content(check_response).strip()
             if checked_text:
                 content_to_check = checked_text
 
+        citation_batches: list[dict[str, str]] = []
         for tag in set(re.findall(CITATION_PATTERN, content_to_check)):
             raw_id = _normalize_citation_id(tag.strip("[]"))
             if raw_id not in all_doc_lookup:
@@ -363,11 +421,20 @@ class ReviewReportMixin:
                 len(content_to_check) + current_batch_doc_len + added_len
                 > self.review_config.MAX_TOKENS
             ):
-                await run_citation_check(current_batch_docs)
+                if current_batch_docs:
+                    citation_batches.append(current_batch_docs)
                 current_batch_docs = {}
                 current_batch_doc_len = 0
             current_batch_docs[tag] = doc_content
             current_batch_doc_len += added_len
 
-        await run_citation_check(current_batch_docs)
+        if current_batch_docs:
+            citation_batches.append(current_batch_docs)
+        total = len(citation_batches)
+        for index, batch_docs in enumerate(citation_batches):
+            await run_citation_check(
+                batch_docs,
+                ordinal=index + 1,
+                total=total,
+            )
         return content_to_check

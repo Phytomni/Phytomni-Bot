@@ -30,7 +30,10 @@ _TERMINAL_CHILD_STATUSES = (
     _SUCCESS_STATUSES | _FAILURE_STATUSES | _CANCELLED_STATUSES
 )
 _TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
-_NON_POLLABLE_RUN_STATUSES = _TERMINAL_RUN_STATUSES | {"input_required"}
+_NON_POLLABLE_RUN_STATUSES = _TERMINAL_RUN_STATUSES | {
+    "input_required",
+    "waiting_input",
+}
 _PARTIAL_CHILDREN_FAILED = "partial_children_failed"
 ResearchFailureCode = _ResearchFailureCode
 RESEARCH_FAILURE_MESSAGES = {
@@ -126,6 +129,7 @@ CREATE TABLE IF NOT EXISTS runs (
     model TEXT,
     request_json TEXT,
     locale TEXT,
+    external_execution_id TEXT,
     a2a_task_id TEXT,
     a2a_context_id TEXT,
     a2a_message_id TEXT,
@@ -143,6 +147,7 @@ _REQUEST_INFO_COLUMNS = (
     ("model", "TEXT"),
     ("request_json", "TEXT"),
     ("locale", "TEXT"),
+    ("external_execution_id", "TEXT"),
 )
 _A2A_COLUMNS = (
     ("a2a_task_id", "TEXT"),
@@ -156,6 +161,11 @@ _RESEARCH_COORDINATOR_COLUMNS = (
 )
 _CREATE_RUNS_USER_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id)"
+)
+_CREATE_RUNS_EXECUTION_INDEX = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_owner_execution "
+    "ON runs(user_id, external_execution_id) "
+    "WHERE external_execution_id IS NOT NULL"
 )
 _CREATE_TASKS_RUN_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_tasks_run ON tasks(run_id)"
@@ -365,6 +375,7 @@ class RunRequestInfo:
     model: str | None = None
     request_json: str | None = None
     locale: SupportedLocale | None = None
+    execution_id: str | None = None
     a2a: A2ACorrelation = A2ACorrelation()
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -378,6 +389,7 @@ class RunRequestInfo:
             "request_json",
             "locale",
             "a2a",
+            "execution_id",
         )
         if len(args) > len(names):
             raise TypeError(
@@ -407,6 +419,7 @@ class RunRequestInfo:
         object.__setattr__(self, "model", values.get("model"))
         object.__setattr__(self, "request_json", values.get("request_json"))
         object.__setattr__(self, "locale", values.get("locale"))
+        object.__setattr__(self, "execution_id", values.get("execution_id"))
         object.__setattr__(
             self,
             "a2a",

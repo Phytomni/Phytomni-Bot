@@ -27,6 +27,9 @@ from ...common.relay_client import RelayRequestOptions, current_relay_client
 from ...config.defaults import DataConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...func_cache import LONG_TTL_SECONDS, func_cache
+from ...runtime.operation_instrumentation_v2 import (
+    instrument_operation_invocation,
+)
 from ...runtime.outbound import OutboundPoolName, current_outbound_runtime
 from ...storage.path_policy import IdFactory
 
@@ -392,10 +395,28 @@ async def execute_nl2sql_request(request: Nl2SqlRequest) -> Any:
         need_insight=payload["need_insight"],
         simplify_response=payload["simplify_response"],
     )
-    return await _execute_nl2sql_cached(
-        cache_key=cache_key,
-        request=request,
+
+    async def execute_cached() -> Any:
+        return await _execute_nl2sql_cached(
+            cache_key=cache_key,
+            request=request,
+        )
+
+    return await instrument_operation_invocation(
+        "data.query",
+        execute_cached,
+        detail_from_result=_nl2sql_result_detail,
     )
+
+
+def _nl2sql_result_detail(result: Any) -> dict[str, int]:
+    """Return only a safe row count from a successful NL2SQL response."""
+    if not isinstance(result, dict):
+        return {}
+    rows = result.get("data")
+    if not isinstance(rows, list):
+        return {}
+    return {"result_count": len(rows)}
 
 
 def clear_nl2sql_cache() -> None:

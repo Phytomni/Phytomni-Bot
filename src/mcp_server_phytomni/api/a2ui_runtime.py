@@ -17,7 +17,7 @@ from collections.abc import (
     Callable,
     Mapping,
 )
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from typing import Any
 
@@ -40,18 +40,21 @@ from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..mcp.stream_lifecycle import (
     run_persistence_error,
 )
+from ..runtime.checkpoint_instrumentation_v2 import (
+    record_projected_input_required,
+)
+from ..runtime.execution_instrumentation_v2 import current_execution_boundary
 from ..runtime.langgraph_runner import (
     build_runnable_config,
     ensure_checkpointer,
+    invoke_graph,
 )
 from ..runtime.locale import current_effective_locale
 from ..runtime.resume import aresume_graph, detect_interrupt
 from ..runtime.run_registry import (
-    RunOutcome,
     RunRegistry,
     RunRequestInfo,
 )
-from ..storage.path_policy import IdFactory
 from .a2ui_projection import (
     ReviewSurfaceProjectionError,
     chat_interrupt_body,
@@ -61,6 +64,7 @@ from .a2ui_projection import (
     project_review_interrupt,
     review_interrupt_body,
     review_interrupt_result,
+    review_projection_error,
     submitted_a2ui_value,
 )
 from .a2ui_resume import (
@@ -69,16 +73,6 @@ from .a2ui_resume import (
     resume_a2ui_run,
     resume_review_run,
     review_run_body,
-)
-from .a2ui_review_persistence import (
-    create_review_pause as _create_review_pause,
-)
-from .a2ui_review_persistence import (
-    review_projection_error as _review_projection_error,
-)
-from .a2ui_review_persistence import review_run_spec
-from .a2ui_review_persistence import (
-    settle_review_projection_failure as _settle_review_projection_failure,
 )
 from .a2ui_review_stream import (
     A2UIStreamInputs,
@@ -111,8 +105,6 @@ type CurrentUser = Callable[[], str | None]
 type CurrentRequestId = Callable[[], str | None]
 type DbPath = Callable[[], str]
 type HasCheckpoint = Callable[[Any, str], Awaitable[bool]]
-type CreateStreamRun = Callable[[str, str, str, RunRequestInfo], None]
-type SettleStreamRun = Callable[..., bool]
 type ReviewFormatter = Callable[..., dict[str, Any]]
 type ReviewValidator = Callable[[dict[str, Any]], ReviewAgentArgs]
 type StreamSetupError = Callable[..., HTTPException]
@@ -141,8 +133,6 @@ class A2UIPersistenceDependencies:
     current_user: CurrentUser
     current_request_id: CurrentRequestId
     tasks_db_path: DbPath
-    create_stream_run: CreateStreamRun
-    settle_stream_run: SettleStreamRun
     format_review_result: ReviewFormatter
 
 
@@ -201,12 +191,17 @@ def build_review_initial_state(args: ReviewAgentArgs) -> Mapping[str, Any]:
 def build_review_request_info(
     payload: ChatCompletionRequest,
     user_query: str,
+    *,
+    execution_id: str | None = None,
 ) -> RunRequestInfo:
     """Build the stable request metadata stored for Review runs."""
-    return build_safe_chat_request_info(
-        payload,
-        user_query,
-        tool_name="ReviewAgent",
+    return replace(
+        build_safe_chat_request_info(
+            payload,
+            user_query,
+            tool_name="ReviewAgent",
+        ),
+        execution_id=execution_id,
     )
 
 
@@ -240,6 +235,47 @@ def _redact_review_payload(
     return redact_managed_attachment_values(payload, evidence)
 
 
+@dataclass(frozen=True, slots=True)
+class _ReviewInterruptPersistRequest:
+    """Inputs needed to persist one Review pause row."""
+
+    registry: RunRegistry
+    run_id: str
+    owner: str
+    request_info: RunRequestInfo
+    interrupt: Mapping[str, Any]
+    attachment_evidence: ManagedAttachmentEvidence | None
+
+
+def _persist_review_interrupt(
+    request: _ReviewInterruptPersistRequest,
+) -> ReviewExecution:
+    """Persist one Review pause after projecting its interrupt surface."""
+    try:
+        interrupt_dict = project_review_interrupt(request.interrupt)
+    except ReviewSurfaceProjectionError as exc:
+        raise review_projection_error() from exc
+    result = _redact_review_payload(
+        review_interrupt_result(interrupt_dict),
+        request.attachment_evidence,
+    )
+    if not request.registry.update_active_result(
+        request.run_id,
+        owner=request.owner,
+        result=result,
+    ):
+        raise HTTPException(
+            status_code=500, detail="review persistence failed"
+        )
+    record_projected_input_required(result)
+    return ReviewExecution(
+        run_id=request.run_id,
+        status="input_required",
+        result=result,
+        interrupt=interrupt_dict,
+    )
+
+
 async def execute_review_with_run_id(
     *,
     run_id: str,
@@ -249,7 +285,8 @@ async def execute_review_with_run_id(
 ) -> ReviewExecution:
     """Execute Review against a run identity reserved by the caller."""
     args = dependencies.graphs.validate_review(arguments)
-    final_state = await dependencies.graphs.review_graph().ainvoke(
+    final_state = await invoke_graph(
+        dependencies.graphs.review_graph(),
         dependencies.graphs.review_initial_state(args),
         config=build_runnable_config(run_id),
     )
@@ -282,42 +319,56 @@ async def run_review_with_interrupt(
     attachment_evidence: ManagedAttachmentEvidence | None = None,
 ) -> ReviewExecution:
     """Run ReviewAgent once, surfacing a LangGraph interrupt if present."""
+    args = dependencies.graphs.validate_review(arguments)
     owner = dependencies.persistence.current_user() or "anonymous"
-    run_id = IdFactory().new_id("run", "review")
     registry = dependencies.persistence.registry_factory(
         dependencies.persistence.tasks_db_path()
     )
-    try:
-        execution = await execute_review_with_run_id(
-            run_id=run_id,
-            arguments=arguments,
-            dependencies=dependencies,
-            attachment_evidence=attachment_evidence,
+    boundary = current_execution_boundary()
+    if boundary is None or boundary.context.run_id is None:
+        raise HTTPException(
+            status_code=500, detail="execution runtime boundary required"
         )
-    except ReviewSurfaceProjectionError as exc:
-        _settle_review_projection_failure(
-            registry,
-            run_id=run_id,
-            owner=owner,
-            request_info=request_info,
-            existing=False,
-        )
-        raise _review_projection_error() from exc
-    if execution.interrupt is not None:
-        _create_review_pause(
-            registry,
-            run_id=run_id,
-            owner=owner,
-            request_info=request_info,
-            result=execution.result or {},
-        )
-        return execution
-    registry.create_run(
-        review_run_spec(run_id, owner),
-        outcome=RunOutcome(status="succeeded", result=execution.result),
-        request_info=request_info,
+    if (
+        request_info.execution_id is not None
+        and boundary.context.execution_id != request_info.execution_id
+    ):
+        raise HTTPException(status_code=409, detail="execution id mismatch")
+    if boundary.context.owner_ref != owner:
+        raise HTTPException(status_code=403, detail="execution owner mismatch")
+    run_id = boundary.context.run_id
+    registry.update_request_info(
+        run_id,
+        owner=owner,
+        request_info=replace(
+            request_info,
+            execution_id=boundary.context.execution_id,
+        ),
     )
-    return execution
+    final_state = await invoke_graph(
+        dependencies.graphs.review_graph(),
+        dependencies.graphs.review_initial_state(args),
+        config=build_runnable_config(run_id),
+    )
+    interrupt = detect_interrupt(final_state, run_id)
+    if interrupt is not None:
+        return _persist_review_interrupt(
+            _ReviewInterruptPersistRequest(
+                registry=registry,
+                run_id=run_id,
+                owner=owner,
+                request_info=request_info,
+                interrupt=interrupt,
+                attachment_evidence=attachment_evidence,
+            )
+        )
+    result = _redact_review_payload(
+        dependencies.persistence.format_review_result(
+            final_state, arguments=arguments
+        ),
+        attachment_evidence,
+    )
+    return ReviewExecution(run_id=run_id, status="succeeded", result=result)
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,7 +378,6 @@ class _StreamContext:
     agent_slug: str
     owner: str
     run_id: str
-    expected_revision: int
     request_info: RunRequestInfo
     graph: Any
     initial_state: Mapping[str, Any]
@@ -339,8 +389,9 @@ def _prepare_chat_stream(
     payload: ChatCompletionRequest,
     user_query: str,
     dependencies: A2UIRuntimeDependencies,
+    runtime_run_id: str,
 ) -> _StreamContext:
-    """Prepare a Chat A2UI graph and persist its running row."""
+    """Prepare a Chat A2UI graph on the Runtime-reserved run."""
     owner = dependencies.persistence.current_user() or "anonymous"
     try:
         graph = dependencies.graphs.chat_graph()
@@ -350,7 +401,7 @@ def _prepare_chat_stream(
             exc, priming=False
         ) from exc
     agent_slug = "chat"
-    run_id = IdFactory().new_id("run", agent_slug)
+    run_id = runtime_run_id
     request_info = RunRequestInfo(
         dialogue_id=payload.dialogue_id,
         query=user_query,
@@ -359,14 +410,17 @@ def _prepare_chat_stream(
         request_json=payload.model_dump_json(),
         locale=current_effective_locale(),
     )
-    dependencies.persistence.create_stream_run(
-        run_id, agent_slug, owner, request_info
+    dependencies.persistence.registry_factory(
+        dependencies.persistence.tasks_db_path()
+    ).update_request_info(
+        run_id,
+        owner=owner,
+        request_info=request_info,
     )
     return _StreamContext(
         agent_slug=agent_slug,
         owner=owner,
         run_id=run_id,
-        expected_revision=0,
         request_info=request_info,
         graph=graph,
         initial_state=initial_state,
@@ -379,8 +433,9 @@ def _prepare_review_stream(
     payload: ChatCompletionRequest,
     user_query: str,
     dependencies: A2UIRuntimeDependencies,
+    runtime_run_id: str,
 ) -> _StreamContext:
-    """Prepare a Review A2UI graph and persist its running row."""
+    """Prepare a Review A2UI graph on the Runtime-reserved run."""
     owner = dependencies.persistence.current_user() or "anonymous"
     try:
         args = dependencies.graphs.validate_review(arguments)
@@ -391,16 +446,27 @@ def _prepare_review_stream(
             exc, priming=False
         ) from exc
     agent_slug = "review"
-    run_id = IdFactory().new_id("run", agent_slug)
-    request_info = build_review_request_info(payload, user_query)
-    dependencies.persistence.create_stream_run(
-        run_id, agent_slug, owner, request_info
+    run_id = runtime_run_id
+    boundary = current_execution_boundary()
+    execution_id = (
+        boundary.context.execution_id if boundary is not None else None
+    )
+    request_info = build_review_request_info(
+        payload,
+        user_query,
+        execution_id=execution_id,
+    )
+    dependencies.persistence.registry_factory(
+        dependencies.persistence.tasks_db_path()
+    ).update_request_info(
+        run_id,
+        owner=owner,
+        request_info=request_info,
     )
     return _StreamContext(
         agent_slug=agent_slug,
         owner=owner,
         run_id=run_id,
-        expected_revision=0,
         request_info=request_info,
         graph=graph,
         initial_state=initial_state,
@@ -413,11 +479,12 @@ async def stream_chat_a2ui_confirm(
     payload: ChatCompletionRequest,
     user_query: str,
     dependencies: A2UIRuntimeDependencies,
+    runtime_run_id: str,
 ) -> StreamingResponse:
     """Short-circuit Chat streaming into an A2UI pause."""
 
     async def _agui_events(
-        context: Any, settled: list[bool]
+        context: Any, terminal: Any
     ) -> AsyncIterator[AguiEvent]:
         """Yield AG-UI frames for one Chat A2UI pause."""
         yield run_started(context.run_id, payload.dialogue_id)
@@ -431,14 +498,20 @@ async def stream_chat_a2ui_confirm(
             context,
             dependencies,
             chat_interrupt_result(interrupt),
-            settled,
+            terminal,
         ):
             yield run_persistence_error()
             return
         yield custom(A2UI_CUSTOM_NAME, a2ui_value)
         yield run_finished(context.run_id)
 
-    inputs = A2UIStreamInputs(arguments, payload, user_query, dependencies)
+    inputs = A2UIStreamInputs(
+        arguments,
+        payload,
+        user_query,
+        dependencies,
+        runtime_run_id,
+    )
     request = A2UIStreamRequest(
         prepare_context=_prepare_chat_stream,
         inputs=inputs,
@@ -453,6 +526,7 @@ async def stream_review_a2ui_pause(
     payload: ChatCompletionRequest,
     user_query: str,
     dependencies: A2UIRuntimeDependencies,
+    runtime_run_id: str,
 ) -> StreamingResponse:
     """Stream Review through the dedicated Review stream runtime."""
     return await _stream_review_a2ui_pause(
@@ -460,6 +534,7 @@ async def stream_review_a2ui_pause(
         payload=payload,
         user_query=user_query,
         dependencies=dependencies,
+        runtime_run_id=runtime_run_id,
         hooks=ReviewStreamHooks(
             prepare_review_stream=_prepare_review_stream,
             project_interrupt=project_review_interrupt,
@@ -491,6 +566,7 @@ __all__ = [
     "resume_review_run",
     "review_interrupt_body",
     "review_interrupt_result",
+    "review_projection_error",
     "review_run_body",
     "run_review_with_interrupt",
     "settle_a2ui_stream_failure",

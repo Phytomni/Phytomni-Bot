@@ -26,8 +26,11 @@ from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.agents.network.agent import (
     GeneNetworkAgents,
     GeneNetworkConfig,
+    GeneNetworkState,
 )
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from mcp_server_phytomni.runtime import run_registry_reports
+from mcp_server_phytomni.storage.artifact_listing import ListedArtifactObject
 
 from ._subgraph_branch_fakes import stub_prompt_parts
 
@@ -114,3 +117,146 @@ async def test_dispatch_request_carries_to_id_as_target(
     # Network keeps fire-and-poll-elsewhere semantics: the helper is
     # called with is_polling=False (the submit-return default).
     assert call_args.kwargs["is_polling"] is False
+
+
+def test_network_analysis_prompt_requires_artifact_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Network producers must describe files for report and ZIP delivery."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        f"{_NETWORK_MODULE}.get_prompt",
+        lambda _path, key, *_args: (
+            "goal" if key.endswith("analysis") else "meta"
+        ),
+    )
+    monkeypatch.setattr(f"{_NETWORK_MODULE}.get_data_list", lambda *_args: {})
+
+    _goal, instructions, _data = getattr(agent, "_analysis_prompt_parts")(
+        "gene_network_analysis", "osa", "TO:0000011"
+    )
+
+    assert ".phytomni-artifacts.json" in instructions
+    assert "scientific_report" in instructions
+
+
+async def test_prepare_tasks_reallocates_shared_default_output_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A configured dump prefix is not an allocated per-run result root."""
+    agent = _build_agent()
+    allocated = "/obs/phytomni/users/user-1/gene_network_task/run-unique"
+    create_output = AsyncMock(return_value=allocated)
+    monkeypatch.setattr(f"{_NETWORK_MODULE}.create_output_dir", create_output)
+
+    result = await agent.prepare_tasks(
+        cast(
+            GeneNetworkState,
+            {
+                "to_id": "TO:0000621",
+                "species_code": "osa",
+                "user_id": "user-1",
+                "output_dir": f"{agent.gene_network_config.OUTPUT_DIR}/children/part-001",
+            },
+        )
+    )
+
+    assert result["output_dir"] == allocated
+    assert result["network_tasks"][0]["output_dir"] == (
+        f"{allocated}/children/part-001"
+    )
+    create_output.assert_awaited_once()
+
+
+async def test_prepare_tasks_preserves_caller_owned_output_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit root outside the configured dump remains reusable."""
+    agent = _build_agent()
+    create_output = AsyncMock(return_value="/obs/phytomni/unexpected")
+    monkeypatch.setattr(f"{_NETWORK_MODULE}.create_output_dir", create_output)
+    caller_root = "/obs/phytomni/users/user-1/gene_network_task/caller-run"
+
+    result = await agent.prepare_tasks(
+        cast(
+            GeneNetworkState,
+            {
+                "to_id": "TO:0000621",
+                "species_code": "osa",
+                "user_id": "user-1",
+                "output_dir": caller_root,
+            },
+        )
+    )
+
+    assert result["output_dir"] == caller_root
+    assert result["network_tasks"][0]["output_dir"] == (
+        f"{caller_root}/children/part-001"
+    )
+    create_output.assert_not_awaited()
+
+
+async def test_reallocated_network_root_is_the_only_harvest_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Terminal collection enumerates the fresh child, never the dump root."""
+    agent = _build_agent()
+    allocated = "/obs/phytomni/users/user-1/gene_network_task/run-isolated"
+    monkeypatch.setattr(
+        f"{_NETWORK_MODULE}.create_output_dir",
+        AsyncMock(return_value=allocated),
+    )
+    prepared = await agent.prepare_tasks(
+        cast(
+            GeneNetworkState,
+            {
+                "to_id": "TO:0000621",
+                "species_code": "osa",
+                "user_id": "user-1",
+                "output_dir": agent.gene_network_config.OUTPUT_DIR,
+            },
+        )
+    )
+    child_output = prepared["network_tasks"][0]["output_dir"]
+    listed: list[str] = []
+
+    async def object_lister(output_dir: str) -> list[ListedArtifactObject]:
+        listed.append(output_dir)
+        return [
+            ListedArtifactObject(
+                relative_path="network.json",
+                source_path=f"{output_dir}/network.json",
+                size_bytes=16,
+                download_ref=f"{output_dir}/network.json",
+            )
+        ]
+
+    async def manifest_loader(_output_dir: str) -> dict[str, object]:
+        return {
+            "version": "1.0",
+            "artifacts": [
+                {
+                    "path": "network.json",
+                    "role": "scientific_data",
+                    "media_type": "application/json",
+                }
+            ],
+        }
+
+    groups = await run_registry_reports.collect_report_artifact_groups(
+        [
+            {
+                "task_id": "network-child",
+                "status": "succeeded",
+                "output_dir": child_output,
+            }
+        ],
+        lister=None,
+        object_lister=object_lister,
+        manifest_loader=manifest_loader,
+    )
+
+    assert listed == [f"{allocated}/children/part-001"]
+    assert [
+        artifact.relative_path for artifact in groups[0].artifact_set.artifacts
+    ] == ["network.json"]

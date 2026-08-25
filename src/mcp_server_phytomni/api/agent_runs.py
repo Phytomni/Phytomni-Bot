@@ -38,13 +38,20 @@ from ..agents.research.input_inventory import (
 from ..config.defaults import ApiConfig, ServerConfig
 from ..mcp.app import invoke_tool_enveloped, validate_tool_arguments
 from ..mcp.result_formatting import strip_agent_result
-from ..runtime.background_submission import (
-    BackgroundSubmissionExecutionError,
-    BackgroundSubmissionLaunchError,
-    BackgroundSubmissionOutcome,
-    failed_child_ids,
-    launch_background_submission,
-    reserve_background_submission,
+from ..runtime.execution_entrypoint_v2 import (
+    bind_routed_reservation_identity,
+    invoke_public_agent,
+)
+from ..runtime.execution_identity_v2 import new_execution_id
+from ..runtime.execution_instrumentation_v2 import current_execution_boundary
+from ..runtime.execution_reservation_v2 import (
+    ExecutionReservationConflictError,
+    ExecutionReservationNotFoundError,
+    SQLiteExecutionReservationRepository,
+)
+from ..runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+    ExecutionRuntimeError,
 )
 from ..runtime.locale import current_effective_locale
 from ..runtime.research_input_store import ResearchInputStore
@@ -53,6 +60,7 @@ from ..runtime.stage_trace import DataStage
 from ..runtime.submission_outcome import (
     project_submission_warnings as _project_warnings,
 )
+from ..storage.path_policy import IdFactory
 from . import research_capabilities, run_lifecycle
 from .agent_run_support import request_info_query, running_agent_run_response
 from .attachments import (
@@ -74,6 +82,7 @@ from .research_input import (
     ResearchInventoryValidator,
     ResearchRoutePreflight,
     launch_research_input_worker,
+    parse_idempotency_identity,
     research_input_root_worker_ready,
 )
 from .resolvers import ResolverDispatch, apply_runs_resolver
@@ -91,12 +100,8 @@ class ResearchHttpRuntimeOptions:
 
 
 __all__ = [
-    "BackgroundSubmissionLaunchError",
-    "BackgroundSubmissionOutcome",
     "apply_runs_resolver",
     "invoke_tool_enveloped",
-    "launch_background_submission",
-    "reserve_background_submission",
     "resolve_brief_gene_user_query",
     "resolve_deep_genome_user_query",
     "resolve_design_user_query",
@@ -105,8 +110,6 @@ __all__ = [
     "_project_warnings",
     "_AgentRunPreparation",
     "_AgentRunPreflight",
-    "_background_agent_run_response",
-    "_execute_background_agent_run",
     "_format_agent_run_result",
     "_invoke_agent_run",
     "_prepare_agent_run",
@@ -116,6 +119,7 @@ __all__ = [
     "_sync_agent_run_response",
     "execute_native_research_http",
     "invoke_research_http_run",
+    "invoke_research_http_run_via_runtime",
     "ResearchHttpRuntimeOptions",
 ]
 
@@ -213,6 +217,7 @@ async def execute_native_research_http(**options: Any) -> JSONResponse:
         attachment_evidence=None,
         research_http_input=admission,
         research_attachment_bundle=resolve_bundle,
+        execution_id=options.get("execution_id"),
     )
     return JSONResponse(body, status_code=status_code)
 
@@ -368,6 +373,110 @@ async def invoke_research_http_run(
     )
 
 
+async def invoke_research_http_run_via_runtime(
+    request: ResearchHttpAdmissionInput,
+    attachment_bundle: Any,
+    *,
+    arguments: Mapping[str, Any],
+    config: ApiConfig,
+    db_path: str,
+    execution_id: str | None,
+    transport: str,
+    runtime_options: ResearchHttpRuntimeOptions = ResearchHttpRuntimeOptions(),
+) -> tuple[dict[str, Any], int]:
+    """Adapt the Research domain admission to the one public Runtime root."""
+    public_execution_id = execution_id or _research_execution_id(request)
+    owner = request.owner
+    repository = SQLiteExecutionReservationRepository(db_path)
+    selected_command = ExecutionCommand(
+        agent_slug="research",
+        arguments=dict(arguments),
+    )
+    try:
+        with bind_routed_reservation_identity(
+            db_path=db_path,
+            owner=owner,
+            execution_id=public_execution_id,
+            command=selected_command,
+        ):
+            try:
+                reservation = repository.get(
+                    owner=owner,
+                    execution_id=public_execution_id,
+                )
+            except ExecutionReservationNotFoundError:
+                reservation = None
+            if reservation is not None and reservation.agent_slug != (
+                "research"
+            ):
+                raise SafeApiError(
+                    status_code=409,
+                    code="execution_identity_conflict",
+                    message="Execution identity conflicts with this request.",
+                    stage="execution_admission",
+                    retryable=False,
+                )
+            run_id = (
+                reservation.run_id
+                if reservation is not None
+                else IdFactory().new_id("run", "research")
+            )
+            runtime_request = ResearchHttpAdmissionInput(
+                **request.as_dict(), runtime_run_id=run_id
+            )
+
+            async def admit() -> tuple[dict[str, Any], int]:
+                return await invoke_research_http_run(
+                    runtime_request,
+                    attachment_bundle,
+                    config=config,
+                    db_path=db_path,
+                    runtime_options=runtime_options,
+                )
+
+            return await invoke_public_agent(
+                db_path=db_path,
+                owner=owner,
+                execution_id=public_execution_id,
+                agent_slug="research",
+                arguments=dict(arguments),
+                transport=transport,
+                call=admit,
+                fingerprint_version=(
+                    reservation.fingerprint_version
+                    if reservation is not None
+                    else 1
+                ),
+                fingerprint=(
+                    reservation.fingerprint
+                    if reservation is not None
+                    else None
+                ),
+                run_id=run_id,
+            )
+    except (ExecutionReservationConflictError, ExecutionRuntimeError) as exc:
+        if isinstance(exc, ExecutionRuntimeError) and exc.code != (
+            "execution_identity_conflict"
+        ):
+            raise
+        raise SafeApiError(
+            status_code=409,
+            code="execution_identity_conflict",
+            message="Execution identity conflicts with this request.",
+            stage="execution_admission",
+            retryable=False,
+        ) from exc
+
+
+def _research_execution_id(request: ResearchHttpAdmissionInput) -> str:
+    """Derive a stable fallback only when a caller omitted its execution ID."""
+    identity = parse_idempotency_identity(
+        request.idempotency_key,
+        request.conversation,
+    )
+    return f"turn-research-{identity.canonical_digest[:32]}"
+
+
 def _research_inventory_validator(
     config: ApiConfig,
 ) -> ResearchInventoryValidator:
@@ -473,6 +582,7 @@ def _preflight_agent_run(
     dialogue_id: str | None,
     request_json: str | None,
     attachment_evidence: ManagedAttachmentEvidence | None = None,
+    execution_id: str | None = None,
 ) -> _AgentRunPreflight:
     """Validate structural inputs and capture request context before
     dispatch."""
@@ -482,9 +592,11 @@ def _preflight_agent_run(
         raise HTTPException(
             status_code=404, detail=f"agent not found: {agent}"
         )
-    if agent in _app_attr("_BACKGROUND_SUBMISSION_AGENT_SLUGS"):
+    if agent in _app_attr("_REMOTE_AGENT_SLUGS"):
         validation_arguments = deepcopy(arguments)
-        if agent == "design" and validation_arguments.get("resolve_gene_id"):
+        if agent in {"deep_genome", "design"} and validation_arguments.get(
+            "resolve_gene_id"
+        ):
             validation_arguments.setdefault("species_code", "ath")
             validation_arguments.setdefault("gene_id", "AT1G01010")
         elif agent == "network" and validation_arguments.get("resolve_to_id"):
@@ -517,6 +629,7 @@ def _preflight_agent_run(
             model=None,
             request_json=request_json,
             locale=app.current_effective_locale(),
+            execution_id=execution_id,
         ),
     )
 
@@ -539,6 +652,7 @@ async def _prepare_agent_run(
             network_resolver=app.resolve_network_user_query,
         ),
     )
+    _app_attr("validate_tool_arguments")(preflight.tool_name, arguments)
     return _AgentRunPreparation(
         tool_name=preflight.tool_name,
         owner=preflight.owner,
@@ -578,104 +692,6 @@ def _format_agent_run_result(
     return result, response_result
 
 
-async def _execute_background_agent_run(
-    *,
-    agent: str,
-    arguments: dict[str, Any],
-    preflight: _AgentRunPreflight,
-    attachment_evidence: ManagedAttachmentEvidence | None,
-    debug: bool,
-) -> BackgroundSubmissionOutcome:
-    """Resolve, invoke, and project one already-reserved background run."""
-    app = _app_module()
-    try:
-        prepared = await _app_attr("_prepare_agent_run")(
-            agent=agent,
-            arguments=arguments,
-            preflight=preflight,
-        )
-        if agent == "review":
-            execution = await _app_attr("_execute_review_with_run_id")(
-                run_id=cast(str, _app_attr("current_run_id")()),
-                arguments=arguments,
-                attachment_evidence=attachment_evidence,
-            )
-            return BackgroundSubmissionOutcome(
-                status=execution.status,
-                result=execution.result or empty_agent_result(),
-            )
-        envelope = await app.invoke_tool_enveloped(
-            prepared.tool_name, arguments
-        )
-    except HTTPException as exc:
-        raise BackgroundSubmissionExecutionError(
-            "background agent preparation failed"
-        ) from exc
-    result, _response_result = _app_attr("_format_agent_run_result")(
-        envelope,
-        resolve_meta=prepared.resolve_meta,
-        debug=debug,
-    )
-    if attachment_evidence is not None:
-        result = redact_managed_attachment_values(result, attachment_evidence)
-    if agent == "data":
-        return BackgroundSubmissionOutcome(
-            status="succeeded",
-            result=strip_agent_result(result),
-        )
-    return BackgroundSubmissionOutcome(
-        accepted_task_ids=_app_attr("current_accepted_task_ids")(),
-        failed_task_ids=failed_child_ids(
-            owner=preflight.owner,
-            db_path=_app_attr("resolve_tasks_db_path")(),
-        ),
-        # The detached worker persists this projection.  Debug is a public
-        # response option, never an authorization to retain raw agent output.
-        result=strip_agent_result(result),
-        degraded=_app_attr("current_recorder_degraded")(),
-    )
-
-
-def _background_agent_run_response(
-    *,
-    agent: str,
-    arguments: dict[str, Any],
-    preflight: _AgentRunPreflight,
-    attachment_evidence: ManagedAttachmentEvidence | None,
-    debug: bool,
-) -> tuple[dict[str, Any], int]:
-    """Reserve and launch one background run before returning 202."""
-    db_path = _app_attr("resolve_tasks_db_path")()
-    worker_arguments = deepcopy(arguments)
-    reservation = _app_attr("reserve_background_submission")(
-        agent=agent,
-        owner=preflight.owner,
-        request_info=preflight.request_info,
-        db_path=db_path,
-    )
-    _app_attr("launch_background_submission")(
-        reservation,
-        lambda: _execute_background_agent_run(
-            agent=agent,
-            arguments=worker_arguments,
-            preflight=preflight,
-            attachment_evidence=attachment_evidence,
-            debug=debug,
-        ),
-        db_path=db_path,
-    )
-    body = build_agent_run_response(
-        run_id=reservation.run_id,
-        agent=agent,
-        status="running",
-        task_ids=[],
-        result=empty_agent_result(),
-        persisted=True,
-        degraded_tracking=False,
-    )
-    return body, 202
-
-
 def _remote_agent_run_response(
     *,
     agent: str,
@@ -683,24 +699,33 @@ def _remote_agent_run_response(
     request_info: RunRequestInfo,
     response_result: dict[str, Any],
 ) -> tuple[dict[str, Any], int]:
-    """Shape the 202 submission response and expose tracking degradation."""
-    resolved = _app_attr("_resolve_remote_run")(owner)
+    """Shape a compatibility 202 over the Runtime-owned execution root."""
+    boundary = current_execution_boundary()
+    if boundary is None or boundary.context.owner_ref != owner:
+        raise ExecutionRuntimeError("execution_boundary_required")
+    run_id = boundary.context.run_id
+    if run_id is None:
+        raise ExecutionRuntimeError("execution_run_id_required")
+    task_ids = tuple(_app_attr("current_accepted_task_ids")())
+    degraded_tracking = bool(_app_attr("current_recorder_degraded")())
+    if not task_ids:
+        raise ExecutionRuntimeError("remote_submission_identity_required")
     _app_attr("_stamp_remote_request_info")(
-        run_id=resolved.run_id, owner=owner, request_info=request_info
+        run_id=run_id, owner=owner, request_info=request_info
     )
     result = (
         empty_agent_result(degraded=True)
-        if resolved.degraded_tracking
+        if degraded_tracking
         else response_result
     )
     body = build_agent_run_response(
-        run_id=resolved.run_id,
+        run_id=run_id,
         agent=agent,
         status="running",
-        task_ids=resolved.task_ids,
+        task_ids=task_ids,
         result=result,
-        persisted=resolved.persisted,
-        degraded_tracking=resolved.degraded_tracking,
+        persisted=True,
+        degraded_tracking=degraded_tracking,
     )
     return body, 202
 
@@ -712,32 +737,11 @@ async def _sync_agent_run_response(
     request_info: RunRequestInfo,
     result: dict[str, Any],
     response_result: dict[str, Any],
+    reserved_run_id: str,
 ) -> tuple[dict[str, Any], int]:
-    """Persist and shape a terminal synchronous agent response."""
-    try:
-        persistence_context = (
-            _app_attr("trace_data_stage")(
-                DataStage.RUN_PERSIST,
-                dependency="run_registry",
-            )
-            if agent == "data"
-            else nullcontext()
-        )
-        async with persistence_context:
-            run_id = _app_attr("_record_sync_run")(
-                agent=agent,
-                owner=owner,
-                result=result,
-                request_info=request_info,
-            )
-    except run_lifecycle.RunPersistenceError as exc:
-        raise SafeApiError(
-            status_code=500,
-            code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
-            message="The completed run could not be persisted.",
-            stage="run_persist",
-            retryable=False,
-        ) from exc
+    """Shape a terminal response over the Runtime-owned run identity."""
+    del owner, request_info, result
+    run_id = reserved_run_id
     canonical = canonicalize_agent_run_body(
         {
             "id": run_id,
@@ -790,11 +794,16 @@ async def _invoke_agent_run_request(
     request: Mapping[str, Any],
 ) -> tuple[dict[str, Any], int]:
     """Dispatch a normalized native run request through lifecycle stages."""
+    normalized = dict(request)
+    execution_id = normalized.get("execution_id")
+    if not isinstance(execution_id, str) or not execution_id:
+        execution_id = new_execution_id()
+        normalized["execution_id"] = execution_id
+    request = normalized
     agent = request["agent"]
     arguments = request["arguments"]
     dialogue_id = request.get("dialogue_id")
     request_json = request.get("request_json")
-    debug = request.get("debug", False)
     attachment_evidence = request.get("attachment_evidence")
     preflight = _app_attr("_preflight_agent_run")(
         agent=agent,
@@ -802,31 +811,110 @@ async def _invoke_agent_run_request(
         dialogue_id=dialogue_id,
         request_json=request_json,
         attachment_evidence=attachment_evidence,
+        execution_id=request.get("execution_id"),
     )
-    if agent in _app_attr(
-        "_BACKGROUND_SUBMISSION_AGENT_SLUGS"
-    ) and not _has_in_request_context_execution(request):
-        try:
-            return _app_attr("_background_agent_run_response")(
+
+    async def dispatch() -> tuple[dict[str, Any], int]:
+        prepared = await _app_attr("_prepare_agent_run")(
+            agent=agent,
+            arguments=arguments,
+            preflight=preflight,
+        )
+        return await _dispatch_agent_run_request(request, preflight, prepared)
+
+    execution_identity = _existing_execution_identity(
+        db_path=_app_attr("resolve_tasks_db_path")(),
+        owner=preflight.owner,
+        execution_id=execution_id,
+    )
+    try:
+        return await invoke_public_agent(
+            db_path=_app_attr("resolve_tasks_db_path")(),
+            owner=preflight.owner,
+            execution_id=execution_id,
+            agent_slug=agent,
+            arguments=dict(arguments),
+            transport="authenticated_http",
+            call=dispatch,
+            fingerprint_version=(
+                execution_identity[0] if execution_identity is not None else 1
+            ),
+            fingerprint=(
+                execution_identity[1]
+                if execution_identity is not None
+                else None
+            ),
+        )
+    except ExecutionRuntimeError as exc:
+        if exc.code not in {
+            "terminal_settlement_failed",
+            "terminal_settlement_conflict",
+        }:
+            if agent in _app_attr("_REMOTE_AGENT_SLUGS"):
+                return _failed_remote_runtime_response(
+                    owner=preflight.owner,
+                    execution_id=execution_id,
+                    agent=agent,
+                )
+            raise
+        raise SafeApiError(
+            status_code=500,
+            code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
+            message="The completed run could not be persisted.",
+            stage="run_persist",
+            retryable=False,
+        ) from exc
+    except Exception:
+        if agent in _app_attr("_REMOTE_AGENT_SLUGS"):
+            return _failed_remote_runtime_response(
+                owner=preflight.owner,
+                execution_id=execution_id,
                 agent=agent,
-                arguments=arguments,
-                preflight=preflight,
-                attachment_evidence=attachment_evidence,
-                debug=debug,
             )
-        except BackgroundSubmissionLaunchError as exc:
-            raise SafeApiError(
-                status_code=500,
-                code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
-                message="The background run could not be started.",
-                stage="submission_start",
-                retryable=False,
-            ) from exc
-    prepared = await _app_attr("_prepare_agent_run")(
+        raise
+
+
+def _failed_remote_runtime_response(
+    *, owner: str, execution_id: str, agent: str
+) -> tuple[dict[str, Any], int]:
+    """Project a safe compatibility response from a failed V2 reservation."""
+    record = SQLiteExecutionReservationRepository(
+        _app_attr("resolve_tasks_db_path")()
+    ).get(owner=owner, execution_id=execution_id)
+    body = build_agent_run_response(
+        run_id=record.run_id,
         agent=agent,
-        arguments=arguments,
-        preflight=preflight,
+        status="failed",
+        task_ids=tuple(_app_attr("current_accepted_task_ids")()),
+        result=empty_agent_result(
+            degraded=bool(_app_attr("current_recorder_degraded")())
+        ),
+        persisted=True,
+        degraded_tracking=bool(_app_attr("current_recorder_degraded")()),
     )
+    return body, 202
+
+
+def _existing_execution_identity(
+    *, db_path: str, owner: str, execution_id: str
+) -> tuple[int, str] | None:
+    """Reuse the outer admission identity after Expert routing binds an Agent."""
+    try:
+        record = SQLiteExecutionReservationRepository(db_path).get(
+            owner=owner,
+            execution_id=execution_id,
+        )
+    except ExecutionReservationNotFoundError:
+        return None
+    return record.fingerprint_version, record.fingerprint
+
+
+async def _dispatch_agent_run_request(
+    request: Mapping[str, Any],
+    preflight: _AgentRunPreflight,
+    prepared: _AgentRunPreparation,
+) -> tuple[dict[str, Any], int]:
+    """Delegate to established business preparation and response shaping."""
     return await _invoke_prepared_agent_run(request, prepared)
 
 
@@ -841,6 +929,44 @@ async def _invoke_prepared_agent_run(
     private_agent_state = request.get("private_agent_state")
     debug = request.get("debug", False)
     attachment_evidence = request.get("attachment_evidence")
+    execution_id = request.get("execution_id")
+    reserved_run_id: str | None = None
+    if (
+        isinstance(execution_id, str)
+        and execution_id
+        and agent not in _app_attr("_REMOTE_AGENT_SLUGS")
+        and (
+            agent != "review"
+            or (
+                isinstance(private_agent_state, Mapping)
+                and private_agent_state.get("review_adapter") is not None
+            )
+        )
+    ):
+        boundary = current_execution_boundary()
+        if (
+            boundary is None
+            or boundary.context.execution_id != execution_id
+            or boundary.context.owner_ref != prepared.owner
+        ):
+            raise ExecutionRuntimeError("execution_boundary_required")
+        reserved_run_id = boundary.context.run_id
+        assert reserved_run_id is not None
+        try:
+            run_lifecycle.attach_execution_request_info(
+                run_id=reserved_run_id,
+                owner=prepared.owner,
+                request_info=prepared.request_info,
+                db_path=_app_attr("resolve_tasks_db_path")(),
+            )
+        except run_lifecycle.RunPersistenceError as exc:
+            raise SafeApiError(
+                status_code=500,
+                code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
+                message="The admitted run could not be persisted.",
+                stage="run_persist",
+                retryable=False,
+            ) from exc
     if agent == "review" and not (
         isinstance(private_agent_state, Mapping)
         and private_agent_state.get("review_adapter") is not None
@@ -864,8 +990,6 @@ async def _invoke_prepared_agent_run(
                 private_agent_state=private_agent_state,
             )
         else:
-            # Keep the historical two-argument seam usable for narrow
-            # adapters that do not need private native-run context.
             envelope = await app.invoke_tool_enveloped(
                 prepared.tool_name,
                 arguments,
@@ -897,12 +1021,15 @@ async def _invoke_prepared_agent_run(
                 request_info=prepared.request_info,
                 response_result=response_result,
             )
+        if reserved_run_id is None:
+            raise ExecutionRuntimeError("execution_boundary_required")
         return await _app_attr("_sync_agent_run_response")(
             agent=agent,
             owner=prepared.owner,
             request_info=prepared.request_info,
             result=result,
             response_result=response_result,
+            reserved_run_id=reserved_run_id,
         )
     except SafeApiError:
         raise
@@ -941,6 +1068,7 @@ _INVOKE_AGENT_RUN_ANNOTATIONS = {
     "dialogue_id": "str | None",
     "request_json": "str | None",
     "attachment_evidence": "ManagedAttachmentEvidence | None",
+    "execution_id": "str | None",
     "debug": "bool",
     "return": "tuple[dict[str, Any], int]",
 }
@@ -986,6 +1114,12 @@ _INVOKE_AGENT_RUN_SIGNATURE = Signature(
             "attachment_evidence",
             Parameter.KEYWORD_ONLY,
             annotation="ManagedAttachmentEvidence | None",
+            default=None,
+        ),
+        Parameter(
+            "execution_id",
+            Parameter.KEYWORD_ONLY,
+            annotation="str | None",
             default=None,
         ),
         Parameter(

@@ -59,7 +59,7 @@ class RunRegistryViewsMixin:
                        expires_at,
                        dialogue_id, request_id, query, tool_name, model,
                        request_json,
-                       locale,
+                       locale, external_execution_id,
                        a2a_task_id, a2a_context_id, a2a_message_id,
                        stage, failure_json, revision
                 FROM runs WHERE {where}
@@ -118,7 +118,10 @@ class RunRegistryViewsMixin:
                 """,
                 (run_id, owner),
             ).fetchone()
-            if row is None or row[0] != "input_required":
+            if row is None or row[0] not in {
+                "input_required",
+                "waiting_input",
+            }:
                 conn.rollback()
                 raise A2UIActionConflict("run is not awaiting input")
             open_surface = _surface_identity_from_result(row[1])
@@ -241,7 +244,7 @@ class RunRegistryViewsMixin:
                        error, created_at, updated_at, expires_at,
                        dialogue_id, request_id, query, tool_name, model,
                        request_json,
-                       locale,
+                       locale, external_execution_id,
                        a2a_task_id, a2a_context_id, a2a_message_id,
                        stage, failure_json, revision
                 FROM runs WHERE run_id = ? AND user_id = ?
@@ -253,6 +256,39 @@ class RunRegistryViewsMixin:
             task_rows = conn.execute(
                 "SELECT task_id FROM tasks WHERE run_id = ? ORDER BY task_id",
                 (run_id,),
+            ).fetchall()
+        return _row_to_record(row, task_rows)
+
+    def get_run_by_execution_id(
+        self,
+        execution_id: str,
+        *,
+        owner: str,
+    ) -> RunRecord | None:
+        """Resolve one browser-known execution identity within its owner."""
+        if not execution_id:
+            return None
+        with sqlite_transaction(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT run_id, user_id, agent, origin, status, result_json,
+                       error, created_at, updated_at, expires_at,
+                       dialogue_id, request_id, query, tool_name, model,
+                       request_json, locale, external_execution_id,
+                       a2a_task_id, a2a_context_id, a2a_message_id,
+                       stage, failure_json, revision
+                FROM runs
+                WHERE external_execution_id = ? AND user_id = ?
+                LIMIT 1
+                """,
+                (execution_id, owner),
+            ).fetchone()
+            if row is None:
+                return None
+            task_rows = conn.execute(
+                "SELECT task_id FROM tasks WHERE run_id = ? ORDER BY task_id",
+                (row["run_id"],),
             ).fetchall()
         return _row_to_record(row, task_rows)
 
@@ -302,7 +338,7 @@ class RunRegistryViewsMixin:
                        error, created_at, updated_at, expires_at,
                        dialogue_id, request_id, query, tool_name, model,
                        request_json,
-                       locale,
+                       locale, external_execution_id,
                        a2a_task_id, a2a_context_id, a2a_message_id,
                        stage, failure_json, revision
                 FROM runs WHERE a2a_task_id = ? AND user_id = ?
@@ -346,6 +382,7 @@ def _row_to_record(row: sqlite3.Row, task_rows: list[Any]) -> RunRecord:
             model=row["model"],
             request_json=row["request_json"],
             locale=row["locale"],
+            execution_id=row["external_execution_id"],
             a2a=A2ACorrelation(
                 task_id=row["a2a_task_id"],
                 context_id=row["a2a_context_id"],

@@ -38,6 +38,9 @@ from ...runtime.outbound import (
     OutboundPoolName,
     current_outbound_http_client,
 )
+from ...runtime.provider_instrumentation_v2 import (
+    instrument_provider_submission,
+)
 from ...runtime.result_run_layout import (
     result_child_output_dir,
     result_run_root_from_child,
@@ -195,12 +198,28 @@ class AnalystGraphMixin:
             obs_task_path,
             obs_model_path,
         )
-        return await self._post_submit_job(
-            job_headers,
-            job_data,
-            job_name,
-            output_dir,
-            research_grant_sidecar=state.get("research_grant_sidecar"),
+        return await instrument_provider_submission(
+            provider_kind="analysis_task_platform",
+            operation_key="remote.analysis",
+            call=lambda: self._post_submit_job(
+                job_headers,
+                job_data,
+                job_name,
+                output_dir,
+                research_grant_sidecar=state.get("research_grant_sidecar"),
+            ),
+            identity_from_result=lambda value: str(value.get("task_id") or ""),
+            max_attempts=max(
+                1,
+                int(
+                    getattr(
+                        getattr(self, "analyst_config", None),
+                        "MAX_RETRIES",
+                        0,
+                    )
+                )
+                + 1,
+            ),
         )
 
     def _submit_run_identity(self: Any) -> RunIdentity:
