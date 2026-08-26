@@ -341,12 +341,8 @@ async def test_provider_order_is_plan_identity() -> None:
     )
     assert extracted != alphabetical
 
-    first = await build_research_plan(
-        _request(), _GoalProvider(extracted)
-    )
-    second = await build_research_plan(
-        _request(), _GoalProvider(alphabetical)
-    )
+    first = await build_research_plan(_request(), _GoalProvider(extracted))
+    second = await build_research_plan(_request(), _GoalProvider(alphabetical))
 
     assert [child.task_name for child in first.children] == [
         "research_goal_0",
@@ -356,12 +352,8 @@ async def test_provider_order_is_plan_identity() -> None:
         "research_goal_4",
     ]
     assert first.children[0].output_dir.endswith("/part-001")
-    assert first.children[0].goal_description.startswith(
-        "Replicate Figure 2:"
-    )
-    assert first.children[3].goal_description.startswith(
-        "Replicate Figure 1:"
-    )
+    assert first.children[0].goal_description.startswith("Replicate Figure 2:")
+    assert first.children[3].goal_description.startswith("Replicate Figure 1:")
     assert first.children[3].output_dir.endswith("/part-004")
     assert first.digest != second.digest
     assert second.children[0].goal_description.startswith(
@@ -470,16 +462,12 @@ async def test_planner_accepts_empty_effective_query_with_evidence() -> None:
     prepared = replace(_prepared(), effective_query="")
     provider = _GoalProvider(_canonical_figure_goals()[:2])
 
-    plan = await build_research_plan(
-        _request(prepared=prepared), provider
-    )
+    plan = await build_research_plan(_request(prepared=prepared), provider)
 
     assert provider.calls == 1
     assert provider.received is not None
     assert len(plan.children) == 2
-    assert plan.children[0].goal_description.startswith(
-        "Replicate Figure 2:"
-    )
+    assert plan.children[0].goal_description.startswith("Replicate Figure 2:")
 
 
 async def test_empty_goal_result_fails_before_any_child_work() -> None:
