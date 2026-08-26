@@ -9,7 +9,9 @@ object.  The legacy query/path wrapper remains for MCP and graph callers
 whose older contract still owns document-context download.
 """
 
+import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from json import loads
 from typing import Any, NamedTuple
 
@@ -29,9 +31,11 @@ from .planning import research_planning_failure
 PromptBuilder = Callable[..., str]
 ChatAppFactory = Callable[[], Any]
 MAX_GOAL_EVIDENCE_CHARS = 131_072
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "MAX_GOAL_EVIDENCE_CHARS",
+    "EvidenceGoalProvider",
     "ResearchGoalExtractionDependencies",
     "extract_research_goals",
     "extract_research_goals_from_evidence",
@@ -47,6 +51,32 @@ class ResearchGoalExtractionDependencies(NamedTuple):
     sensitive_config: SensitiveConfig
     prompt_builder: PromptBuilder
     chat_app_factory: ChatAppFactory
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceGoalProvider:
+    """ResearchGoalProvider that extracts from retained evidence."""
+
+    dependencies: ResearchGoalExtractionDependencies
+
+    @property
+    def contract_name(self) -> str:
+        """Identify the evidence-backed goal-provider contract."""
+        return "research_goal_provider"
+
+    async def extract(
+        self,
+        evidence: ExtractedResearchEvidence,
+        locale: SupportedLocale | None,
+    ) -> tuple[ResearchGoal, ...]:
+        """Return extractor-ordered goals without rewriting the query."""
+        goals = await extract_research_goals_from_evidence(
+            evidence,
+            locale=locale,
+            dependencies=self.dependencies,
+        )
+        logger.info("Extracted %d research goals", len(goals))
+        return goals
 
 
 async def extract_research_goals(
