@@ -380,11 +380,7 @@ async def test_http_plan_builder_fans_out_extracted_goals(
     assert seen["locale"] == "en-US"
     assert len(plan.children) == 5
     assert [child.task_name for child in plan.children] == [
-        "research_goal_0",
-        "research_goal_1",
-        "research_goal_2",
-        "research_goal_3",
-        "research_goal_4",
+        f"research_goal_{index}" for index in range(5)
     ]
     assert plan.children[0].output_dir.endswith("/part-001")
     assert plan.children[0].goal_description.startswith("Replicate Figure 2:")
