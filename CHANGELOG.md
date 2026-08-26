@@ -77,6 +77,12 @@ package version remains `0.1.3` until the release bump.
 
 ### Fixed
 
+- **Research HTTP goals** — `POST /v1/agents/research/runs` extracts
+  analysis goals from retained paper evidence the same way the MCP graph
+  does. Each goal becomes one Analyst child (`part-001` …, at most 20).
+  The route no longer truncates the authored query to a single
+  1000-character goal. Goal extraction and child submit still complete
+  before the HTTP 202 on this process.
 - **Stream subscribers** — A browser refresh or tab leave detaches that
   subscriber without stopping the owner run, so a later subscriber can
   continue the same in-flight answer.

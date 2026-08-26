@@ -1029,6 +1029,15 @@ resource for the four public stages (`input_resolution`, `planning`,
 `cancelled` state. Failed rows retain `error: "run failed"` and add the
 bounded stable `failure` object.
 
+Research HTTP planning now calls the paper goal extractor before that
+202\. Look for `Extracted N research goals` and one `Submit:` /
+`part-00N` line per child. N>1 is expected for multi-figure papers. Do
+not treat a single `goal_len=1000` path-list child as successful
+planning. Nginx `/v1/` read timeout is 600s and must cover extraction
+plus N submits. Wait-card decode of sibling `part-NNN` directories is
+a Web deploy concern (`9e998874`); Bot acceptance is outbox/`Submit:`
+count = N.
+
 The parser accepts only trailing strict `data:` JSON, fenced strict `data:`
 JSON, or one configured-bucket reference per line with an optional ASCII Tab
 hint. Do not paste an OBS URL, local path, bucket name, archive body, or
