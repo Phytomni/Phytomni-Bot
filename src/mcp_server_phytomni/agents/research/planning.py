@@ -255,7 +255,9 @@ def _validate_prepared(prepared: PreparedResearchInput) -> None:
     """Validate the final native projection and its immutable data map."""
     if not isinstance(prepared, PreparedResearchInput):
         raise _planning_failure()
-    if _invalid_bounded_text(
+    if not isinstance(prepared.effective_query, str):
+        raise _planning_failure()
+    if prepared.effective_query.strip() and _invalid_bounded_text(
         prepared.effective_query,
         _MAX_EFFECTIVE_QUERY_CHARS,
         allowed_control_chars="\t\n\r",
@@ -426,14 +428,7 @@ def _validated_goals(raw_goals: object) -> tuple[ResearchGoal, ...]:
     descriptions = tuple(goal.goal for goal in goals)
     if len(descriptions) != len(set(descriptions)):
         raise _planning_failure()
-    if goals != tuple(sorted(goals, key=_goal_order_key)):
-        raise _planning_failure()
     return goals
-
-
-def _goal_order_key(goal: ResearchGoal) -> tuple[str, str]:
-    """Return the canonical order required of the provider output."""
-    return goal.goal, goal.context or ""
 
 
 def _valid_digest(value: object) -> bool:
