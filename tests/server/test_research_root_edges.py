@@ -6,14 +6,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from tests.agents.test_research_planning import (
+    _canonical_figure_goals,
+    _evidence,
+    _prepared,
+)
 from tests.server.test_research_root import _MetadataPort
 
+from mcp_server_phytomni.agents.research import goal_extraction
 from mcp_server_phytomni.agents.research.document_evidence import (
     ConvertedResearchSection,
     ManagedDocumentPayload,
@@ -66,19 +72,11 @@ def _install_factory_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pin factory config construction to offline namespaces."""
     monkeypatch.setattr(research_root, "ApiLimitsConfig", _limits)
     monkeypatch.setattr(research_root, "ServerConfig", _source)
-
-
-async def test_direct_goal_provider_returns_bounded_goal() -> None:
-    """The HTTP goal provider keeps the supplied query as one goal."""
-    provider = getattr(research_root, "_DirectGoalProvider")(
-        "Find drought genes"
+    monkeypatch.setattr(
+        research_root,
+        "get_sensitive_config",
+        SimpleNamespace,
     )
-
-    assert provider.contract_name == "research_goal_provider"
-    goals = await provider.extract(evidence="ignored", locale="zh-CN")
-
-    assert len(goals) == 1
-    assert goals[0].goal == "Find drought genes"
 
 
 def test_managed_downloader_observes_inventory_snapshot() -> None:
@@ -307,7 +305,11 @@ async def test_factory_revalidate_and_plan_ports(
         return "revalidated"
 
     async def _plan(request: Any, provider: Any) -> str:
-        seen["plan"] = (request.run_id, provider.goal, provider.contract_name)
+        seen["plan"] = (
+            request.run_id,
+            type(provider).__name__,
+            provider.contract_name,
+        )
         return "planned"
 
     monkeypatch.setattr(
@@ -329,33 +331,148 @@ async def test_factory_revalidate_and_plan_ports(
     assert await plan_builder(prepared, request) == "planned"
     assert seen["plan"] == (
         "research-http-root",
-        "compare cultivars",
+        "EvidenceGoalProvider",
         "research_goal_provider",
     )
 
 
-async def test_plan_builder_falls_back_when_query_blank(
+async def test_http_plan_builder_fans_out_extracted_goals(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A blank prepared query still yields one bounded default goal."""
+    """HTTP planning fans out extractor-ordered figure goals."""
     _install_factory_config(monkeypatch)
-    seen: dict[str, str] = {}
+    seen: dict[str, Any] = {}
 
-    async def _plan(_request: Any, provider: Any) -> str:
-        seen["goal"] = provider.goal
-        return "planned"
+    async def _extract(
+        evidence: Any,
+        *,
+        locale: Any,
+        dependencies: Any,
+    ) -> Any:
+        del dependencies
+        seen["evidence"] = evidence
+        seen["locale"] = locale
+        return _canonical_figure_goals()
 
-    monkeypatch.setattr(research_root, "build_research_plan", _plan)
+    monkeypatch.setattr(
+        goal_extraction,
+        "extract_research_goals_from_evidence",
+        _extract,
+    )
     factory = research_root.build_default_research_root_request_factory(
         metadata_port=cast(Any, _MetadataPort()),
         asset_resolver_factory=None,
     )
-    request = factory(_admission())
+    evidence = _evidence()
+    request = factory(_admission())._replace(
+        run_id="run-123",
+        evidence=evidence,
+    )
+    long_query = "/obs/" + ("dataset/" * 200) + "paper.pdf"
+    prepared = replace(_prepared(), effective_query=long_query)
     plan_builder = request.dependencies.plan_builder
     assert plan_builder is not None
 
-    assert await plan_builder(SimpleNamespace(effective_query="   "), request)
-    assert seen["goal"] == "Analyze the supplied research inputs."
+    plan = await plan_builder(prepared, request)
+
+    collapsed = " ".join(long_query.split())[:1000]
+    assert seen["evidence"] is evidence
+    assert seen["locale"] == "en-US"
+    assert len(plan.children) == 5
+    assert [child.task_name for child in plan.children] == [
+        "research_goal_0",
+        "research_goal_1",
+        "research_goal_2",
+        "research_goal_3",
+        "research_goal_4",
+    ]
+    assert plan.children[0].output_dir.endswith("/part-001")
+    assert plan.children[0].goal_description.startswith("Replicate Figure 2:")
+    assert plan.children[3].goal_description.startswith("Replicate Figure 1:")
+    assert plan.children[0].goal_description != collapsed
+    assert not plan.children[0].goal_description.startswith("/obs/")
+
+
+async def test_http_plan_builder_fail_closed_on_extractor_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Extractor errors fail closed with the stable planning code."""
+    _install_factory_config(monkeypatch)
+
+    async def _extract(
+        evidence: Any,
+        *,
+        locale: Any,
+        dependencies: Any,
+    ) -> Any:
+        del evidence, locale, dependencies
+        raise RuntimeError("extractor down")
+
+    monkeypatch.setattr(
+        goal_extraction,
+        "extract_research_goals_from_evidence",
+        _extract,
+    )
+    factory = research_root.build_default_research_root_request_factory(
+        metadata_port=cast(Any, _MetadataPort()),
+        asset_resolver_factory=None,
+    )
+    request = factory(_admission())._replace(
+        run_id="run-123",
+        evidence=_evidence(),
+    )
+    plan_builder = request.dependencies.plan_builder
+    assert plan_builder is not None
+
+    with pytest.raises(Exception) as caught:
+        await plan_builder(_prepared(), request)
+
+    assert getattr(caught.value, "code", None) == (
+        "research_input_resolution_failed"
+    )
+
+
+async def test_http_plan_builder_blank_query_still_extracts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A blank prepared query still fans out extracted goals."""
+    _install_factory_config(monkeypatch)
+
+    async def _extract(
+        evidence: Any,
+        *,
+        locale: Any,
+        dependencies: Any,
+    ) -> Any:
+        del evidence, locale, dependencies
+        return _canonical_figure_goals()[:2]
+
+    monkeypatch.setattr(
+        goal_extraction,
+        "extract_research_goals_from_evidence",
+        _extract,
+    )
+    factory = research_root.build_default_research_root_request_factory(
+        metadata_port=cast(Any, _MetadataPort()),
+        asset_resolver_factory=None,
+    )
+    request = factory(_admission())._replace(
+        run_id="run-123",
+        evidence=_evidence(),
+    )
+    plan_builder = request.dependencies.plan_builder
+    assert plan_builder is not None
+
+    plan = await plan_builder(
+        replace(_prepared(), effective_query=""),
+        request,
+    )
+
+    assert len(plan.children) == 2
+    assert plan.children[0].goal_description.startswith("Replicate Figure 2:")
+    assert "Analyze the supplied research inputs." not in [
+        child.goal_description for child in plan.children
+    ]
 
 
 def test_bind_default_factory_requires_runtime() -> None:

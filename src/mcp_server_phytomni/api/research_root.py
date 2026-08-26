@@ -17,13 +17,17 @@ from dataclasses import dataclass, replace
 from os import stat
 from typing import TYPE_CHECKING, Any
 
-from ..agents.research.contracts import ResearchGoal
+from ..agents.chat.service import _cached_chat_app
 from ..agents.research.document_evidence import (
     ConvertedResearchSection,
     ManagedDocumentObservation,
     ManagedDocumentPayload,
     ResearchEvidenceRequest,
     extract_research_evidence,
+)
+from ..agents.research.goal_extraction import (
+    EvidenceGoalProvider,
+    ResearchGoalExtractionDependencies,
 )
 from ..agents.research.input_contracts import (
     ResearchCoordinatorDependencies,
@@ -44,12 +48,14 @@ from ..agents.research.planning import (
     ResearchPlanningRequest,
     build_research_plan,
 )
+from ..common.prompts import get_prompt
 from ..config.api_limits import ApiLimitsConfig
 from ..config.defaults import (
     InSilicoResearchConfig,
     ServerConfig,
     resolve_compute_resource,
 )
+from ..config.settings import get_sensitive_config
 from ..storage.downloads import convert_document_file, download_obs_source
 from ..storage.research_objects import ResearchObjectMetadataPort
 from .asset_resolver import bind_research_asset_resolver
@@ -58,27 +64,6 @@ if TYPE_CHECKING:
     from .research_input import ResearchAdmissionRequest
 
 __all__ = ["build_default_research_root_request_factory"]
-
-
-@dataclass(frozen=True, slots=True)
-class _DirectGoalProvider:
-    """Build one bounded remote-inspection goal without a second LLM call."""
-
-    goal: str
-
-    @property
-    def contract_name(self) -> str:
-        """Identify the bounded direct goal provider."""
-        return "research_goal_provider"
-
-    async def extract(
-        self,
-        evidence: Any,
-        locale: Any,
-    ) -> tuple[ResearchGoal, ...]:
-        """Return one bounded goal for the supplied evidence."""
-        del evidence, locale
-        return (ResearchGoal(goal=self.goal),)
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,9 +218,13 @@ def build_default_research_root_request_factory(
             prepared: Any,
             request: ResearchCoordinatorRequest,
         ) -> ResearchPlan:
-            query = " ".join(prepared.effective_query.split())[:1000]
-            provider = _DirectGoalProvider(
-                query or "Analyze the supplied research inputs."
+            provider = EvidenceGoalProvider(
+                ResearchGoalExtractionDependencies(
+                    in_silico_config=InSilicoResearchConfig(),
+                    sensitive_config=get_sensitive_config(),
+                    prompt_builder=get_prompt,
+                    chat_app_factory=_cached_chat_app,
+                )
             )
             return await build_research_plan(
                 ResearchPlanningRequest(
