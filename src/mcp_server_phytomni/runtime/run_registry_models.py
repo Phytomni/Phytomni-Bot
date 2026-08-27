@@ -68,6 +68,9 @@ RESEARCH_FAILURE_CONTRACTS: dict[str, frozenset[tuple[int, bool, str]]] = {
             (503, True, "input_resolution"),
         }
     ),
+    "research_goal_extraction_failed": frozenset(
+        {(422, False, "planning")}
+    ),
     "research_input_resolution_failed": frozenset(
         {(422, False, "input_resolution")}
     ),
