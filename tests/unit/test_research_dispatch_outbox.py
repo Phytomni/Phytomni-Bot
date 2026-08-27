@@ -343,6 +343,35 @@ def test_plan_write_failure_rolls_back_every_private_projection(
     assert work == (0,)
 
 
+@pytest.mark.asyncio
+async def test_second_child_accept_after_first_stays_accepted(
+    tmp_path: Path,
+) -> None:
+    """N=2 must not IntegrityError once the parent left planning."""
+    store = _store(tmp_path)
+    records = persist_plan_and_outbox(
+        store, "run-1", 0, _prepared(), _plan(2)
+    )
+    submitted: list[str] = []
+
+    async def submit(row: ResearchDispatchRecord) -> object:
+        submitted.append(row.dispatch_id)
+        return {"task_id": f"ei-{row.child_ordinal}"}
+
+    outbox = ResearchDispatchOutbox(
+        store,
+        submit=submit,
+        authority_verifier=_authority_verifier,
+    )
+    first = await outbox.dispatch_once(records[0].dispatch_id, "worker")
+    second = await outbox.dispatch_once(records[1].dispatch_id, "worker")
+    assert first.state == "accepted"
+    assert second.state in {"accepted", "reconciled"}
+    assert first.remote_task_id == "ei-0"
+    assert second.remote_task_id == "ei-1"
+    assert submitted == [records[0].dispatch_id, records[1].dispatch_id]
+
+
 def test_claim_persists_new_lease_and_heartbeat_rejects_expiry(
     tmp_path: Path,
 ) -> None:

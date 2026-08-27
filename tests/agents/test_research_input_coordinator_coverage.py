@@ -170,6 +170,29 @@ async def test_dispatch_records_and_native_empty_query_are_guarded() -> None:
         getattr(caught.value, "code", None) == "research_run_tracking_failed"
     )
 
+
+@pytest.mark.asyncio
+async def test_dispatch_records_maps_outbox_exception_to_tracking_failed() -> (
+    None
+):
+    """Unclassified outbox errors must not become 503 unavailable."""
+    request = _request(_Harness())
+    coordinator = module.ResearchInputCoordinator(request)
+
+    async def dispatch_once(_dispatch_id: str, _owner: str) -> Any:
+        raise RuntimeError("parent changed")
+
+    coordinator.outbox = SimpleNamespace(dispatch_once=dispatch_once)
+    with pytest.raises(Exception) as caught:
+        await getattr(coordinator, "_dispatch_records")(
+            (SimpleNamespace(run_id="run-001", dispatch_id="d1"),),
+            "worker",
+        )
+    assert getattr(caught.value, "code", None) == (
+        "research_run_tracking_failed"
+    )
+    assert getattr(caught.value, "http_status_hint", None) == 502
+
     empty = PreparedResearchInput(
         effective_query=" ",
         obs_file_list=(),

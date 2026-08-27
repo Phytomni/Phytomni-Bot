@@ -843,7 +843,7 @@ def _accept_row(
                 "updated_at=?"
                 " WHERE run_id=? AND status NOT IN "
                 "('succeeded','failed','cancelled')"
-                " AND stage='planning' AND revision=?",
+                " AND stage IN ('planning','execution') AND revision=?",
                 (now_iso, record.run_id, record.parent_revision),
             )
             if parent.rowcount != 1:

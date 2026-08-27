@@ -462,9 +462,21 @@ class ResearchInputCoordinator:
             return
         for record in records:
             self._ensure_not_cancelled(record.run_id, "execution")
-            outcome = await self.outbox.dispatch_once(
-                record.dispatch_id, lease_owner
-            )
+            try:
+                outcome = await self.outbox.dispatch_once(
+                    record.dispatch_id, lease_owner
+                )
+            except ResearchInputFailure:
+                raise
+            except Exception:
+                raise research_input_failure(
+                    "research_run_tracking_failed",
+                    "Research child tracking failed.",
+                    http_status_hint=502,
+                    retryable=False,
+                    stage="planning",
+                    last_stage="planning",
+                ) from None
             if outcome.state not in {"accepted", "reconciled"}:
                 raise research_input_failure(
                     "research_run_tracking_failed",
