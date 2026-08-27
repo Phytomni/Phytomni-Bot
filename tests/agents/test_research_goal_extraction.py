@@ -127,13 +127,15 @@ async def test_empty_chat_response_is_goal_extraction_failed(
     chat_app = SimpleNamespace(
         ainvoke=AsyncMock(return_value={"response": {}})
     )
-    with caplog.at_level(logging.INFO, logger=_GOAL_LOGGER):
-        with pytest.raises(Exception) as caught:
-            await extract_research_goals_from_evidence(
-                _evidence(),
-                locale="en-US",
-                dependencies=_dependencies(chat_app),
-            )
+    with (
+        caplog.at_level(logging.INFO, logger=_GOAL_LOGGER),
+        pytest.raises(Exception) as caught,
+    ):
+        await extract_research_goals_from_evidence(
+            _evidence(),
+            locale="en-US",
+            dependencies=_dependencies(chat_app),
+        )
     assert getattr(caught.value, "code", None) == (
         "research_goal_extraction_failed"
     )
