@@ -367,14 +367,14 @@ def test_mid_query_json_object_stays_prose() -> None:
     """A non-suffix object is not a dataset block."""
     query = 'see {"obs://dev-bucket/a.fasta": "x"} in the methods'
     parsed = parse_research_input(query, "dev-bucket")
-    assert parsed.candidates == ()
+    assert not parsed.candidates
     assert "{" in parsed.effective_query
 
 
 def test_unlabeled_suffix_non_ref_object_stays_prose() -> None:
     """Trailing {foo: bar} is not an explicit data attempt."""
     parsed = parse_research_input('hello\n{"foo": "bar"}', "dev-bucket")
-    assert parsed.candidates == ()
+    assert not parsed.candidates
 
 
 def test_unlabeled_suffix_mixed_keys_are_path_invalid() -> None:

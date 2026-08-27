@@ -396,11 +396,13 @@ def _comparison_key(reference: str, bucket: str) -> str | None:
             return None
         uri = f"obs://{ref_bucket}/{key}"
     match = re.fullmatch(r"obs://([^/]+)/(.+)", uri, flags=re.IGNORECASE)
-    if match is None:
+    if (
+        match is None
+        or not bucket
+        or match.group(1).casefold() != bucket.casefold()
+    ):
         return None
-    reference_bucket, key = match.groups()
-    if not bucket or reference_bucket.casefold() != bucket.casefold():
-        return None
+    key = match.group(2)
     segments = key.split("/")
     if not segments or any(
         not segment.strip()
