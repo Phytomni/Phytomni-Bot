@@ -83,6 +83,17 @@ package version remains `0.1.3` until the release bump.
   The route no longer truncates the authored query to a single
   1000-character goal. Goal extraction and child submit still complete
   before the HTTP 202 on this process.
+- **Research admission errors** — Planning 422 responses keep the domain
+  `safe_message` and fine code. Empty or invalid goal JSON is
+  `research_goal_extraction_failed` after one bounded retry on the same
+  evidence.
+- **Research pasted datasets** — A suffix `{path: description}` JSON
+  object without a `data:` label becomes pasted dataset candidates.
+  `/obs/bucket/key` is accepted as an exact spelling of
+  `obs://bucket/key`. JSON newlines in descriptions fold to spaces.
+- **Research N-child accept** — After the first child moves the parent
+  to `execution`, later children still accept. An outbox exception is
+  `research_run_tracking_failed` 502, not an unclassified 503.
 - **Stream subscribers** — A browser refresh or tab leave detaches that
   subscriber without stopping the owner run, so a later subscriber can
   continue the same in-flight answer.

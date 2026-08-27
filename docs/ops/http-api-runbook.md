@@ -1038,10 +1038,11 @@ plus N submits. Wait-card decode of sibling `part-NNN` directories is
 a Web deploy concern (`9e998874`); Bot acceptance is outbox/`Submit:`
 count = N.
 
-The parser accepts only trailing strict `data:` JSON, fenced strict `data:`
-JSON, or one configured-bucket reference per line with an optional ASCII Tab
-hint. Do not paste an OBS URL, local path, bucket name, archive body, or
-provider payload. Managed `attachments` carry opaque completed `asset_id`
+The parser accepts trailing strict `data:` JSON, fenced strict `data:`
+JSON, one configured-bucket reference per line with an optional ASCII Tab
+hint, or an unlabeled suffix JSON object whose keys are all OBS refs
+(`obs://bucket/key` or `/obs/bucket/key`). Do not paste an HTTP URL,
+local path, bucket name, archive body, or provider payload. Managed `attachments` carry opaque completed `asset_id`
 values only. Pasted references are checked through exact-key metadata and
 snapshot verification; this authority never lists, downloads bodies, writes,
 deletes, signs URLs, or returns credentials. `relay:obs` and MCP remain
