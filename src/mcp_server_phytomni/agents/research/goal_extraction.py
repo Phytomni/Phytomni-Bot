@@ -214,6 +214,8 @@ async def _extract_goals_from_prompt(
         content: object = None
         try:
             content = phyto_response["choices"][0]["message"]["content"]
+            if not isinstance(content, str):
+                raise TypeError("goal content is not JSON text")
             batch = ResearchGoalBatch.model_validate(loads(content))
         except _PARSE_ERRORS as error:
             last_error = error
