@@ -349,9 +349,7 @@ async def test_second_child_accept_after_first_stays_accepted(
 ) -> None:
     """N=2 must not IntegrityError once the parent left planning."""
     store = _store(tmp_path)
-    records = persist_plan_and_outbox(
-        store, "run-1", 0, _prepared(), _plan(2)
-    )
+    records = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(2))
     submitted: list[str] = []
 
     async def submit(row: ResearchDispatchRecord) -> object:

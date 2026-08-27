@@ -352,12 +352,8 @@ def test_unlabeled_suffix_slash_obs_spelling() -> None:
     """Exact /obs/<bucket>/key keys round-trip and compare as obs://."""
     query = 'reproduce\n{"/obs/dev-bucket/a.fasta": "reads"}'
     parsed = parse_research_input(query, "dev-bucket")
-    assert parsed.candidates[0].exact_reference == (
-        "/obs/dev-bucket/a.fasta"
-    )
-    assert parsed.candidates[0].comparison_key == (
-        "obs://dev-bucket/a.fasta"
-    )
+    assert parsed.candidates[0].exact_reference == ("/obs/dev-bucket/a.fasta")
+    assert parsed.candidates[0].comparison_key == ("obs://dev-bucket/a.fasta")
 
 
 def test_unlabeled_suffix_json_folds_newline_hint() -> None:
@@ -383,9 +379,7 @@ def test_unlabeled_suffix_non_ref_object_stays_prose() -> None:
 
 def test_unlabeled_suffix_mixed_keys_are_path_invalid() -> None:
     """A suffix object that mixes refs and prose fails closed."""
-    query = (
-        'hello\n{"obs://dev-bucket/a.fasta": "x", "foo": "bar"}'
-    )
+    query = 'hello\n{"obs://dev-bucket/a.fasta": "x", "foo": "bar"}'
     with pytest.raises(ResearchInputFailure) as caught:
         parse_research_input(query, "dev-bucket")
     assert caught.value.code == "research_dataset_path_invalid"

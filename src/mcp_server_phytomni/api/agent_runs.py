@@ -405,9 +405,7 @@ def _research_admission_error(exc: ValueError) -> SafeApiError:
         message = "Research input resolution failed."
     return SafeApiError(
         status_code=int(getattr(exc, "http_status_hint", 400)),
-        code=str(
-            getattr(exc, "code", "research_input_resolution_failed")
-        ),
+        code=str(getattr(exc, "code", "research_input_resolution_failed")),
         message=message,
         stage=str(getattr(exc, "stage", "input_resolution")),
         retryable=bool(getattr(exc, "retryable", False)),

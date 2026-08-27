@@ -150,9 +150,7 @@ async def test_invalid_goal_json_retries_once_then_fails() -> None:
                 {"response": _content([])},
                 {
                     "response": {
-                        "choices": [
-                            {"message": {"content": "not-json"}}
-                        ]
+                        "choices": [{"message": {"content": "not-json"}}]
                     }
                 },
             ]
@@ -181,11 +179,7 @@ async def test_invalid_goal_json_then_valid_batch_returns_goals() -> None:
     chat_app = SimpleNamespace(
         ainvoke=AsyncMock(
             side_effect=[
-                {
-                    "response": {
-                        "choices": [{"message": {"content": "{"}}]
-                    }
-                },
+                {"response": {"choices": [{"message": {"content": "{"}}]}},
                 {"response": _content(payload)},
             ]
         )
