@@ -12,8 +12,10 @@ whose older contract still owns document-context download.
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from json import loads
+from json import JSONDecodeError, loads
 from typing import Any, NamedTuple
+
+from pydantic import ValidationError
 
 from ...config.defaults import InSilicoResearchConfig
 from ...config.settings import SensitiveConfig
@@ -26,6 +28,7 @@ from ...runtime.locale import SupportedLocale
 from ...storage.downloads import download_upload_context
 from .contracts import ResearchGoal, ResearchGoalBatch
 from .document_evidence import ExtractedResearchEvidence
+from .input_contracts import ResearchInputFailure, research_input_failure
 from .planning import research_planning_failure
 
 PromptBuilder = Callable[..., str]
@@ -42,6 +45,29 @@ __all__ = [
 ]
 
 _goal_extraction_failure = research_planning_failure
+_PARSE_ERRORS = (
+    KeyError,
+    IndexError,
+    TypeError,
+    ValueError,
+    JSONDecodeError,
+    ValidationError,
+)
+
+
+def _goal_chat_failure() -> ResearchInputFailure:
+    """Public, retry-exhausted goal-extraction failure."""
+    return research_input_failure(
+        "research_goal_extraction_failed",
+        (
+            "Research goals could not be parsed from the paper. "
+            "Please try again later."
+        ),
+        http_status_hint=422,
+        retryable=False,
+        stage="planning",
+        last_stage="planning",
+    )
 
 
 class ResearchGoalExtractionDependencies(NamedTuple):
@@ -179,19 +205,33 @@ async def _extract_goals_from_prompt(
         },
         locale=locale,
     )
-    chat_output = await dependencies.chat_app_factory().ainvoke(
-        build_chat_input(user_query=user_query, chat_kwargs=chat_kwargs)
-    )
-    phyto_response = extract_chat_response(chat_output)
-    if not phyto_response:
-        raise ValueError("research goal extraction returned no goals")
-    try:
-        batch = ResearchGoalBatch.model_validate(
-            loads(phyto_response["choices"][0]["message"]["content"])
+    last_error: BaseException | None = None
+    for _attempt in range(2):
+        chat_output = await dependencies.chat_app_factory().ainvoke(
+            build_chat_input(user_query=user_query, chat_kwargs=chat_kwargs)
         )
-    except (KeyError, IndexError, TypeError, ValueError) as error:
-        raise research_planning_failure() from error
-    return tuple(batch.root)
+        phyto_response = extract_chat_response(chat_output)
+        content: object = None
+        try:
+            content = phyto_response["choices"][0]["message"]["content"]
+            batch = ResearchGoalBatch.model_validate(loads(content))
+        except _PARSE_ERRORS as error:
+            last_error = error
+            parsed: object = None
+            if isinstance(content, str):
+                try:
+                    parsed = loads(content)
+                except (TypeError, ValueError, JSONDecodeError):
+                    parsed = None
+            logger.info(
+                "goal extraction failed content_len=%s json_array=%s err=%s",
+                len(content) if isinstance(content, str) else 0,
+                isinstance(parsed, list),
+                type(error).__name__,
+            )
+            continue
+        return tuple(batch.root)
+    raise _goal_chat_failure() from last_error
 
 
 def _evidence_prompt(evidence: ExtractedResearchEvidence) -> str:

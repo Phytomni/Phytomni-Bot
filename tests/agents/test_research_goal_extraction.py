@@ -23,6 +23,7 @@ from mcp_server_phytomni.agents.research.goal_extraction import (
     MAX_GOAL_EVIDENCE_CHARS,
     EvidenceGoalProvider,
     ResearchGoalExtractionDependencies,
+    extract_research_goals_from_evidence,
 )
 from mcp_server_phytomni.config.defaults import InSilicoResearchConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
@@ -117,3 +118,82 @@ async def test_evidence_goal_provider_rejects_oversize_evidence() -> None:
         "research_input_resolution_failed"
     )
     chat_app.ainvoke.assert_not_awaited()
+
+
+async def test_empty_chat_response_is_goal_extraction_failed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Empty chat must not look like a silent planning umbrella."""
+    chat_app = SimpleNamespace(
+        ainvoke=AsyncMock(return_value={"response": {}})
+    )
+    with caplog.at_level(logging.INFO, logger=_GOAL_LOGGER):
+        with pytest.raises(Exception) as caught:
+            await extract_research_goals_from_evidence(
+                _evidence(),
+                locale="en-US",
+                dependencies=_dependencies(chat_app),
+            )
+    assert getattr(caught.value, "code", None) == (
+        "research_goal_extraction_failed"
+    )
+    assert getattr(caught.value, "http_status_hint", None) == 422
+    assert "goal extraction failed" in caplog.text.lower()
+    assert chat_app.ainvoke.await_count == 2
+
+
+async def test_invalid_goal_json_retries_once_then_fails() -> None:
+    """First bad JSON, second still bad: 422, never DirectGoal text."""
+    chat_app = SimpleNamespace(
+        ainvoke=AsyncMock(
+            side_effect=[
+                {"response": _content([])},
+                {
+                    "response": {
+                        "choices": [
+                            {"message": {"content": "not-json"}}
+                        ]
+                    }
+                },
+            ]
+        )
+    )
+    with pytest.raises(Exception) as caught:
+        await extract_research_goals_from_evidence(
+            _evidence(),
+            locale="en-US",
+            dependencies=_dependencies(chat_app),
+        )
+    assert getattr(caught.value, "code", None) == (
+        "research_goal_extraction_failed"
+    )
+    assert chat_app.ainvoke.await_count == 2
+    message = str(getattr(caught.value, "safe_message", ""))
+    assert "1000" not in message
+
+
+async def test_invalid_goal_json_then_valid_batch_returns_goals() -> None:
+    """One bounded retry on the same evidence may recover."""
+    payload = [
+        {"goal": item.goal, "context": item.context or ""}
+        for item in _canonical_figure_goals()[:2]
+    ]
+    chat_app = SimpleNamespace(
+        ainvoke=AsyncMock(
+            side_effect=[
+                {
+                    "response": {
+                        "choices": [{"message": {"content": "{"}}]
+                    }
+                },
+                {"response": _content(payload)},
+            ]
+        )
+    )
+    goals = await extract_research_goals_from_evidence(
+        _evidence(),
+        locale="en-US",
+        dependencies=_dependencies(chat_app),
+    )
+    assert len(goals) == 2
+    assert chat_app.ainvoke.await_count == 2
