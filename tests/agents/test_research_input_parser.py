@@ -246,11 +246,11 @@ def test_rejects_duplicate_references_across_approved_grammars() -> None:
     assert caught.value.code == "research_dataset_duplicate"
 
 
-@pytest.mark.parametrize("escaped_control", ("0009", "000a", "000d"))
+@pytest.mark.parametrize("escaped_control", ("0000", "001f"))
 def test_rejects_escaped_control_characters_in_json_hints(
     escaped_control: str,
 ) -> None:
-    """Decoded JSON hints never inherit grammar-delimiter exceptions."""
+    """Decoded JSON hints still reject remaining control characters."""
     query = (
         f'data: {{"obs://dev-bucket/a.tsv": "bad\\u{escaped_control}hint"}}'
     )
@@ -330,3 +330,71 @@ def test_prose_without_approved_grammar_remains_untouched(query: str) -> None:
     assert not parsed.removed_spans
     assert not parsed.candidates
     assert has_explicit_research_data_syntax(query, "dev-bucket") is False
+
+
+def test_unlabeled_suffix_json_yields_obs_candidates() -> None:
+    """Prose plus a suffix object, without data:, is still inventory."""
+    query = (
+        "我想复现这篇文章的结果，相关的数据已经存到 OBS 的以下路径下：\r\n"
+        '{"obs://dev-bucket/a.fasta": "reads", '
+        '"obs://dev-bucket/b.gff": "ann"}'
+    )
+    parsed = parse_research_input(query, "dev-bucket")
+    assert [c.exact_reference for c in parsed.candidates] == [
+        "obs://dev-bucket/a.fasta",
+        "obs://dev-bucket/b.gff",
+    ]
+    assert parsed.effective_query.startswith("我想复现")
+    assert "{" not in parsed.effective_query
+
+
+def test_unlabeled_suffix_slash_obs_spelling() -> None:
+    """Exact /obs/<bucket>/key keys round-trip and compare as obs://."""
+    query = 'reproduce\n{"/obs/dev-bucket/a.fasta": "reads"}'
+    parsed = parse_research_input(query, "dev-bucket")
+    assert parsed.candidates[0].exact_reference == (
+        "/obs/dev-bucket/a.fasta"
+    )
+    assert parsed.candidates[0].comparison_key == (
+        "obs://dev-bucket/a.fasta"
+    )
+
+
+def test_unlabeled_suffix_json_folds_newline_hint() -> None:
+    """JSON newlines in a description fold to spaces."""
+    query = 'note\n{"obs://dev-bucket/zp-pc.rds": "line1\\nline2"}'
+    parsed = parse_research_input(query, "dev-bucket")
+    assert parsed.candidates[0].user_hint == "line1 line2"
+
+
+def test_mid_query_json_object_stays_prose() -> None:
+    """A non-suffix object is not a dataset block."""
+    query = 'see {"obs://dev-bucket/a.fasta": "x"} in the methods'
+    parsed = parse_research_input(query, "dev-bucket")
+    assert parsed.candidates == ()
+    assert "{" in parsed.effective_query
+
+
+def test_unlabeled_suffix_non_ref_object_stays_prose() -> None:
+    """Trailing {foo: bar} is not an explicit data attempt."""
+    parsed = parse_research_input('hello\n{"foo": "bar"}', "dev-bucket")
+    assert parsed.candidates == ()
+
+
+def test_unlabeled_suffix_mixed_keys_are_path_invalid() -> None:
+    """A suffix object that mixes refs and prose fails closed."""
+    query = (
+        'hello\n{"obs://dev-bucket/a.fasta": "x", "foo": "bar"}'
+    )
+    with pytest.raises(ResearchInputFailure) as caught:
+        parse_research_input(query, "dev-bucket")
+    assert caught.value.code == "research_dataset_path_invalid"
+
+
+def test_slash_obs_segment_may_contain_space() -> None:
+    """OBS keys may contain spaces; exact_reference is not rewritten."""
+    query = '{"/obs/dev-bucket/Plant Cell/a.fasta": ""}'
+    parsed = parse_research_input(query, "dev-bucket")
+    assert parsed.candidates[0].exact_reference == (
+        "/obs/dev-bucket/Plant Cell/a.fasta"
+    )
