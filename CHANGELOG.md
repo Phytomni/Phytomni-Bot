@@ -35,6 +35,10 @@ package version remains `0.1.3` until the release bump.
 
 ### Changed
 
+- **Research goal extraction bounds** — Each extracted `goal` may be
+  16384 characters and each `context` 114688 (sum 131072, the evidence
+  prompt cap). Paper paragraphs that previously tripped the 4000-character
+  `context` check can now reach Analyst children.
 - **Submit-return defaults** — Analyst, the analyst subgraph helper, and
   Design MCP helpers default `is_polling` to false.
 - **DeepGenome cancel** — An owner cancel no longer lets the

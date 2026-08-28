@@ -8,7 +8,16 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
-__all__ = ["ResearchGoal", "ResearchGoalBatch"]
+# Per-item budgets sum to MAX_GOAL_EVIDENCE_CHARS (131072).
+MAX_RESEARCH_GOAL_CHARS = 16_384
+MAX_RESEARCH_GOAL_CONTEXT_CHARS = 114_688
+
+__all__ = [
+    "MAX_RESEARCH_GOAL_CHARS",
+    "MAX_RESEARCH_GOAL_CONTEXT_CHARS",
+    "ResearchGoal",
+    "ResearchGoalBatch",
+]
 
 
 class ResearchGoal(BaseModel):
@@ -16,8 +25,10 @@ class ResearchGoal(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    goal: str = Field(min_length=1, max_length=1000)
-    context: str | None = Field(default=None, max_length=4000)
+    goal: str = Field(min_length=1, max_length=MAX_RESEARCH_GOAL_CHARS)
+    context: str | None = Field(
+        default=None, max_length=MAX_RESEARCH_GOAL_CONTEXT_CHARS
+    )
 
     @field_validator("goal", "context")
     @classmethod

@@ -15,7 +15,11 @@ from typing import Any, cast
 
 import pytest
 
-from mcp_server_phytomni.agents.research.contracts import ResearchGoal
+from mcp_server_phytomni.agents.research.contracts import (
+    MAX_RESEARCH_GOAL_CHARS,
+    MAX_RESEARCH_GOAL_CONTEXT_CHARS,
+    ResearchGoal,
+)
 from mcp_server_phytomni.agents.research.document_evidence import (
     DocumentEvidenceDigest,
     ExtractedResearchEvidence,
@@ -488,8 +492,13 @@ async def test_empty_goal_result_fails_before_any_child_work() -> None:
     "goals",
     [
         (ResearchGoal(goal="x"), ResearchGoal(goal="x")),
-        ({"goal": "x" * 1001},),
-        ({"goal": "x", "context": "y" * 4001},),
+        ({"goal": "x" * (MAX_RESEARCH_GOAL_CHARS + 1)},),
+        (
+            {
+                "goal": "x",
+                "context": "y" * (MAX_RESEARCH_GOAL_CONTEXT_CHARS + 1),
+            },
+        ),
     ],
 )
 async def test_invalid_goal_result_fails_closed(

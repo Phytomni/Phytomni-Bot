@@ -26,7 +26,12 @@ from ...graphs.chat_adapters import (
 )
 from ...runtime.locale import SupportedLocale
 from ...storage.downloads import download_upload_context
-from .contracts import ResearchGoal, ResearchGoalBatch
+from .contracts import (
+    MAX_RESEARCH_GOAL_CHARS,
+    MAX_RESEARCH_GOAL_CONTEXT_CHARS,
+    ResearchGoal,
+    ResearchGoalBatch,
+)
 from .document_evidence import ExtractedResearchEvidence
 from .input_contracts import ResearchInputFailure, research_input_failure
 from .planning import research_planning_failure
@@ -191,12 +196,12 @@ async def _extract_goals_from_prompt(
                         "goal": {
                             "type": "string",
                             "minLength": 1,
-                            "maxLength": 1000,
+                            "maxLength": MAX_RESEARCH_GOAL_CHARS,
                         },
                         "context": {
                             "type": "string",
                             "minLength": 1,
-                            "maxLength": 4000,
+                            "maxLength": MAX_RESEARCH_GOAL_CONTEXT_CHARS,
                         },
                     },
                     "required": ["goal"],
