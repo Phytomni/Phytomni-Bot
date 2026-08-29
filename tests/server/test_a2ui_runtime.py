@@ -186,7 +186,7 @@ def _dependencies(
         """Keep direct runtime tests focused on post-claim behavior."""
         return checkpoint_present
 
-    def format_review(_state: Any, **_kwargs: Any) -> dict[str, Any]:
+    async def format_review(_state: Any, **_kwargs: Any) -> dict[str, Any]:
         return {"formatted": {"answer": "review"}, "raw": None}
 
     return a2ui_runtime.A2UIRuntimeDependencies(

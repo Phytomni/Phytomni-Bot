@@ -23,6 +23,7 @@ from ..agents.shared.a2ui import (
     validate_a2ui_surface,
 )
 from ..agents.shared.intermediate_state import merge_intermediate_state
+from ..mcp.app import _maybe_enrich_cited
 from ..mcp.result_formatting import build_tool_result_envelope
 from .lifecycle_contract import build_agent_run_response
 
@@ -92,13 +93,19 @@ def format_chat_result(
     }
 
 
-def format_review_result(
+async def format_review_result(
     final_state: Mapping[str, Any],
     *,
     arguments: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Format a terminal ReviewAgent graph state for registry storage."""
+    """Format a terminal ReviewAgent graph state for registry storage.
+
+    Bibliographic enrichment runs after the graph finishes, including
+    any A2UI pause/resume, so the stored result matches the blocking
+    cited-tool envelope.
+    """
     raw_payload = merge_intermediate_state(final_state)
+    await _maybe_enrich_cited("ReviewAgent", raw_payload)
     envelope = build_tool_result_envelope(
         "ReviewAgent",
         raw_payload,

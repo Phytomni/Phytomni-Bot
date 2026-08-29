@@ -14,6 +14,7 @@ from mcp_server_phytomni.agents.shared import sql as shared_sql
 from mcp_server_phytomni.agents.shared.citation_metadata import (
     CITATION_STATUS_KEY,
 )
+from mcp_server_phytomni.api.a2ui_projection import format_review_result
 from mcp_server_phytomni.mcp import app as app_mod
 from mcp_server_phytomni.mcp.app import invoke_tool_enveloped
 
@@ -124,3 +125,33 @@ async def test_end_to_end_enriched_references_via_sqlite(
     assert raw_doc["title"] == "T"
     assert raw_doc["content"] == "retrieval content sentinel"
     assert CITATION_STATUS_KEY not in raw_doc
+
+
+@pytest.mark.asyncio
+async def test_review_terminal_result_enriches_citations(
+    citation_db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A2UI terminal Review result enriches after the graph completes."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    with sqlite3.connect(citation_db_path) as connection:
+        connection.execute(
+            "INSERT INTO citation_records (file_id, au, so) VALUES (?, ?, ?)",
+            ("f1", "Smith J", "Nature"),
+        )
+
+    async def forbidden_database_call(*_args, **_kwargs):
+        raise AssertionError(
+            "citation enrichment called a non-SQLite database"
+        )
+
+    monkeypatch.setattr(shared_sql, "bi_query", forbidden_database_call)
+    monkeypatch.setattr(shared_sql, "gauss_query", forbidden_database_call)
+    monkeypatch.setattr(shared_sql, "relay_bi_query", forbidden_database_call)
+    result = await format_review_result({"final_response": _cited_payload()})
+    ref = result["formatted"]["references"][0]
+    assert ref["file_id"] == "f1"
+    assert ref["au"] == "Smith J"
+    assert ref["so"] == "Nature"
+    assert ref["formatted_citation"] == "Smith J. T. *Nature*."
+    assert ref["doi_missing"] is True
+    assert CITATION_STATUS_KEY not in ref

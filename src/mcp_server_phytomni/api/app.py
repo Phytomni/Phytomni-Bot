@@ -604,13 +604,13 @@ def _review_interrupt_body(
     )
 
 
-def _format_review_result(
+async def _format_review_result(
     final_state: Mapping[str, Any],
     *,
     arguments: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compatibility seam for terminal Review result formatting."""
-    return a2ui_runtime.format_review_result(
+    return await a2ui_runtime.format_review_result(
         final_state,
         arguments=arguments,
     )

@@ -113,7 +113,7 @@ type DbPath = Callable[[], str]
 type HasCheckpoint = Callable[[Any, str], Awaitable[bool]]
 type CreateStreamRun = Callable[[str, str, str, RunRequestInfo], None]
 type SettleStreamRun = Callable[..., bool]
-type ReviewFormatter = Callable[..., dict[str, Any]]
+type ReviewFormatter = Callable[..., Awaitable[dict[str, Any]]]
 type ReviewValidator = Callable[[dict[str, Any]], ReviewAgentArgs]
 type StreamSetupError = Callable[..., HTTPException]
 type FailedStreamResult = Callable[[], dict[str, Any]]
@@ -266,7 +266,7 @@ async def execute_review_with_run_id(
             interrupt=interrupt_dict,
         )
     result = _redact_review_payload(
-        dependencies.persistence.format_review_result(
+        await dependencies.persistence.format_review_result(
             final_state, arguments=arguments
         ),
         attachment_evidence,
