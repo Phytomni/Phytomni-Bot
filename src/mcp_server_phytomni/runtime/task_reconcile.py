@@ -10,6 +10,7 @@ polling; other rows may probe the remote analysis platform once.
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import sqlite3
@@ -364,12 +365,14 @@ async def _relaunch_research_memory(
         )
         return
     try:
-        await relaunch(
+        outcome = relaunch(
             dispatch_id,
             "reconcile",
             status_payload,
             log_payload,
         )
+        if inspect.isawaitable(outcome):
+            await outcome
     except (sqlite3.Error, OSError, KeyError, TypeError, ValueError):
         logger.warning(
             "reconcile: research memory relaunch skipped for %s",
