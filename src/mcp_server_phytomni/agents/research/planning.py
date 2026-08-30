@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from ...runtime.locale import SupportedLocale
 from ...storage.path_policy import PathPolicyError, safe_path_segment
 from .contracts import ResearchGoal, ResearchGoalBatch
+from .dataset_binding import bound_child_data_list
 from .document_evidence import (
     DocumentEvidenceDigest,
     ExtractedResearchEvidence,
@@ -482,7 +483,12 @@ def _children(
         context = goal.context or ""
         output_dir = research_child_output_dir(request.run_id, ordinal)
         thread_id = research_child_thread_id(request.run_id, ordinal)
-        data_list = _ImmutableDataMap(dict(data_snapshot))
+        bound = bound_child_data_list(
+            dict(data_snapshot),
+            request.prepared.authorities,
+            goal.dataset_ids,
+        )
+        data_list = _ImmutableDataMap(bound)
         fingerprint = _dispatch_fingerprint(
             request,
             _ResearchChildDraft(
@@ -492,7 +498,7 @@ def _children(
                 context,
                 output_dir,
                 thread_id,
-                data_snapshot,
+                tuple(bound.items()),
             ),
         )
         children.append(
@@ -519,7 +525,6 @@ def _dispatch_fingerprint(
     """Hash every semantic input that affects one child dispatch."""
     return _digest(
         {
-            "compute_resource": request.compute_resource,
             "data_list": child.data_snapshot,
             "effective_query": request.prepared.effective_query,
             "evidence_digest": request.evidence.coverage_digest,
@@ -563,7 +568,10 @@ def _plan_digest(
             ],
             "compute_resource": request.compute_resource,
             "evidence_digest": request.evidence.coverage_digest,
-            "goals": [goal.model_dump(mode="json") for goal in goals],
+            "goals": [
+                goal.model_dump(mode="json", exclude_none=True)
+                for goal in goals
+            ],
             "interop_mode": request.interop_mode,
             "interop_targets": request.interop_targets,
             "prepared_fingerprint": request.prepared.execution_fingerprint,

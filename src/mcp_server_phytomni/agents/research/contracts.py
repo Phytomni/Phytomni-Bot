@@ -29,6 +29,7 @@ class ResearchGoal(BaseModel):
     context: str | None = Field(
         default=None, max_length=MAX_RESEARCH_GOAL_CONTEXT_CHARS
     )
+    dataset_ids: tuple[str, ...] | None = Field(default=None)
 
     @field_validator("goal", "context")
     @classmethod
@@ -40,6 +41,24 @@ class ResearchGoal(BaseModel):
         if not clean:
             raise ValueError("value must be nonblank")
         return clean
+
+    @field_validator("dataset_ids", mode="before")
+    @classmethod
+    def coerce_dataset_ids(cls, value: object) -> tuple[str, ...] | None:
+        """Coerce cited ids; unusable values fail-open to unbound."""
+        if value is None or not isinstance(value, (list, tuple)):
+            return None
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for item in value:
+            if not isinstance(item, str):
+                continue
+            clean = item.strip()
+            if not clean or clean in seen:
+                continue
+            seen.add(clean)
+            ordered.append(clean)
+        return tuple(ordered)
 
 
 class ResearchGoalBatch(RootModel[list[ResearchGoal]]):

@@ -10,7 +10,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -27,6 +27,7 @@ from mcp_server_phytomni.agents.research.document_evidence import (
 )
 from mcp_server_phytomni.agents.research.input_contracts import SourceSpan
 from mcp_server_phytomni.agents.research.input_preparation import (
+    PreparedResearchAuthority,
     PreparedResearchInput,
 )
 from mcp_server_phytomni.agents.research.planning import (
@@ -533,6 +534,48 @@ async def test_query_only_plan_allows_empty_data_list() -> None:
     )
 
     assert not dict(plan.children[0].data_list)
+
+
+async def test_bound_goal_subsets_child_data_list() -> None:
+    """Cited inventory ids subset one child; unbound goals keep parent."""
+    parent = {
+        "obs://bucket/a.csv": "table-a",
+        "obs://bucket/b.csv": "table-b",
+    }
+    prepared = replace(
+        _prepared(parent),
+        authorities=(
+            PreparedResearchAuthority(
+                dataset_id="dataset_001",
+                exact_reference="obs://bucket/a.csv",
+                compound_suffix=".csv",
+                authority=cast(Any, SimpleNamespace()),
+            ),
+        ),
+    )
+    plan = await build_research_plan(
+        _request(prepared=prepared),
+        _GoalProvider(
+            (
+                ResearchGoal(
+                    goal="Analyze first table",
+                    dataset_ids=("dataset_001",),
+                ),
+                ResearchGoal(goal="Analyze both tables"),
+            )
+        ),
+    )
+
+    assert len(plan.children[0].data_list) == 1
+    assert dict(plan.children[0].data_list) == {
+        "obs://bucket/a.csv": "table-a",
+    }
+    assert len(plan.children[1].data_list) == 2
+    assert dict(plan.children[1].data_list) == parent
+    assert (
+        plan.children[0].dispatch_fingerprint
+        != plan.children[1].dispatch_fingerprint
+    )
 
 
 async def test_planner_rejects_empty_evidence_before_provider() -> None:
