@@ -993,6 +993,9 @@ user:
           *   `"goal"`: The comprehensive summary string of the workflow.
           *   `"context"`: The aggregated original text from the paper
           providing the details for the workflow.
+      Each object MAY include `"dataset_ids"`, a JSON array of inventory
+      ids this objective needs. Omit the key when unsure. Never invent
+      ids not listed in the evidence roster.
 
       **EXAMPLE OF A SINGLE OUTPUT ELEMENT:**
       ```json
@@ -1017,6 +1020,7 @@ user:
           combined into one object... The FindIntegrationAnchors function
           command used default parameters... The IntegrateData function was
           run...",
+          "dataset_ids": ["dataset_001"],
         },
         {
           "goal": "...",

@@ -116,7 +116,7 @@ async def extract_research_goals(
     *,
     locale: SupportedLocale | None,
     dependencies: ResearchGoalExtractionDependencies,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """Extract and validate research goals through the shared chat seam."""
     config = dependencies.in_silico_config
     if obs_file_list:
@@ -141,9 +141,16 @@ async def extract_research_goals(
         locale=locale,
         dependencies=dependencies,
     )
-    return [
-        {"goal": goal.goal, "context": goal.context or ""} for goal in goals
-    ]
+    payload: list[dict[str, Any]] = []
+    for goal in goals:
+        item: dict[str, Any] = {
+            "goal": goal.goal,
+            "context": goal.context or "",
+        }
+        if goal.dataset_ids is not None:
+            item["dataset_ids"] = list(goal.dataset_ids)
+        payload.append(item)
+    return payload
 
 
 async def extract_research_goals_from_evidence(
@@ -203,6 +210,15 @@ async def _extract_goals_from_prompt(
                             "minLength": 1,
                             "maxLength": MAX_RESEARCH_GOAL_CONTEXT_CHARS,
                         },
+                        "dataset_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                            },
+                            "maxItems": 256,
+                        },
                     },
                     "required": ["goal"],
                 },
@@ -257,7 +273,11 @@ def _evidence_prompt(evidence: ExtractedResearchEvidence) -> str:
             or not unit.text.strip()
         ):
             raise _goal_extraction_failure()
-        part = f"[evidence_{ordinal + 1:03d}]\n{unit.text.strip()}"
+        chunks = [f"[evidence_{ordinal + 1:03d}]"]
+        if unit.dataset_ids:
+            chunks.append("dataset_ids: " + ", ".join(unit.dataset_ids))
+        chunks.append(unit.text.strip())
+        part = "\n".join(chunks)
         total += len(part) + (2 if parts else 0)
         if total > MAX_GOAL_EVIDENCE_CHARS:
             raise _goal_extraction_failure()
