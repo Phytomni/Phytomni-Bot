@@ -46,6 +46,8 @@ from mcp_server_phytomni.runtime.task_manager import (
     TaskManager,
 )
 from mcp_server_phytomni.runtime.task_reconcile import (
+    bind_research_relaunch_outbox,
+    get_research_relaunch_outbox,
     reconcile_task,
     reconcile_task_log,
 )
@@ -63,6 +65,13 @@ def _attach_reconcile_log_handler(
         caplog.handler,
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_research_relaunch_outbox() -> Iterator[None]:
+    """Drop any GetRun outbox bound by a previous test."""
+    yield
+    bind_research_relaunch_outbox(None)
 
 
 @pytest.fixture(name="mgr_path")
@@ -580,9 +589,9 @@ async def test_reconcile_task_probes_source_task_id_when_present(
     )
 
     await reconcile_task("T-local")
-    assert probed_ids == [
-        "R-remote"
-    ], f"Expected probe of 'R-remote', got {probed_ids}"
+    assert probed_ids == ["R-remote"], (
+        f"Expected probe of 'R-remote', got {probed_ids}"
+    )
 
 
 @pytest.mark.asyncio
@@ -614,9 +623,9 @@ async def test_reconcile_task_probes_own_id_when_source_task_id_is_none(
     )
 
     await reconcile_task("T-own")
-    assert probed_ids == [
-        "T-own"
-    ], f"Expected probe of 'T-own', got {probed_ids}"
+    assert probed_ids == ["T-own"], (
+        f"Expected probe of 'T-own', got {probed_ids}"
+    )
 
 
 @pytest.mark.asyncio
@@ -1068,3 +1077,126 @@ async def test_reconcile_persists_network_memory_class_failure(
     assert row is not None
     assert row["status"] == "failed"
 
+
+def _install_research_memory_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    mgr_path: str,
+    *,
+    dispatch_id: str = "dispatch-1",
+) -> None:
+    """Record one Research child and stub a memory-class live FAILED."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile._research_outbox_lookup",
+        lambda _db, _ids: (
+            dispatch_id,
+            {"compute_resource": "small"},
+        ),
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="rs-oom",
+            status="submitted",
+            output_dir="/obs/run",
+            run_context=RunContext(agent="research"),
+            source_task_id="ei-remote-1",
+        )
+    )
+
+    async def _failed(t_id: str, **_: Any) -> dict[str, str]:
+        assert t_id == "ei-remote-1"
+        return {"status": "FAILED", "message": "MemoryError"}
+
+    async def _oom_log(_t_id: str, **_: Any) -> dict[str, object]:
+        return {
+            "logs": [{"content": "worker hit OOM during merge"}],
+        }
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _failed,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_log",
+        _oom_log,
+    )
+
+
+@pytest.mark.asyncio
+async def test_reconcile_research_memory_relaunch_uses_bound_outbox(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GetRun relaunch uses the bound production outbox submit port."""
+    _install_research_memory_failure(monkeypatch, mgr_path)
+    relaunch = AsyncMock()
+    bind_research_relaunch_outbox(
+        SimpleNamespace(relaunch_memory_exhausted=relaunch)
+    )
+
+    result = await reconcile_task("rs-oom")
+
+    assert result["status"] == "submitted"
+    relaunch.assert_awaited_once_with(
+        "dispatch-1",
+        "reconcile",
+        {"status": "FAILED", "message": "MemoryError"},
+        {
+            "logs": [
+                {"content": "worker hit OOM during merge"},
+            ]
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_reconcile_research_memory_relaunch_warns_when_unbound(
+    mgr_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Missing bind must not construct a submit-less outbox."""
+    _install_research_memory_failure(monkeypatch, mgr_path)
+    caplog.set_level(logging.WARNING)
+
+    result = await reconcile_task("rs-oom")
+
+    assert result["status"] == "submitted"
+    assert any(
+        "submit port is unbound" in rec.message for rec in caplog.records
+    )
+
+
+def test_build_research_input_coordinator_binds_relaunch_outbox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production coordinator construction wires GetRun's relaunch outbox."""
+    from mcp_server_phytomni.api import research_input as research_input_mod
+
+    outbox = object()
+    coordinator = SimpleNamespace(outbox=outbox, recovery=object())
+
+    def _from_production(
+        _cls: object, _request: object = None, **_ports: object
+    ) -> object:
+        return coordinator
+
+    monkeypatch.setattr(
+        research_input_mod.ResearchInputCoordinator,
+        "from_production",
+        classmethod(_from_production),
+    )
+    monkeypatch.setattr(
+        research_input_mod,
+        "register_recovery_service",
+        lambda _service: None,
+    )
+    monkeypatch.setitem(research_input_mod._RUNTIME_STATE, "current", None)
+
+    built = research_input_mod.build_research_input_coordinator()
+
+    assert built is coordinator
+    assert get_research_relaunch_outbox() is outbox

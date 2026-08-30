@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 
 __all__ = [
@@ -26,6 +27,12 @@ _MEMORY_TOKENS = (
     "std::bad_alloc",
     "exit code 137",
     "signal 9",
+)
+_MEMORY_TOKEN_PATTERN = re.compile(
+    "|".join(
+        rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])"
+        for token in _MEMORY_TOKENS
+    )
 )
 
 
@@ -55,9 +62,9 @@ def is_memory_class_failure(
 ) -> bool:
     """Return whether status/log text matches a memory-class failure.
 
-    A bare ``FAILED`` status is not memory-class. Tokens are matched as
-    case-insensitive substrings of one haystack built from status values,
-    ``logs[].content``, and the log ``text`` field.
+    A bare ``FAILED`` status is not memory-class. Tokens are matched
+    case-insensitively with non-alnum boundaries on one haystack built
+    from status values, ``logs[].content``, and the log ``text`` field.
 
     Args:
         status_payload: Live task-status body, or ``None``.
@@ -66,12 +73,10 @@ def is_memory_class_failure(
     Returns:
         True when a documented memory-class token is present.
     """
-    haystack = " ".join(
-        _haystack_parts(status_payload, log_payload)
-    ).lower()
+    haystack = " ".join(_haystack_parts(status_payload, log_payload)).lower()
     if not haystack.strip():
         return False
-    return any(token in haystack for token in _MEMORY_TOKENS)
+    return _MEMORY_TOKEN_PATTERN.search(haystack) is not None
 
 
 def _haystack_parts(

@@ -77,10 +77,22 @@ def test_is_memory_class_failure_rejects_non_memory_payloads(
     ],
 )
 def test_is_memory_class_failure_matches_each_token(token: str) -> None:
-    """Each documented token is a case-insensitive substring match."""
+    """Each documented token matches on a case-insensitive word boundary."""
     assert is_memory_class_failure({"message": token}) is True
     assert is_memory_class_failure({"message": token.upper()}) is True
     assert is_memory_class_failure({"message": token.lower()}) is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["room", "boom", "gloom", "skilled"],
+)
+def test_is_memory_class_failure_rejects_embedded_tokens(
+    message: str,
+) -> None:
+    """``oom`` and ``killed`` must not match inside ordinary words."""
+    assert is_memory_class_failure({"message": message}) is False
+    assert is_memory_class_failure({"message": message.upper()}) is False
 
 
 def test_is_memory_class_failure_reads_logs_and_text() -> None:

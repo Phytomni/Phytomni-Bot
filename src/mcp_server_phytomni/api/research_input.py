@@ -37,6 +37,7 @@ from ..runtime.research_input_store import (
     ResearchAdmissionReservation,
     ResearchInputStore,
 )
+from ..runtime.task_reconcile import bind_research_relaunch_outbox
 from ..storage.path_policy import IdFactory
 from .research_launch import launch_worker
 from .research_root import bind_default_research_root_request_factory
@@ -123,6 +124,7 @@ def build_research_input_coordinator(
         request,
         **ports,
     )
+    bind_research_relaunch_outbox(coordinator.outbox)
     recovery = coordinator.recovery
     if recovery is None:
         raise RuntimeError("Research production runtime has no recovery")

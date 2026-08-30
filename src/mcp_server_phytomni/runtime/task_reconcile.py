@@ -40,12 +40,28 @@ from .terminal_report import (
     synthesize_terminal_report,
 )
 
-__all__ = ["reconcile_task", "reconcile_task_log"]
+__all__ = [
+    "bind_research_relaunch_outbox",
+    "get_research_relaunch_outbox",
+    "reconcile_task",
+    "reconcile_task_log",
+]
 
 logger = logging.getLogger(__name__)
 
 _NON_TERMINAL_STATUSES = frozenset({"running", "submitted", "pending"})
 _RESTART_ORPHAN_REASON = "workflow interrupted by service restart"
+_RESEARCH_RELAUNCH_OUTBOX: dict[str, object | None] = {"current": None}
+
+
+def bind_research_relaunch_outbox(outbox: object | None) -> None:
+    """Bind the production Research outbox used by GetRun relaunch."""
+    _RESEARCH_RELAUNCH_OUTBOX["current"] = outbox
+
+
+def get_research_relaunch_outbox() -> object | None:
+    """Return the bound production Research outbox, if any."""
+    return _RESEARCH_RELAUNCH_OUTBOX["current"]
 
 
 def _platform_log_contents(payload: Mapping[str, Any]) -> list[str]:
@@ -316,9 +332,7 @@ def _task_input_fingerprint(db_path: str, task_id: str) -> str | None:
     return row[0].strip()
 
 
-async def _fetch_live_task_log(
-    probe_id: str, config: AnalystConfig
-) -> object:
+async def _fetch_live_task_log(probe_id: str, config: AnalystConfig) -> object:
     """Fetch one task log best-effort; a miss is not a hard failure."""
     try:
         return await task_log(
@@ -335,23 +349,22 @@ async def _fetch_live_task_log(
 
 
 async def _relaunch_research_memory(
-    db_path: str,
     dispatch_id: str,
     status_payload: object,
     log_payload: object,
 ) -> None:
     """Best-effort Research outbox relaunch; skip if submit is unwired."""
-    try:
-        from ..agents.research.dispatch_outbox import (
-            ResearchDispatchOutbox,
+    outbox = get_research_relaunch_outbox()
+    relaunch = getattr(outbox, "relaunch_memory_exhausted", None)
+    if outbox is None or not callable(relaunch):
+        logger.warning(
+            "reconcile: research memory relaunch skipped for %s; "
+            "submit port is unbound",
+            dispatch_id,
         )
-        from .research_input_store import ResearchInputStore
-    except ImportError:
         return
     try:
-        store = ResearchInputStore(db_path)
-        outbox = ResearchDispatchOutbox(store)
-        await outbox.relaunch_memory_exhausted(
+        await relaunch(
             dispatch_id,
             "reconcile",
             status_payload,
@@ -401,9 +414,7 @@ async def _hide_memory_class_failure(
     )
     found = _research_outbox_lookup(manager.db_path, remote_ids)
     if found is not None:
-        await _relaunch_research_memory(
-            manager.db_path, found[0], live, log_payload
-        )
+        await _relaunch_research_memory(found[0], live, log_payload)
     elif str(task_agent or "").strip().lower() == "analyst":
         fingerprint = _task_input_fingerprint(
             manager.db_path, str(result.get("task_id") or "")
