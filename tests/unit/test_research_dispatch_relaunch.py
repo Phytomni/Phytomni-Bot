@@ -10,17 +10,17 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
-from mcp_server_phytomni.agents.research.dispatch_outbox import (
-    ResearchDispatchOutbox,
-    ResearchDispatchRecord,
-    persist_plan_and_outbox,
-)
 from tests.unit.test_research_dispatch_outbox import (
     _authority_verifier,
     _plan,
     _prepared,
     _store,
+)
+
+from mcp_server_phytomni.agents.research.dispatch_outbox import (
+    ResearchDispatchOutbox,
+    ResearchDispatchRecord,
+    persist_plan_and_outbox,
 )
 
 pytestmark = pytest.mark.unit
