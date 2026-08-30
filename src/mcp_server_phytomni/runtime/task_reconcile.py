@@ -14,7 +14,7 @@ import inspect
 import json
 import logging
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, Literal, NamedTuple
 
 from mcp.shared.exceptions import McpError
@@ -49,6 +49,17 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def _call_relaunch(
+    relaunch: Callable[..., object],
+    dispatch_id: str,
+    status_payload: object,
+    log_payload: object,
+) -> object:
+    """Invoke a bound outbox relaunch port."""
+    return relaunch(dispatch_id, status_payload, log_payload)
+
 
 _NON_TERMINAL_STATUSES = frozenset({"running", "submitted", "pending"})
 _RESTART_ORPHAN_REASON = "workflow interrupted by service restart"
@@ -377,8 +388,8 @@ async def _relaunch_research_memory(
         )
         return
     try:
-        # Bound outbox is a duck-typed production port or test double.
-        outcome = relaunch(  # pylint: disable=not-callable
+        outcome = _call_relaunch(
+            relaunch,
             dispatch_id,
             status_payload,
             log_payload,

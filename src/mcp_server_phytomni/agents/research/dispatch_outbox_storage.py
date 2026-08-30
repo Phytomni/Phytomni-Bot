@@ -720,6 +720,29 @@ def _parent_live(connection: sqlite3.Connection, run_id: str) -> bool:
     )
 
 
+def parent_run_is_live(db_path: str, run_id: str) -> bool:
+    """Return whether the parent run may still accept child work."""
+    with sqlite_transaction(db_path) as connection:
+        return _parent_live(connection, run_id)
+
+
+def parent_live_predicate() -> str:
+    """SQL fragment requiring the parent run to still be live."""
+    return (
+        "EXISTS (SELECT 1 FROM runs WHERE runs.run_id = "
+        "research_dispatch_outbox.run_id AND runs.status NOT IN "
+        "('succeeded','failed','cancelled')) AND NOT EXISTS (SELECT 1 FROM "
+        "research_input_resolutions WHERE run_id = "
+        "research_dispatch_outbox.run_id "
+        "AND COALESCE(cancel_requested,0) <> 0)"
+    )
+
+
+OUTBOX_ROW_SELECT = (
+    "SELECT * FROM research_dispatch_outbox WHERE outbox_id = ?"
+)
+
+
 def mark_row(
     db_path: str,
     record: Any,

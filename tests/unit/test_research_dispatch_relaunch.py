@@ -48,14 +48,17 @@ def _memory_failure() -> tuple[dict[str, str], dict[str, object]]:
     )
 
 
-@pytest.mark.asyncio
-# pylint: disable-next=too-many-locals
-async def test_memory_relaunch_bumps_small_child_to_medium(
-    tmp_path: Path,
-) -> None:
-    """A memory-class FAILED child resubmits once on medium."""
+async def _accepted_children(tmp_path: Path, count: int = 2) -> tuple[
+    ResearchDispatchOutbox,
+    tuple[ResearchDispatchRecord, ...],
+    list[ResearchDispatchRecord],
+    list[Any],
+]:
+    """Persist, submit, and accept ``count`` children on one outbox."""
     store = _store(tmp_path)
-    records = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(2))
+    records = persist_plan_and_outbox(
+        store, "run-1", 0, _prepared(), _plan(count)
+    )
     submitted, submit = _counting_submit()
     outbox = ResearchDispatchOutbox(
         store,
@@ -66,6 +69,15 @@ async def test_memory_relaunch_bumps_small_child_to_medium(
         await outbox.dispatch_once(item.dispatch_id, "worker")
         for item in records
     ]
+    return outbox, records, submitted, dispatched
+
+
+@pytest.mark.asyncio
+async def test_memory_relaunch_bumps_small_child_to_medium(
+    tmp_path: Path,
+) -> None:
+    """A memory-class FAILED child resubmits once on medium."""
+    outbox, records, submitted, dispatched = await _accepted_children(tmp_path)
     first, second = dispatched
     loaded = outbox.load(records[0].dispatch_id)
     assert loaded.payload["compute_resource"] == "small"

@@ -3,8 +3,6 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Pure preflight and atomic admission for durable Research input work."""
 
-# pylint: disable=too-many-lines
-
 from __future__ import annotations
 
 import hashlib
@@ -119,13 +117,7 @@ def build_research_input_coordinator(
     request: Any | None = None,
     **ports: Any,
 ) -> Any:
-    """Build and register the production Research admission worker.
-
-    The API admission owner supplies the store, real Analyst configuration,
-    metadata port, and resolver provider.  Keeping construction here gives
-    HTTP admission and lifespan recovery the same coordinator instance while
-    leaving MCP dispatch independent of this HTTP-only path.
-    """
+    """Build and register the production Research admission worker."""
     root_worker = ports.pop("root_worker", None)
     root_request_factory = ports.pop("root_request_factory", None)
     coordinator = ResearchInputCoordinator.from_production(
