@@ -1374,7 +1374,10 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   `MODEL_ID`, `CODER_MODEL`, or `EMBED_MODEL`. Analysis children send only a
   `small`, `medium`, or `large` `compute_resource`; the operator removes it and
   injects the matching `APP_ID`, so do not provision these model names or app
-  UUIDs in the child environment.
+  UUIDs in the child environment. Relay still maps `small` | `medium` |
+  `large` to the operator `APP_ID`. After an OOM, `GetRun` may record a
+  second (or third) EI id for the same `part-NNN`. The wait-card stays
+  running until that child is actually terminal.
 
 - **Query the audit.** Every relay call is recorded in the local audit
   store (`RELAY_AUDIT_DB_PATH`). Query it with the service token:

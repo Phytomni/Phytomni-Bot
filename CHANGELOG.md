@@ -35,6 +35,13 @@ package version remains `0.1.3` until the release bump.
 
 ### Changed
 
+- **Analyst/Research compute tiers** — New Analyst and Research
+  jobs start at `small`. A memory-class remote failure relaunches
+  that same child at `medium`, then `large`. Research children may
+  receive a subset of parent datasets when goal extraction cites
+  inventory ids; otherwise they keep the full snapshot. Typed
+  agents still use `resolve_compute_resource`. There is no reject
+  tier.
 - **Research goal extraction bounds** — Each extracted `goal` may be
   16384 characters and each `context` 114688 (sum 131072, the evidence
   prompt cap). Paper paragraphs that previously tripped the 4000-character
@@ -51,7 +58,9 @@ package version remains `0.1.3` until the release bump.
   409\.
 - **Compute tiers** — `AnalystConfig.RESOURCE` medium is now 4C/16G
   (was 8G). Submit sites resolve `small` / `medium` / `large` through
-  `resolve_compute_resource`; InSilicoResearch defaults to `medium`.
+  `resolve_compute_resource`. Analyst and Research start at `small`;
+  a memory-class remote failure relaunches the same child at the next
+  named tier. There is no reject tier.
 - **Outbound example budgets** — `config/.env.example` sets LLM 32,
   retrieval/rerank/NL2SQL 16, and SPA FAQ 4. Other pools stay `0`
   (unlimited per process). Restart the process to apply.
