@@ -11,7 +11,10 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from mcp_server_phytomni.agents.research.contracts import ResearchGoal
+from mcp_server_phytomni.agents.research.contracts import (
+    ResearchGoal,
+    ResearchGoalBatch,
+)
 from mcp_server_phytomni.agents.research.dataset_binding import (
     bound_child_data_list,
 )
@@ -96,3 +99,12 @@ def test_research_goal_coerces_dataset_ids() -> None:
     assert goal.dataset_ids == ("dataset_002",)
     with pytest.raises(ValidationError):
         ResearchGoal.model_validate({"goal": "g", "unexpected": True})
+
+
+def test_research_goal_batch_fail_opens_non_list_dataset_ids() -> None:
+    """A non-list dataset_ids value does not reject the whole batch."""
+    batch = ResearchGoalBatch.model_validate(
+        [{"goal": "g1", "dataset_ids": "not-a-list"}]
+    )
+
+    assert batch.root[0].dataset_ids is None

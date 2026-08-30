@@ -578,6 +578,62 @@ async def test_bound_goal_subsets_child_data_list() -> None:
     )
 
 
+async def test_bound_child_fingerprint_isolates_data_list() -> None:
+    """Same child identity, only bound data_list changes fingerprint."""
+    parent = {
+        "obs://bucket/a.csv": "table-a",
+        "obs://bucket/b.csv": "table-b",
+    }
+    prepared = replace(
+        _prepared(parent),
+        authorities=(
+            PreparedResearchAuthority(
+                dataset_id="dataset_001",
+                exact_reference="obs://bucket/a.csv",
+                compound_suffix=".csv",
+                authority=cast(Any, SimpleNamespace()),
+            ),
+        ),
+    )
+    request = _request(prepared=prepared)
+    goal_one = "Analyze first table"
+    goal_two = "Analyze both tables"
+    bound = await build_research_plan(
+        request,
+        _GoalProvider(
+            (
+                ResearchGoal(
+                    goal=goal_one,
+                    dataset_ids=("dataset_001",),
+                ),
+                ResearchGoal(goal=goal_two),
+            )
+        ),
+    )
+    unbound = await build_research_plan(
+        request,
+        _GoalProvider(
+            (
+                ResearchGoal(goal=goal_one, dataset_ids=None),
+                ResearchGoal(goal=goal_two),
+            )
+        ),
+    )
+    first_bound = bound.children[0]
+    first_unbound = unbound.children[0]
+
+    assert len(first_bound.data_list) == 1
+    assert len(first_unbound.data_list) == 2
+    assert (
+        first_bound.dispatch_fingerprint
+        != first_unbound.dispatch_fingerprint
+    )
+    assert first_bound.task_name == first_unbound.task_name
+    assert first_bound.output_dir == first_unbound.output_dir
+    assert first_bound.thread_id == first_unbound.thread_id
+    assert first_bound.goal_description == first_unbound.goal_description
+
+
 async def test_planner_rejects_empty_evidence_before_provider() -> None:
     """A forged empty evidence object cannot reach the goal provider."""
     request = _request()
