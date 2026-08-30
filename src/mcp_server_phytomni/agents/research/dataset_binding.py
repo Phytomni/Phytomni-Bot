@@ -19,7 +19,9 @@ def bound_child_data_list(
 ) -> dict[str, str]:
     """Return a child data map bound to cited inventory references."""
     snapshot = dict(parent)
-    if dataset_ids is None or not isinstance(dataset_ids, tuple):
+    if dataset_ids is None or isinstance(dataset_ids, (str, bytes)):
+        return snapshot
+    if not isinstance(dataset_ids, Sequence):
         return snapshot
     if not dataset_ids:
         return {}

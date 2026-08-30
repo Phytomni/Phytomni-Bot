@@ -47,6 +47,7 @@ AUTHORITIES = (
     ("dataset_ids", "expected"),
     [
         (("dataset_002",), {"obs://b/b.csv": "table-b"}),
+        (["dataset_002"], {"obs://b/b.csv": "table-b"}),
         (None, dict(PARENT)),
         ((), {}),
         (("nope",), dict(PARENT)),
@@ -57,7 +58,7 @@ def test_bound_child_data_list_subsets_or_fail_opens(
     dataset_ids: object,
     expected: dict[str, str],
 ) -> None:
-    """None/unknown/str fail-open; empty tuple binds no datasets."""
+    """None/unknown/str fail-open; list/tuple bind; empty binds none."""
     snapshot = dict(PARENT)
 
     result = bound_child_data_list(PARENT, AUTHORITIES, dataset_ids)
