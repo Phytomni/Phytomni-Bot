@@ -572,10 +572,10 @@ def test_compute_resource_table_and_agent_defaults() -> None:
         "large": {"cpu": 16, "memory": 48},
     }
     assert analyst_fields["COMPUTE_RESOURCE"].default == "small"
-    assert research_fields["COMPUTE_RESOURCE"].default == "medium"
+    assert research_fields["COMPUTE_RESOURCE"].default == "small"
     assert environment_fields["COMPUTE_RESOURCE"].default == "large"
     assert resolve_compute_resource(AnalystConfig) == "small"
-    assert resolve_compute_resource(InSilicoResearchConfig) == "medium"
+    assert resolve_compute_resource(InSilicoResearchConfig) == "small"
     assert resolve_compute_resource(EnvironmentConfig) == "large"
     assert (
         resolve_compute_resource(

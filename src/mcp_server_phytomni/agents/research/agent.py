@@ -98,6 +98,7 @@ from ..shared.remote_analysis import (
     submit_remote_analysis,
 )
 from .contracts import ResearchGoal
+from .dataset_binding import bound_child_data_list
 from .document_evidence import ExtractedResearchEvidence
 from .goal_extraction import (
     ResearchGoalExtractionDependencies,
@@ -179,8 +180,8 @@ class InSilicoResearchState(ParallelDispatchState):
     obs_file_list: list[str]
     extracted_evidence: NotRequired[ExtractedResearchEvidence]
     output_dir: str | None
-    goals: list[dict[str, str]]  # List of extracted research objectives
-    research_tasks: list[dict[str, str]]  # List of research tasks
+    goals: list[dict[str, Any]]  # List of extracted research objectives
+    research_tasks: list[dict[str, Any]]  # List of research tasks
     goal_description: str
     context: str
     task_name: str
@@ -346,7 +347,6 @@ class InSilicoResearchAgents:
                 "research_node",
                 {
                     "task_index": i,
-                    "data_list": state.get("data_list", {}),
                     "output_dir": state.get("output_dir"),
                     "interop_mode": state.get("interop_mode", "off"),
                     "interop_targets": state.get("interop_targets", []),
@@ -608,10 +608,15 @@ class InSilicoResearchAgents:
                     extracted_evidence,
                     state.get("locale"),
                 )
-                goals = [
-                    {"goal": item.goal, "context": item.context or ""}
-                    for item in models
-                ]
+                goals = []
+                for item in models:
+                    goal: dict[str, Any] = {
+                        "goal": item.goal,
+                        "context": item.context or "",
+                    }
+                    if item.dataset_ids is not None:
+                        goal["dataset_ids"] = list(item.dataset_ids)
+                    goals.append(goal)
             else:
                 goals = await self._extract_goals(
                     paper_text,
@@ -658,6 +663,7 @@ class InSilicoResearchAgents:
             bucket_name=self.in_silico_config.BUCKET_NAME,
             run_identity=run_identity,
         )
+        parent_data = state.get("data_list") or {}
         tasks = [
             {
                 "goal_description": goal["goal"],
@@ -665,6 +671,11 @@ class InSilicoResearchAgents:
                 "task_name": f"research_goal_{i}",
                 "thread_id": run_identity.scoped_id("thread", i),
                 "output_dir": result_child_output_dir(output_dir, i),
+                "data_list": bound_child_data_list(
+                    parent_data,
+                    (),
+                    goal.get("dataset_ids"),
+                ),
             }
             for i, goal in enumerate(goals)
         ]

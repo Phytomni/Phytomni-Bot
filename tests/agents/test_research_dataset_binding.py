@@ -17,6 +17,7 @@ from mcp_server_phytomni.agents.research.contracts import (
 )
 from mcp_server_phytomni.agents.research.dataset_binding import (
     bound_child_data_list,
+    bound_child_grants,
 )
 
 pytestmark = pytest.mark.agent
@@ -87,6 +88,46 @@ def test_bound_child_data_list_differs_by_cited_ids() -> None:
     second = bound_child_data_list(PARENT, AUTHORITIES, ("dataset_002",))
 
     assert first != second
+
+
+GRANTS = (
+    {
+        "dataset_id": "dataset-001",
+        "exact_reference": "obs://b/a.csv",
+        "grant_id": "grant-001",
+    },
+    {
+        "dataset_id": "dataset-002",
+        "exact_reference": "obs://b/b.csv",
+        "grant_id": "grant-002",
+    },
+)
+
+
+def test_bound_child_grants_keeps_matching_references() -> None:
+    """Grants whose exact_reference is a child data_list key are kept."""
+    result = bound_child_grants(GRANTS, {"obs://b/a.csv": "table-a"})
+
+    assert tuple(grant["dataset_id"] for grant in result) == ("dataset-001",)
+    assert result[0]["grant_id"] == "grant-001"
+
+
+def test_bound_child_grants_empty_data_list_drops_all() -> None:
+    """An empty child data_list binds no grants."""
+    assert bound_child_grants(GRANTS, {}) == ()
+
+
+def test_bound_child_grants_preserves_parent_order() -> None:
+    """Matching grants keep the parent grant order, not data_list order."""
+    result = bound_child_grants(
+        GRANTS,
+        {"obs://b/b.csv": "table-b", "obs://b/a.csv": "table-a"},
+    )
+
+    assert tuple(grant["dataset_id"] for grant in result) == (
+        "dataset-001",
+        "dataset-002",
+    )
 
 
 def test_research_goal_coerces_dataset_ids() -> None:

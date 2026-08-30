@@ -113,6 +113,11 @@ async def test_research_state_reduction_dispatches_single_goal(
             Deterministic task payload echoing ``task.task_name``.
         """
         submitted.append(task.task_name)
+        assert task.data_list == {
+            "/obs/phytomni/data/rice.fa": (
+                "Rice protein sequences for PHYB analysis."
+            ),
+        }
         return {
             "task_id": f"task-{task.task_name}",
             "output_dir": task.output_dir,
@@ -249,3 +254,36 @@ async def test_research_state_reduction_handles_multiple_goals(
     assert final_state["completed_count"] == 2
     assert final_state["goals"] == extracted
     assert final_state.get("error") is None
+
+
+async def test_prepare_tasks_puts_data_list_on_each_task() -> None:
+    """Each graph task carries data_list; missing authorities fail-open."""
+    agent = _build_research_agent()
+    parent = {
+        "obs://b/a.tsv": "table-a",
+        "obs://b/b.tsv": "table-b",
+    }
+
+    result = await agent.prepare_tasks(
+        cast(
+            Any,
+            {
+                "user_id": "test-user",
+                "output_dir": "/tmp/research-out",
+                "data_list": parent,
+                "goals": [
+                    {
+                        "goal": "analyze first table",
+                        "context": "",
+                        "dataset_ids": ["dataset-001"],
+                    },
+                    {"goal": "analyze both tables", "context": ""},
+                ],
+            },
+        )
+    )
+
+    tasks = result["research_tasks"]
+    assert isinstance(tasks[0]["data_list"], dict)
+    assert tasks[0]["data_list"] == parent
+    assert tasks[1]["data_list"] == parent

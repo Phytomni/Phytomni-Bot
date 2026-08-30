@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
-__all__ = ["bound_child_data_list"]
+__all__ = ["bound_child_data_list", "bound_child_grants"]
 
 
 def bound_child_data_list(
@@ -35,6 +36,20 @@ def bound_child_data_list(
         for reference, description in snapshot.items()
         if reference in wanted
     }
+
+
+def bound_child_grants(
+    grants: Sequence[Mapping[str, Any]] | tuple,
+    data_list: Mapping[str, str],
+) -> tuple[dict, ...]:
+    """Keep grants whose exact_reference is a child data_list key."""
+    if not data_list:
+        return ()
+    return tuple(
+        dict(grant)
+        for grant in grants
+        if grant.get("exact_reference") in data_list
+    )
 
 
 def _id_to_ref(authorities: Iterable[object]) -> dict[str, str]:

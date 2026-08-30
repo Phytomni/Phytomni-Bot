@@ -205,6 +205,8 @@ def test_atomic_plan_projection_and_outbox_commit(tmp_path: Path) -> None:
     ]
     assert work == (2,)
     assert stage == ("planning",)
+    first = ResearchDispatchOutbox(store).load(records[0].dispatch_id)
+    assert first.payload["compute_resource"] == "small"
 
 
 def test_plan_persists_exact_private_authority_bindings(
@@ -230,7 +232,7 @@ def test_plan_persists_exact_private_authority_bindings(
         authorities=(
             PreparedResearchAuthority(
                 dataset_id="dataset-001",
-                exact_reference="obs://dev-bucket/dataset-001.tsv",
+                exact_reference="bucket/data.tsv",
                 compound_suffix=".tsv",
                 authority=authority,
             ),
@@ -243,13 +245,14 @@ def test_plan_persists_exact_private_authority_bindings(
     grant = durable.payload["research_grants"][0]
     assert durable.grant_ids == ("grant-001",)
     assert grant["dataset_id"] == "dataset-001"
-    assert grant["exact_reference"] == "obs://dev-bucket/dataset-001.tsv"
+    assert grant["exact_reference"] == "bucket/data.tsv"
     assert grant["snapshot_digest"] == "snapshot-001"
+    assert durable.payload["compute_resource"] == "small"
     scope = research_object_authority_scope(
         (
             ResearchObjectCandidate(
                 "dataset-001",
-                "obs://dev-bucket/dataset-001.tsv",
+                "bucket/data.tsv",
                 ".tsv",
             ),
         )
@@ -292,7 +295,7 @@ def test_plan_persists_server_owned_binding_without_suffix(
         authorities=(
             PreparedResearchAuthority(
                 dataset_id="dataset-opaque",
-                exact_reference="obs://dev-bucket/opaque-key",
+                exact_reference="bucket/data.tsv",
                 compound_suffix="",
                 authority=authority,
             ),
@@ -306,8 +309,97 @@ def test_plan_persists_server_owned_binding_without_suffix(
         .payload["research_grants"][0]
     )
 
-    assert grant["exact_reference"] == "obs://dev-bucket/opaque-key"
+    assert grant["exact_reference"] == "bucket/data.tsv"
     assert grant["compound_suffix"] == ""
+
+
+def _child_authority(
+    dataset_id: str,
+    exact_reference: str,
+    grant_id: str,
+) -> PreparedResearchAuthority:
+    """Build one exact-reference grant used by child subset tests."""
+    return PreparedResearchAuthority(
+        dataset_id=dataset_id,
+        exact_reference=exact_reference,
+        compound_suffix=".tsv",
+        authority=ResearchObjectAuthority(
+            dataset_id=dataset_id,
+            authority_id=grant_id,
+            snapshot=ResearchObjectSnapshot(
+                dataset_id=dataset_id,
+                size_bytes=17,
+                etag=f"etag-{dataset_id}",
+                version_id=f"version-{dataset_id}",
+                last_modified="2026-08-08T00:00:00+00:00",
+                placeholder=False,
+                snapshot_digest=f"snapshot-{dataset_id}",
+            ),
+        ),
+    )
+
+
+def test_plan_subsets_child_grants_and_starts_small(tmp_path: Path) -> None:
+    """Each child payload keeps matching grants and a small compute tier."""
+    store = _store(tmp_path)
+    data_a = {"obs://b/a.tsv": "table-a"}
+    data_both = {
+        "obs://b/a.tsv": "table-a",
+        "obs://b/b.tsv": "table-b",
+    }
+    prepared = replace(
+        _prepared(),
+        data_list=MappingProxyType(data_both),
+        authority_ids=("grant-001", "grant-002"),
+        authorities=(
+            _child_authority("dataset-001", "obs://b/a.tsv", "grant-001"),
+            _child_authority("dataset-002", "obs://b/b.tsv", "grant-002"),
+        ),
+    )
+    children = tuple(
+        ResearchChildPlan(
+            ordinal=index,
+            task_name=f"research_goal_{index}",
+            goal_description=f"goal-{index}",
+            context="",
+            data_list=MappingProxyType(data_list),
+            output_dir=f"research/run-1/children/part-{index + 1:03d}",
+            thread_id=f"thread-{index}-run-1",
+            interop_mode="off",
+            interop_targets=(),
+            dispatch_fingerprint=_digest(("dispatch", index)),
+        )
+        for index, data_list in enumerate((data_a, data_both))
+    )
+    plan = ResearchPlan(
+        goals=(),
+        children=children,
+        digest=_digest(
+            {
+                "children": [
+                    child.dispatch_fingerprint for child in children
+                ],
+                "run_id": "run-1",
+            }
+        ),
+    )
+
+    records = persist_plan_and_outbox(store, "run-1", 0, prepared, plan)
+    outbox = ResearchDispatchOutbox(store)
+    child0 = outbox.load(records[0].dispatch_id)
+    child1 = outbox.load(records[1].dispatch_id)
+
+    assert child0.payload["compute_resource"] == "small"
+    assert child1.payload["compute_resource"] == "small"
+    assert len(child0.payload["research_grants"]) == 1
+    assert child0.payload["research_grants"][0]["dataset_id"] == (
+        "dataset-001"
+    )
+    assert child0.grant_ids == ("grant-001",)
+    assert len(child1.payload["research_grants"]) == 2
+    assert tuple(
+        grant["dataset_id"] for grant in child1.payload["research_grants"]
+    ) == ("dataset-001", "dataset-002")
 
 
 def test_plan_write_failure_rolls_back_every_private_projection(
@@ -907,7 +999,7 @@ def test_api_lifespan_runtime_constructs_and_registers_worker(
         captured["analyst_config"],
         research_input_api.InSilicoResearchConfig,
     )
-    assert captured["analyst_config"].COMPUTE_RESOURCE == "medium"
+    assert captured["analyst_config"].COMPUTE_RESOURCE == "small"
 
 
 @pytest.mark.asyncio

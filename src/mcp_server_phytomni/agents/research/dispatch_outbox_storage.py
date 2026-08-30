@@ -18,6 +18,7 @@ from ...storage.research_objects import (
     ResearchObjectCandidate,
     research_object_authority_scope,
 )
+from .dataset_binding import bound_child_grants
 
 
 class SqlContext(NamedTuple):
@@ -243,11 +244,26 @@ def plan_children(
         seen["fingerprints"].add(cast(str, fingerprint))
         seen["task_names"].add(cast(str, task_name))
         seen["output_dirs"].add(cast(str, output_dir))
-        research_grants, resolved_grant_ids = _research_grants(
+        parent_grants, parent_grant_ids = _research_grants(
             prepared, error_factory
         )
+        if parent_grants:
+            research_grants = bound_child_grants(parent_grants, data)
+            resolved_grant_ids = tuple(
+                cast(str, grant["grant_id"]) for grant in research_grants
+            )
+        else:
+            research_grants = ()
+            resolved_grant_ids = parent_grant_ids or tuple(
+                getattr(
+                    prepared,
+                    "grant_ids",
+                    getattr(prepared, "authority_ids", ()),
+                )
+            )
         grant_binding = _grant_binding(research_grants)
         payload = {
+            "compute_resource": "small",
             "context": getattr(child, "context", ""),
             "data_list": list(data.items()),
             "dispatch_fingerprint": fingerprint,
@@ -269,14 +285,7 @@ def plan_children(
             "dispatch_fingerprint": fingerprint,
             "payload": payload,
             "output_dir": output_dir,
-            "grant_ids": resolved_grant_ids
-            or tuple(
-                getattr(
-                    prepared,
-                    "grant_ids",
-                    getattr(prepared, "authority_ids", ()),
-                )
-            ),
+            "grant_ids": resolved_grant_ids,
             "snapshot_digest": getattr(prepared, "inventory_digest", ""),
             "policy_digest": digest,
         }
