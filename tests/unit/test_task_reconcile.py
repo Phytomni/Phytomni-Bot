@@ -589,9 +589,9 @@ async def test_reconcile_task_probes_source_task_id_when_present(
     )
 
     await reconcile_task("T-local")
-    assert probed_ids == ["R-remote"], (
-        f"Expected probe of 'R-remote', got {probed_ids}"
-    )
+    assert probed_ids == [
+        "R-remote"
+    ], f"Expected probe of 'R-remote', got {probed_ids}"
 
 
 @pytest.mark.asyncio
@@ -623,9 +623,9 @@ async def test_reconcile_task_probes_own_id_when_source_task_id_is_none(
     )
 
     await reconcile_task("T-own")
-    assert probed_ids == ["T-own"], (
-        f"Expected probe of 'T-own', got {probed_ids}"
-    )
+    assert probed_ids == [
+        "T-own"
+    ], f"Expected probe of 'T-own', got {probed_ids}"
 
 
 @pytest.mark.asyncio

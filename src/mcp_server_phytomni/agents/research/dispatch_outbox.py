@@ -563,9 +563,7 @@ class ResearchDispatchOutbox:
         task_id = await self._submit_relaunch(submit_record)
         if not task_id:
             return _existing_disposition(dispatch_id, row)
-        accepted = _cas_relaunch(
-            self.store, submit_record, task_id, timestamp
-        )
+        accepted = _cas_relaunch(self.store, submit_record, task_id, timestamp)
         if accepted is None:
             if not _parent_live(self.store, row.record.run_id):
                 return _cancelled(dispatch_id)

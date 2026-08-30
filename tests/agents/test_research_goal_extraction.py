@@ -226,9 +226,7 @@ async def test_evidence_prompt_includes_dataset_ids_roster() -> None:
     await extract_research_goals_from_evidence(
         _evidence(),
         locale="en-US",
-        dependencies=_dependencies(
-            chat_app, prompt_builder=prompt_builder
-        ),
+        dependencies=_dependencies(chat_app, prompt_builder=prompt_builder),
     )
     assert _paper_text(prompt_builder) == (
         "[evidence_001]\n"
@@ -250,9 +248,7 @@ async def test_evidence_prompt_omits_roster_when_dataset_ids_empty() -> None:
     await extract_research_goals_from_evidence(
         _evidence_with_ids(),
         locale="en-US",
-        dependencies=_dependencies(
-            chat_app, prompt_builder=prompt_builder
-        ),
+        dependencies=_dependencies(chat_app, prompt_builder=prompt_builder),
     )
     assert _paper_text(prompt_builder) == (
         "[evidence_001]\nDrought response in rice."
@@ -272,9 +268,7 @@ async def test_evidence_prompt_joins_multiple_dataset_ids() -> None:
     await extract_research_goals_from_evidence(
         _evidence_with_ids("dataset_001", "dataset_002"),
         locale="en-US",
-        dependencies=_dependencies(
-            chat_app, prompt_builder=prompt_builder
-        ),
+        dependencies=_dependencies(chat_app, prompt_builder=prompt_builder),
     )
     assert _paper_text(prompt_builder) == (
         "[evidence_001]\n"
@@ -408,13 +402,9 @@ async def test_extract_research_goals_includes_bound_dataset_ids() -> None:
         }
     ]
 
-    unbound_payload = [
-        {"goal": "Investigate drought", "context": "rice"}
-    ]
+    unbound_payload = [{"goal": "Investigate drought", "context": "rice"}]
     chat_app = SimpleNamespace(
-        ainvoke=AsyncMock(
-            return_value={"response": _content(unbound_payload)}
-        )
+        ainvoke=AsyncMock(return_value={"response": _content(unbound_payload)})
     )
     unbound = await extract_research_goals(
         "paper",
@@ -422,6 +412,4 @@ async def test_extract_research_goals_includes_bound_dataset_ids() -> None:
         locale="en-US",
         dependencies=_dependencies(chat_app),
     )
-    assert unbound == [
-        {"goal": "Investigate drought", "context": "rice"}
-    ]
+    assert unbound == [{"goal": "Investigate drought", "context": "rice"}]

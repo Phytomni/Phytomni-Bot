@@ -625,8 +625,7 @@ async def test_bound_child_fingerprint_isolates_data_list() -> None:
     assert len(first_bound.data_list) == 1
     assert len(first_unbound.data_list) == 2
     assert (
-        first_bound.dispatch_fingerprint
-        != first_unbound.dispatch_fingerprint
+        first_bound.dispatch_fingerprint != first_unbound.dispatch_fingerprint
     )
     assert first_bound.task_name == first_unbound.task_name
     assert first_bound.output_dir == first_unbound.output_dir

@@ -376,9 +376,7 @@ def test_plan_subsets_child_grants_and_starts_small(tmp_path: Path) -> None:
         children=children,
         digest=_digest(
             {
-                "children": [
-                    child.dispatch_fingerprint for child in children
-                ],
+                "children": [child.dispatch_fingerprint for child in children],
                 "run_id": "run-1",
             }
         ),
@@ -1224,4 +1222,3 @@ async def test_non_memory_failure_does_not_relaunch(
     loaded = outbox.load(record.dispatch_id)
     assert loaded.payload["compute_resource"] == "small"
     assert loaded.remote_task_id == "ei-1"
-
