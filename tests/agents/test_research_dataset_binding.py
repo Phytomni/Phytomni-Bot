@@ -133,10 +133,10 @@ def test_bound_child_grants_preserves_parent_order() -> None:
 
 def test_research_goal_coerces_dataset_ids() -> None:
     """dataset_ids stay optional, unique, and extra-field-forbidden."""
-    assert ResearchGoal(goal="g", dataset_ids="x").dataset_ids is None
-    goal = ResearchGoal(
-        goal="g",
-        dataset_ids=[" dataset_002 ", "dataset_002"],
+    unbound = ResearchGoal.model_validate({"goal": "g", "dataset_ids": "x"})
+    assert unbound.dataset_ids is None
+    goal = ResearchGoal.model_validate(
+        {"goal": "g", "dataset_ids": [" dataset_002 ", "dataset_002"]}
     )
     assert goal.dataset_ids == ("dataset_002",)
     with pytest.raises(ValidationError):
