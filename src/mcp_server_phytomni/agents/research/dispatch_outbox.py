@@ -888,14 +888,7 @@ def _parent_live_connection(
 
 
 def _parent_live_sql() -> str:
-    return (
-        "EXISTS (SELECT 1 FROM runs WHERE runs.run_id = "
-        "research_dispatch_outbox.run_id AND runs.status NOT IN "
-        "('succeeded','failed','cancelled')) AND NOT EXISTS (SELECT 1 FROM "
-        "research_input_resolutions WHERE run_id = "
-        "research_dispatch_outbox.run_id "
-        "AND COALESCE(cancel_requested,0) <> 0)"
-    )
+    return _storage.parent_live_predicate()
 
 
 def _disposition(
