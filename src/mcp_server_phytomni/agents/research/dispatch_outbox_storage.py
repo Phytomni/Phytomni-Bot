@@ -9,6 +9,7 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from importlib import import_module
 from typing import Any, NamedTuple, cast
 
@@ -48,6 +49,15 @@ class SentRequest(NamedTuple):
     owner: str
     now_iso: str
     expiry: str
+
+
+class RelaunchRequest(NamedTuple):
+    """Inputs for one memory-class compute-resource relaunch CAS."""
+
+    sql: SqlContext
+    record: Any
+    task_id: str
+    now_iso: str
 
 
 def recovery_ports(options: dict[str, object]) -> dict[str, object]:
@@ -264,6 +274,7 @@ def plan_children(
         grant_binding = _grant_binding(research_grants)
         payload = {
             "compute_resource": "small",
+            "compute_resource_generation": 0,
             "context": getattr(child, "context", ""),
             "data_list": list(data.items()),
             "dispatch_fingerprint": fingerprint,
@@ -592,6 +603,59 @@ def claim_row(request: ClaimRequest) -> bool:
             ),
         )
     return changed.rowcount == 1
+
+
+def relaunch_row(request: RelaunchRequest) -> bool:
+    """CAS-write a new payload and remote task id on an accepted child."""
+    sql = request.sql
+    record = request.record
+    payload_json, payload_digest, grant_json, snapshot_digest = binding_values(
+        record
+    )
+    with sqlite_transaction(sql.db_path) as connection:
+        changed = connection.execute(
+            "UPDATE research_dispatch_outbox SET state='accepted', "
+            "remote_task_id=?, payload_json=?, payload_digest=?, "
+            "grant_ids_json=?, snapshot_digest=?, updated_at=?, "
+            "lease_owner=NULL, lease_expires_at=NULL, failure_code=NULL, "
+            "failure_retryable=NULL, revision=revision+1 "
+            "WHERE outbox_id=? AND revision=? "
+            "AND state IN ('accepted','sent') AND " + sql.parent_sql,
+            (
+                request.task_id,
+                payload_json,
+                payload_digest,
+                grant_json,
+                snapshot_digest,
+                request.now_iso,
+                record.dispatch_id,
+                record.revision,
+            ),
+        )
+        if changed.rowcount != 1:
+            return False
+        with suppress(sqlite3.Error):
+            _bind_relaunch_task(connection, record, request.task_id)
+    return True
+
+
+def _bind_relaunch_task(
+    connection: sqlite3.Connection, record: Any, task_id: str
+) -> None:
+    """Point the discarded EI id at the new child and attach the row."""
+    old_id = getattr(record, "remote_task_id", None)
+    if isinstance(old_id, str) and old_id.strip() and old_id != task_id:
+        connection.execute(
+            "UPDATE tasks SET source_task_id=? WHERE task_id=?",
+            (task_id, old_id),
+        )
+    attach_task(
+        connection,
+        record.run_id,
+        record.dispatch_fingerprint,
+        task_id,
+        record.output_dir,
+    )
 
 
 def mark_sent(request: SentRequest) -> bool:

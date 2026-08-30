@@ -939,3 +939,132 @@ async def test_reconcile_never_fails_remote_row_absent_from_registry(
     result = await reconcile_task("remote-row")
 
     assert result["status"] == "submitted"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_hides_analyst_memory_class_failure(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Analyst memory-class FAILED stays in-progress locally."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="an-oom",
+            status="submitted",
+            output_dir="/obs/run",
+            run_context=RunContext(agent="analyst"),
+            input_fingerprint="a" * 64,
+        )
+    )
+
+    async def _failed(t_id: str, **_: Any) -> dict[str, str]:
+        assert t_id == "an-oom"
+        return {"status": "FAILED", "message": "MemoryError"}
+
+    async def _oom_log(_t_id: str, **_: Any) -> dict[str, object]:
+        return {
+            "logs": [{"content": "worker hit OOM"}],
+            "text": "OOM",
+        }
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _failed,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_log",
+        _oom_log,
+    )
+
+    result = await reconcile_task("an-oom")
+
+    assert str(result["status"]).lower() != "failed"
+    assert result["status"] == "submitted"
+    row = mgr.get_task("an-oom")
+    assert row is not None
+    assert row["status"] == "submitted"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_persists_analyst_non_memory_failure(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ValueError FAILED analyst row is still persisted failed."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="an-value",
+            status="submitted",
+            output_dir="/obs/run",
+            run_context=RunContext(agent="analyst"),
+        )
+    )
+
+    async def _failed(_t_id: str, **_: Any) -> dict[str, str]:
+        return {
+            "status": "FAILED",
+            "message": "ValueError missing column",
+        }
+
+    async def _empty_log(_t_id: str, **_: Any) -> dict[str, object]:
+        return {"logs": []}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _failed,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_log",
+        _empty_log,
+    )
+
+    result = await reconcile_task("an-value")
+
+    assert result["status"] == "FAILED"
+    row = mgr.get_task("an-value")
+    assert row is not None
+    assert row["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_persists_network_memory_class_failure(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Network agents keep today's persist-failed path on MemoryError."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="net-oom",
+            status="submitted",
+            output_dir="/obs/run",
+            run_context=RunContext(agent="network"),
+        )
+    )
+
+    async def _failed(_t_id: str, **_: Any) -> dict[str, str]:
+        return {"status": "FAILED", "message": "MemoryError"}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _failed,
+    )
+
+    result = await reconcile_task("net-oom")
+
+    assert result["status"] == "FAILED"
+    row = mgr.get_task("net-oom")
+    assert row is not None
+    assert row["status"] == "failed"
+

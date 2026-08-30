@@ -11,13 +11,18 @@ import inspect
 import json
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from sqlite3 import Row
 from typing import Any, Literal, NamedTuple, cast
 
 from ...runtime.research_input_store import ResearchInputStore
 from ...runtime.sqlite import sqlite_transaction
+from ..shared.memory_relaunch import (
+    START_COMPUTE_RESOURCE,
+    is_memory_class_failure,
+    next_compute_resource,
+)
 from . import dispatch_outbox_storage as _storage
 from .input_contracts import ResearchErrorCode, ResearchInputFailure
 from .resolver_policy import canonical_json_bytes
@@ -524,6 +529,61 @@ class ResearchDispatchOutbox:
             self.options.attach_task,
         )
 
+    async def relaunch_memory_exhausted(
+        self,
+        dispatch_id: str,
+        lease_owner: str,
+        status_payload: object,
+        log_payload: object = None,
+        now: datetime | None = None,
+    ) -> ResearchDispatchDisposition:
+        """Resubmit one accepted child one compute tier higher.
+
+        Keeps the same ``dispatch_id``, discards the failed EI id, and
+        CAS-writes the bumped payload plus the new remote task id.
+        ``dispatch_once`` / ``reconcile_once`` never take this path.
+        ``lease_owner`` is accepted for the same abort signature as
+        claim/dispatch and is not used to take a new lease.
+        """
+        del lease_owner
+        timestamp = now or self.options.now()
+        row = _load_row(self.store, dispatch_id)
+        blocked = _relaunch_blocked(
+            self.store,
+            dispatch_id,
+            row,
+            status_payload,
+            log_payload,
+            timestamp,
+        )
+        if blocked is not None:
+            return blocked
+        assert row is not None
+        submit_record = _relaunch_submit_record(row)
+        task_id = await self._submit_relaunch(submit_record)
+        if not task_id:
+            return _existing_disposition(dispatch_id, row)
+        accepted = _cas_relaunch(
+            self.store, submit_record, task_id, timestamp
+        )
+        if accepted is None:
+            if not _parent_live(self.store, row.record.run_id):
+                return _cancelled(dispatch_id)
+            return _ambiguous(dispatch_id)
+        return accepted
+
+    async def _submit_relaunch(
+        self, record: ResearchDispatchRecord
+    ) -> str | None:
+        """Submit one bumped child and return the new remote task id."""
+        if self.options.submit is None:
+            return None
+        try:
+            response = await _maybe_await(self.options.submit(record))
+        except _OUTBOX_FAILURES:
+            return None
+        return _storage.task_id(response)
+
     async def reconcile_once(
         self,
         dispatch_id: str,
@@ -958,6 +1018,84 @@ def _terminal_disposition(
     if row.record.state == "cancelled":
         return _cancelled(dispatch_id)
     return None
+
+
+def _existing_disposition(
+    dispatch_id: str, row: _OutboxRow | None
+) -> ResearchDispatchDisposition:
+    """Return the current non-failed disposition without submitting."""
+    terminal = _terminal_disposition(dispatch_id, row)
+    if terminal is not None:
+        return terminal
+    remote_id = None if row is None else row.record.remote_task_id
+    return _disposition(dispatch_id, "accepted", remote_id)
+
+
+def _payload_generation(payload: Mapping[str, Any]) -> int:
+    """Read a persisted generation, defaulting missing values to 0."""
+    raw = payload.get("compute_resource_generation") or 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _relaunch_blocked(
+    store: ResearchInputStore,
+    dispatch_id: str,
+    row: _OutboxRow | None,
+    status_payload: object,
+    log_payload: object,
+    now: datetime,
+) -> ResearchDispatchDisposition | None:
+    """Return an abort disposition when a relaunch must not submit."""
+    if row is None:
+        return _ambiguous(dispatch_id)
+    if not _parent_live(store, row.record.run_id):
+        _mark_row(store, row.record, now, _CANCEL_OPTIONS)
+        return _cancelled(dispatch_id)
+    payload = row.record.payload
+    current = str(payload.get("compute_resource") or START_COMPUTE_RESOURCE)
+    if next_compute_resource(current) is None:
+        return _existing_disposition(dispatch_id, row)
+    if not is_memory_class_failure(status_payload, log_payload):
+        return _existing_disposition(dispatch_id, row)
+    if _payload_generation(payload) >= 2:
+        return _existing_disposition(dispatch_id, row)
+    return None
+
+
+def _relaunch_submit_record(row: _OutboxRow) -> ResearchDispatchRecord:
+    """Copy one child payload and bump compute resource by one tier."""
+    payload = dict(row.record.payload)
+    current = str(payload.get("compute_resource") or START_COMPUTE_RESOURCE)
+    nxt = next_compute_resource(current)
+    if nxt is None:
+        return row.record
+    payload["compute_resource"] = nxt
+    payload["compute_resource_generation"] = _payload_generation(payload) + 1
+    return replace(row.record, payload=payload)
+
+
+def _cas_relaunch(
+    store: ResearchInputStore,
+    record: ResearchDispatchRecord,
+    task_id: str,
+    now: datetime,
+) -> ResearchDispatchDisposition | None:
+    """Persist the bumped payload and new remote id on the same row."""
+    if not _storage.relaunch_row(
+        _storage.RelaunchRequest(
+            _storage.SqlContext(
+                store.db_path, _OUTBOX_SELECT, _parent_live_sql()
+            ),
+            record,
+            task_id,
+            _iso(now),
+        )
+    ):
+        return None
+    return _disposition(record.dispatch_id, "accepted", task_id)
 
 
 async def _maybe_await(value: object) -> object:
