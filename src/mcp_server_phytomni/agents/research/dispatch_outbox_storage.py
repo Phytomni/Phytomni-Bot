@@ -254,24 +254,9 @@ def plan_children(
         seen["fingerprints"].add(cast(str, fingerprint))
         seen["task_names"].add(cast(str, task_name))
         seen["output_dirs"].add(cast(str, output_dir))
-        parent_grants, parent_grant_ids = _research_grants(
-            prepared, error_factory
+        research_grants, resolved_grant_ids, grant_binding = (
+            _child_grant_fields(prepared, data, error_factory)
         )
-        if parent_grants:
-            research_grants = bound_child_grants(parent_grants, data)
-            resolved_grant_ids = tuple(
-                cast(str, grant["grant_id"]) for grant in research_grants
-            )
-        else:
-            research_grants = ()
-            resolved_grant_ids = parent_grant_ids or tuple(
-                getattr(
-                    prepared,
-                    "grant_ids",
-                    getattr(prepared, "authority_ids", ()),
-                )
-            )
-        grant_binding = _grant_binding(research_grants)
         payload = {
             "compute_resource": "small",
             "compute_resource_generation": 0,
@@ -306,6 +291,29 @@ def plan_children(
     if not values:
         raise error_factory()
     return tuple(values)
+
+
+def _child_grant_fields(
+    prepared: object,
+    data: Mapping[str, Any],
+    error_factory: Callable[[], Exception],
+) -> tuple[tuple[dict[str, Any], ...], tuple[str, ...], dict[str, str] | None]:
+    """Subset parent grants to one child's data_list keys."""
+    parent_grants, parent_grant_ids = _research_grants(prepared, error_factory)
+    if not parent_grants:
+        fallback = parent_grant_ids or tuple(
+            getattr(
+                prepared,
+                "grant_ids",
+                getattr(prepared, "authority_ids", ()),
+            )
+        )
+        return (), fallback, None
+    research_grants = bound_child_grants(parent_grants, data)
+    resolved_grant_ids = tuple(
+        cast(str, grant["grant_id"]) for grant in research_grants
+    )
+    return research_grants, resolved_grant_ids, _grant_binding(research_grants)
 
 
 def _research_grants(
@@ -640,20 +648,20 @@ def relaunch_row(request: RelaunchRequest) -> bool:
 
 
 def _bind_relaunch_task(
-    connection: sqlite3.Connection, record: Any, task_id: str
+    connection: sqlite3.Connection, record: Any, remote_id: str
 ) -> None:
     """Point the discarded EI id at the new child and attach the row."""
     old_id = getattr(record, "remote_task_id", None)
-    if isinstance(old_id, str) and old_id.strip() and old_id != task_id:
+    if isinstance(old_id, str) and old_id.strip() and old_id != remote_id:
         connection.execute(
             "UPDATE tasks SET source_task_id=? WHERE task_id=?",
-            (task_id, old_id),
+            (remote_id, old_id),
         )
     attach_task(
         connection,
         record.run_id,
         record.dispatch_fingerprint,
-        task_id,
+        remote_id,
         record.output_dir,
     )
 

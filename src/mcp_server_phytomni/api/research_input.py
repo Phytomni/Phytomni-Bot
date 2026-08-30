@@ -3,6 +3,8 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Pure preflight and atomic admission for durable Research input work."""
 
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 import hashlib
@@ -50,6 +52,7 @@ __all__ = [
     "ResearchInputStore",
     "ResearchRoutePreflight",
     "build_research_input_coordinator",
+    "clear_research_input_runtime",
     "ensure_research_input_runtime",
     "launch_research_input_worker",
     "research_input_root_worker_ready",
@@ -78,6 +81,11 @@ class _ResearchInputRuntime:
 
 
 _RUNTIME_STATE: dict[str, _ResearchInputRuntime | None] = {"current": None}
+
+
+def clear_research_input_runtime() -> None:
+    """Drop the process-local Research coordinator (tests and shutdown)."""
+    _RUNTIME_STATE["current"] = None
 
 
 def research_input_root_worker_ready(

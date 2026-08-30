@@ -3,6 +3,8 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Durable, mark-before-send dispatch for validated Research children."""
 
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 import asyncio
@@ -532,7 +534,6 @@ class ResearchDispatchOutbox:
     async def relaunch_memory_exhausted(
         self,
         dispatch_id: str,
-        lease_owner: str,
         status_payload: object,
         log_payload: object = None,
         now: datetime | None = None,
@@ -542,18 +543,14 @@ class ResearchDispatchOutbox:
         Keeps the same ``dispatch_id``, discards the failed EI id, and
         CAS-writes the bumped payload plus the new remote task id.
         ``dispatch_once`` / ``reconcile_once`` never take this path.
-        ``lease_owner`` is accepted for the same abort signature as
-        claim/dispatch and is not used to take a new lease.
         """
-        del lease_owner
         timestamp = now or self.options.now()
         row = _load_row(self.store, dispatch_id)
         blocked = _relaunch_blocked(
             self.store,
             dispatch_id,
             row,
-            status_payload,
-            log_payload,
+            (status_payload, log_payload),
             timestamp,
         )
         if blocked is not None:
@@ -1042,11 +1039,11 @@ def _relaunch_blocked(
     store: ResearchInputStore,
     dispatch_id: str,
     row: _OutboxRow | None,
-    status_payload: object,
-    log_payload: object,
+    failure: tuple[object, object],
     now: datetime,
 ) -> ResearchDispatchDisposition | None:
     """Return an abort disposition when a relaunch must not submit."""
+    status_payload, log_payload = failure
     if row is None:
         return _ambiguous(dispatch_id)
     if not _parent_live(store, row.record.run_id):

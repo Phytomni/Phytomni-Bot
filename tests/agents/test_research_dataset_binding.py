@@ -115,7 +115,7 @@ def test_bound_child_grants_keeps_matching_references() -> None:
 
 def test_bound_child_grants_empty_data_list_drops_all() -> None:
     """An empty child data_list binds no grants."""
-    assert bound_child_grants(GRANTS, {}) == ()
+    assert len(bound_child_grants(GRANTS, {})) == 0
 
 
 def test_bound_child_grants_preserves_parent_order() -> None:

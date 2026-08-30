@@ -9,7 +9,11 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-__all__ = ["bound_child_data_list", "bound_child_grants"]
+__all__ = [
+    "bound_child_data_list",
+    "bound_child_grants",
+    "task_data_list",
+]
 
 
 def bound_child_data_list(
@@ -38,6 +42,18 @@ def bound_child_data_list(
         for reference, description in snapshot.items()
         if reference in wanted
     }
+
+
+def task_data_list(
+    goal: Mapping[str, Any],
+    parent: Mapping[str, str] | None,
+) -> dict[str, str]:
+    """Bind one graph task data_list from a goal dict and parent snapshot."""
+    return bound_child_data_list(
+        parent or {},
+        (),
+        goal.get("dataset_ids"),
+    )
 
 
 def bound_child_grants(

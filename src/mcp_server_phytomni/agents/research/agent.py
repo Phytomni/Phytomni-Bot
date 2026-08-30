@@ -98,7 +98,7 @@ from ..shared.remote_analysis import (
     submit_remote_analysis,
 )
 from .contracts import ResearchGoal
-from .dataset_binding import bound_child_data_list
+from .dataset_binding import task_data_list
 from .document_evidence import ExtractedResearchEvidence
 from .goal_extraction import (
     ResearchGoalExtractionDependencies,
@@ -608,15 +608,7 @@ class InSilicoResearchAgents:
                     extracted_evidence,
                     state.get("locale"),
                 )
-                goals = []
-                for item in models:
-                    goal: dict[str, Any] = {
-                        "goal": item.goal,
-                        "context": item.context or "",
-                    }
-                    if item.dataset_ids is not None:
-                        goal["dataset_ids"] = list(item.dataset_ids)
-                    goals.append(goal)
+                goals = [item.as_state() for item in models]
             else:
                 goals = await self._extract_goals(
                     paper_text,
@@ -663,7 +655,6 @@ class InSilicoResearchAgents:
             bucket_name=self.in_silico_config.BUCKET_NAME,
             run_identity=run_identity,
         )
-        parent_data = state.get("data_list") or {}
         tasks = [
             {
                 "goal_description": goal["goal"],
@@ -671,11 +662,7 @@ class InSilicoResearchAgents:
                 "task_name": f"research_goal_{i}",
                 "thread_id": run_identity.scoped_id("thread", i),
                 "output_dir": result_child_output_dir(output_dir, i),
-                "data_list": bound_child_data_list(
-                    parent_data,
-                    (),
-                    goal.get("dataset_ids"),
-                ),
+                "data_list": task_data_list(goal, state.get("data_list")),
             }
             for i, goal in enumerate(goals)
         ]
