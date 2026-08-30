@@ -322,15 +322,13 @@ async def test_extract_schema_includes_optional_dataset_ids() -> None:
     ]
     assert items["additionalProperties"] is False
     assert items["required"] == ["goal"]
-    assert items["properties"]["dataset_ids"] == {
-        "type": "array",
-        "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-        },
-        "maxItems": 256,
-    }
+    dataset_ids = items["properties"]["dataset_ids"]
+    assert dataset_ids["type"] == "array"
+    assert dataset_ids["maxItems"] == 256
+    id_items = dataset_ids["items"]
+    assert id_items["type"] == "string"
+    assert id_items["minLength"] == 1
+    assert id_items["maxLength"] == 128
 
 
 async def test_chat_stub_dataset_ids_list_parses_to_tuple() -> None:

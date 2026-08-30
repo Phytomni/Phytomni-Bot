@@ -141,16 +141,7 @@ async def extract_research_goals(
         locale=locale,
         dependencies=dependencies,
     )
-    payload: list[dict[str, Any]] = []
-    for goal in goals:
-        item: dict[str, Any] = {
-            "goal": goal.goal,
-            "context": goal.context or "",
-        }
-        if goal.dataset_ids is not None:
-            item["dataset_ids"] = list(goal.dataset_ids)
-        payload.append(item)
-    return payload
+    return [goal.as_state() for goal in goals]
 
 
 async def extract_research_goals_from_evidence(
