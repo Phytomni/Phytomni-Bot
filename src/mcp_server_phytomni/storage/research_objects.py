@@ -363,14 +363,10 @@ def _normalized_object_key(
     candidate: ResearchObjectCandidate, bucket: str
 ) -> str:
     """Validate the configured-bucket reference and retain only its key."""
-    reference = candidate.exact_reference
-    if reference[:6].casefold() != "obs://":
-        raise ResearchObjectMetadataError()
-    reference_bucket, separator, raw_key = reference[6:].partition("/")
-    if not separator or reference_bucket.casefold() != bucket.casefold():
-        raise ResearchObjectMetadataError()
     try:
-        object_key = normalize_obs_object_key(raw_key, bucket)
+        object_key = normalize_obs_object_key(
+            candidate.exact_reference, bucket
+        )
     except ValueError:
         raise ResearchObjectMetadataError() from None
     if not object_key or (

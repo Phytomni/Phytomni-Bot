@@ -90,7 +90,7 @@ def _dependencies(
     async def has_checkpoint(_app: Any, _thread_id: str) -> bool:
         return checkpoint_present
 
-    def format_review(_state: Any, **_kwargs: Any) -> dict[str, Any]:
+    async def format_review(_state: Any, **_kwargs: Any) -> dict[str, Any]:
         return {"formatted": {"answer": "review"}, "raw": None}
 
     return a2ui_runtime.A2UIRuntimeDependencies(

@@ -1381,12 +1381,23 @@ resource for the four public stages (`input_resolution`, `planning`,
 `cancelled` state. Failed rows retain `error: "run failed"` and add the
 bounded stable `failure` object.
 
-The parser accepts only trailing strict `data:` JSON, fenced strict `data:`
-JSON, or one configured-bucket reference per line with an optional ASCII Tab
-hint. Do not paste an OBS URL, local path, bucket name, archive body, or
-provider payload. Managed `attachments` carry opaque completed `asset_id`
-values only. Pasted references are checked through exact-key metadata and
-snapshot verification; this authority never lists, downloads bodies, writes,
+Research HTTP planning now calls the paper goal extractor before that
+202\. Look for `Extracted N research goals` and one `Submit:` /
+`part-00N` line per child. N>1 is expected for multi-figure papers. Do
+not treat a single `goal_len=1000` path-list child as successful
+planning. Nginx `/v1/` read timeout is 600s and must cover extraction
+plus N submits. Wait-card decode of sibling `part-NNN` directories is
+a Web deploy concern (`9e998874`); Bot acceptance is outbox/`Submit:`
+count = N.
+
+The parser accepts trailing strict `data:` JSON, fenced strict `data:`
+JSON, one configured-bucket reference per line with an optional ASCII Tab
+hint, or an unlabeled suffix JSON object whose keys are all OBS refs
+(`obs://bucket/key` or `/obs/bucket/key`). Do not paste an HTTP URL,
+local path, bucket name, archive body, or provider payload. Managed
+`attachments` carry opaque completed `asset_id` values only. Pasted
+references are checked through exact-key metadata and snapshot
+verification; this authority never lists, downloads bodies, writes,
 deletes, signs URLs, or returns credentials. `relay:obs` and MCP remain
 unchanged.
 
@@ -1715,7 +1726,10 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   `MODEL_ID`, `CODER_MODEL`, or `EMBED_MODEL`. Analysis children send only a
   `small`, `medium`, or `large` `compute_resource`; the operator removes it and
   injects the matching `APP_ID`, so do not provision these model names or app
-  UUIDs in the child environment.
+  UUIDs in the child environment. Relay still maps `small` | `medium` |
+  `large` to the operator `APP_ID`. After an OOM, `GetRun` may record a
+  second (or third) EI id for the same `part-NNN`. The wait-card stays
+  running until that child is actually terminal.
 
 - **Query the audit.** Every relay call is recorded in the local audit
   store (`RELAY_AUDIT_DB_PATH`). Query it with the service token:

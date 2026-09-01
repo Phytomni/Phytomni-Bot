@@ -10,14 +10,21 @@ polling; other rows may probe the remote analysis platform once.
 
 from __future__ import annotations
 
+import inspect
+import json
 import logging
 import sqlite3
-from collections.abc import Mapping
-from typing import Any, Literal
+from collections.abc import Callable, Mapping
+from typing import Any, Literal, NamedTuple
 
 from mcp.shared.exceptions import McpError
 
 from ..agents.analyst.agent import task_log, task_status
+from ..agents.shared.memory_relaunch import (
+    START_COMPUTE_RESOURCE,
+    is_memory_class_failure,
+    next_compute_resource,
+)
 from ..config.defaults import AnalystConfig
 from .deep_genome_store import (
     DeepGenomeStore,
@@ -34,12 +41,51 @@ from .terminal_report import (
     synthesize_terminal_report,
 )
 
-__all__ = ["reconcile_task", "reconcile_task_log"]
+__all__ = [
+    "bind_research_relaunch_outbox",
+    "get_research_relaunch_outbox",
+    "reconcile_task",
+    "reconcile_task_log",
+]
 
 logger = logging.getLogger(__name__)
 
+
+def _call_relaunch(
+    relaunch: Callable[..., object],
+    dispatch_id: str,
+    status_payload: object,
+    log_payload: object,
+) -> object:
+    """Invoke a bound outbox relaunch port."""
+    return relaunch(dispatch_id, status_payload, log_payload)
+
+
 _NON_TERMINAL_STATUSES = frozenset({"running", "submitted", "pending"})
 _RESTART_ORPHAN_REASON = "workflow interrupted by service restart"
+_RESEARCH_RELAUNCH_OUTBOX: dict[str, object | None] = {"current": None}
+
+
+class _HideRequest(NamedTuple):
+    """Inputs for one memory-class GetRun hide/relaunch decision."""
+
+    manager: TaskManager
+    row: Mapping[str, Any]
+    result: dict[str, Any]
+    task_agent: str | None
+    probe_id: str
+    live: object
+    config: AnalystConfig
+
+
+def bind_research_relaunch_outbox(outbox: object | None) -> None:
+    """Bind the production Research outbox used by GetRun relaunch."""
+    _RESEARCH_RELAUNCH_OUTBOX["current"] = outbox
+
+
+def get_research_relaunch_outbox() -> object | None:
+    """Return the bound production Research outbox, if any."""
+    return _RESEARCH_RELAUNCH_OUTBOX["current"]
 
 
 def _platform_log_contents(payload: Mapping[str, Any]) -> list[str]:
@@ -85,6 +131,7 @@ def _project_task_log_text(payload: dict[str, Any]) -> dict[str, Any]:
 _SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
 _LIVE_SUCCESS = "SUCCEEDED"
 _LIVE_DEAD = frozenset({"FAILED", "CANCELLED"})
+_MEMORY_RELAUNCH_AGENTS = frozenset({"analyst", "research"})
 
 
 def _project_deep_genome_snapshot(
@@ -233,6 +280,184 @@ def _mark_fingerprint_from_live(
         logger.warning("reconcile: failed to mark fingerprint job terminal")
 
 
+def _memory_relaunch_agent(agent: str | None) -> bool:
+    """Return whether GetRun may hide a memory-class FAILED status."""
+    return str(agent or "").strip().lower() in _MEMORY_RELAUNCH_AGENTS
+
+
+def _local_nonterminal_status(status: object) -> str:
+    """Keep a local in-flight status instead of flashing remote FAILED."""
+    local = str(status or "").strip()
+    if local.lower() in _NON_TERMINAL_STATUSES:
+        return local
+    return "running"
+
+
+def _research_outbox_lookup(
+    db_path: str, remote_ids: tuple[str, ...]
+) -> tuple[str, Mapping[str, Any]] | None:
+    """Return outbox id and payload for one remote task, if present."""
+    ids = tuple(item.strip() for item in remote_ids if item and item.strip())
+    if not ids:
+        return None
+    try:
+        with sqlite3.connect(db_path) as connection:
+            connection.row_factory = sqlite3.Row
+            found = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='research_dispatch_outbox'"
+            ).fetchone()
+            if found is None:
+                return None
+            placeholders = ",".join("?" for _ in ids)
+            row = connection.execute(
+                "SELECT outbox_id, payload_json FROM "
+                "research_dispatch_outbox WHERE remote_task_id IN "
+                f"({placeholders}) LIMIT 1",
+                ids,
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    if row is None:
+        return None
+    payload: object
+    try:
+        payload = json.loads(row["payload_json"] or "{}")
+    except (TypeError, ValueError):
+        payload = {}
+    if not isinstance(payload, Mapping):
+        payload = {}
+    return str(row["outbox_id"]), payload
+
+
+def _current_compute_resource(
+    db_path: str, remote_ids: tuple[str, ...]
+) -> str:
+    """Read the child's compute tier from the Research outbox when present."""
+    found = _research_outbox_lookup(db_path, remote_ids)
+    if found is None:
+        return START_COMPUTE_RESOURCE
+    current = found[1].get("compute_resource") or START_COMPUTE_RESOURCE
+    return str(current) if current else START_COMPUTE_RESOURCE
+
+
+def _task_input_fingerprint(db_path: str, task_id: str) -> str | None:
+    """Return the persisted fingerprint for one local task row."""
+    try:
+        with sqlite3.connect(db_path) as connection:
+            row = connection.execute(
+                "SELECT input_fingerprint FROM tasks WHERE task_id=?",
+                (task_id,),
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    if row is None or not isinstance(row[0], str) or not row[0].strip():
+        return None
+    return row[0].strip()
+
+
+async def _fetch_live_task_log(probe_id: str, config: AnalystConfig) -> object:
+    """Fetch one task log best-effort; a miss is not a hard failure."""
+    try:
+        return await task_log(
+            probe_id,
+            analysis_url=config.ANALYSIS_URL,
+            region=config.ANALYSIS_REGION,
+            timeout=config.TIMEOUT,
+            retriable_codes=config.RETRIABLE_CODES,
+            max_retries=config.MAX_RETRIES,
+            compute_resource=config.COMPUTE_RESOURCE,
+        )
+    except McpError:
+        return None
+
+
+async def _relaunch_research_memory(
+    dispatch_id: str,
+    status_payload: object,
+    log_payload: object,
+) -> None:
+    """Best-effort Research outbox relaunch; skip if submit is unwired."""
+    outbox = get_research_relaunch_outbox()
+    relaunch = getattr(outbox, "relaunch_memory_exhausted", None)
+    if outbox is None or not callable(relaunch):
+        logger.warning(
+            "reconcile: research memory relaunch skipped for %s; "
+            "submit port is unbound",
+            dispatch_id,
+        )
+        return
+    try:
+        outcome = _call_relaunch(
+            relaunch,
+            dispatch_id,
+            status_payload,
+            log_payload,
+        )
+        if inspect.isawaitable(outcome):
+            await outcome
+    except (sqlite3.Error, OSError, KeyError, TypeError, ValueError):
+        logger.warning(
+            "reconcile: research memory relaunch skipped for %s",
+            dispatch_id,
+        )
+
+
+async def _hide_memory_class_failure(request: _HideRequest) -> bool:
+    """Hide a memory-class FAILED live status for Analyst/Research.
+
+    Marks the old fingerprint generation dead, relaunches a Research
+    outbox child when the row can be resolved, and leaves Analyst in
+    progress without calling ``retrieve_plan_submit`` from GetRun.
+    """
+    manager = request.manager
+    row = request.row
+    result = request.result
+    task_agent = request.task_agent
+    probe_id = request.probe_id
+    live = request.live
+    config = request.config
+    if not _memory_relaunch_agent(task_agent):
+        return False
+    log_payload = await _fetch_live_task_log(probe_id, config)
+    remote_ids = (
+        str(probe_id or ""),
+        str(row.get("source_task_id") or ""),
+        str(row.get("analysis_id") or ""),
+        str(result.get("task_id") or ""),
+    )
+    current_tier = _current_compute_resource(manager.db_path, remote_ids)
+    if next_compute_resource(current_tier) is None:
+        return False
+    if not is_memory_class_failure(live, log_payload):
+        return False
+    _mark_fingerprint_from_live(
+        manager.db_path,
+        _fingerprint_ei_id(row, probe_id),
+        "FAILED",
+    )
+    found = _research_outbox_lookup(manager.db_path, remote_ids)
+    if found is not None:
+        await _relaunch_research_memory(found[0], live, log_payload)
+    elif str(task_agent or "").strip().lower() == "analyst":
+        fingerprint = _task_input_fingerprint(
+            manager.db_path, str(result.get("task_id") or "")
+        )
+        if fingerprint:
+            logger.warning(
+                "reconcile: hiding memory-class failure for %s; "
+                "retrieve_plan_submit resubmit skipped",
+                result.get("task_id"),
+            )
+        else:
+            logger.warning(
+                "reconcile: hiding memory-class failure for %s",
+                result.get("task_id"),
+            )
+    result["status"] = _local_nonterminal_status(result.get("status"))
+    return True
+
+
 async def reconcile_task(task_id: str) -> dict[str, Any]:
     """Return one task's locally recorded + live-bridged status.
 
@@ -322,6 +547,18 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
     if not isinstance(live_status, str) or not live_status.strip():
         return result
     cleaned = live_status.strip()
+    if cleaned.upper() == "FAILED" and await _hide_memory_class_failure(
+        _HideRequest(
+            manager,
+            row,
+            result,
+            task_agent,
+            probe_id,
+            live,
+            analyst_config,
+        )
+    ):
+        return result
     result["status"] = cleaned
     live_output = live.get("output_dir") if isinstance(live, dict) else None
     if isinstance(live_output, str) and live_output.strip():

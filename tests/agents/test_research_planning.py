@@ -10,12 +10,16 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
-from mcp_server_phytomni.agents.research.contracts import ResearchGoal
+from mcp_server_phytomni.agents.research.contracts import (
+    MAX_RESEARCH_GOAL_CHARS,
+    MAX_RESEARCH_GOAL_CONTEXT_CHARS,
+    ResearchGoal,
+)
 from mcp_server_phytomni.agents.research.document_evidence import (
     DocumentEvidenceDigest,
     ExtractedResearchEvidence,
@@ -23,6 +27,7 @@ from mcp_server_phytomni.agents.research.document_evidence import (
 )
 from mcp_server_phytomni.agents.research.input_contracts import SourceSpan
 from mcp_server_phytomni.agents.research.input_preparation import (
+    PreparedResearchAuthority,
     PreparedResearchInput,
 )
 from mcp_server_phytomni.agents.research.planning import (
@@ -144,6 +149,112 @@ class _GoalProvider:
         return self.goals
 
 
+def _canonical_figure_goals() -> tuple[ResearchGoal, ...]:
+    """Owner-approved HTTP fan-out fixture (Figure 2, 4, 3, 1, 5)."""
+    return (
+        ResearchGoal(
+            goal=(
+                "Replicate Figure 2: Perform comparative analysis of m5C "
+                "methylation levels and gene expression in WT and emf1 "
+                "mutants, including LC-MS/MS quantification of m5C, "
+                "m5C-RIP-seq peak calling, and correlation analysis with "
+                "RNA-seq expression data."
+            ),
+            context=(
+                "The authors performed dot blot and LC-MS/MS assays to "
+                "quantify m5C levels in WT and emf1 seedlings "
+                "(Figure 2A-B). m5C-RIP-seq was conducted on 7-day-old "
+                "seedlings with three biological replicates, identifying "
+                "6572 peaks in WT and 6778 peaks in emf1 (Figure S2D). "
+                "They observed a 50% increase in m5C abundance in emf1 "
+                "mutants. RNA-seq revealed 3526 up-regulated and 3377 "
+                "down-regulated genes in emf1. The analysis showed that "
+                "831 down-regulated genes had increased m5C modification "
+                "(Figure 2I-J), with m5C peaks predominantly in coding "
+                "regions (Figure S2G-H)."
+            ),
+        ),
+        ResearchGoal(
+            goal=(
+                "Replicate Figure 4: Analyze the inverse relationship "
+                "between m5C and H3K27me3 distributions using ChIP-seq "
+                "and RIP-seq data integration, including Circos plot "
+                "generation and gene ontology enrichment."
+            ),
+            context=(
+                "Genome-wide ChIP-seq data of H3K27me3 (from prior "
+                "studies) and m5C RIP-seq data were compared. The "
+                "analysis revealed that m5C peaks were enriched in "
+                "regions lacking H3K27me3 (Figure 4B), with a "
+                "significant negative correlation (R = -0.42, "
+                "p = 1.1e-11, Figure S3H). Photosynthesis genes "
+                "(e.g., LHCB5, CAO) showed m5C enrichment in emf1 "
+                "mutants, while starch genes (SUS1, SUS3) lacked m5C "
+                "but had reduced H3K27me3 in emf1 (Figure 4C-G). GO "
+                "analysis of down-regulated m5C-modified genes "
+                "highlighted photosynthesis and chloroplast "
+                "development (Figure S5C-E)."
+            ),
+        ),
+        ResearchGoal(
+            goal=(
+                "Replicate Figure 3: Investigate EMF1's role in "
+                "repressing starch synthesis genes via H3K27me3, "
+                "including ChIP-qPCR validation of H3K27me3 levels "
+                "and RT-qPCR of SUS1/SUS3 expression."
+            ),
+            context=(
+                "emf1 mutants showed 7.3-fold increased starch content "
+                "at 7 DAG (Figure 3A). RNA-seq revealed 73% of starch "
+                "synthesis genes were up-regulated in emf1 "
+                "(Figure 3B). ChIP-seq and qPCR demonstrated reduced "
+                "H3K27me3 at SUS1 and SUS3 loci in emf1 "
+                "(Figure 3G-H), correlating with increased transcript "
+                "levels (Figure 3D-E). The authors concluded EMF1 "
+                "maintains repression of starch genes via H3K27me3 "
+                "(EMF1-PcG-H3K27me3 module)."
+            ),
+        ),
+        ResearchGoal(
+            goal=(
+                "Replicate Figure 1: Characterize photosynthetic "
+                "defects in emf1 mutants through chlorophyll "
+                "quantification, TEM analysis, and differential "
+                "expression analysis of photosynthesis genes."
+            ),
+            context=(
+                "emf1 mutants exhibited pale-green leaves and 50% "
+                "lower chlorophyll content (Figure 1B). TEM revealed "
+                "defective chloroplast structure with starch "
+                "accumulation (Figure 1C). RNA-seq identified 2219 "
+                "EMF1-no-K27 genes, 775 of which were m5C-modified "
+                "(Figure S7A). Down-regulated photosynthesis genes "
+                "(e.g., LHCB5, CAO) showed increased m5C in emf1 "
+                "(Figure 1D-G). GO analysis enriched for "
+                "photosynthesis and chloroplast development "
+                "(Figure 1E)."
+            ),
+        ),
+        ResearchGoal(
+            goal=(
+                "Replicate Figure 5: Validate TRM4B's role in m5C "
+                "deposition and its regulation by EMF1 through "
+                "ChIP-qPCR of H3K4me3 and RT-qPCR of TRM4B "
+                "expression."
+            ),
+            context=(
+                "TRM4B expression was up-regulated 2.5-fold in emf1 "
+                "(Figure 4G). ChIP-qPCR showed increased H3K4me3 at "
+                "TRM4B loci in emf1 (Figure S6M), correlating with "
+                "ULT1 binding (Figure S6L). TRM4B overexpression in "
+                "emf1 rescued m5C levels on photosynthesis genes "
+                "(Figure 4F). The authors concluded EMF1 represses "
+                "TRM4B via H3K4me3 (EMF1-TRM4B-m5C module)."
+            ),
+        ),
+    )
+
+
 def _request(
     *,
     run_id: str = "run-123",
@@ -227,18 +338,31 @@ async def test_planner_accepts_multiline_effective_query() -> None:
     assert plan.children[0].goal_description == "Compare datasets"
 
 
-async def test_provider_order_that_is_not_canonical_fails_closed() -> None:
-    """A provider cannot silently change child identity by changing order."""
-    goals = (
-        ResearchGoal(goal="Prioritize candidates", context="field"),
-        ResearchGoal(goal="Map drought genes", context="rice"),
+async def test_provider_order_is_plan_identity() -> None:
+    """Extractor order is child identity; a permutation is a new plan."""
+    extracted = _canonical_figure_goals()
+    alphabetical = tuple(
+        sorted(extracted, key=lambda goal: (goal.goal, goal.context or ""))
     )
+    assert extracted != alphabetical
 
-    with pytest.raises(Exception) as caught:
-        await build_research_plan(_request(), _GoalProvider(goals))
+    first = await build_research_plan(_request(), _GoalProvider(extracted))
+    second = await build_research_plan(_request(), _GoalProvider(alphabetical))
 
-    assert getattr(caught.value, "code", None) == (
-        "research_input_resolution_failed"
+    assert [child.task_name for child in first.children] == [
+        "research_goal_0",
+        "research_goal_1",
+        "research_goal_2",
+        "research_goal_3",
+        "research_goal_4",
+    ]
+    assert first.children[0].output_dir.endswith("/part-001")
+    assert first.children[0].goal_description.startswith("Replicate Figure 2:")
+    assert first.children[3].goal_description.startswith("Replicate Figure 1:")
+    assert first.children[3].output_dir.endswith("/part-004")
+    assert first.digest != second.digest
+    assert second.children[0].goal_description.startswith(
+        "Replicate Figure 1:"
     )
 
 
@@ -317,7 +441,6 @@ async def test_planner_rejects_invalid_public_execution_controls(
     "prepared",
     [
         cast(Any, object()),
-        replace(_prepared(), effective_query=""),
         replace(_prepared(), effective_query="query\x00payload"),
         replace(_prepared(), obs_file_list=cast(Any, ["obs://asset"])),
         replace(_prepared(), data_list=cast(Any, {"obs://asset": "data"})),
@@ -338,6 +461,20 @@ async def test_planner_rejects_invalid_final_native_projection(
     assert not provider.calls
 
 
+async def test_planner_accepts_empty_effective_query_with_evidence() -> None:
+    """Blank query is not a synthetic goal; evidence still reaches the
+    provider."""
+    prepared = replace(_prepared(), effective_query="")
+    provider = _GoalProvider(_canonical_figure_goals()[:2])
+
+    plan = await build_research_plan(_request(prepared=prepared), provider)
+
+    assert provider.calls == 1
+    assert provider.received is not None
+    assert len(plan.children) == 2
+    assert plan.children[0].goal_description.startswith("Replicate Figure 2:")
+
+
 async def test_empty_goal_result_fails_before_any_child_work() -> None:
     """An empty provider result fails before a plan can be persisted."""
     provider = _GoalProvider(goals=())
@@ -356,8 +493,13 @@ async def test_empty_goal_result_fails_before_any_child_work() -> None:
     "goals",
     [
         (ResearchGoal(goal="x"), ResearchGoal(goal="x")),
-        ({"goal": "x" * 1001},),
-        ({"goal": "x", "context": "y" * 4001},),
+        ({"goal": "x" * (MAX_RESEARCH_GOAL_CHARS + 1)},),
+        (
+            {
+                "goal": "x",
+                "context": "y" * (MAX_RESEARCH_GOAL_CONTEXT_CHARS + 1),
+            },
+        ),
     ],
 )
 async def test_invalid_goal_result_fails_closed(
@@ -392,6 +534,103 @@ async def test_query_only_plan_allows_empty_data_list() -> None:
     )
 
     assert not dict(plan.children[0].data_list)
+
+
+async def test_bound_goal_subsets_child_data_list() -> None:
+    """Cited inventory ids subset one child; unbound goals keep parent."""
+    parent = {
+        "obs://bucket/a.csv": "table-a",
+        "obs://bucket/b.csv": "table-b",
+    }
+    prepared = replace(
+        _prepared(parent),
+        authorities=(
+            PreparedResearchAuthority(
+                dataset_id="dataset_001",
+                exact_reference="obs://bucket/a.csv",
+                compound_suffix=".csv",
+                authority=cast(Any, SimpleNamespace()),
+            ),
+        ),
+    )
+    plan = await build_research_plan(
+        _request(prepared=prepared),
+        _GoalProvider(
+            (
+                ResearchGoal(
+                    goal="Analyze first table",
+                    dataset_ids=("dataset_001",),
+                ),
+                ResearchGoal(goal="Analyze both tables"),
+            )
+        ),
+    )
+
+    assert len(plan.children[0].data_list) == 1
+    assert dict(plan.children[0].data_list) == {
+        "obs://bucket/a.csv": "table-a",
+    }
+    assert len(plan.children[1].data_list) == 2
+    assert dict(plan.children[1].data_list) == parent
+    assert (
+        plan.children[0].dispatch_fingerprint
+        != plan.children[1].dispatch_fingerprint
+    )
+
+
+async def test_bound_child_fingerprint_isolates_data_list() -> None:
+    """Same child identity, only bound data_list changes fingerprint."""
+    parent = {
+        "obs://bucket/a.csv": "table-a",
+        "obs://bucket/b.csv": "table-b",
+    }
+    prepared = replace(
+        _prepared(parent),
+        authorities=(
+            PreparedResearchAuthority(
+                dataset_id="dataset_001",
+                exact_reference="obs://bucket/a.csv",
+                compound_suffix=".csv",
+                authority=cast(Any, SimpleNamespace()),
+            ),
+        ),
+    )
+    request = _request(prepared=prepared)
+    goal_one = "Analyze first table"
+    goal_two = "Analyze both tables"
+    bound = await build_research_plan(
+        request,
+        _GoalProvider(
+            (
+                ResearchGoal(
+                    goal=goal_one,
+                    dataset_ids=("dataset_001",),
+                ),
+                ResearchGoal(goal=goal_two),
+            )
+        ),
+    )
+    unbound = await build_research_plan(
+        request,
+        _GoalProvider(
+            (
+                ResearchGoal(goal=goal_one, dataset_ids=None),
+                ResearchGoal(goal=goal_two),
+            )
+        ),
+    )
+    first_bound = bound.children[0]
+    first_unbound = unbound.children[0]
+
+    assert len(first_bound.data_list) == 1
+    assert len(first_unbound.data_list) == 2
+    assert (
+        first_bound.dispatch_fingerprint != first_unbound.dispatch_fingerprint
+    )
+    assert first_bound.task_name == first_unbound.task_name
+    assert first_bound.output_dir == first_unbound.output_dir
+    assert first_bound.thread_id == first_unbound.thread_id
+    assert first_bound.goal_description == first_unbound.goal_description
 
 
 async def test_planner_rejects_empty_evidence_before_provider() -> None:

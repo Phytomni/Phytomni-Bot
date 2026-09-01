@@ -37,6 +37,7 @@ from ..runtime.research_input_store import (
     ResearchAdmissionReservation,
     ResearchInputStore,
 )
+from ..runtime.task_reconcile import bind_research_relaunch_outbox
 from ..storage.path_policy import IdFactory
 from .research_launch import launch_worker
 from .research_root import bind_default_research_root_request_factory
@@ -49,6 +50,7 @@ __all__ = [
     "ResearchInputStore",
     "ResearchRoutePreflight",
     "build_research_input_coordinator",
+    "clear_research_input_runtime",
     "ensure_research_input_runtime",
     "launch_research_input_worker",
     "research_input_root_worker_ready",
@@ -77,6 +79,11 @@ class _ResearchInputRuntime:
 
 
 _RUNTIME_STATE: dict[str, _ResearchInputRuntime | None] = {"current": None}
+
+
+def clear_research_input_runtime() -> None:
+    """Drop the process-local Research coordinator (tests and shutdown)."""
+    _RUNTIME_STATE["current"] = None
 
 
 def research_input_root_worker_ready(
@@ -110,19 +117,14 @@ def build_research_input_coordinator(
     request: Any | None = None,
     **ports: Any,
 ) -> Any:
-    """Build and register the production Research admission worker.
-
-    The API admission owner supplies the store, real Analyst configuration,
-    metadata port, and resolver provider.  Keeping construction here gives
-    HTTP admission and lifespan recovery the same coordinator instance while
-    leaving MCP dispatch independent of this HTTP-only path.
-    """
+    """Build and register the production Research admission worker."""
     root_worker = ports.pop("root_worker", None)
     root_request_factory = ports.pop("root_request_factory", None)
     coordinator = ResearchInputCoordinator.from_production(
         request,
         **ports,
     )
+    bind_research_relaunch_outbox(coordinator.outbox)
     recovery = coordinator.recovery
     if recovery is None:
         raise RuntimeError("Research production runtime has no recovery")

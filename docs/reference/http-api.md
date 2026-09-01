@@ -1347,6 +1347,18 @@ request requires an `Idempotency-Key` header. The private conversation
 context envelope may supply the identity when that independently gated
 contract is present.
 
+HTTP planning uses the same evidence-backed goal extraction as the
+InSilicoResearch graph. Child count equals the extracted goal count
+(1–20). `research_goal_0` maps to `part-001` in extractor order, not
+alphabetical order. The authored query is evidence, not the sole goal.
+On this process the first `202` is returned after that extraction and
+after **every** child `create-task` has been accepted. Extraction
+failure is `research_goal_extraction_failed` (invalid or empty goal
+JSON after one retry) or `research_input_resolution_failed` (other
+planning misses), with no outbox row. A suffix JSON object of OBS
+paths without a `data:` label is a pasted-dataset grammar; `/obs/`
+and `obs://` spellings of the configured bucket are equivalent.
+
 The first accepted request returns HTTP `202` with the normal `agent.run`
 acknowledgement and a sanitized `run_id`. Same-identity/same-fingerprint
 replay returns the durable run without a second input-resolution or child

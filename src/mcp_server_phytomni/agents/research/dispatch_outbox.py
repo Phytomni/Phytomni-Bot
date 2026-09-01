@@ -18,6 +18,12 @@ from typing import Any, Literal, NamedTuple, cast
 from ...runtime.research_input_store import ResearchInputStore
 from ...runtime.sqlite import sqlite_transaction
 from . import dispatch_outbox_storage as _storage
+from .dispatch_outbox_relaunch import (
+    recover_dispatch_outbox,
+)
+from .dispatch_outbox_relaunch import (
+    relaunch_memory_exhausted as _relaunch_memory_exhausted,
+)
 from .input_contracts import ResearchErrorCode, ResearchInputFailure
 from .resolver_policy import canonical_json_bytes
 
@@ -523,6 +529,8 @@ class ResearchDispatchOutbox:
             self.options.attach_task,
         )
 
+    relaunch_memory_exhausted = _relaunch_memory_exhausted
+
     async def reconcile_once(
         self,
         dispatch_id: str,
@@ -613,43 +621,6 @@ class ResearchDispatchOutbox:
                 return None
             verified = _row_with_record(result)
         return verified
-
-
-async def recover_dispatch_outbox(
-    outbox: ResearchDispatchOutbox,
-    now: datetime,
-    limit: int,
-    lease_owner: str,
-) -> tuple[DispositionState, ...]:
-    """Reconcile a bounded pending/expired outbox set after a restart."""
-    if limit <= 0:
-        return ()
-    now_iso = _iso(now)
-    with sqlite_transaction(outbox.store.db_path) as connection:
-        rows = connection.execute(
-            "SELECT outbox_id FROM research_dispatch_outbox "
-            "WHERE state='pending' "
-            "OR (state IN ('leased','sent') AND "
-            "lease_expires_at IS NOT NULL AND "
-            "lease_expires_at <= ?) ORDER BY updated_at, outbox_id LIMIT ?",
-            (now_iso, limit),
-        ).fetchall()
-    outcomes: list[DispositionState] = []
-    for row in rows:
-        dispatch_id = cast(str, row[0])
-        current = _load_row(outbox.store, dispatch_id)
-        if current is None:
-            continue
-        if current.record.state == "sent":
-            disposition = await outbox.reconcile_once(
-                dispatch_id, lease_owner, now
-            )
-        else:
-            disposition = await outbox.dispatch_once(
-                dispatch_id, lease_owner, now
-            )
-        outcomes.append(disposition.state)
-    return tuple(outcomes)
 
 
 def _validated_children(
@@ -842,7 +813,7 @@ async def _accept_row(
                 "updated_at=?"
                 " WHERE run_id=? AND status NOT IN "
                 "('succeeded','failed','cancelled')"
-                " AND stage='planning' AND revision=?",
+                " AND stage IN ('planning','execution') AND revision=?",
                 (now_iso, record.run_id, record.parent_revision),
             )
             if parent.rowcount != 1:
@@ -916,14 +887,7 @@ def _parent_live_connection(
 
 
 def _parent_live_sql() -> str:
-    return (
-        "EXISTS (SELECT 1 FROM runs WHERE runs.run_id = "
-        "research_dispatch_outbox.run_id AND runs.status NOT IN "
-        "('succeeded','failed','cancelled')) AND NOT EXISTS (SELECT 1 FROM "
-        "research_input_resolutions WHERE run_id = "
-        "research_dispatch_outbox.run_id "
-        "AND COALESCE(cancel_requested,0) <> 0)"
-    )
+    return _storage.parent_live_predicate()
 
 
 def _disposition(
@@ -957,6 +921,17 @@ def _terminal_disposition(
     if row.record.state == "cancelled":
         return _cancelled(dispatch_id)
     return None
+
+
+def _existing_disposition(
+    dispatch_id: str, row: _OutboxRow | None
+) -> ResearchDispatchDisposition:
+    """Return the current non-failed disposition without submitting."""
+    terminal = _terminal_disposition(dispatch_id, row)
+    if terminal is not None:
+        return terminal
+    remote_id = None if row is None else row.record.remote_task_id
+    return _disposition(dispatch_id, "accepted", remote_id)
 
 
 async def _maybe_await(value: object) -> object:

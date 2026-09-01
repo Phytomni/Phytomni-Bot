@@ -263,7 +263,7 @@ async def stream_review_a2ui_pause(
                 if isinstance(a2ui_value, Mapping):
                     yield custom(A2UI_CUSTOM_NAME, dict(a2ui_value))
         else:
-            result = dependencies.persistence.format_review_result(
+            result = await dependencies.persistence.format_review_result(
                 final_state, arguments=arguments
             )
             terminal.record("succeeded", result)

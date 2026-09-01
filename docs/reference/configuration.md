@@ -266,16 +266,27 @@ Resolution order is `COMPUTE_RESOURCE_BY_TYPE[analysis_type]`, then the
 instance `COMPUTE_RESOURCE`, then the config-class default. These are
 Pydantic fields, not required deployment environment variables.
 
+Typed agents still use `resolve_compute_resource` and
+`COMPUTE_RESOURCE_BY_TYPE`. DigitalDesign protein analyses map to
+`medium`. DeepGenome `evolution_analysis` (and protein analyses) map to
+`medium`. GeneNetwork stays `small`. Environment stays `large`.
+
 Per-agent defaults:
 
 - Analyst and GeneNetwork: `small`.
-- InSilicoResearch: `medium`.
+- InSilicoResearch: `small` (was `medium`).
 - Environment: `large`.
 - DigitalDesign: `small`, with `protein_design_analysis` and
   `protein_structure_analysis` mapped to `medium`.
 - DeepGenome: `small`, with `evolution_analysis`,
   `protein_structure_analysis`, and `protein_design_analysis` mapped to
   `medium`.
+
+Analyst and Research jobs start at `small`. A memory-class remote
+failure relaunches that same task or child one named tier up
+(`medium`, then `large`), at most twice. A `large` job that still
+fails is an ordinary failure. Logs with no memory-class tokens are
+not relaunched.
 
 ## HTTP API Variables
 

@@ -35,6 +35,17 @@ package version remains `0.1.3` until the release bump.
 
 ### Changed
 
+- **Analyst/Research compute tiers** — New Analyst and Research
+  jobs start at `small`. A memory-class remote failure relaunches
+  that same child at `medium`, then `large`. Research children may
+  receive a subset of parent datasets when goal extraction cites
+  inventory ids; otherwise they keep the full snapshot. Typed
+  agents still use `resolve_compute_resource`. There is no reject
+  tier.
+- **Research goal extraction bounds** — Each extracted `goal` may be
+  16384 characters and each `context` 114688 (sum 131072, the evidence
+  prompt cap). Paper paragraphs that previously tripped the 4000-character
+  `context` check can now reach Analyst children.
 - **Submit-return defaults** — Analyst, the analyst subgraph helper, and
   Design MCP helpers default `is_polling` to false.
 - **DeepGenome cancel** — An owner cancel no longer lets the
@@ -47,7 +58,9 @@ package version remains `0.1.3` until the release bump.
   409\.
 - **Compute tiers** — `AnalystConfig.RESOURCE` medium is now 4C/16G
   (was 8G). Submit sites resolve `small` / `medium` / `large` through
-  `resolve_compute_resource`; InSilicoResearch defaults to `medium`.
+  `resolve_compute_resource`. Analyst and Research start at `small`;
+  a memory-class remote failure relaunches the same child at the next
+  named tier. There is no reject tier.
 - **Outbound example budgets** — `config/.env.example` sets LLM 32,
   retrieval/rerank/NL2SQL 16, and SPA FAQ 4. Other pools stay `0`
   (unlimited per process). Restart the process to apply.
@@ -56,6 +69,9 @@ package version remains `0.1.3` until the release bump.
 - **Review manuscript** — Review plans argument-led sections, drops
   off-domain papers, writes claim-led subsections, and assembles
   Abstract / Introduction / Conclusions. Citation delivery is unchanged.
+- **Review citation enrichment** — After an A2UI confirm resume, the
+  terminal Review result runs the same bibliographic enrichment as
+  Knowledge and Brief Gene. The pause itself is unchanged.
 - **Review dimension count** — Review plans 4–10 argument sections.
   Fewer than 4 fails; more than 10 are capped. Assembly follows the
   actual count instead of padding empty slots to four. No figures.
@@ -77,6 +93,23 @@ package version remains `0.1.3` until the release bump.
 
 ### Fixed
 
+- **Research HTTP goals** — `POST /v1/agents/research/runs` extracts
+  analysis goals from retained paper evidence the same way the MCP graph
+  does. Each goal becomes one Analyst child (`part-001` …, at most 20).
+  The route no longer truncates the authored query to a single
+  1000-character goal. Goal extraction and child submit still complete
+  before the HTTP 202 on this process.
+- **Research admission errors** — Planning 422 responses keep the domain
+  `safe_message` and fine code. Empty or invalid goal JSON is
+  `research_goal_extraction_failed` after one bounded retry on the same
+  evidence.
+- **Research pasted datasets** — A suffix `{path: description}` JSON
+  object without a `data:` label becomes pasted dataset candidates.
+  `/obs/bucket/key` is accepted as an exact spelling of
+  `obs://bucket/key`. JSON newlines in descriptions fold to spaces.
+- **Research N-child accept** — After the first child moves the parent
+  to `execution`, later children still accept. An outbox exception is
+  `research_run_tracking_failed` 502, not an unclassified 503.
 - **Stream subscribers** — A browser refresh or tab leave detaches that
   subscriber without stopping the owner run, so a later subscriber can
   continue the same in-flight answer.

@@ -46,7 +46,7 @@ type InterruptProjector = Callable[[Mapping[str, Any]], dict[str, Any]]
 type ChatInterruptBody = Callable[..., dict[str, Any]]
 type ReviewInterruptBody = Callable[..., dict[str, Any]]
 type ChatFormatter = Callable[..., dict[str, Any]]
-type ReviewFormatter = Callable[[Mapping[str, Any]], dict[str, Any]]
+type ReviewFormatter = Callable[[Mapping[str, Any]], Awaitable[dict[str, Any]]]
 
 __all__ = [
     "A2ARegistryDependencies",
@@ -313,7 +313,7 @@ def _settle_interrupt(
     return body, 200
 
 
-def _terminal_result(
+async def _terminal_result(
     context: _ResumeContext,
     final_state: Mapping[str, Any],
     *,
@@ -338,7 +338,7 @@ def _terminal_result(
             ),
             resume_payload=context.resume_payload,
         )
-    return dependencies.projection.format_review_result(final_state)
+    return await dependencies.projection.format_review_result(final_state)
 
 
 async def resume_task(
@@ -378,7 +378,7 @@ async def resume_task(
             interrupt,
             dependencies=dependencies,
         )
-    result = _terminal_result(
+    result = await _terminal_result(
         context,
         final_state,
         dependencies=dependencies,

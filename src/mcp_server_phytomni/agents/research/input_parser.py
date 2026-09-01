@@ -29,7 +29,7 @@ _DATA_LABEL = re.compile(r"(?<![A-Za-z0-9_])[dD][aA][tT][aA]:")
 _JSON_KEY = re.compile(r'"((?:[^"\\\x00-\x1f]|\\.)*)"[ \t\r\n]*:')
 _WINDOWS_PATH = re.compile(r"^[A-Za-z]:[\\/]")
 _SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
-_KEY_SEGMENT = re.compile(r"^[\w.-]+$", re.UNICODE)
+_KEY_SEGMENT = re.compile(r"^[\w. -]+$", re.UNICODE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +51,12 @@ def parse_research_input(
     solely for comparison and never rewrites the caller's exact reference.
     """
     spans, raw_candidates = _parse_data_blocks(original_query, bucket)
+    if not raw_candidates:
+        suffix_spans, suffix_candidates = _parse_unlabeled_suffix_object(
+            original_query, bucket, spans
+        )
+        spans.extend(suffix_spans)
+        raw_candidates.extend(suffix_candidates)
     standalone_spans, standalone_candidates = _parse_standalone_lines(
         original_query, bucket, spans
     )
@@ -99,7 +105,14 @@ def has_explicit_research_data_syntax(query: str, bucket: str) -> bool:
             return True
     try:
         return bool(parse_research_input(query, bucket).candidates)
-    except ResearchInputFailure:
+    except ResearchInputFailure as error:
+        if error.code in {
+            "research_data_block_invalid",
+            "research_dataset_path_invalid",
+            "research_dataset_format_unsupported",
+            "research_dataset_duplicate",
+        }:
+            return True
         return _looks_like_standalone_reference(query)
 
 
@@ -130,6 +143,45 @@ def _parse_data_blocks(
         spans.append(span)
         candidates.extend(block_candidates)
     return spans, candidates
+
+
+def _parse_unlabeled_suffix_object(
+    query: str, bucket: str, occupied: Iterable[SourceSpan]
+) -> tuple[list[SourceSpan], list[_RawCandidate]]:
+    """Parse a suffix JSON object that has no ``data:`` label."""
+    if not query.rstrip().endswith("}"):
+        return [], []
+    offset = 0
+    while True:
+        start = query.find("{", offset)
+        if start < 0:
+            return [], []
+        try:
+            value, object_end = _decode_object(query, start)
+        except ResearchInputFailure:
+            offset = start + 1
+            continue
+        if query[object_end:].strip():
+            offset = start + 1
+            continue
+        span = SourceSpan(start, object_end, "trailing_json")
+        if any(_overlaps(span, existing) for existing in occupied):
+            return [], []
+        keys = tuple(value)
+        looks_like_ref = tuple(_looks_like_dataset_key(key) for key in keys)
+        if not keys or not any(looks_like_ref):
+            return [], []
+        if not all(looks_like_ref):
+            raise _path_invalid()
+        return [span], _object_candidates(
+            query, start, object_end, value, bucket
+        )
+
+
+def _looks_like_dataset_key(key: str) -> bool:
+    """Return whether a JSON key looks like a pasted OBS reference."""
+    lowered = key.casefold()
+    return lowered.startswith("obs://") or lowered.startswith("/obs/")
 
 
 def _parse_trailing_json(
@@ -304,6 +356,7 @@ def _candidate(
     bucket: str,
 ) -> _RawCandidate:
     """Validate one exact reference and derive its comparison-only key."""
+    hint = _fold_user_hint(hint)
     if hint is not None and _contains_forbidden_control(hint):
         raise _path_invalid()
     comparison_key = _comparison_key(reference, bucket)
@@ -316,19 +369,45 @@ def _candidate(
     )
 
 
+def _fold_user_hint(hint: str | None) -> str | None:
+    """Fold JSON whitespace controls to spaces before the control check."""
+    if hint is None:
+        return None
+    folded: list[str] = []
+    for character in hint:
+        if character in "\n\r\t":
+            if not folded or folded[-1] != " ":
+                folded.append(" ")
+            continue
+        folded.append(character)
+    return "".join(folded) or None
+
+
 def _comparison_key(reference: str, bucket: str) -> str | None:
     """Validate OBS authority and return a normalized comparison identity."""
     if _contains_forbidden_control(reference):
         return None
-    match = re.fullmatch(r"obs://([^/]+)/(.+)", reference, flags=re.IGNORECASE)
-    if match is None:
+    uri = reference
+    if reference.startswith("/obs/"):
+        ref_bucket, separator, key = reference.removeprefix("/obs/").partition(
+            "/"
+        )
+        if not ref_bucket or not separator or not key:
+            return None
+        uri = f"obs://{ref_bucket}/{key}"
+    match = re.fullmatch(r"obs://([^/]+)/(.+)", uri, flags=re.IGNORECASE)
+    if (
+        match is None
+        or not bucket
+        or match.group(1).casefold() != bucket.casefold()
+    ):
         return None
-    reference_bucket, key = match.groups()
-    if not bucket or reference_bucket.casefold() != bucket.casefold():
-        return None
+    key = match.group(2)
     segments = key.split("/")
     if not segments or any(
-        segment in ("", ".", "..") or not _KEY_SEGMENT.fullmatch(segment)
+        not segment.strip()
+        or segment.strip() in (".", "..")
+        or not _KEY_SEGMENT.fullmatch(segment)
         for segment in segments
     ):
         return None

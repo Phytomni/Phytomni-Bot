@@ -30,7 +30,6 @@ pytestmark = pytest.mark.agent
     "prepared",
     [
         object(),
-        replace(_request().prepared, effective_query=" "),
         cast(
             Any,
             replace(

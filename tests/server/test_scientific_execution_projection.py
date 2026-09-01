@@ -82,7 +82,7 @@ def _canonical_result(result: dict[str, Any]) -> dict[str, Any]:
     return body["result"]
 
 
-def _entrypoint_result(entrypoint: str) -> dict[str, Any]:
+async def _entrypoint_result(entrypoint: str) -> dict[str, Any]:
     """Build one public result for each migration entrypoint."""
     envelope = _envelope()
     format_agent_run_result = getattr(api_app, "_format_agent_run_result")
@@ -101,7 +101,7 @@ def _entrypoint_result(entrypoint: str) -> dict[str, Any]:
         )
         return _canonical_result(result)
     if entrypoint == "resume":
-        result = format_review_result(
+        result = await format_review_result(
             {
                 "final_response": _sentinel_payload(),
             }
@@ -114,11 +114,11 @@ def _entrypoint_result(entrypoint: str) -> dict[str, Any]:
     "entrypoint",
     ["native", "expert", "polling", "resume"],
 )
-def test_operational_sentinels_only_live_in_execution(
+async def test_operational_sentinels_only_live_in_execution(
     entrypoint: str,
 ) -> None:
     """Native, Expert, polling, and resume keep one public split."""
-    result = _entrypoint_result(entrypoint)
+    result = await _entrypoint_result(entrypoint)
     formatted = json.dumps(
         {
             key: value

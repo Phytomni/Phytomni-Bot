@@ -291,10 +291,14 @@ async def test_a2a_resume_checks_generation_and_reuses_resume_kernel(
 
     monkeypatch.setattr(api_app_module, "_review_stream_app", fake_review_app)
     monkeypatch.setattr(api_app_module, "_resume_paused_run", fake_resume)
+
+    async def fake_format_review(_state: object) -> dict[str, object]:
+        return {"formatted": {"answer": "done"}, "raw": None}
+
     monkeypatch.setattr(
         api_app_module,
         "_format_review_result",
-        lambda _state: {"formatted": {"answer": "done"}, "raw": None},
+        fake_format_review,
     )
 
     resume_a2a_task = getattr(api_app_module, "_resume_a2a_task")

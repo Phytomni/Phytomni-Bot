@@ -287,7 +287,7 @@ def _settled_action_interrupt(
     )
 
 
-def _terminal_action_result(
+async def _terminal_action_result(
     *,
     context: _ActionContext,
     final_state: Mapping[str, Any],
@@ -301,7 +301,7 @@ def _terminal_action_result(
             resume_payload=context.resume_payload,
         )
     return {
-        **format_review_result(final_state),
+        **await format_review_result(final_state),
         "a2ui": submitted_a2ui_value(
             context.surface,
             context.resume_payload,
@@ -375,7 +375,7 @@ async def resume_a2ui_run(
             interrupt=interrupt_after,
         )
 
-    result = _terminal_action_result(
+    result = await _terminal_action_result(
         context=context,
         final_state=final_state,
         format_review_result=dependencies.persistence.format_review_result,
@@ -531,7 +531,7 @@ async def resume_review_run(
             thread_id=thread_id,
             interrupt=interrupt,
         )
-    result = dependencies.persistence.format_review_result(final_state)
+    result = await dependencies.persistence.format_review_result(final_state)
     result = {
         **result,
         "a2ui": submitted_a2ui_value(

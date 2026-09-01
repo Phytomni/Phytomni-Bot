@@ -9,9 +9,13 @@ object.  The legacy query/path wrapper remains for MCP and graph callers
 whose older contract still owns document-context download.
 """
 
+import logging
 from collections.abc import Callable
-from json import loads
+from dataclasses import dataclass
+from json import JSONDecodeError, loads
 from typing import Any, NamedTuple
+
+from pydantic import ValidationError
 
 from ...config.defaults import InSilicoResearchConfig
 from ...config.settings import SensitiveConfig
@@ -23,22 +27,53 @@ from ...graphs.chat_adapters import (
 from ...runtime.langgraph_runner import invoke_graph
 from ...runtime.locale import SupportedLocale
 from ...storage.downloads import download_upload_context
-from .contracts import ResearchGoal, ResearchGoalBatch
+from .contracts import (
+    MAX_RESEARCH_GOAL_CHARS,
+    MAX_RESEARCH_GOAL_CONTEXT_CHARS,
+    ResearchGoal,
+    ResearchGoalBatch,
+)
 from .document_evidence import ExtractedResearchEvidence
+from .input_contracts import ResearchInputFailure, research_input_failure
 from .planning import research_planning_failure
 
 PromptBuilder = Callable[..., str]
 ChatAppFactory = Callable[[], Any]
 MAX_GOAL_EVIDENCE_CHARS = 131_072
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "MAX_GOAL_EVIDENCE_CHARS",
+    "EvidenceGoalProvider",
     "ResearchGoalExtractionDependencies",
     "extract_research_goals",
     "extract_research_goals_from_evidence",
 ]
 
 _goal_extraction_failure = research_planning_failure
+_PARSE_ERRORS = (
+    KeyError,
+    IndexError,
+    TypeError,
+    ValueError,
+    JSONDecodeError,
+    ValidationError,
+)
+
+
+def _goal_chat_failure() -> ResearchInputFailure:
+    """Public, retry-exhausted goal-extraction failure."""
+    return research_input_failure(
+        "research_goal_extraction_failed",
+        (
+            "Research goals could not be parsed from the paper. "
+            "Please try again later."
+        ),
+        http_status_hint=422,
+        retryable=False,
+        stage="planning",
+        last_stage="planning",
+    )
 
 
 class ResearchGoalExtractionDependencies(NamedTuple):
@@ -50,13 +85,39 @@ class ResearchGoalExtractionDependencies(NamedTuple):
     chat_app_factory: ChatAppFactory
 
 
+@dataclass(frozen=True, slots=True)
+class EvidenceGoalProvider:
+    """ResearchGoalProvider that extracts from retained evidence."""
+
+    dependencies: ResearchGoalExtractionDependencies
+
+    @property
+    def contract_name(self) -> str:
+        """Identify the evidence-backed goal-provider contract."""
+        return "research_goal_provider"
+
+    async def extract(
+        self,
+        evidence: ExtractedResearchEvidence,
+        locale: SupportedLocale | None,
+    ) -> tuple[ResearchGoal, ...]:
+        """Return extractor-ordered goals without rewriting the query."""
+        goals = await extract_research_goals_from_evidence(
+            evidence,
+            locale=locale,
+            dependencies=self.dependencies,
+        )
+        logger.info("Extracted %d research goals", len(goals))
+        return goals
+
+
 async def extract_research_goals(
     user_query: str,
     obs_file_list: list[str],
     *,
     locale: SupportedLocale | None,
     dependencies: ResearchGoalExtractionDependencies,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """Extract and validate research goals through the shared chat seam."""
     config = dependencies.in_silico_config
     if obs_file_list:
@@ -81,9 +142,7 @@ async def extract_research_goals(
         locale=locale,
         dependencies=dependencies,
     )
-    return [
-        {"goal": goal.goal, "context": goal.context or ""} for goal in goals
-    ]
+    return [goal.as_state() for goal in goals]
 
 
 async def extract_research_goals_from_evidence(
@@ -136,12 +195,21 @@ async def _extract_goals_from_prompt(
                         "goal": {
                             "type": "string",
                             "minLength": 1,
-                            "maxLength": 1000,
+                            "maxLength": MAX_RESEARCH_GOAL_CHARS,
                         },
                         "context": {
                             "type": "string",
                             "minLength": 1,
-                            "maxLength": 4000,
+                            "maxLength": MAX_RESEARCH_GOAL_CONTEXT_CHARS,
+                        },
+                        "dataset_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                            },
+                            "maxItems": 256,
                         },
                     },
                     "required": ["goal"],
@@ -150,20 +218,36 @@ async def _extract_goals_from_prompt(
         },
         locale=locale,
     )
-    chat_output = await invoke_graph(
-        dependencies.chat_app_factory(),
-        build_chat_input(user_query=user_query, chat_kwargs=chat_kwargs),
-    )
-    phyto_response = extract_chat_response(chat_output)
-    if not phyto_response:
-        raise ValueError("research goal extraction returned no goals")
-    try:
-        batch = ResearchGoalBatch.model_validate(
-            loads(phyto_response["choices"][0]["message"]["content"])
+    last_error: BaseException | None = None
+    for _attempt in range(2):
+        chat_output = await invoke_graph(
+            dependencies.chat_app_factory(),
+            build_chat_input(user_query=user_query, chat_kwargs=chat_kwargs),
         )
-    except (KeyError, IndexError, TypeError, ValueError) as error:
-        raise research_planning_failure() from error
-    return tuple(batch.root)
+        phyto_response = extract_chat_response(chat_output)
+        content: object = None
+        try:
+            content = phyto_response["choices"][0]["message"]["content"]
+            if not isinstance(content, str):
+                raise TypeError("goal content is not JSON text")
+            batch = ResearchGoalBatch.model_validate(loads(content))
+        except _PARSE_ERRORS as error:
+            last_error = error
+            parsed: object = None
+            if isinstance(content, str):
+                try:
+                    parsed = loads(content)
+                except (TypeError, ValueError, JSONDecodeError):
+                    parsed = None
+            logger.info(
+                "goal extraction failed content_len=%s json_array=%s err=%s",
+                len(content) if isinstance(content, str) else 0,
+                isinstance(parsed, list),
+                type(error).__name__,
+            )
+            continue
+        return tuple(batch.root)
+    raise _goal_chat_failure() from last_error
 
 
 def _evidence_prompt(evidence: ExtractedResearchEvidence) -> str:
@@ -182,7 +266,11 @@ def _evidence_prompt(evidence: ExtractedResearchEvidence) -> str:
             or not unit.text.strip()
         ):
             raise _goal_extraction_failure()
-        part = f"[evidence_{ordinal + 1:03d}]\n{unit.text.strip()}"
+        chunks = [f"[evidence_{ordinal + 1:03d}]"]
+        if unit.dataset_ids:
+            chunks.append("dataset_ids: " + ", ".join(unit.dataset_ids))
+        chunks.append(unit.text.strip())
+        part = "\n".join(chunks)
         total += len(part) + (2 if parts else 0)
         if total > MAX_GOAL_EVIDENCE_CHARS:
             raise _goal_extraction_failure()

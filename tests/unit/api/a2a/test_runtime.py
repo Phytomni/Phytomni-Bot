@@ -243,7 +243,7 @@ def _dependencies(
             "payload": dict(resume_payload),
         }
 
-    def format_review(_state: Mapping[str, Any]) -> dict[str, Any]:
+    async def format_review(_state: Mapping[str, Any]) -> dict[str, Any]:
         return {"formatted": {"answer": "reviewed"}, "raw": None}
 
     dependencies = runtime.A2AResumeDependencies(

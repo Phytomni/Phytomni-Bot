@@ -199,6 +199,17 @@ def _port(fake_obs: FakeObsClient) -> DirectResearchObjectMetadataPort:
     )
 
 
+@pytest.mark.asyncio
+async def test_direct_resolve_accepts_slash_obs_exact_reference() -> None:
+    """Pasted /obs/bucket/key must HEAD the same object as obs://."""
+    fake_obs = FakeObsClient()
+    authorities = await _port(fake_obs).resolve(
+        _resolve_request("/obs/dev-bucket/a.vcf")
+    )
+    assert tuple(authorities)[0].dataset_id == "dataset-1"
+    assert fake_obs.calls == [("head", "dev-bucket", "a.vcf")]
+
+
 async def test_direct_resolve_leases_each_metadata_head_separately() -> None:
     """Two exact-key HEAD attempts request two independent OBS leases."""
     fake_obs = FakeObsClient()

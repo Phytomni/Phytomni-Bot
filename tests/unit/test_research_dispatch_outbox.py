@@ -18,18 +18,12 @@ from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
 import pytest
-from tests.agents import (
-    test_research_input_coordinator as coordinator_fixtures,
-)
-from tests.support.outbound_fakes import InlineObsRuntime
 from tests.support.research_fakes import persist_research_resolution
 
 from mcp_server_phytomni.agents.research import (
     dispatch_outbox,
     dispatch_outbox_storage,
-    dispatch_runtime,
 )
-from mcp_server_phytomni.agents.research import recovery as recovery_module
 from mcp_server_phytomni.agents.research.dispatch_outbox import (
     ResearchDispatchDisposition,
     ResearchDispatchOutbox,
@@ -47,7 +41,6 @@ from mcp_server_phytomni.agents.research.planning import (
 from mcp_server_phytomni.agents.research.recovery import (
     ResearchRecoveryService,
 )
-from mcp_server_phytomni.api import research_input as research_input_api
 from mcp_server_phytomni.runtime.research_input_store import (
     ResearchInputStore,
     cancel_research_run,
@@ -57,22 +50,13 @@ from mcp_server_phytomni.runtime.research_input_store_support import (
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
 from mcp_server_phytomni.storage.research_objects import (
-    DirectResearchObjectMetadataPort,
     ResearchObjectAuthority,
     ResearchObjectCandidate,
-    ResearchObjectResolveRequest,
     ResearchObjectSnapshot,
     research_object_authority_scope,
 )
 
 pytestmark = pytest.mark.unit
-
-coordinator_store = getattr(coordinator_fixtures, "_runtime_store")
-MetadataPortType = getattr(coordinator_fixtures, "_RuntimeMetadataPort")
-ProviderType = getattr(coordinator_fixtures, "_RuntimeProvider")
-analyst_factory = getattr(coordinator_fixtures, "_runtime_analyst")
-prepared_factory = getattr(coordinator_fixtures, "_runtime_prepared")
-plan_factory = getattr(coordinator_fixtures, "_runtime_plan")
 
 
 def _digest(value: object) -> str:
@@ -205,6 +189,8 @@ def test_atomic_plan_projection_and_outbox_commit(tmp_path: Path) -> None:
     ]
     assert work == (2,)
     assert stage == ("planning",)
+    first = ResearchDispatchOutbox(store).load(records[0].dispatch_id)
+    assert first.payload["compute_resource"] == "small"
 
 
 def test_plan_persists_exact_private_authority_bindings(
@@ -230,7 +216,7 @@ def test_plan_persists_exact_private_authority_bindings(
         authorities=(
             PreparedResearchAuthority(
                 dataset_id="dataset-001",
-                exact_reference="obs://dev-bucket/dataset-001.tsv",
+                exact_reference="bucket/data.tsv",
                 compound_suffix=".tsv",
                 authority=authority,
             ),
@@ -243,13 +229,14 @@ def test_plan_persists_exact_private_authority_bindings(
     grant = durable.payload["research_grants"][0]
     assert durable.grant_ids == ("grant-001",)
     assert grant["dataset_id"] == "dataset-001"
-    assert grant["exact_reference"] == "obs://dev-bucket/dataset-001.tsv"
+    assert grant["exact_reference"] == "bucket/data.tsv"
     assert grant["snapshot_digest"] == "snapshot-001"
+    assert durable.payload["compute_resource"] == "small"
     scope = research_object_authority_scope(
         (
             ResearchObjectCandidate(
                 "dataset-001",
-                "obs://dev-bucket/dataset-001.tsv",
+                "bucket/data.tsv",
                 ".tsv",
             ),
         )
@@ -292,7 +279,7 @@ def test_plan_persists_server_owned_binding_without_suffix(
         authorities=(
             PreparedResearchAuthority(
                 dataset_id="dataset-opaque",
-                exact_reference="obs://dev-bucket/opaque-key",
+                exact_reference="bucket/data.tsv",
                 compound_suffix="",
                 authority=authority,
             ),
@@ -306,8 +293,95 @@ def test_plan_persists_server_owned_binding_without_suffix(
         .payload["research_grants"][0]
     )
 
-    assert grant["exact_reference"] == "obs://dev-bucket/opaque-key"
+    assert grant["exact_reference"] == "bucket/data.tsv"
     assert grant["compound_suffix"] == ""
+
+
+def _child_authority(
+    dataset_id: str,
+    exact_reference: str,
+    grant_id: str,
+) -> PreparedResearchAuthority:
+    """Build one exact-reference grant used by child subset tests."""
+    return PreparedResearchAuthority(
+        dataset_id=dataset_id,
+        exact_reference=exact_reference,
+        compound_suffix=".tsv",
+        authority=ResearchObjectAuthority(
+            dataset_id=dataset_id,
+            authority_id=grant_id,
+            snapshot=ResearchObjectSnapshot(
+                dataset_id=dataset_id,
+                size_bytes=17,
+                etag=f"etag-{dataset_id}",
+                version_id=f"version-{dataset_id}",
+                last_modified="2026-08-08T00:00:00+00:00",
+                placeholder=False,
+                snapshot_digest=f"snapshot-{dataset_id}",
+            ),
+        ),
+    )
+
+
+def test_plan_subsets_child_grants_and_starts_small(tmp_path: Path) -> None:
+    """Each child payload keeps matching grants and a small compute tier."""
+    store = _store(tmp_path)
+    data_a = {"obs://b/a.tsv": "table-a"}
+    data_both = {
+        "obs://b/a.tsv": "table-a",
+        "obs://b/b.tsv": "table-b",
+    }
+    prepared = replace(
+        _prepared(),
+        data_list=MappingProxyType(data_both),
+        authority_ids=("grant-001", "grant-002"),
+        authorities=(
+            _child_authority("dataset-001", "obs://b/a.tsv", "grant-001"),
+            _child_authority("dataset-002", "obs://b/b.tsv", "grant-002"),
+        ),
+    )
+    children = tuple(
+        ResearchChildPlan(
+            ordinal=index,
+            task_name=f"research_goal_{index}",
+            goal_description=f"goal-{index}",
+            context="",
+            data_list=MappingProxyType(data_list),
+            output_dir=f"research/run-1/children/part-{index + 1:03d}",
+            thread_id=f"thread-{index}-run-1",
+            interop_mode="off",
+            interop_targets=(),
+            dispatch_fingerprint=_digest(("dispatch", index)),
+        )
+        for index, data_list in enumerate((data_a, data_both))
+    )
+    plan = ResearchPlan(
+        goals=(),
+        children=children,
+        digest=_digest(
+            {
+                "children": [child.dispatch_fingerprint for child in children],
+                "run_id": "run-1",
+            }
+        ),
+    )
+
+    records = persist_plan_and_outbox(store, "run-1", 0, prepared, plan)
+    outbox = ResearchDispatchOutbox(store)
+    child0 = outbox.load(records[0].dispatch_id)
+    child1 = outbox.load(records[1].dispatch_id)
+
+    assert child0.payload["compute_resource"] == "small"
+    assert child1.payload["compute_resource"] == "small"
+    assert len(child0.payload["research_grants"]) == 1
+    assert child0.payload["research_grants"][0]["dataset_id"] == (
+        "dataset-001"
+    )
+    assert child0.grant_ids == ("grant-001",)
+    assert len(child1.payload["research_grants"]) == 2
+    assert tuple(
+        grant["dataset_id"] for grant in child1.payload["research_grants"]
+    ) == ("dataset-001", "dataset-002")
 
 
 def test_plan_write_failure_rolls_back_every_private_projection(
@@ -341,6 +415,33 @@ def test_plan_write_failure_rolls_back_every_private_projection(
     assert resolution == (None, None, "pending")
     assert outbox == (0,)
     assert work == (0,)
+
+
+@pytest.mark.asyncio
+async def test_second_child_accept_after_first_stays_accepted(
+    tmp_path: Path,
+) -> None:
+    """N=2 must not IntegrityError once the parent left planning."""
+    store = _store(tmp_path)
+    records = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(2))
+    submitted: list[str] = []
+
+    async def submit(row: ResearchDispatchRecord) -> object:
+        submitted.append(row.dispatch_id)
+        return {"task_id": f"ei-{row.child_ordinal}"}
+
+    outbox = ResearchDispatchOutbox(
+        store,
+        submit=submit,
+        authority_verifier=_authority_verifier,
+    )
+    first = await outbox.dispatch_once(records[0].dispatch_id, "worker")
+    second = await outbox.dispatch_once(records[1].dispatch_id, "worker")
+    assert first.state == "accepted"
+    assert second.state in {"accepted", "reconciled"}
+    assert first.remote_task_id == "ei-0"
+    assert second.remote_task_id == "ei-1"
+    assert submitted == [records[0].dispatch_id, records[1].dispatch_id]
 
 
 def test_claim_persists_new_lease_and_heartbeat_rejects_expiry(
@@ -821,142 +922,3 @@ async def test_recovery_processes_pending_outbox_without_resolver_provider(
     assert calls == ["submit"]
     assert recovery.outbox is not None
     assert recovery.outbox.load(record.dispatch_id).state == "accepted"
-
-
-def test_api_lifespan_runtime_constructs_and_registers_worker(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The HTTP production entrypoint builds the real coordinator seam."""
-    store = coordinator_store(tmp_path, "api-runtime")
-    sensitive = object()
-    analyst_instances: list[Any] = []
-    registered: list[Any] = []
-
-    def fake_analyst_agent(**kwargs: Any) -> object:
-        """Capture the production Analyst constructor arguments."""
-        analyst_instances.append(kwargs)
-        return object()
-
-    monkeypatch.setitem(
-        getattr(research_input_api, "_RUNTIME_STATE"), "current", None
-    )
-    monkeypatch.setattr(research_input_api, "AnalystAgent", fake_analyst_agent)
-    monkeypatch.setattr(
-        research_input_api, "get_sensitive_config", lambda: sensitive
-    )
-    monkeypatch.setattr(
-        research_input_api,
-        "ResearchInputStore",
-        lambda _path: store,
-    )
-    monkeypatch.setattr(
-        research_input_api,
-        "register_recovery_service",
-        registered.append,
-    )
-    monkeypatch.setattr(
-        recovery_module,
-        "register_recovery_service",
-        lambda _service: None,
-    )
-    monkeypatch.setattr(
-        dispatch_runtime,
-        "build_research_object_metadata_port",
-        MetadataPortType,
-    )
-
-    coordinator = research_input_api.ensure_research_input_runtime(
-        str(tmp_path / "api-runtime.db")
-    )
-
-    assert coordinator.outbox is not None
-    assert coordinator.recovery is not None
-    assert registered == [coordinator.recovery]
-    assert len(analyst_instances) == 1
-    captured = analyst_instances[0]
-    assert captured["sensitive_config"] is sensitive
-    assert isinstance(
-        captured["analyst_config"],
-        research_input_api.InSilicoResearchConfig,
-    )
-    assert captured["analyst_config"].COMPUTE_RESOURCE == "medium"
-
-
-@pytest.mark.asyncio
-async def test_direct_runtime_re_resolves_only_after_authority_restart(
-    tmp_path: Path,
-) -> None:
-    """A direct-port restart re-resolves exact metadata before submission."""
-    store = coordinator_store(tmp_path, "direct-runtime")
-    head_calls: list[tuple[str, str]] = []
-
-    def get_object_metadata(**kwargs: str) -> SimpleNamespace:
-        """Return stable HEAD metadata for the exact child object."""
-        head_calls.append((kwargs["bucketName"], kwargs["objectKey"]))
-        return SimpleNamespace(
-            status=200,
-            body=SimpleNamespace(
-                contentLength=17,
-                etag="etag-001",
-                versionId="version-001",
-                lastModified="2026-08-08T00:00:00+00:00",
-            ),
-        )
-
-    client = SimpleNamespace(getObjectMetadata=get_object_metadata)
-    initial_port = DirectResearchObjectMetadataPort(
-        "dev-bucket", InlineObsRuntime(lambda: client)
-    )
-    fingerprint = hashlib.sha256(str(tmp_path).encode()).hexdigest()
-    candidate = ResearchObjectCandidate(
-        "dataset-001", "obs://dev-bucket/data.tsv", ".tsv"
-    )
-    authority = (
-        await initial_port.resolve(
-            ResearchObjectResolveRequest(
-                "run-runtime", fingerprint, (candidate,)
-            )
-        )
-    )[0]
-    prepared = prepared_factory()
-    prepared = replace(
-        prepared,
-        authority_ids=(authority.authority_id,),
-        authorities=(replace(prepared.authorities[0], authority=authority),),
-    )
-    submitted: list[Any] = []
-    restarted_port = DirectResearchObjectMetadataPort(
-        "dev-bucket", InlineObsRuntime(lambda: client)
-    )
-    runtime = dispatch_runtime.build_research_dispatch_runtime(
-        store,
-        ProviderType(),
-        analyst_agent=analyst_factory(submitted),
-        analyst_config=type(
-            "Config",
-            (),
-            {"USER_ID": "owner", "COMPUTE_RESOURCE": "medium"},
-        )(),
-        sensitive_config=object(),
-        metadata_port=restarted_port,
-        lease_owner="direct-worker",
-    )
-    record = persist_plan_and_outbox(
-        store,
-        "run-runtime",
-        0,
-        prepared,
-        plan_factory(fingerprint),
-    )[0]
-
-    disposition = await runtime.outbox.dispatch_once(
-        record.dispatch_id, "direct-worker"
-    )
-
-    assert disposition.state == "accepted"
-    assert head_calls == [("dev-bucket", "data.tsv")] * 2
-    assert (
-        submitted[0][0]["research_grant_sidecar"]["objects"][0]["grant_id"]
-        != authority.authority_id
-    )

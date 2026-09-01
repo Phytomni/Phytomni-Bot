@@ -9,6 +9,7 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from importlib import import_module
 from typing import Any, NamedTuple, cast
 
@@ -18,6 +19,7 @@ from ...storage.research_objects import (
     ResearchObjectCandidate,
     research_object_authority_scope,
 )
+from .dataset_binding import bound_child_grants
 
 
 class SqlContext(NamedTuple):
@@ -47,6 +49,15 @@ class SentRequest(NamedTuple):
     owner: str
     now_iso: str
     expiry: str
+
+
+class RelaunchRequest(NamedTuple):
+    """Inputs for one memory-class compute-resource relaunch CAS."""
+
+    sql: SqlContext
+    record: Any
+    task_id: str
+    now_iso: str
 
 
 def recovery_ports(options: dict[str, object]) -> dict[str, object]:
@@ -243,11 +254,12 @@ def plan_children(
         seen["fingerprints"].add(cast(str, fingerprint))
         seen["task_names"].add(cast(str, task_name))
         seen["output_dirs"].add(cast(str, output_dir))
-        research_grants, resolved_grant_ids = _research_grants(
-            prepared, error_factory
+        research_grants, resolved_grant_ids, grant_binding = (
+            _child_grant_fields(prepared, data, error_factory)
         )
-        grant_binding = _grant_binding(research_grants)
         payload = {
+            "compute_resource": "small",
+            "compute_resource_generation": 0,
             "context": getattr(child, "context", ""),
             "data_list": list(data.items()),
             "dispatch_fingerprint": fingerprint,
@@ -269,14 +281,7 @@ def plan_children(
             "dispatch_fingerprint": fingerprint,
             "payload": payload,
             "output_dir": output_dir,
-            "grant_ids": resolved_grant_ids
-            or tuple(
-                getattr(
-                    prepared,
-                    "grant_ids",
-                    getattr(prepared, "authority_ids", ()),
-                )
-            ),
+            "grant_ids": resolved_grant_ids,
             "snapshot_digest": getattr(prepared, "inventory_digest", ""),
             "policy_digest": digest,
         }
@@ -286,6 +291,29 @@ def plan_children(
     if not values:
         raise error_factory()
     return tuple(values)
+
+
+def _child_grant_fields(
+    prepared: object,
+    data: Mapping[str, Any],
+    error_factory: Callable[[], Exception],
+) -> tuple[tuple[dict[str, Any], ...], tuple[str, ...], dict[str, str] | None]:
+    """Subset parent grants to one child's data_list keys."""
+    parent_grants, parent_grant_ids = _research_grants(prepared, error_factory)
+    if not parent_grants:
+        fallback = parent_grant_ids or tuple(
+            getattr(
+                prepared,
+                "grant_ids",
+                getattr(prepared, "authority_ids", ()),
+            )
+        )
+        return (), fallback, None
+    research_grants = bound_child_grants(parent_grants, data)
+    resolved_grant_ids = tuple(
+        cast(str, grant["grant_id"]) for grant in research_grants
+    )
+    return research_grants, resolved_grant_ids, _grant_binding(research_grants)
 
 
 def _research_grants(
@@ -585,6 +613,59 @@ def claim_row(request: ClaimRequest) -> bool:
     return changed.rowcount == 1
 
 
+def relaunch_row(request: RelaunchRequest) -> bool:
+    """CAS-write a new payload and remote task id on an accepted child."""
+    sql = request.sql
+    record = request.record
+    payload_json, payload_digest, grant_json, snapshot_digest = binding_values(
+        record
+    )
+    with sqlite_transaction(sql.db_path) as connection:
+        changed = connection.execute(
+            "UPDATE research_dispatch_outbox SET state='accepted', "
+            "remote_task_id=?, payload_json=?, payload_digest=?, "
+            "grant_ids_json=?, snapshot_digest=?, updated_at=?, "
+            "lease_owner=NULL, lease_expires_at=NULL, failure_code=NULL, "
+            "failure_retryable=NULL, revision=revision+1 "
+            "WHERE outbox_id=? AND revision=? "
+            "AND state IN ('accepted','sent') AND " + sql.parent_sql,
+            (
+                request.task_id,
+                payload_json,
+                payload_digest,
+                grant_json,
+                snapshot_digest,
+                request.now_iso,
+                record.dispatch_id,
+                record.revision,
+            ),
+        )
+        if changed.rowcount != 1:
+            return False
+        with suppress(sqlite3.Error):
+            _bind_relaunch_task(connection, record, request.task_id)
+    return True
+
+
+def _bind_relaunch_task(
+    connection: sqlite3.Connection, record: Any, remote_id: str
+) -> None:
+    """Point the discarded EI id at the new child and attach the row."""
+    old_id = getattr(record, "remote_task_id", None)
+    if isinstance(old_id, str) and old_id.strip() and old_id != remote_id:
+        connection.execute(
+            "UPDATE tasks SET source_task_id=? WHERE task_id=?",
+            (remote_id, old_id),
+        )
+    attach_task(
+        connection,
+        record.run_id,
+        record.dispatch_fingerprint,
+        remote_id,
+        record.output_dir,
+    )
+
+
 def mark_sent(request: SentRequest) -> bool:
     """Persist a verified binding and mark a claimed row sent atomically."""
     sql = request.sql
@@ -637,6 +718,29 @@ def _parent_live(connection: sqlite3.Connection, run_id: str) -> bool:
         }
         and not bool(row[1])
     )
+
+
+def parent_run_is_live(db_path: str, run_id: str) -> bool:
+    """Return whether the parent run may still accept child work."""
+    with sqlite_transaction(db_path) as connection:
+        return _parent_live(connection, run_id)
+
+
+def parent_live_predicate() -> str:
+    """SQL fragment requiring the parent run to still be live."""
+    return (
+        "EXISTS (SELECT 1 FROM runs WHERE runs.run_id = "
+        "research_dispatch_outbox.run_id AND runs.status NOT IN "
+        "('succeeded','failed','cancelled')) AND NOT EXISTS (SELECT 1 FROM "
+        "research_input_resolutions WHERE run_id = "
+        "research_dispatch_outbox.run_id "
+        "AND COALESCE(cancel_requested,0) <> 0)"
+    )
+
+
+OUTBOX_ROW_SELECT = (
+    "SELECT * FROM research_dispatch_outbox WHERE outbox_id = ?"
+)
 
 
 def mark_row(

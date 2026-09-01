@@ -202,21 +202,11 @@ def test_bind_default_factory_requires_runtime_and_port() -> None:
     assert callable(bound.root_request_factory)
 
 
-def test_direct_goal_downloader_and_converter_branches(
+def test_managed_downloader_and_converter_branches(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Goal, download, and conversion ports stay bounded."""
-    provider = getattr(research_root, "_DirectGoalProvider")(
-        "Inspect the files."
-    )
-
-    async def _extract() -> None:
-        assert (await provider.extract(object(), "en-US"))[
-            0
-        ].goal == "Inspect the files."
-
-    asyncio.run(_extract())
+    """Download and conversion ports stay bounded."""
     downloader = getattr(research_root, "_ManagedDocumentDownloader")(
         cast(
             Any,
@@ -308,6 +298,11 @@ def test_root_factory_closures_and_managed_resolver_bind(
         "ServerConfig",
         lambda: SimpleNamespace(BUCKET_NAME="research-bucket"),
     )
+    monkeypatch.setattr(
+        research_root,
+        "get_sensitive_config",
+        SimpleNamespace,
+    )
     bound: dict[str, Any] = {}
     monkeypatch.setattr(
         research_root,
@@ -383,8 +378,8 @@ def test_root_factory_closures_and_managed_resolver_bind(
             == "plan"
         )
         await plan_builder(SimpleNamespace(effective_query="   "), request)
-        assert (
-            captured["plan"][1].goal == "Analyze the supplied research inputs."
-        )
+        assert type(captured["plan"][1]).__name__ == "EvidenceGoalProvider"
+        assert captured["plan"][1].contract_name == "research_goal_provider"
+        assert not hasattr(captured["plan"][1], "goal")
 
     asyncio.run(_run())

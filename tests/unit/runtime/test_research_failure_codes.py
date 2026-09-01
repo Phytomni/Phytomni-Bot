@@ -17,3 +17,8 @@ def test_research_failure_code_validation_accepts_only_contract_codes() -> (
     assert is_research_failure_code("research_cancel_conflict")
     assert not is_research_failure_code("research_unknown")
     assert not is_research_failure_code(None)
+
+
+def test_goal_extraction_failed_is_a_public_research_code() -> None:
+    """Goal-extraction failure is a first-class public code."""
+    assert is_research_failure_code("research_goal_extraction_failed")

@@ -275,11 +275,12 @@ class DigitalDesignConfig(AnalystConfig):
 class InSilicoResearchConfig(AnalystConfig):
     """Configuration settings specific to in-silico research tasks.
 
-    Defaults ``COMPUTE_RESOURCE`` to ``medium`` so Research children
-    do not inherit Analyst's ``small`` tier.
+    Defaults ``COMPUTE_RESOURCE`` to ``small``. Research children
+    start at small and may relaunch on memory-class failure; they
+    do not inherit a medium floor.
     """
 
-    COMPUTE_RESOURCE: ComputeResourceName = "medium"
+    COMPUTE_RESOURCE: ComputeResourceName = "small"
 
 
 class EnvironmentConfig(AnalystConfig):

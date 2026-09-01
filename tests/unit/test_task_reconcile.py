@@ -46,6 +46,7 @@ from mcp_server_phytomni.runtime.task_manager import (
     TaskManager,
 )
 from mcp_server_phytomni.runtime.task_reconcile import (
+    bind_research_relaunch_outbox,
     reconcile_task,
     reconcile_task_log,
 )
@@ -63,6 +64,13 @@ def _attach_reconcile_log_handler(
         caplog.handler,
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_research_relaunch_outbox() -> Iterator[None]:
+    """Drop any GetRun outbox bound by a previous test."""
+    yield
+    bind_research_relaunch_outbox(None)
 
 
 @pytest.fixture(name="mgr_path")

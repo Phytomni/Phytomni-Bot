@@ -98,6 +98,7 @@ from ..shared.remote_analysis import (
     submit_remote_analysis,
 )
 from .contracts import ResearchGoal
+from .dataset_binding import task_data_list
 from .document_evidence import ExtractedResearchEvidence
 from .goal_extraction import (
     ResearchGoalExtractionDependencies,
@@ -179,8 +180,8 @@ class InSilicoResearchState(ParallelDispatchState):
     obs_file_list: list[str]
     extracted_evidence: NotRequired[ExtractedResearchEvidence]
     output_dir: str | None
-    goals: list[dict[str, str]]  # List of extracted research objectives
-    research_tasks: list[dict[str, str]]  # List of research tasks
+    goals: list[dict[str, Any]]  # List of extracted research objectives
+    research_tasks: list[dict[str, Any]]  # List of research tasks
     goal_description: str
     context: str
     task_name: str
@@ -346,7 +347,6 @@ class InSilicoResearchAgents:
                 "research_node",
                 {
                     "task_index": i,
-                    "data_list": state.get("data_list", {}),
                     "output_dir": state.get("output_dir"),
                     "interop_mode": state.get("interop_mode", "off"),
                     "interop_targets": state.get("interop_targets", []),
@@ -608,10 +608,7 @@ class InSilicoResearchAgents:
                     extracted_evidence,
                     state.get("locale"),
                 )
-                goals = [
-                    {"goal": item.goal, "context": item.context or ""}
-                    for item in models
-                ]
+                goals = [item.as_state() for item in models]
             else:
                 goals = await self._extract_goals(
                     paper_text,
@@ -665,6 +662,7 @@ class InSilicoResearchAgents:
                 "task_name": f"research_goal_{i}",
                 "thread_id": run_identity.scoped_id("thread", i),
                 "output_dir": result_child_output_dir(output_dir, i),
+                "data_list": task_data_list(goal, state.get("data_list")),
             }
             for i, goal in enumerate(goals)
         ]
