@@ -82,6 +82,7 @@ class RemotePollOptions(TypedDict, total=False):
     tracking: Any | None
     work_item_key: str | None
     transition_sink_factory: Callable[[], Any] | None
+    deadline_seconds: float
 
 
 def _empty_hooks() -> RemoteIOHooks:
@@ -308,6 +309,9 @@ class DeepGenomeRemoteIO:
             summary_builder=options.get("summary_builder"),
         )
         poller = self.hook("poll_work_item", poll_work_item)
+        deadline_seconds = options.get("deadline_seconds")
+        if deadline_seconds is None:
+            deadline_seconds = float(getattr(self.config, "MAX_POLL", 86400.0))
         outcome = await poller(
             WorkItemPollRequest(
                 submission=submission,
@@ -323,9 +327,7 @@ class DeepGenomeRemoteIO:
                     poll_interval=float(
                         getattr(self.config, "POLL_INTERVAL", 300.0)
                     ),
-                    deadline_seconds=float(
-                        getattr(self.config, "MAX_POLL", 86400.0)
-                    ),
+                    deadline_seconds=float(deadline_seconds),
                 ),
             )
         )
@@ -414,7 +416,7 @@ class DeepGenomeRemoteIO:
         )
         if not statuses:
             raise RuntimeError(
-                "relay returned no analysis results for " f"{obs_output_path}"
+                f"relay returned no analysis results for {obs_output_path}"
             )
 
     async def _download_via_sdk(

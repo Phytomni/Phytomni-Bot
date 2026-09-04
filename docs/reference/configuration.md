@@ -894,6 +894,14 @@ real CA bundle instead.
   **Purpose:** Maximum local polling duration for long-running
   Analyst/DeepGenome work.
 
+- **Variable:** `PROTEIN_DESIGN_MAX_POLL`
+  **Default:** `172800`
+  **Sensitive?:** no
+  **Purpose:** DeepGenome protein-design local polling budget. Promoter
+  design keeps `MAX_POLL`; protein design starts this clock when both
+  design jobs are polled together so a long EI protein job is not cut
+  off after the promoter returns.
+
 - **Variable:** `ANALYSIS_JOB_TIMEOUT`
   **Default:** `86400`
   **Sensitive?:** no

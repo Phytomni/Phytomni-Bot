@@ -210,6 +210,7 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
 
     RELAY_TIMEOUT_PROFILE: ClassVar[str | None] = None
     TIMEOUT: float = 600.0
+    PROTEIN_DESIGN_MAX_POLL: float = 172800
     COMPUTE_RESOURCE_BY_TYPE: ClassVar[dict[str, ComputeResourceName]] = {
         "evolution_analysis": "medium",
         "protein_structure_analysis": "medium",

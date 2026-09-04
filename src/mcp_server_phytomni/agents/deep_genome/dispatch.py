@@ -66,6 +66,7 @@ class _DispatchPollOptions(TypedDict, total=False):
     summary_builder: Callable[[str], str] | None
     tracking: DeepGenomeTransitionSink | None
     work_item_key: str | None
+    deadline_seconds: float
 
 
 logger = logging.getLogger(__name__)
@@ -445,15 +446,26 @@ class DeepGenomeDispatchMixin:
             scope=work_item_key,
         )
         await tracking.accept_remote_submission(work_item_key, submission)
+        poll_options: _DispatchPollOptions = {
+            "summary_builder": lambda path: build_design_work_item_summary(
+                work_item_key, path
+            ),
+            "tracking": tracking,
+            "work_item_key": work_item_key,
+        }
+        if work_item_key == "protein_design":
+            poll_options["deadline_seconds"] = float(
+                getattr(
+                    self.deep_genome_config,
+                    "PROTEIN_DESIGN_MAX_POLL",
+                    172800.0,
+                )
+            )
         outcome, results_dir = await self._poll_remote_submission(
             submission,
             context,
             run_identity,
-            summary_builder=lambda path: build_design_work_item_summary(
-                work_item_key, path
-            ),
-            tracking=tracking,
-            work_item_key=work_item_key,
+            **poll_options,
         )
         summary_data: dict[str, Any] = {}
         if outcome.status == "succeeded" and results_dir is not None:
@@ -498,12 +510,17 @@ class DeepGenomeDispatchMixin:
         """Poll both independent Design jobs and merge their state deltas."""
         raw_data: dict[str, Any] = {}
         summaries: dict[str, Any] = {}
-        for work_item_key, submission in sorted(submissions.items()):
-            raw_delta, summary_delta = await self._poll_design_work_item(
-                work_item_key,
-                submission,
-                state,
+        polled = await asyncio.gather(
+            *(
+                self._poll_design_work_item(
+                    work_item_key,
+                    submission,
+                    state,
+                )
+                for work_item_key, submission in submissions.items()
             )
+        )
+        for raw_delta, summary_delta in polled:
             raw_data.update(raw_delta)
             summaries.update(summary_delta)
         delta: dict[str, Any] = {
@@ -838,25 +855,29 @@ class DeepGenomeDispatchMixin:
         try:
             result = await self._submit_analysis_task(context)
             if isinstance(result, RemoteSubmission):
-                task_id, output_path, results_dir = (
-                    await DeepGenomeDispatchMixin._resolve_remote_analysis(
-                        self,
-                        result,
-                        context,
-                        run_identity,
-                        tracking=tracking,
-                        work_item_key=work_item_key,
-                    )
+                (
+                    task_id,
+                    output_path,
+                    results_dir,
+                ) = await DeepGenomeDispatchMixin._resolve_remote_analysis(
+                    self,
+                    result,
+                    context,
+                    run_identity,
+                    tracking=tracking,
+                    work_item_key=work_item_key,
                 )
             else:
-                task_id, output_path, results_dir = (
-                    await DeepGenomeDispatchMixin._resolve_direct_analysis(
-                        self,
-                        result,
-                        context,
-                        analysis_type,
-                        run_identity,
-                    )
+                (
+                    task_id,
+                    output_path,
+                    results_dir,
+                ) = await DeepGenomeDispatchMixin._resolve_direct_analysis(
+                    self,
+                    result,
+                    context,
+                    analysis_type,
+                    run_identity,
                 )
         except DeepGenomeTrackingError:
             raise

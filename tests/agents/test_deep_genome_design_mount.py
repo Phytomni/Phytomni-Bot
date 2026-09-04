@@ -10,6 +10,7 @@ section from the mounted graph's protein-design task.
 
 from __future__ import annotations
 
+import asyncio
 from functools import partial
 from typing import Any
 
@@ -156,7 +157,103 @@ async def test_finalize_polls_both_independent_design_work_items() -> None:
         "protein_design_analysis": 10,
         "promoter_analysis": 11,
     }
-    assert host.downloaded == ["/obs/promoter", "/obs/protein"]
+    assert set(host.downloaded) == {"/obs/promoter", "/obs/protein"}
+
+
+async def test_finalize_polls_design_work_items_concurrently() -> None:
+    """Do not wait for promoter before starting the protein poll clock."""
+    host = _stub_host()
+    in_flight = 0
+    max_in_flight = 0
+    lock = asyncio.Lock()
+    both_started = asyncio.Event()
+
+    async def _poll_remote_submission(
+        submission: RemoteSubmission,
+        _context: Any,
+        _run_identity: Any,
+        **_kwargs: Any,
+    ) -> tuple[WorkItemOutcome, str]:
+        nonlocal in_flight, max_in_flight
+        async with lock:
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+            if in_flight >= 2:
+                both_started.set()
+        await asyncio.wait_for(both_started.wait(), timeout=1.0)
+        async with lock:
+            in_flight -= 1
+        return (
+            WorkItemOutcome("succeeded", "# usable result", None),
+            f"{submission.output_dir}/results",
+        )
+
+    setattr(host, "_poll_remote_submission", _poll_remote_submission)
+    design_output = {
+        "protein_design": RemoteSubmission(
+            submitted_task_id="protein-caller",
+            poll_task_id="protein-remote",
+            output_dir="/obs/protein",
+        ),
+        "promoter_design": RemoteSubmission(
+            submitted_task_id="promoter-caller",
+            poll_task_id="promoter-caller",
+            output_dir="/obs/promoter",
+        ),
+    }
+
+    delta = await DeepGenomeDispatchMixin.finalize_design_result(
+        host,
+        design_output=design_output,
+        state=mount_state("design", task_index=4),
+    )
+
+    assert max_in_flight == 2
+    protein = delta["raw_analyst_data"]["task_4:protein_design"]
+    promoter = delta["raw_analyst_data"]["task_4:promoter_design"]
+    assert protein["status"] == "succeeded"
+    assert promoter["status"] == "succeeded"
+
+
+async def test_finalize_gives_protein_design_a_longer_poll_budget() -> None:
+    """Protein design keeps a 48h local clock independent of MAX_POLL."""
+    host = _stub_host()
+    seen: dict[str, float | None] = {}
+    setattr(host.deep_genome_config, "MAX_POLL", 10.0)
+    setattr(host.deep_genome_config, "PROTEIN_DESIGN_MAX_POLL", 172800.0)
+
+    async def _poll_remote_submission(
+        submission: RemoteSubmission,
+        _context: Any,
+        _run_identity: Any,
+        **kwargs: Any,
+    ) -> tuple[WorkItemOutcome, str]:
+        seen[submission.poll_task_id] = kwargs.get("deadline_seconds")
+        return (
+            WorkItemOutcome("succeeded", "# usable result", None),
+            f"{submission.output_dir}/results",
+        )
+
+    setattr(host, "_poll_remote_submission", _poll_remote_submission)
+    design_output = {
+        "protein_design": RemoteSubmission(
+            submitted_task_id="protein-caller",
+            poll_task_id="protein-remote",
+            output_dir="/obs/protein",
+        ),
+        "promoter_design": RemoteSubmission(
+            submitted_task_id="promoter-caller",
+            poll_task_id="promoter-remote",
+            output_dir="/obs/promoter",
+        ),
+    }
+
+    await DeepGenomeDispatchMixin.finalize_design_result(
+        host, design_output=design_output, state=mount_state("design")
+    )
+
+    assert seen["protein-remote"] == 172800.0
+    assert seen["promoter-remote"] is None
 
 
 async def test_finalize_keeps_partial_design_failure_and_blank_result() -> (

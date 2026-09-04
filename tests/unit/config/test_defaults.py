@@ -375,6 +375,14 @@ def test_analysis_timeout_budgets_are_independent() -> None:
     assert config.ANALYSIS_JOB_TIMEOUT == 33
 
 
+def test_deep_genome_protein_design_poll_budget_defaults_to_48h() -> None:
+    """Protein design keeps a longer local poll than generic MAX_POLL."""
+    config = DeepGenomeConfig()
+
+    assert config.MAX_POLL == 86400
+    assert config.PROTEIN_DESIGN_MAX_POLL == 172800
+
+
 def test_defaults_reexports_server_required_endpoint_fields() -> None:
     """Existing defaults imports keep the centralized tuple unchanged."""
     assert set(SERVER_REQUIRED_ENDPOINT_FIELDS) <= set(

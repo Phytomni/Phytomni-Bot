@@ -368,7 +368,12 @@ def test_gauss_docs_require_all_three_read_only_layers() -> None:
         assert phrase in runbook
     assert "External" in runbook
     assert "Pending until the authorized probe" in runbook
-    for name in ("TIMEOUT", "MAX_POLL", "ANALYSIS_JOB_TIMEOUT"):
+    for name in (
+        "TIMEOUT",
+        "MAX_POLL",
+        "ANALYSIS_JOB_TIMEOUT",
+        "PROTEIN_DESIGN_MAX_POLL",
+    ):
         assert f"`{name}`" in configuration
 
 

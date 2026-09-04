@@ -35,6 +35,10 @@ package version remains `0.1.3` until the release bump.
 
 ### Changed
 
+- **Deep Genome design polling** — Protein and promoter design jobs
+  are polled together. Protein design waits up to 48h from that
+  shared start, and a local timeout takes one last EI status read
+  before settling `timed_out`.
 - **Analyst/Research compute tiers** — New Analyst and Research
   jobs start at `small`. A memory-class remote failure relaunches
   that same child at `medium`, then `large`. Research children may
