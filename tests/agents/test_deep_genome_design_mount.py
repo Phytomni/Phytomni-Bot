@@ -201,11 +201,10 @@ async def test_finalize_polls_design_work_items_concurrently() -> None:
             output_dir="/obs/promoter",
         ),
     }
+    state: Any = mount_state("design", task_index=4)
 
     delta = await DeepGenomeDispatchMixin.finalize_design_result(
-        host,
-        design_output=design_output,
-        state=mount_state("design", task_index=4),
+        host, design_output=design_output, state=state
     )
 
     assert max_in_flight == 2
@@ -247,9 +246,10 @@ async def test_finalize_gives_protein_design_a_longer_poll_budget() -> None:
             output_dir="/obs/promoter",
         ),
     }
+    state: Any = mount_state("design")
 
     await DeepGenomeDispatchMixin.finalize_design_result(
-        host, design_output=design_output, state=mount_state("design")
+        host, design_output=design_output, state=state
     )
 
     assert seen["protein-remote"] == 172800.0
