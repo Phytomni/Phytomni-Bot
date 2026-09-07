@@ -2266,6 +2266,19 @@ user:
       [document 001].
     - Put citations immediately after the supported claim.
     - Do not invent unsupported details.
+    - When a paragraph contains three or more factual sentences and at least
+      two relevant source documents are available, synthesize evidence from
+      at least two distinct document IDs in that paragraph.
+    - Do not write more than two consecutive factual sentences supported
+      exclusively by the same document when independent evidence is
+      available.
+    - If only one document genuinely supports a point, limit that paragraph
+      to at most two factual sentences. Never add an unrelated citation
+      merely to satisfy source diversity. This limit takes precedence over
+      the 80-150-word target; do not pad the paragraph.
+    - Before returning, check long paragraphs for single-document citation
+      concentration; integrate relevant independent evidence or compress the
+      paragraph to at most two factual sentences.
     - Return only the subsection text. Do not invent ### headings.
 
     Scientific italics:
@@ -2305,7 +2318,9 @@ user:
     snippets.
   deep_research_feedback: |-
     You are revising a plant-science review subsection. Improve the existing
-    draft only when the new snippets provide stronger or missing evidence.
+    draft's evidence only when the new snippets provide stronger or missing
+    evidence. You may also compress long single-source paragraphs without
+    adding claims.
 
     Existing draft:
     {{existing_draft}}
@@ -2315,12 +2330,18 @@ user:
 
     Requirements:
     - Keep the original scope and the claim-led tone.
-    - Revise only when the new snippets supply stronger or missing
-      in-domain evidence. Ignore human drug-target, viral, or C60
+    - Change factual claims only when the new snippets supply stronger or
+      missing in-domain evidence. Ignore human drug-target, viral, or C60
       snippets.
     - Keep paragraph openings as judgments, with species, assay, and
       an explicit limit when evidence is analogical or incomplete.
     - Preserve existing valid citations.
+    - When new snippets provide independent evidence, revise long
+      single-source paragraphs into genuine multi-source synthesis; do not
+      merely append a new citation to unchanged claims.
+    - If no independent new evidence supports a flagged paragraph, compress
+      it to at most two factual sentences instead of adding an unrelated
+      citation. Preserve supported facts and their attached citation tags.
     - Cite new evidence with the exact supplied tags, such as
       [add document S1-001].
     - Do not add unsupported claims.
@@ -2382,13 +2403,19 @@ user:
 
     Rules:
     - Set "has_critical_gaps" to false when the draft is adequately
-    supported.
+      supported and has no citation-concentration risk.
     - Set "off_topic" to true when the draft relies on human
       drug-target, viral, C60, or other off-domain papers.
     - When "off_topic" is true, do not request generic PPI or
       drug-target search queries; leave search_queries empty.
     - Missing-evidence search queries must stay inside the crop
       and gene names of the current subtopic.
+    - Treat an in-scope paragraph containing three or more factual sentences
+      but only one unique document ID as a citation-concentration risk. Set
+      "has_critical_gaps" to true and propose focused searches for independent
+      corroboration; if none is likely available, leave search_queries empty
+      and explain in "reason" that the paragraph needs compression to at most
+      two factual sentences. The off_topic rule still takes precedence.
     - Use at most three focused search queries.
     - Do not include markdown or prose outside the JSON object.
   deep_research_summary: |-
@@ -2474,6 +2501,14 @@ user:
       APA or MLA.
       - No Reference List: Do NOT generate a "References" or "Bibliography"
       list at the end of the document.
+      - Preserve paragraph boundaries when merging text would create a long
+      paragraph supported by only one unique document. Shorten any remaining
+      paragraph with three or more factual sentences and only one document ID
+      by splitting at existing sentence boundaries, keeping at most two
+      factual sentences per paragraph. Keep every audited sentence and its
+      attached citations unchanged; do not discard evidence to shorten a
+      paragraph. Never move or add citations merely to create the appearance
+      of source diversity.
 
     3. Constraints: Formatting and Scope
       - Output Integrity: Begin directly with `### Title:`. No
