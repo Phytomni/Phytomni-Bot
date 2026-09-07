@@ -2792,6 +2792,17 @@ ids. The `(id=null, task_ids=[])` body shape no longer arises from a dedup
 hit; it occurs only when the local registry write fails (see the
 `degraded_tracking` case above).
 
+## Exhausted Upstream Transport Errors
+
+When an exhausted shared HTTP retry raises a typed MCP transport error,
+the HTTP API returns `502` / `upstream_failed` for connection failures or
+`504` / `upstream_timeout` for timeouts, with `retryable=true` and a fixed
+public-safe message. Classification uses the direct HTTPX or OpenAI SDK
+exception type, not its text or nested causes. No business `stage` is
+inferred. Existing stage-specific projections take precedence; unknown MCP
+and internal failures remain `500`. This does not change retry policy,
+HTTP-status error handling, or the separate streaming-open retry path.
+
 ## Retention and Correlation
 
 A terminal run row carries an `expires_at` based on:

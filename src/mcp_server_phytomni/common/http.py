@@ -27,6 +27,7 @@ from httpx import (
 )
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
+from openai import APIConnectionError, APITimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,14 @@ _RETRIABLE_TRANSPORT_ERRORS = (
     RemoteProtocolError,
     ProxyError,
 )
+
+
+class UpstreamConnectionError(McpError):
+    """An exhausted upstream transport failure with a safe MCP message."""
+
+
+class UpstreamTimeoutError(McpError):
+    """An exhausted upstream timeout with a safe MCP message."""
 
 
 class AsyncRequestClient(Protocol):  # pylint: disable=too-few-public-methods
@@ -213,7 +222,15 @@ async def retry_network_or_raise(
         type(exc).__name__,
         attempt,
     )
-    raise McpError(
+    error_type = McpError
+    if isinstance(exc, (TimeoutException, APITimeoutError)):
+        error_type = UpstreamTimeoutError
+    elif isinstance(
+        exc,
+        (NetworkError, RemoteProtocolError, ProxyError, APIConnectionError),
+    ):
+        error_type = UpstreamConnectionError
+    raise error_type(
         ErrorData(
             code=INTERNAL_ERROR,
             message=message,
