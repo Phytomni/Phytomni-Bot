@@ -2222,6 +2222,18 @@ user:
     - Do not add new claims or new citations.
     - Preserve supported citation tags exactly.
     - Return only the corrected text.
+
+    Scientific italics:
+    - Use Markdown italics for source-supported gene and allele symbols
+      following species conventions; distinguish gene/RNA from protein uses
+      and keep protein names upright. Preserve spelling and case; do not
+      guess from identifier shape.
+    - Italicize Latin genus/species names, not common names, author
+      abbreviations, strain/cultivar labels, or surrounding punctuation.
+    - Preserve appropriate existing Markdown italics through revision and
+      assembly. Use *in silico* in generated scientific prose; do not
+      reformat code identifiers, URLs, or filenames.
+    - Do not alter facts, numbers, or citation syntax for typography.
   deep_research_dimension: |-
     You are a plant-science review writer. Write one rigorous subsection for
     the subtopic below using only the supplied knowledge snippets.
@@ -2255,6 +2267,18 @@ user:
     - Put citations immediately after the supported claim.
     - Do not invent unsupported details.
     - Return only the subsection text. Do not invent ### headings.
+
+    Scientific italics:
+    - Use Markdown italics for source-supported gene and allele symbols
+      following species conventions; distinguish gene/RNA from protein uses
+      and keep protein names upright. Preserve spelling and case; do not
+      guess from identifier shape.
+    - Italicize Latin genus/species names, not common names, author
+      abbreviations, strain/cultivar labels, or surrounding punctuation.
+    - Preserve appropriate existing Markdown italics through revision and
+      assembly. Use *in silico* in generated scientific prose; do not
+      reformat code identifiers, URLs, or filenames.
+    - Do not alter facts, numbers, or citation syntax for typography.
 
     CITATION RULES (strictly enforced — violations will cause downstream
     errors):
@@ -2301,6 +2325,18 @@ user:
       [add document S1-001].
     - Do not add unsupported claims.
     - Return only the revised subsection text.
+
+    Scientific italics:
+    - Use Markdown italics for source-supported gene and allele symbols
+      following species conventions; distinguish gene/RNA from protein uses
+      and keep protein names upright. Preserve spelling and case; do not
+      guess from identifier shape.
+    - Italicize Latin genus/species names, not common names, author
+      abbreviations, strain/cultivar labels, or surrounding punctuation.
+    - Preserve appropriate existing Markdown italics through revision and
+      assembly. Use *in silico* in generated scientific prose; do not
+      reformat code identifiers, URLs, or filenames.
+    - Do not alter facts, numbers, or citation syntax for typography.
   deep_research_query: |-
     {{> user/_partials/deep_research_query_body }}
 
@@ -2446,6 +2482,18 @@ user:
       every provided section title, and Conclusions. `####` only
       when a section needs 1-3 content-driven splits.
       - No Reference List: Do NOT generate References or Bibliography.
+
+    Scientific italics:
+    - Use Markdown italics for source-supported gene and allele symbols
+      following species conventions; distinguish gene/RNA from protein uses
+      and keep protein names upright. Preserve spelling and case; do not
+      guess from identifier shape.
+    - Italicize Latin genus/species names, not common names, author
+      abbreviations, strain/cultivar labels, or surrounding punctuation.
+    - Preserve appropriate existing Markdown italics through revision and
+      assembly. Use *in silico* in generated scientific prose; do not
+      reformat code identifiers, URLs, or filenames.
+    - Do not alter facts, numbers, or citation syntax for typography.
 
     ## Workflows
 
