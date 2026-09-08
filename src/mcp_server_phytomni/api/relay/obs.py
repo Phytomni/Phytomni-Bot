@@ -33,6 +33,15 @@ from ...config.defaults import ApiConfig, ServerConfig
 from ...runtime.outbound import ObsProfileName, current_outbound_runtime
 from ...runtime.request_context import current_request_id
 from ...storage import obs_relay_ops
+from ...storage.gene_example_reader import (
+    CuratedReadControl,
+    read_curated_object,
+)
+from ...storage.gene_examples import (
+    CuratedGeneError,
+    parse_manifest_key,
+    parse_material_key,
+)
 from ...storage.obs_relay_ops import ObsAccessOptions
 from ...storage.obs_storage import (
     ObsPathError,
@@ -185,6 +194,8 @@ def _is_gene_example_object(key: str) -> bool:
     return bool(
         _GENE_EXAMPLE_MD_RE.fullmatch(key)
         or _GENE_EXAMPLE_IMAGE_RE.fullmatch(key)
+        or parse_manifest_key(key)
+        or parse_material_key(key)
     )
 
 
@@ -288,6 +299,47 @@ async def _put_object(
     )
 
 
+async def _get_curated_object(
+    request: Request, bucket: str, key: str, max_bytes: int
+) -> Response:
+    """Validate the entire bounded object before sending successful headers."""
+    control = CuratedReadControl()
+    producer = asyncio.create_task(
+        _run_obs_op(
+            read_curated_object,
+            bucket,
+            key,
+            control=control,
+            max_bytes=max_bytes,
+        )
+    )
+    try:
+        while not producer.done():
+            await asyncio.wait({producer}, timeout=0.05)
+            if not producer.done() and await request.is_disconnected():
+                raise HTTPException(
+                    status_code=499, detail="curated_read_cancelled"
+                )
+        result = producer.result()
+        return Response(
+            result.content,
+            media_type=result.media_type,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+    except CuratedGeneError as error:
+        raise HTTPException(
+            status_code=error.status, detail=error.code
+        ) from None
+    finally:
+        control.cancel()
+        if not producer.done():
+            producer.cancel()
+            await _wait_for_producer(producer)
+
+
 async def _get_object(
     request: Request,
     principal: ApiPrincipal = Depends(require_relay_access(_OBS_SERVICE)),
@@ -296,6 +348,23 @@ async def _get_object(
     started, config, server = _begin()
     path = _require_query(request, "path")
     safe_key = _require_read_object(server.BUCKET_NAME, path, principal)
+    if parse_manifest_key(safe_key) or parse_material_key(safe_key):
+        if "\\" in path or "." in path.split("/"):
+            raise HTTPException(status_code=400, detail="invalid curated path")
+        response = await _get_curated_object(
+            request,
+            server.BUCKET_NAME,
+            safe_key,
+            config.RELAY_RESPONSE_MAX_BYTES,
+        )
+        _record_obs_audit(
+            principal,
+            "obs_download",
+            started,
+            {"path": path, "bytes": len(response.body)},
+            db_path=config.RELAY_AUDIT_DB_PATH,
+        )
+        return response
     size = await _run_obs_op(
         obs_relay_ops.object_size,
         server.BUCKET_NAME,
