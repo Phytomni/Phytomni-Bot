@@ -47,9 +47,11 @@ def _build_agent(
     ``submit_remote_analysis`` so the call is observable
     without constructing a real ``AnalystAgent``.
     """
-    config = InSilicoResearchConfig()
-    if compute_resource is not None:
-        config.COMPUTE_RESOURCE = compute_resource
+    config = (
+        InSilicoResearchConfig()
+        if compute_resource is None
+        else InSilicoResearchConfig(COMPUTE_RESOURCE=compute_resource)
+    )
     analyst_stub = SimpleNamespace(
         arun=AsyncMock(return_value={"task_id": "legacy-task"})
     )
