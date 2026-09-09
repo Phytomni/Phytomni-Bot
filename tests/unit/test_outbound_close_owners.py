@@ -76,6 +76,9 @@ _EXPECTED_OUTBOUND_OWNER_FUNCTIONS = {
     "mcp_server_phytomni/storage/obs_relay_ops.py": frozenset(
         {"close_stream"}
     ),
+    "mcp_server_phytomni/storage/gene_example_reader.py": frozenset(
+        {"CuratedReadControl.bind_source", "CuratedReadControl.finish_source"}
+    ),
     "mcp_server_phytomni/agents/chat/service.py": frozenset(
         {"_close_async_stream"}
     ),
@@ -318,6 +321,15 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
     "mcp_server_phytomni/storage/downloads.py": Counter(
         {"download_list_convert": 1}
     ),
+    "mcp_server_phytomni/storage/gene_example_reader.py": Counter(
+        {
+            "CuratedReadControl.bind_source": 1,
+            "CuratedReadControl.finish_source": 1,
+        }
+    ),
+    "mcp_server_phytomni/storage/gene_examples.py": Counter(
+        {"_open_directory": 2, "_read_declared": 2, "build_gene_bundle": 1}
+    ),
     "mcp_server_phytomni/storage/obs_relay_ops.py": Counter(
         {"_iter_sdk_chunks": 1, "close_stream": 1}
     ),
@@ -372,6 +384,10 @@ _EXPECTED_CLOSE_PATH_DISPOSITIONS: dict[str, _CloseDisposition] = {
     "mcp_server_phytomni/runtime/sqlite.py": "local_not_outbound",
     "mcp_server_phytomni/runtime/task_manager.py": "local_not_outbound",
     "mcp_server_phytomni/storage/downloads.py": "local_not_outbound",
+    "mcp_server_phytomni/storage/gene_example_reader.py": (
+        "server_outbound_owner"
+    ),
+    "mcp_server_phytomni/storage/gene_examples.py": "local_not_outbound",
     "mcp_server_phytomni/storage/obs_relay_ops.py": "server_outbound_owner",
 }
 

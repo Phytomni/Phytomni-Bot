@@ -98,6 +98,11 @@ _EXPECTED_NETWORK_OPERATIONS: Counter[_CallSite] = Counter(
             "sdk_client.getObject",
         ): 1,
         (
+            "mcp_server_phytomni/storage/gene_example_reader.py",
+            "_sdk_body",
+            "client.getObject",
+        ): 1,
+        (
             "mcp_server_phytomni/storage/obs_relay_ops.py",
             "list_object_keys_page",
             "_resolve_client(resolved_access.client).listObjects",
