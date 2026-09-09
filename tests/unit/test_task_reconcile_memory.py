@@ -243,21 +243,36 @@ async def test_reconcile_research_memory_relaunch_uses_bound_outbox(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("package_propagates", [False, True])
 async def test_reconcile_research_memory_relaunch_warns_when_unbound(
     mgr_path: str,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    package_propagates: bool,
 ) -> None:
     """Missing bind must not construct a submit-less outbox."""
+    monkeypatch.setattr(
+        logging.getLogger("mcp_server_phytomni"),
+        "propagate",
+        package_propagates,
+    )
     _install_research_memory_failure(monkeypatch, mgr_path)
-    caplog.set_level(logging.WARNING)
+    logger = logging.getLogger("mcp_server_phytomni.runtime.task_reconcile")
+    monkeypatch.setattr(logger, "handlers", [caplog.handler])
+    monkeypatch.setattr(logger, "propagate", False)
+    caplog.set_level(logging.WARNING, logger=logger.name)
 
     result = await reconcile_task("rs-oom")
 
     assert result["status"] == "submitted"
-    assert any(
-        "submit port is unbound" in rec.message for rec in caplog.records
-    )
+    assert caplog.record_tuples == [
+        (
+            logger.name,
+            logging.WARNING,
+            "reconcile: research memory relaunch skipped for dispatch-1; "
+            "submit port is unbound",
+        )
+    ]
 
 
 def test_build_research_input_coordinator_binds_relaunch_outbox(
