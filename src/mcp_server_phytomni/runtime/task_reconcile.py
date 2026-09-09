@@ -33,6 +33,7 @@ from .deep_genome_store import (
 )
 from .fingerprint_jobs import mark_job_terminal
 from .live_tasks import is_live_running
+from .sqlite import sqlite_transaction
 from .task_manager import TaskManager, resolve_tasks_db_path
 from .terminal_report import (
     TerminalReportContext,
@@ -301,7 +302,7 @@ def _research_outbox_lookup(
     if not ids:
         return None
     try:
-        with sqlite3.connect(db_path) as connection:
+        with sqlite_transaction(db_path) as connection:
             connection.row_factory = sqlite3.Row
             found = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' "
@@ -344,7 +345,7 @@ def _current_compute_resource(
 def _task_input_fingerprint(db_path: str, task_id: str) -> str | None:
     """Return the persisted fingerprint for one local task row."""
     try:
-        with sqlite3.connect(db_path) as connection:
+        with sqlite_transaction(db_path) as connection:
             row = connection.execute(
                 "SELECT input_fingerprint FROM tasks WHERE task_id=?",
                 (task_id,),
