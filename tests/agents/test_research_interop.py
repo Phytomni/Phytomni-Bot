@@ -419,9 +419,10 @@ async def test_worker_keeps_local_analyst_dispatch_and_attaches_evidence(
 ) -> None:
     """External evidence augments, but does not replace, local dispatch."""
     analyst_stub = SimpleNamespace(arun=AsyncMock())
-    config = InSilicoResearchConfig()
-    if compute_resource is not None:
-        config.COMPUTE_RESOURCE = compute_resource
+    if compute_resource is None:
+        config = InSilicoResearchConfig()
+    else:
+        config = InSilicoResearchConfig(COMPUTE_RESOURCE=compute_resource)
     agent = InSilicoResearchAgents(
         in_silico_config=config,
         sensitive_config=SensitiveConfig.load(),
