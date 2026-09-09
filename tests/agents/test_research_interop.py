@@ -34,6 +34,7 @@ from mcp_server_phytomni.agents.research.interop import (
 from mcp_server_phytomni.agents.shared.remote_analysis import (
     RemoteAnalysisRequest,
 )
+from mcp_server_phytomni.config.models.agents import ComputeResourceName
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.interop.a2a_client import InteropA2AClientError
 from mcp_server_phytomni.interop.a2a_mapping import (
@@ -411,13 +412,18 @@ async def test_required_mode_surfaces_invocation_error() -> None:
         )
 
 
+@pytest.mark.parametrize("compute_resource", [None, "medium", "large"])
 async def test_worker_keeps_local_analyst_dispatch_and_attaches_evidence(
     monkeypatch: pytest.MonkeyPatch,
+    compute_resource: ComputeResourceName | None,
 ) -> None:
     """External evidence augments, but does not replace, local dispatch."""
     analyst_stub = SimpleNamespace(arun=AsyncMock())
+    config = InSilicoResearchConfig()
+    if compute_resource is not None:
+        config.COMPUTE_RESOURCE = compute_resource
     agent = InSilicoResearchAgents(
-        in_silico_config=InSilicoResearchConfig(),
+        in_silico_config=config,
         sensitive_config=SensitiveConfig.load(),
         analyst_agent=cast(AnalystAgent, analyst_stub),
     )
@@ -469,7 +475,7 @@ async def test_worker_keeps_local_analyst_dispatch_and_attaches_evidence(
     assert "[UNTRUSTED EXTERNAL MCP EVIDENCE]" in request.meta
     assert request.data_list == {}
     assert request.output_dir == "/tmp/research-out"
-    assert request.compute_resource == "medium"
+    assert request.compute_resource == (compute_resource or "small")
     assert submit_call.kwargs["is_polling"] is False
 
     updates = await agent.run_research_node(
