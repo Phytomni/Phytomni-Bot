@@ -23,8 +23,12 @@ import httpx
 import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR
-from openai import APIConnectionError, APITimeoutError
+from openai import APIConnectionError
 from tests.support.logging_helpers import capture_non_propagating_logger
+from tests.support.openai_errors import (
+    openai_connection_error,
+    openai_timeout_error,
+)
 
 from mcp_server_phytomni.common import http as common_http
 from mcp_server_phytomni.common.http import (
@@ -132,13 +136,17 @@ async def test_network_error_message_excludes_exception_text(
     assert "tcp connect" not in caplog.text
 
 
-@pytest.mark.parametrize("error_type", [APIConnectionError, APITimeoutError])
+@pytest.mark.parametrize(
+    "build_error",
+    [openai_connection_error, openai_timeout_error],
+    ids=["APIConnectionError", "APITimeoutError"],
+)
 async def test_sdk_transport_preserves_safe_mcp_error_and_cause(
-    error_type: type[APIConnectionError],
+    build_error: Callable[[str], APIConnectionError],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """SDK exhaustion retains the MCP contract and private diagnostic cause."""
-    exc = error_type(request=httpx.Request("POST", _URL_SECRET))
+    exc = build_error(_URL_SECRET)
     with (
         caplog.at_level("ERROR", logger=common_http.logger.name),
         pytest.raises(McpError) as raised,
@@ -150,7 +158,7 @@ async def test_sdk_transport_preserves_safe_mcp_error_and_cause(
     assert str(raised.value) == _NETWORK_PREFIX
     assert raised.value.__cause__ is exc
     assert _URL_SECRET not in caplog.text
-    assert f"exception={error_type.__name__}" in caplog.text
+    assert f"exception={type(exc).__name__}" in caplog.text
     assert "retries=2" in caplog.text
 
 
@@ -164,7 +172,7 @@ async def test_transport_retries_keep_existing_backoff(
         sleeps.append(delay)
 
     monkeypatch.setattr(common_http.asyncio, "sleep", record_sleep)
-    exc = APITimeoutError(httpx.Request("POST", _URL_SECRET))
+    exc = openai_timeout_error(_URL_SECRET)
     for attempt in range(3):
         assert await retry_network_or_raise(
             exc, attempt=attempt, max_retries=3

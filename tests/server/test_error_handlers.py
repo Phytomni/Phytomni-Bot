@@ -18,10 +18,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
-from openai import APIConnectionError, APITimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 from tests.support.http_fakes import open_asgi_client
+from tests.support.openai_errors import (
+    openai_connection_error,
+    openai_timeout_error,
+)
 
 from mcp_server_phytomni.agents.chat.completion_validation import (
     InvalidChatCompletionError,
@@ -92,17 +95,14 @@ _TRANSPORT_SECRET = "https://private-upstream.invalid/private?token=hidden"
             )
         ],
         pytest.param(
-            APIConnectionError(
-                message=_TRANSPORT_SECRET,
-                request=httpx.Request("POST", _TRANSPORT_SECRET),
-            ),
+            openai_connection_error(_TRANSPORT_SECRET),
             502,
             "upstream_failed",
             "upstream service failed",
             id="APIConnectionError",
         ),
         pytest.param(
-            APITimeoutError(httpx.Request("POST", _TRANSPORT_SECRET)),
+            openai_timeout_error(_TRANSPORT_SECRET),
             504,
             "upstream_timeout",
             "upstream service timed out",
