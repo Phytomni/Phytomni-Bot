@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Callable
@@ -20,6 +19,7 @@ from tests.support.citation_database import (
     create_valid_citation_database,
     install_failed_integrity,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.shared import citation_database
 from mcp_server_phytomni.agents.shared.citation_database import (
@@ -184,7 +184,7 @@ def _prepare_invalid_artifact(
         raise AssertionError(f"unknown artifact kind: {kind}")
 
     if statement is not None:
-        with sqlite3.connect(path) as connection:
+        with closed_sqlite_connection(path) as connection:
             connection.execute(statement)
     return path, expected_error
 

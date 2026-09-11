@@ -17,6 +17,7 @@ from typing import Any, NoReturn
 import pytest
 from tests.support.asyncio_helpers import wait_until as _wait_until
 from tests.support.execution_tasks import execution_child
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.api.lifecycle_contract import canonicalize_run_record
 from mcp_server_phytomni.runtime import background_submission
@@ -164,7 +165,7 @@ def test_reservation_discards_raw_request_payload(tmp_path: Path) -> None:
         message_id="a2a-message-1",
     )
 
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         persisted = connection.execute(
             "SELECT query, request_json FROM runs WHERE run_id = ?",
             (reservation.run_id,),

@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 from tests.support.research_fakes import persist_research_resolution
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.research import (
     dispatch_outbox,
@@ -142,7 +143,7 @@ def _outbox_race_rows(
     store: ResearchInputStore, dispatch_id: str
 ) -> tuple[tuple[object, ...], tuple[object, ...]]:
     """Read public parent and durable outbox state after the race."""
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         parent = connection.execute(
             "SELECT status, revision FROM runs WHERE run_id = ?",
             ("run-1",),
@@ -163,7 +164,7 @@ def test_atomic_plan_projection_and_outbox_commit(tmp_path: Path) -> None:
     records = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan())
 
     assert tuple(record.child_ordinal for record in records) == (0, 1)
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         resolution = connection.execute(
             "SELECT final_projection_json, plan_digest, status, last_stage "
             "FROM research_input_resolutions WHERE run_id = 'run-1'"
@@ -246,7 +247,7 @@ def test_plan_persists_exact_private_authority_bindings(
         "execution_fingerprint": scope,
     }
     assert durable.payload["research_grant_binding"] == expected_binding
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         row = connection.execute(
             "SELECT final_projection_json FROM research_input_resolutions "
             "WHERE run_id = 'run-1'"
@@ -399,7 +400,7 @@ def test_plan_write_failure_rolls_back_every_private_projection(
     with pytest.raises(sqlite3.OperationalError):
         persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan())
 
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         resolution = connection.execute(
             "SELECT final_projection_json, plan_digest, status FROM "
             "research_input_resolutions WHERE run_id = 'run-1'"
@@ -513,7 +514,7 @@ async def test_first_dispatch_queries_remote_and_ignores_failed_local_task(
     record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
         0
     ]
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         connection.execute(
             "INSERT INTO tasks(task_id,status,analysis_id,output_dir,run_id,"
             "input_fingerprint) VALUES(?,?,?,?,?,?)",
@@ -658,7 +659,7 @@ async def test_authority_rotation_is_persisted_with_acceptance(
 
     assert disposition.state == "accepted"
     assert observed == [("authority-1",)]
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         row = connection.execute(
             "SELECT grant_ids_json, payload_json FROM "
             "research_dispatch_outbox WHERE outbox_id = ?",
@@ -676,7 +677,7 @@ def test_plan_replacement_removes_stale_child_rows(tmp_path: Path) -> None:
     persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(2))
     records = persist_plan_and_outbox(store, "run-1", 1, _prepared(), _plan(1))
     assert tuple(record.child_ordinal for record in records) == (0,)
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         rows = connection.execute(
             "SELECT child_ordinal FROM research_dispatch_outbox "
             "WHERE run_id='run-1' ORDER BY child_ordinal"
@@ -698,7 +699,7 @@ async def test_acceptance_requires_parent_revision_and_durable_attachment(
     record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
         0
     ]
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         connection.execute(
             "UPDATE runs SET revision=revision+1 WHERE run_id='run-1'"
         )
@@ -730,7 +731,7 @@ async def test_acceptance_requires_parent_revision_and_durable_attachment(
         authority_verifier=_authority_verifier,
     ).dispatch_once(fresh.dispatch_id, "worker-a")
     assert accepted.state == "accepted"
-    with sqlite3.connect(fresh_store.db_path) as connection:
+    with closed_sqlite_connection(fresh_store.db_path) as connection:
         task = connection.execute(
             "SELECT run_id,input_fingerprint,status FROM tasks "
             "WHERE task_id='task-stale'"
@@ -804,7 +805,7 @@ async def test_pending_dispatch_is_cancelled_when_parent_is_cancelled(
     record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
         0
     ]
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         connection.execute(
             "UPDATE research_input_resolutions SET cancel_requested = 1 "
             "WHERE run_id = 'run-1'"

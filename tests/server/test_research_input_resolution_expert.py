@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +26,7 @@ from tests.support.http_fakes import (
     running_agent_run_body,
 )
 from tests.support.resumable_asset_fakes import enable_conversation_context_v1
+from tests.support.sqlite import closed_sqlite_connection
 
 import mcp_server_phytomni.api.agent_runs as agent_runs_module
 import mcp_server_phytomni.api.research_input as research_input_module
@@ -412,7 +412,7 @@ async def test_http_count_boundaries_reach_research_preflight_for_all_forms(
 
 def _research_alias(db_path: str, run_id: str) -> str | None:
     """Read the persisted opaque alias only for this HTTP contract check."""
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         row = connection.execute(
             "SELECT alias_digest FROM research_idempotency_bindings "
             "WHERE run_id = ?",

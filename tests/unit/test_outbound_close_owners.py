@@ -147,7 +147,7 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
             "_close_stack": 2,
             "_close_unstarted": 1,
             "_open_relay_upstream": 2,
-            "_stream": 1,
+            "_stream": 2,
             "forward_relay_request": 1,
         }
     ),
@@ -157,6 +157,12 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
             "_produce_obs_chunks": 1,
             "_stream": 1,
         }
+    ),
+    "mcp_server_phytomni/api/relay/routes.py": Counter(
+        {"_read_research_grant_rows": 1}
+    ),
+    "mcp_server_phytomni/api/research_capabilities.py": Counter(
+        {"ResearchRelayCapabilityCache.schedule_refresh": 1}
     ),
     "mcp_server_phytomni/api/streaming.py": Counter(
         {"_produce_detached_stream": 3}
@@ -259,6 +265,7 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
     ),
     "mcp_server_phytomni/runtime/memory/sqlite.py": Counter(
         {
+            "MemoryStore.__init__": 1,
             "MemoryStore._connect": 1,
             "MemoryStore.close": 1,
         }
@@ -349,6 +356,8 @@ _EXPECTED_CLOSE_PATH_DISPOSITIONS: dict[str, _CloseDisposition] = {
     "mcp_server_phytomni/api/openai_mapping.py": "downstream_iterator",
     "mcp_server_phytomni/api/relay/forward.py": "server_outbound_owner",
     "mcp_server_phytomni/api/relay/obs.py": "server_outbound_owner",
+    "mcp_server_phytomni/api/relay/routes.py": "local_not_outbound",
+    "mcp_server_phytomni/api/research_capabilities.py": "local_not_outbound",
     "mcp_server_phytomni/api/run_lifecycle.py": "local_not_outbound",
     "mcp_server_phytomni/api/streaming.py": "downstream_iterator",
     "mcp_server_phytomni/common/reasoning_content.py": "local_not_outbound",
@@ -430,6 +439,8 @@ def _outbound_close_owners() -> dict[str, Counter[str]]:
                 else node.func.id if isinstance(node.func, ast.Name) else ""
             )
             if "close" not in tail.lower() and tail not in {
+                "closing",
+                "aclosing",
                 "__aexit__",
                 "disconnect",
                 "shutdown",
@@ -465,3 +476,22 @@ def test_close_scan_scope_is_independent_of_the_expected_inventory(
     assert "mcp_server_phytomni/runtime/outbound/http.py" in (
         _outbound_close_owners()
     )
+
+
+def test_close_scan_includes_context_manager_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Standard-library closing helpers cannot hide a close owner."""
+    source = tmp_path / "owned.py"
+    source.write_text(
+        "from contextlib import aclosing, closing\n\n"
+        "async def own(resource):\n"
+        "    with closing(resource):\n"
+        "        await resource.ready()\n"
+        "    async with aclosing(resource):\n"
+        "        await resource.ready()\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "_SRC_ROOT", tmp_path)
+
+    assert _outbound_close_owners() == {"owned.py": Counter({"own": 2})}

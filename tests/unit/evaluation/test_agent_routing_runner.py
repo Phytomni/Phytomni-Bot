@@ -23,6 +23,7 @@ from scripts.agent_routing_eval.runner import (
     RunOutcome,
     run_evaluation,
 )
+from tests.support.asyncio_helpers import run_coroutine_on_owned_loop
 
 from mcp_server_phytomni.agents.expert.router import (
     ExpertProviderError,
@@ -131,7 +132,7 @@ def test_selector_receives_canonical_surface_without_context() -> None:
     """The runner offers all ten tools with no history or forced choice."""
     selector = RecordingSelector([_chat_selection()])
 
-    outcomes = asyncio.run(run_evaluation([_case()], selector))
+    outcomes = run_coroutine_on_owned_loop(run_evaluation([_case()], selector))
 
     assert len(outcomes) == 1
     assert selector.recorded_calls() == (
@@ -152,7 +153,9 @@ def test_valid_selection_is_schema_valid_and_dispatchable() -> None:
     """A valid top-1 choice and core arguments produce success."""
     selector = RecordingSelector([_chat_selection(" What is plant height? ")])
 
-    outcome = asyncio.run(run_evaluation([_case()], selector))[0]
+    outcome = run_coroutine_on_owned_loop(run_evaluation([_case()], selector))[
+        0
+    ]
 
     assert outcome.agent_correct is True
     assert outcome.schema_valid is True
@@ -202,7 +205,9 @@ def test_selection_outcome_distinguishes_top1_schema_and_core(
     """Wrong agents, invalid schemas, and core mismatches stay distinct."""
     selector = RecordingSelector([selection])
 
-    outcome = asyncio.run(run_evaluation([_case()], selector))[0]
+    outcome = run_coroutine_on_owned_loop(run_evaluation([_case()], selector))[
+        0
+    ]
 
     for field, value in expected.items():
         assert getattr(outcome, field) == value
@@ -224,7 +229,9 @@ def test_routing_contract_failures_are_bounded(
         cast(list[ToolSelection | BaseException], [result])
     )
 
-    outcome = asyncio.run(run_evaluation([_case()], selector))[0]
+    outcome = run_coroutine_on_owned_loop(run_evaluation([_case()], selector))[
+        0
+    ]
 
     assert outcome.predicted_agent == ROUTING_ERROR
     assert outcome.error_code == error_code
@@ -247,7 +254,9 @@ def test_provider_failures_retry_exactly_three_attempts(
     selector = RecordingSelector([failure, failure, failure])
     options = RunnerOptions(repeat_count=1, retry_delay_seconds=0)
 
-    outcome = asyncio.run(run_evaluation([_case()], selector, options))[0]
+    outcome = run_coroutine_on_owned_loop(
+        run_evaluation([_case()], selector, options)
+    )[0]
 
     assert len(selector.calls) == 3
     assert outcome.predicted_agent == PROVIDER_ERROR
@@ -273,7 +282,7 @@ def test_hanging_selector_times_out_and_retries_three_times() -> None:
         await asyncio.sleep(3600)
         return _chat_selection(user_query)
 
-    outcome = asyncio.run(
+    outcome = run_coroutine_on_owned_loop(
         run_evaluation(
             [_case()],
             hanging_selector,
@@ -297,7 +306,9 @@ def test_success_on_second_attempt_records_retry_count() -> None:
     selector = RecordingSelector([ExpertProviderError(), _chat_selection()])
     options = RunnerOptions(repeat_count=1, retry_delay_seconds=0)
 
-    outcome = asyncio.run(run_evaluation([_case()], selector, options))[0]
+    outcome = run_coroutine_on_owned_loop(
+        run_evaluation([_case()], selector, options)
+    )[0]
 
     assert len(selector.calls) == 2
     assert outcome.attempts == 2
@@ -310,7 +321,7 @@ def test_unexpected_exception_aborts_evaluation() -> None:
     selector = RecordingSelector([ValueError("unexpected")])
 
     with pytest.raises(EvaluationIncompleteError) as exc_info:
-        asyncio.run(run_evaluation([_case()], selector))
+        run_coroutine_on_owned_loop(run_evaluation([_case()], selector))
 
     assert isinstance(exc_info.value.__cause__, ValueError)
 
@@ -346,7 +357,7 @@ def test_outputs_are_sorted_by_case_and_repeat() -> None:
         release.set()
         return await task
 
-    outcomes = asyncio.run(execute())
+    outcomes = run_coroutine_on_owned_loop(execute())
 
     assert [(item.case_id, item.repeat_index) for item in outcomes] == [
         ("case-a", 1),
@@ -392,7 +403,7 @@ def test_locale_isolated_for_concurrent_cases_and_restored() -> None:
     prior = current_effective_locale()
     outer_token = bind_effective_locale("zh-CN")
     try:
-        asyncio.run(execute())
+        run_coroutine_on_owned_loop(execute())
     finally:
         reset_request_var(outer_token)
 
@@ -444,7 +455,7 @@ def test_cancellation_cleans_children_and_sinks_partial_results() -> None:
         with pytest.raises(asyncio.CancelledError):
             await task
 
-    asyncio.run(execute())
+    run_coroutine_on_owned_loop(execute())
 
     assert cancelled_count == 2
     assert len(partials) == 1
@@ -491,7 +502,7 @@ def test_cancellation_sinks_completed_outcomes() -> None:
         with pytest.raises(asyncio.CancelledError):
             await task
 
-    asyncio.run(execute())
+    run_coroutine_on_owned_loop(execute())
 
     assert len(partials) == 1
     assert [item.case_id for item in partials[0]] == ["case-done"]
@@ -531,7 +542,7 @@ def test_failing_partial_sink_does_not_replace_cancellation() -> None:
         with pytest.raises(asyncio.CancelledError):
             await task
 
-    asyncio.run(execute())
+    run_coroutine_on_owned_loop(execute())
 
 
 def test_failing_partial_sink_does_not_replace_unexpected_failure() -> None:
@@ -542,7 +553,7 @@ def test_failing_partial_sink_does_not_replace_unexpected_failure() -> None:
         raise RuntimeError("sink failed during abort")
 
     with pytest.raises(EvaluationIncompleteError) as exc_info:
-        asyncio.run(
+        run_coroutine_on_owned_loop(
             run_evaluation([_case()], selector, partial_sink=failing_sink)
         )
 
@@ -572,7 +583,7 @@ def test_selector_concurrency_never_exceeds_configured_ceiling() -> None:
         finally:
             active -= 1
 
-    outcomes = asyncio.run(
+    outcomes = run_coroutine_on_owned_loop(
         run_evaluation(
             [
                 _case("case-a", question="a"),
@@ -606,7 +617,7 @@ def test_runner_cannot_reach_dispatch_seams(
     monkeypatch.setattr(mcp_app, "invoke_tool_enveloped", fail_dispatch)
     monkeypatch.setattr(mcp_app, "dispatch_tool", fail_dispatch)
 
-    outcome = asyncio.run(
+    outcome = run_coroutine_on_owned_loop(
         run_evaluation([_case()], RecordingSelector([_chat_selection()]))
     )[0]
 

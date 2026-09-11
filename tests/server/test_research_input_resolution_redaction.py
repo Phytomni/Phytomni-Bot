@@ -8,13 +8,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import sqlite3
 import time
 from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.research import dispatch_runtime
 from mcp_server_phytomni.agents.research.dispatch_outbox import (
@@ -216,7 +216,7 @@ async def test_research_http_reads_never_project_private_request_metadata(
             request_json=json.dumps(request_metadata),
         ),
     )
-    with sqlite3.connect(tasks_db_path) as connection:
+    with closed_sqlite_connection(tasks_db_path) as connection:
         connection.execute(
             "UPDATE runs SET stage = ?, failure_json = ? WHERE run_id = ?",
             (
@@ -300,7 +300,7 @@ async def test_dispatch_runtime_outbox_never_forwards_private_input_channels(
     record = persist_plan_and_outbox(
         store, "run-private-dispatch", 0, prepared, plan
     )[0]
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         payload = json.loads(
             connection.execute(
                 "SELECT payload_json FROM research_dispatch_outbox "

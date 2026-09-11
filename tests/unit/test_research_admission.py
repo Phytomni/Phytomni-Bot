@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from typing import NoReturn, cast
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.research.input_contracts import (
     ParsedResearchInput,
@@ -231,7 +231,7 @@ def test_admission_replays_without_public_query_or_second_root(
     assert replay.run_id == first.run_id
     assert replay.replay is True
     assert replay.status_code == 202
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         assert connection.execute("SELECT COUNT(*) FROM runs").fetchone() == (
             2,
         )
@@ -257,7 +257,7 @@ def test_same_identity_with_new_fingerprint_conflicts_without_mutation(
 
     assert caught.value.code == "research_idempotency_conflict"
     assert caught.value.http_status_hint == 409
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         assert connection.execute("SELECT COUNT(*) FROM runs").fetchone() == (
             2,
         )
@@ -293,7 +293,7 @@ def test_conversation_replay_can_attach_one_alias_but_alias_cannot_cross_turn(
     with pytest.raises(ResearchInputFailure) as alias_caught:
         admit_research_request(conflicting_alias, store)
     assert alias_caught.value.code == "research_idempotency_conflict"
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         assert connection.execute(
             "SELECT alias_digest FROM research_idempotency_bindings "
             "WHERE run_id = ?",
@@ -316,7 +316,7 @@ def test_conversation_replay_can_attach_one_alias_but_alias_cannot_cross_turn(
     with pytest.raises(ResearchInputFailure) as caught:
         admit_research_request(next_turn_request, store)
     assert caught.value.code == "research_idempotency_conflict"
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM runs "
             "WHERE agent = 'research' AND run_id != 'unrelated'"
@@ -339,7 +339,7 @@ def test_identical_first_admissions_share_one_root_and_run(
 
     assert len({outcome.run_id for outcome in outcomes}) == 1
     assert sum(not outcome.replay for outcome in outcomes) == 1
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         run_id = outcomes[0].run_id
         assert connection.execute(
             "SELECT COUNT(*) FROM research_idempotency_bindings"
@@ -389,7 +389,7 @@ def test_retry_admission_cas_grants_one_of_eight_workers(
     assert owners == [
         ResearchAdmissionReservation(admitted.run_id, False, "running")
     ]
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         assert connection.execute(
             "SELECT status, error, stage, failure_json, expires_at, revision "
             "FROM runs WHERE run_id = ?",
@@ -416,7 +416,7 @@ def test_launch_failure_after_root_claim_settles_and_queues_grants(
         },
         sort_keys=True,
     )
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         connection.execute(
             "UPDATE research_work_units SET state = 'leased', "
             "lease_owner = 'root-owner', attempt = 1, revision = 1 "
@@ -443,7 +443,7 @@ def test_launch_failure_after_root_claim_settles_and_queues_grants(
     )
 
     assert store.mark_admission_launch_failed(admitted.run_id, failure)
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         assert connection.execute(
             "SELECT status, error, stage FROM runs WHERE run_id = ?",
             (admitted.run_id,),
@@ -487,7 +487,7 @@ def test_admission_validates_query_digest_and_hides_public_query(
         admit_research_request(forged, store)
     assert caught.value.code == "research_input_resolution_failed"
 
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         public = connection.execute(
             "SELECT query, request_json FROM runs WHERE run_id = ?",
             (admitted.run_id,),
@@ -519,7 +519,7 @@ def test_forged_query_with_old_fingerprint_does_not_replay(
         admit_research_request(forged, store)
 
     assert caught.value.code == "research_input_resolution_failed"
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         assert connection.execute("SELECT COUNT(*) FROM runs").fetchone() == (
             2,
         )
@@ -535,7 +535,7 @@ def test_legacy_duplicate_blank_owner_digests_migrate_without_rewriting_rows(
 ) -> None:
     """Legacy blank-owner duplicates survive additive migration."""
     database = str(tmp_path / "legacy-research-admission.db")
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         connection.executescript("""
             CREATE TABLE runs (
                 run_id TEXT PRIMARY KEY,
@@ -578,7 +578,7 @@ def test_legacy_duplicate_blank_owner_digests_migrate_without_rewriting_rows(
 
     ResearchInputStore(database)
 
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         after = connection.execute(
             "SELECT run_id, idempotency_digest, request_digest "
             "FROM research_idempotency_bindings ORDER BY run_id"
@@ -608,7 +608,7 @@ def test_binding_identity_uniqueness_is_scoped_by_operation(
             origin="api",
         )
     )
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         values = (
             ("operation-run-1", "same-digest", "operation-a"),
             ("operation-run-2", "same-digest", "operation-b"),

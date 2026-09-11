@@ -22,6 +22,7 @@ from tests.support.resumable_asset_fakes import (
     ResumableAssetSpec,
     build_resumable_asset,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.auth import ApiKeyStore
@@ -312,7 +313,7 @@ async def test_native_context_exact_replay_skips_preparation_and_mutation(
 
 def _context_store_text(db_path: Path) -> str:
     """Return bounded serialized context rows for redaction assertions."""
-    with sqlite3.connect(str(db_path)) as connection:
+    with closed_sqlite_connection(str(db_path)) as connection:
         contexts = connection.execute(
             "SELECT * FROM conversation_contexts"
         ).fetchall()
@@ -325,7 +326,7 @@ def _context_store_text(db_path: Path) -> str:
 
 def _context_row_counts(db_path: str | Path) -> tuple[int, int]:
     """Return context and turn row counts without exposing stored values."""
-    with sqlite3.connect(str(db_path)) as connection:
+    with closed_sqlite_connection(str(db_path)) as connection:
         return (
             connection.execute(
                 "SELECT COUNT(*) FROM conversation_contexts"
@@ -528,7 +529,9 @@ async def test_native_context_asset_failures_precede_context_mutation(
             ),
         )
         if scenario == "byte":
-            with sqlite3.connect(str(tmp_path / "tasks.sqlite")) as connection:
+            with closed_sqlite_connection(
+                str(tmp_path / "tasks.sqlite")
+            ) as connection:
                 connection.execute(
                     "UPDATE upload_assets SET size_bytes=? WHERE asset_id=?",
                     (MAX_UPLOAD_BYTES + 1, harness.asset_id),

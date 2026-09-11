@@ -13,7 +13,6 @@ settles the run as terminal when all children are success-like.
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from dataclasses import asdict
 from typing import Any, Literal, cast
 from unittest.mock import AsyncMock
@@ -33,6 +32,7 @@ from tests.support.run_registry_fakes import (
     seed_foreign_run,
     seed_remote_run_with_task,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
@@ -565,7 +565,7 @@ async def test_get_zero_child_orphan_background_run_settles_safe_failure(
             "raw": {"path": "/private/input.fa"},
         },
     )
-    with sqlite3.connect(tasks_db_path) as conn:
+    with closed_sqlite_connection(tasks_db_path) as conn:
         conn.execute(
             "UPDATE runs SET error = ? WHERE run_id = ?",
             ("error-sentinel: /private/input.fa", run_id),

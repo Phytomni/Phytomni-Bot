@@ -9,7 +9,6 @@ import hashlib
 import importlib.util
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +18,7 @@ from tests.support.citation_database import (
     CITATION_SOURCE_ACCOUNTING_COUNTS,
     assert_citation_metadata_counts,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.shared.citation_database import (
     CitationDatabaseError,
@@ -173,7 +173,7 @@ def test_build_accounts_for_duplicates_conflicts_and_source_quality(
     )
     assert validate_citation_database(output) == metadata
 
-    with sqlite3.connect(output) as connection:
+    with closed_sqlite_connection(output) as connection:
         records = connection.execute(
             "SELECT file_id, di FROM citation_records ORDER BY file_id"
         ).fetchall()

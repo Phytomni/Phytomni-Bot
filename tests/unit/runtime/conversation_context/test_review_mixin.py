@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, cast
 from uuid import UUID
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.runtime.conversation_context import review_mixin
 from mcp_server_phytomni.runtime.conversation_context.review_support import (
@@ -149,52 +149,54 @@ def test_write_review_marker_false_and_persists_when_encoded() -> None:
             """No-op closer so the double meets the public-method floor."""
             return None
 
-    connection = sqlite3.connect(":memory:")
-    connection.execute(
-        "CREATE TABLE conversation_turns ("
-        "conversation_key TEXT, turn_id TEXT, "
-        "delta_json TEXT, updated_at TEXT)"
-    )
-    connection.execute(
-        "INSERT INTO conversation_turns VALUES (?, ?, ?, ?)",
-        ("k", "t", "{}", "old"),
-    )
-    request = _ReviewMarkerWriteRequest(
-        connection=connection,
-        key="k",
-        turn_id="t",
-        decoded=_envelope({"_review_settlement": {"version": 1}}),
-        marker={"version": 2},
-        now="now",
-    )
-    assert (
-        getattr(review_mixin, "_write_review_marker")(_NoneEncoder, request)
-        is False
-    )
-
-    class _Encoder:
-        _with_review_record = staticmethod(
-            getattr(review_mixin, "_with_review_record")
+    with closed_sqlite_connection(":memory:") as connection:
+        connection.execute(
+            "CREATE TABLE conversation_turns ("
+            "conversation_key TEXT, turn_id TEXT, "
+            "delta_json TEXT, updated_at TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO conversation_turns VALUES (?, ?, ?, ?)",
+            ("k", "t", "{}", "old"),
+        )
+        request = _ReviewMarkerWriteRequest(
+            connection=connection,
+            key="k",
+            turn_id="t",
+            decoded=_envelope({"_review_settlement": {"version": 1}}),
+            marker={"version": 2},
+            now="now",
+        )
+        assert (
+            getattr(review_mixin, "_write_review_marker")(
+                _NoneEncoder, request
+            )
+            is False
         )
 
-        def describe(self) -> str:
-            """Return a stable name for the public-method floor."""
-            return "_Encoder"
+        class _Encoder:
+            _with_review_record = staticmethod(
+                getattr(review_mixin, "_with_review_record")
+            )
 
-        def close(self) -> None:
-            """No-op closer so the double meets the public-method floor."""
-            return None
+            def describe(self) -> str:
+                """Return a stable name for the public-method floor."""
+                return "_Encoder"
 
-    assert (
-        getattr(review_mixin, "_write_review_marker")(_Encoder, request)
-        is True
-    )
-    stored = connection.execute(
-        "SELECT delta_json, updated_at FROM conversation_turns"
-    ).fetchone()
-    assert stored is not None
-    assert stored[1] == "now"
-    assert '"version":2' in stored[0].replace(" ", "")
+            def close(self) -> None:
+                """No-op closer so the double meets the public-method floor."""
+                return None
+
+        assert (
+            getattr(review_mixin, "_write_review_marker")(_Encoder, request)
+            is True
+        )
+        stored = connection.execute(
+            "SELECT delta_json, updated_at FROM conversation_turns"
+        ).fetchone()
+        assert stored is not None
+        assert stored[1] == "now"
+        assert '"version":2' in stored[0].replace(" ", "")
 
 
 def test_marker_field_helpers_reject_and_accept_bounded_values() -> None:
@@ -464,106 +466,108 @@ def test_claim_row_failure_maps_each_precondition() -> None:
             """No-op closer so the double meets the public-method floor."""
             return None
 
-    connection = sqlite3.connect(":memory:")
-    tombstoned = getattr(review_mixin, "_claim_row_failure")(
-        _Tombstoned(),
-        _ReviewClaimLookupRequest(
-            connection=connection,
-            key="k",
-            row=("staged", "ledger", 1, "d"),
-            expected_ledger_version=None,
-            expected_base_context_version=None,
-        ),
-    )
-    assert tombstoned is not None and tombstoned.status == "conflict"
+    with closed_sqlite_connection(":memory:") as connection:
+        tombstoned = getattr(review_mixin, "_claim_row_failure")(
+            _Tombstoned(),
+            _ReviewClaimLookupRequest(
+                connection=connection,
+                key="k",
+                row=("staged", "ledger", 1, "d"),
+                expected_ledger_version=None,
+                expected_base_context_version=None,
+            ),
+        )
+        assert tombstoned is not None and tombstoned.status == "conflict"
 
-    class _Live:
-        @staticmethod
-        def _review_context_state(_connection: object, _key: object):
-            return (2, "active")
+        class _Live:
+            @staticmethod
+            def _review_context_state(_connection: object, _key: object):
+                return (2, "active")
 
-        def describe(self) -> str:
-            """Return a stable name for the public-method floor."""
-            return "_Live"
+            def describe(self) -> str:
+                """Return a stable name for the public-method floor."""
+                return "_Live"
 
-        def close(self) -> None:
-            """No-op closer so the double meets the public-method floor."""
-            return None
+            def close(self) -> None:
+                """No-op closer so the double meets the public-method floor."""
+                return None
 
-    failed = getattr(review_mixin, "_claim_row_failure")(
-        _Live(),
-        _ReviewClaimLookupRequest(
-            connection=connection,
-            key="k",
-            row=("failed", "ledger", 2, "d"),
-            expected_ledger_version=None,
-            expected_base_context_version=None,
-        ),
-    )
-    assert failed is not None and failed.status == "conflict"
-    ledger = getattr(review_mixin, "_claim_row_failure")(
-        _Live(),
-        _ReviewClaimLookupRequest(
-            connection=connection,
-            key="k",
-            row=("staged", "other", 2, "d"),
-            expected_ledger_version="ledger",
-            expected_base_context_version=None,
-        ),
-    )
-    assert ledger is not None and ledger.status == "conflict"
-    version = getattr(review_mixin, "_claim_row_failure")(
-        _Live(),
-        _ReviewClaimLookupRequest(
-            connection=connection,
-            key="k",
-            row=("staged", "ledger", 1, "d"),
-            expected_ledger_version=None,
-            expected_base_context_version=2,
-        ),
-    )
-    assert version is not None and version.status == "conflict"
-    current = getattr(review_mixin, "_claim_row_failure")(
-        _Live(),
-        _ReviewClaimLookupRequest(
-            connection=connection,
-            key="k",
-            row=("staged", "ledger", 0, "d"),
-            expected_ledger_version=None,
-            expected_base_context_version=None,
-        ),
-    )
-    assert current is not None and current.status == "conflict"
-    assert (
-        getattr(review_mixin, "_claim_row_failure")(
+        failed = getattr(review_mixin, "_claim_row_failure")(
             _Live(),
             _ReviewClaimLookupRequest(
                 connection=connection,
                 key="k",
-                row=("committed", "ledger", 2, "d"),
+                row=("failed", "ledger", 2, "d"),
+                expected_ledger_version=None,
+                expected_base_context_version=None,
+            ),
+        )
+        assert failed is not None and failed.status == "conflict"
+        ledger = getattr(review_mixin, "_claim_row_failure")(
+            _Live(),
+            _ReviewClaimLookupRequest(
+                connection=connection,
+                key="k",
+                row=("staged", "other", 2, "d"),
                 expected_ledger_version="ledger",
+                expected_base_context_version=None,
+            ),
+        )
+        assert ledger is not None and ledger.status == "conflict"
+        version = getattr(review_mixin, "_claim_row_failure")(
+            _Live(),
+            _ReviewClaimLookupRequest(
+                connection=connection,
+                key="k",
+                row=("staged", "ledger", 1, "d"),
+                expected_ledger_version=None,
                 expected_base_context_version=2,
             ),
         )
-        is None
-    )
+        assert version is not None and version.status == "conflict"
+        current = getattr(review_mixin, "_claim_row_failure")(
+            _Live(),
+            _ReviewClaimLookupRequest(
+                connection=connection,
+                key="k",
+                row=("staged", "ledger", 0, "d"),
+                expected_ledger_version=None,
+                expected_base_context_version=None,
+            ),
+        )
+        assert current is not None and current.status == "conflict"
+        assert (
+            getattr(review_mixin, "_claim_row_failure")(
+                _Live(),
+                _ReviewClaimLookupRequest(
+                    connection=connection,
+                    key="k",
+                    row=("committed", "ledger", 2, "d"),
+                    expected_ledger_version="ledger",
+                    expected_base_context_version=2,
+                ),
+            )
+            is None
+        )
 
 
 def test_review_context_state_reads_version_and_state() -> None:
     """The context-state seam returns the stored version pair."""
-    connection = sqlite3.connect(":memory:")
-    connection.execute(
-        "CREATE TABLE conversation_contexts ("
-        "conversation_key TEXT, context_version INTEGER, state TEXT)"
-    )
-    connection.execute(
-        "INSERT INTO conversation_contexts VALUES (?, ?, ?)",
-        ("k", 3, "active"),
-    )
-    row = getattr(review_mixin, "_review_context_state")(connection, "k")
-    assert row is not None
-    assert tuple(row) == (3, "active")
-    assert (
-        getattr(review_mixin, "_review_context_state")(connection, "missing")
-        is None
-    )
+    with closed_sqlite_connection(":memory:") as connection:
+        connection.execute(
+            "CREATE TABLE conversation_contexts ("
+            "conversation_key TEXT, context_version INTEGER, state TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO conversation_contexts VALUES (?, ?, ?)",
+            ("k", 3, "active"),
+        )
+        row = getattr(review_mixin, "_review_context_state")(connection, "k")
+        assert row is not None
+        assert tuple(row) == (3, "active")
+        assert (
+            getattr(review_mixin, "_review_context_state")(
+                connection, "missing"
+            )
+            is None
+        )

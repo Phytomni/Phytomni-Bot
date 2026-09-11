@@ -5,10 +5,10 @@
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 from tests.unit.test_research_admission import _request, _store
 
 from mcp_server_phytomni.api.research_input import admit_research_request
@@ -25,7 +25,7 @@ def test_replay_projects_202_while_running_and_200_after_terminal(
     first = admit_research_request(_request("http-key"), store)
     assert first.status_code == 202
 
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         connection.execute(
             "UPDATE runs SET status = 'succeeded' WHERE run_id = ?",
             (first.run_id,),

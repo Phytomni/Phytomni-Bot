@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.runtime import research_input_store
 from mcp_server_phytomni.runtime.research_input_store import (
@@ -229,7 +230,7 @@ def test_terminal_parent_rejects_work_and_resolution_mutations(
         work_digest="w" * 64,
     )
 
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         work_count = connection.execute(
             "SELECT COUNT(*) FROM research_work_units WHERE run_id = 'run-1'"
         ).fetchone()
@@ -323,7 +324,7 @@ def test_existing_private_rows_survive_additive_migration(
             run_id="run-1", user_id="owner", agent="research", origin="api"
         )
     )
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         legacy_tables = {
             "research_idempotency_bindings": (
                 "run_id TEXT",
@@ -388,7 +389,7 @@ def test_existing_private_rows_survive_additive_migration(
 
     ResearchInputStore(database)
 
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         binding = connection.execute(
             "SELECT idempotency_digest, request_digest FROM "
             "research_idempotency_bindings"
@@ -444,7 +445,7 @@ def test_partial_private_table_gets_safe_digest_defaults(
             run_id="run-1", user_id="owner", agent="research", origin="api"
         )
     )
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         connection.execute(
             "CREATE TABLE research_input_resolutions ("
             "run_id TEXT PRIMARY KEY)"
@@ -455,7 +456,7 @@ def test_partial_private_table_gets_safe_digest_defaults(
 
     ResearchInputStore(database)
 
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         row = connection.execute(
             "SELECT run_id, effective_query_digest, evidence_digest, "
             "schema_version FROM research_input_resolutions"
@@ -483,7 +484,7 @@ def test_private_migration_failure_rolls_back_all_new_objects(
     with pytest.raises(sqlite3.OperationalError, match="injected"):
         ResearchInputStore(database)
 
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         private_tables = connection.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND "
             "name LIKE 'research_%'"
@@ -528,7 +529,7 @@ def test_registry_expiry_purges_research_children_and_grants(
             revision=0,
         )
     )
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         connection.execute(
             "CREATE TABLE research_object_grants ("
             "grant_id TEXT PRIMARY KEY, parent_run_id TEXT NOT NULL)"
@@ -543,7 +544,7 @@ def test_registry_expiry_purges_research_children_and_grants(
         )
 
     assert registry.purge_expired() == 1
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         stale = connection.execute(
             "SELECT COUNT(*) FROM research_work_units WHERE run_id = 'run-1'"
         ).fetchone()

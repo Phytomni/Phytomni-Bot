@@ -205,7 +205,12 @@ class MemoryStore:
                 timeout=_CONNECT_TIMEOUT_SECONDS,
                 isolation_level=None,
             )
-            self._configure_connection(self._memory_connection)
+            try:
+                self._configure_connection(self._memory_connection)
+            except BaseException:
+                self._memory_connection.close()
+                self._memory_connection = None
+                raise
         else:
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         try:

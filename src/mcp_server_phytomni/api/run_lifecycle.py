@@ -237,7 +237,9 @@ def _run_async_at_sync_boundary(
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coroutine_factory())
+        return asyncio.run(
+            coroutine_factory(), loop_factory=asyncio.new_event_loop
+        )
 
     result: list[Any] = []
     failures: list[BaseException] = []

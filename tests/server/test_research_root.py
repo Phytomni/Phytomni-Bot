@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from tests.support.asyncio_helpers import run_coroutine_on_owned_loop
 
 from mcp_server_phytomni.agents.research.document_evidence import (
     ManagedDocumentPayload,
@@ -107,7 +107,7 @@ def test_default_root_factory_keeps_empty_remote_inspection_inputs(
     async def check_resolution() -> None:
         assert await resolve_descriptions(request) is None
 
-    asyncio.run(check_resolution())
+    run_coroutine_on_owned_loop(check_resolution())
 
 
 def test_root_factory_rejects_incomplete_metadata_port() -> None:
@@ -240,7 +240,7 @@ def test_managed_downloader_and_converter_branches(
         assert payload.size_bytes == staged.stat().st_size
         assert payload.cleanup is True
 
-    asyncio.run(_download())
+    run_coroutine_on_owned_loop(_download())
     converter = getattr(research_root, "_MarkItDownDocumentConverter")()
     payload = ManagedDocumentPayload(path=str(staged), size_bytes=10)
     monkeypatch.setattr(
@@ -382,4 +382,4 @@ def test_root_factory_closures_and_managed_resolver_bind(
         assert captured["plan"][1].contract_name == "research_goal_provider"
         assert not hasattr(captured["plan"][1], "goal")
 
-    asyncio.run(_run())
+    run_coroutine_on_owned_loop(_run())

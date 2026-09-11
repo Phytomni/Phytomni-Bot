@@ -18,6 +18,7 @@ import httpx
 import pytest
 from tests.support.asyncio_helpers import wait_until
 from tests.support.resolver_fakes import post_native_run
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.shared import (
@@ -136,7 +137,7 @@ def _canned_result() -> dict[str, Any]:
 
 def _install_record(path: Path) -> None:
     """Insert the one canonical record used by the surface matrix."""
-    with sqlite3.connect(path) as connection:
+    with closed_sqlite_connection(path) as connection:
         connection.execute(
             """
             INSERT INTO citation_records (
@@ -166,7 +167,7 @@ def _install_bounded_lookup(
     async def lookup(file_ids: Any) -> CitationLookupResult:
         columns = ("file_id", *CITATION_RECORD_FIELDS)
         records: dict[str, dict[str, str | None]] = {}
-        with sqlite3.connect(path) as connection:
+        with closed_sqlite_connection(path) as connection:
             connection.row_factory = sqlite3.Row
             for file_id in dict.fromkeys(file_ids):
                 row = connection.execute(
@@ -436,7 +437,7 @@ async def test_cited_metadata_failures_degrade_blocking_and_stream(
     _install_handler(monkeypatch, case.tool_name)
     _install_bounded_lookup(monkeypatch, citation_db_path)
     if failure_mode == "quarantined":
-        with sqlite3.connect(citation_db_path) as connection:
+        with closed_sqlite_connection(citation_db_path) as connection:
             connection.execute(
                 """
                 INSERT INTO citation_conflicts (

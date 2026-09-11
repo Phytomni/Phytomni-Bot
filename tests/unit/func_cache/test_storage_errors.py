@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from collections.abc import Callable, Iterator
+from contextlib import ExitStack, closing
 from typing import Any, cast
 
 import pytest
@@ -33,8 +34,11 @@ def cache_storage_fixture(tmp_path) -> Iterator[Storage]:
         Isolated cache storage for one test.
     """
     cache_storage = Storage(str(tmp_path / "func_cache.sqlite"))
-    yield cache_storage
-    cache_storage.close()
+    with closing(getattr(cache_storage, "_get_conn")()):
+        try:
+            yield cache_storage
+        finally:
+            cache_storage.close()
 
 
 class _FailingConn:
@@ -102,13 +106,17 @@ def test_storage_connect_error_closes_partial_connection(
     """A PRAGMA failure after connect still closes the partial handle."""
     real_connect = sqlite3.connect
 
-    def _connect_then_fail(*args: Any, **kwargs: Any) -> _FailingConn:
-        conn = real_connect(*args, **kwargs)
-        return _FailingConn(conn, fail_execute=True, fail_close=True)
+    with ExitStack() as resources:
 
-    monkeypatch.setattr(sqlite3, "connect", _connect_then_fail)
-    with pytest.raises(StorageError, match="Failed to connect to SQLite"):
-        Storage(str(tmp_path / "cache.sqlite"))
+        def _connect_then_fail(*args: Any, **kwargs: Any) -> _FailingConn:
+            conn = resources.enter_context(
+                closing(real_connect(*args, **kwargs))
+            )
+            return _FailingConn(conn, fail_execute=True, fail_close=True)
+
+        monkeypatch.setattr(sqlite3, "connect", _connect_then_fail)
+        with pytest.raises(StorageError, match="Failed to connect to SQLite"):
+            Storage(str(tmp_path / "cache.sqlite"))
 
 
 def test_storage_reconnects_after_pid_change(

@@ -33,11 +33,7 @@ from .deep_genome_transitions import (
     DeepGenomeTransitionError,
     DeepGenomeTransitionMixin,
 )
-from .task_manager import (
-    _CREATE_TASKS_DDL,
-    _TASK_ADD_COLUMN_STATEMENTS,
-    _expires_at_for,
-)
+from .task_manager import _expires_at_for, ensure_tasks_table
 
 if TYPE_CHECKING:
     from ..agents.deep_genome.work_items import WorkItemSpec
@@ -132,13 +128,7 @@ class DeepGenomeStore(DeepGenomeTransitionMixin):
             conn.execute("PRAGMA foreign_keys=ON")
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute(_CREATE_TASKS_DDL)
-            existing = {
-                row[1] for row in conn.execute("PRAGMA table_info(tasks)")
-            }
-            for column, statement in _TASK_ADD_COLUMN_STATEMENTS:
-                if column not in existing:
-                    conn.execute(statement)
+            ensure_tasks_table(conn)
             conn.execute(_CREATE_SECTIONS_DDL)
             conn.execute(_CREATE_REMOTE_TASKS_DDL)
             conn.commit()

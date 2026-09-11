@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -81,6 +82,36 @@ def test_closed_sqlite_connection_closes_after_body(
     assert connection is not None
     with pytest.raises(sqlite3.ProgrammingError, match="closed"):
         connection.execute("SELECT 1")
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_closed_sqlite_connection_preserves_transaction_outcome(
+    tmp_path: Path, fail: bool
+) -> None:
+    """Explicit close preserves commits and rolls back failed test writes."""
+    database = tmp_path / "transaction.sqlite"
+    with closed_sqlite_connection(database) as setup:
+        setup.execute("CREATE TABLE marker (value TEXT NOT NULL)")
+
+    connection: sqlite3.Connection | None = None
+    expected_error = (
+        pytest.raises(RuntimeError, match="body failed")
+        if fail
+        else nullcontext()
+    )
+    with expected_error, closed_sqlite_connection(database) as writer:
+        connection = writer
+        connection.execute("INSERT INTO marker VALUES ('written')")
+        if fail:
+            raise RuntimeError("body failed")
+
+    assert connection is not None
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        connection.execute("SELECT 1")
+    with closed_sqlite_connection(database) as reader:
+        assert reader.execute("SELECT value FROM marker").fetchall() == (
+            [] if fail else [("written",)]
+        )
 
 
 def test_sqlite_connection_closes_after_body_error(tmp_path: Path) -> None:

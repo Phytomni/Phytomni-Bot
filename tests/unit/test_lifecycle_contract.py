@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from collections.abc import Callable, Coroutine, Generator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ from uuid import UUID
 import pytest
 from tests.support.execution_tasks import protein_promoter_children
 from tests.support.resume_graph import build_resume_app
+from tests.support.sqlite import closed_sqlite_connection
 from tests.support.terminal_results import (
     SensitiveTerminalResultSpec,
     public_partial_warning,
@@ -47,6 +49,40 @@ from mcp_server_phytomni.runtime.conversation_context.store import (
     StagedTurn,
 )
 from mcp_server_phytomni.runtime.langgraph_runner import build_runnable_config
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_sync_gc_preserves_caller_loop_and_closes_its_own(fail: bool) -> None:
+    """Library-owned async work must not displace a caller's dormant loop."""
+    boundary = getattr(run_lifecycle, "_run_async_at_sync_boundary")
+
+    def check() -> None:
+        owned: list[asyncio.AbstractEventLoop] = []
+        error = RuntimeError("synthetic cleanup failure")
+
+        async def run() -> str:
+            owned.append(asyncio.get_running_loop())
+            if fail:
+                raise error
+            return "completed"
+
+        with asyncio.Runner() as caller:
+            caller_loop = caller.get_loop()
+            if fail:
+                with pytest.raises(RuntimeError) as caught:
+                    boundary(run)
+                assert caught.value is error
+            else:
+                assert boundary(run) == "completed"
+            assert asyncio.get_event_loop() is caller_loop
+            assert not caller_loop.is_closed()
+            assert len(owned) == 1
+            assert owned[0] is not caller_loop
+            assert owned[0].is_closed()
+        assert caller_loop.is_closed()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(check).result(timeout=2)
 
 
 def test_safe_api_error_allows_exception_traceback_assignment() -> None:
@@ -267,7 +303,7 @@ def test_normal_lifecycle_gc_purges_staged_context_and_review_candidate(
     _future_stable_thread_id, future_candidate_thread_id = _stage_review_turn(
         store, future_key, future_turn_id
     )
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         connection.execute(
             "UPDATE conversation_turns SET expires_at = ? "
             "WHERE conversation_key = ?",
@@ -289,7 +325,7 @@ def test_normal_lifecycle_gc_purges_staged_context_and_review_candidate(
     assert stable_thread_id not in deleted_candidates
     assert not checkpointer_closed
     assert store.load_turn(future_key, future_turn_id) is not None
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         assert connection.execute(
             "SELECT candidate_thread_id "
             "FROM conversation_review_checkpoint_cleanup "
@@ -299,7 +335,7 @@ def test_normal_lifecycle_gc_purges_staged_context_and_review_candidate(
 
     assert store.tombstone(key) == ()
     store.complete_checkpoint_cleanup(key)
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM conversation_review_checkpoint_cleanup "
             "WHERE conversation_key = ?",
@@ -331,7 +367,7 @@ def test_failed_review_candidate_cleanup_retries_on_next_lifecycle_gc(
             )
         },
     )
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         connection.execute(
             "UPDATE conversation_turns SET expires_at = ? "
             "WHERE conversation_key = ?",
@@ -394,7 +430,7 @@ def test_registered_candidate_survives_tombstone_until_retry_gc(
     assert store.tombstone(key) == (candidate_thread_id,)
     store.complete_checkpoint_cleanup(key)
 
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         assert connection.execute(
             "SELECT staged_at, tombstone_pending "
             "FROM conversation_review_checkpoint_cleanup "
@@ -426,7 +462,7 @@ def test_registered_candidate_survives_tombstone_until_retry_gc(
     assert store.list_checkpoint_cleanup_candidates() == ()
 
 
-def test_lifecycle_gc_uses_the_persistent_checkpoint_backend_by_default(
+async def test_lifecycle_gc_uses_the_persistent_checkpoint_backend_by_default(
     tmp_path: Path,
 ) -> None:
     """The production default deletes a row from the shared SQLite saver."""
@@ -449,7 +485,7 @@ def test_lifecycle_gc_uses_the_persistent_checkpoint_backend_by_default(
             )
         },
     )
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         connection.execute(
             "UPDATE conversation_turns SET expires_at = ? "
             "WHERE conversation_key = ? AND turn_id = ?",
@@ -468,7 +504,7 @@ def test_lifecycle_gc_uses_the_persistent_checkpoint_backend_by_default(
         finally:
             await saver.conn.close()
 
-    asyncio.run(seed_checkpoints())
+    await seed_checkpoints()
 
     def registry_factory(path: str) -> SimpleNamespace:
         assert path == str(db_path)
@@ -478,7 +514,7 @@ def test_lifecycle_gc_uses_the_persistent_checkpoint_backend_by_default(
         db_path=str(db_path), registry_factory=registry_factory
     )
 
-    with sqlite3.connect(checkpoint_path) as connection:
+    with closed_sqlite_connection(checkpoint_path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM checkpoints WHERE thread_id = ?",
             (candidate_thread_id,),
@@ -515,7 +551,7 @@ async def test_async_lifecycle_gc_keeps_injected_checkpointer_caller_owned(
             )
         },
     )
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         connection.execute(
             "UPDATE conversation_turns SET expires_at = ? "
             "WHERE conversation_key = ? AND turn_id = ?",
