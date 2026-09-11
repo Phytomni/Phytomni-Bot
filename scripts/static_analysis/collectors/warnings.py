@@ -62,11 +62,17 @@ def _dotted_name(node: ast.AST) -> str | None:
     return None
 
 
-def _string_argument(node: ast.Call) -> str | None:
-    if not node.args or not isinstance(node.args[0], ast.Constant):
-        return None
-    value = node.args[0].value
-    return value if isinstance(value, str) else None
+def _string_arguments(node: ast.Call) -> list[str]:
+    return [
+        argument.value
+        for argument in node.args
+        if isinstance(argument, ast.Constant)
+        and isinstance(argument.value, str)
+    ]
+
+
+def _raises_warning(value: str) -> bool:
+    return value.partition(":")[0].strip() == "error"
 
 
 def _config_filters(root: Path) -> list[Finding]:
@@ -86,6 +92,8 @@ def _config_filters(root: Path) -> list[Finding]:
     findings: list[Finding] = []
     for index, value in enumerate(values):
         if not isinstance(value, str) or not value.strip():
+            continue
+        if _raises_warning(value):
             continue
         key = f"tool.pytest.ini_options.filterwarnings[{index}]"
         findings.append(
@@ -123,31 +131,31 @@ def _decorator_filters(root: Path, path: Path) -> list[Finding]:
                 continue
             if _dotted_name(decorator.func) != "pytest.mark.filterwarnings":
                 continue
-            value = _string_argument(decorator)
-            if value is None:
-                continue
             key = f"{symbol or node.name}.pytest.mark.filterwarnings"
-            findings.append(
-                _finding(
-                    root,
-                    path,
-                    {
-                        "tool": "pytest",
-                        "rule": value,
-                        "key": key,
-                        "symbol": symbol,
-                        "mechanism": Mechanism.DECORATOR,
-                        "source": value,
-                    },
+            for value in _string_arguments(decorator):
+                if _raises_warning(value):
+                    continue
+                findings.append(
+                    _finding(
+                        root,
+                        path,
+                        {
+                            "tool": "pytest",
+                            "rule": value,
+                            "key": key,
+                            "symbol": symbol,
+                            "mechanism": Mechanism.DECORATOR,
+                            "source": value,
+                        },
+                    )
                 )
-            )
     return findings
 
 
 def collect_warning_suppressions(
     root: Path, paths: Sequence[Path]
 ) -> tuple[Finding, ...]:
-    """Collect pytest warning filters and filterwarnings decorators."""
+    """Collect non-error pytest filters from config and decorators."""
     findings = _config_filters(root)
     for path in sorted(paths, key=lambda item: _relative_path(root, item)):
         if path.suffix == ".py":

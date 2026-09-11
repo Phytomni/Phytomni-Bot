@@ -32,6 +32,8 @@ from __future__ import annotations
 import os
 
 _TEST_ENV = {
+    # Disable native ONNX Runtime telemetry before collection imports it.
+    "ORT_DISABLE_TELEMETRY": "1",
     "DOMAIN_NAME": "pytest-domain",
     "USER_NAME": "pytest-user",
     "USER_PASSWORD": "pytest-password",

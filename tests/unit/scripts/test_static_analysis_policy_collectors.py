@@ -92,6 +92,108 @@ def test_warning_collector_reads_config_and_decorators(tmp_path: Path) -> None:
     assert findings[1].symbol == "test_sample"
 
 
+@pytest.mark.parametrize("surface", ["config", "decorator"])
+@pytest.mark.parametrize(
+    "action,is_suppression",
+    [
+        ("error", False),
+        (" error ", False),
+        ("ignore", True),
+        ("default", True),
+        ("once", True),
+        ("module", True),
+        ("always", True),
+        ("", True),
+        ("errorish", True),
+    ],
+)
+def test_warning_collector_distinguishes_error_policy(
+    tmp_path: Path, surface: str, action: str, is_suppression: bool
+) -> None:
+    """Raising warnings strengthens either existing policy surface."""
+    value = f"{action}::ResourceWarning"
+    path = tmp_path / "test_sample.py"
+    if surface == "config":
+        (tmp_path / "pyproject.toml").write_text(
+            "[tool.pytest.ini_options]\n" f'filterwarnings = ["{value}"]\n',
+            encoding="utf-8",
+        )
+        path.write_text("def test_sample():\n    pass\n", encoding="utf-8")
+    else:
+        path.write_text(
+            "import pytest\n\n"
+            f'@pytest.mark.filterwarnings("{value}")\n'
+            "def test_sample():\n    pass\n",
+            encoding="utf-8",
+        )
+
+    findings = collect_warning_suppressions(tmp_path, [path])
+
+    assert [item.rule for item in findings] == (
+        [value] if is_suppression else []
+    )
+
+
+@pytest.mark.parametrize(
+    "arguments,expected",
+    [
+        (
+            '"error::ResourceWarning", "ignore::RuntimeWarning"',
+            ["ignore::RuntimeWarning"],
+        ),
+        (
+            '"ignore::RuntimeWarning", "error::ResourceWarning"',
+            ["ignore::RuntimeWarning"],
+        ),
+        (
+            '"ignore::UserWarning", "ignore::RuntimeWarning"',
+            ["ignore::RuntimeWarning", "ignore::UserWarning"],
+        ),
+        ('"error::ResourceWarning", "error::RuntimeWarning"', []),
+        ('policy, "ignore::RuntimeWarning"', ["ignore::RuntimeWarning"]),
+        ('1, "ignore::RuntimeWarning"', ["ignore::RuntimeWarning"]),
+    ],
+)
+def test_warning_collector_checks_every_decorator_argument(
+    tmp_path: Path, arguments: str, expected: list[str]
+) -> None:
+    """Every literal filter is audited independently of adjacent filters."""
+    path = tmp_path / "test_sample.py"
+    path.write_text(
+        "import pytest\n\n"
+        f"@pytest.mark.filterwarnings({arguments})\n"
+        "def test_sample():\n    pass\n",
+        encoding="utf-8",
+    )
+
+    findings = collect_warning_suppressions(tmp_path, [path])
+
+    assert [item.rule for item in findings] == expected
+
+
+def test_warning_collector_preserves_single_filter_identity(
+    tmp_path: Path,
+) -> None:
+    """Adding an error filter must not reidentify an existing suppression."""
+    path = tmp_path / "test_sample.py"
+    source = (
+        "import pytest\n\n"
+        '@pytest.mark.filterwarnings("ignore::RuntimeWarning")\n'
+        "def test_sample():\n    pass\n"
+    )
+    path.write_text(source, encoding="utf-8")
+    single = collect_warning_suppressions(tmp_path, [path])
+    path.write_text(
+        source.replace(
+            '"ignore::RuntimeWarning"',
+            '"error::ResourceWarning", "ignore::RuntimeWarning"',
+        ),
+        encoding="utf-8",
+    )
+
+    assert collect_warning_suppressions(tmp_path, [path]) == single
+
+
 def test_ci_collector_finds_command_flags_and_old_baseline(
     tmp_path: Path,
 ) -> None:

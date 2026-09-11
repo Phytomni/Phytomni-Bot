@@ -59,6 +59,8 @@ dependencies = [
     "python-multipart>=0.0.9",
     "pyyaml>=6.0.3",
     "sqlglot>=30.12,<31",
+    # ASGI 2.4 streaming must detect send failures without polling receive.
+    "starlette>=0.42.0",
     "uvicorn[standard]>=0.34.0",
     "youtube-transcript-api>=1.2.4",
 ]
@@ -87,7 +89,7 @@ dev = [
     "ruff>=0.15.12,<0.16",
     "shellcheck-py>=0.11.0",
     "toml-sort>=0.24.4",
-    "types-protobuf<7",
+    "types-protobuf>=6.32.1.20251210,<7",
     "types-pyyaml>=6.0.12",
     "types-requests>=2.33.0",
     "validate-pyproject>=0.25",
@@ -176,6 +178,11 @@ testpaths = ["tests"]
 pythonpath = ["src", "."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "error::ResourceWarning",
+    "error::RuntimeWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
 addopts = [
     "--import-mode=importlib",
     "--strict-config",
