@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import json
 import sys
+from io import BufferedReader
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
+from zipfile import BadZipFile
 
 import pytest
 from pydantic import ValidationError
@@ -276,7 +279,8 @@ def test_workbook_verifier_uses_only_declared_cells(
 ) -> None:
     """Reject values that only occur in a non-declared column on the row."""
     case, root = _workbook_case(tmp_path)
-    workbook: Any = __import__("openpyxl").load_workbook(root / "source.xlsx")
+    with (root / "source.xlsx").open("rb") as source_file:
+        workbook: Any = __import__("openpyxl").load_workbook(source_file)
     sheet = workbook["Sheet1"]
     sheet.cell(1, 3, "Q_2")
     sheet.cell(1, 4, "Plant width in rice")
@@ -313,6 +317,38 @@ def test_workbook_verifier_rejects_missing_source_text() -> None:
     )
     with pytest.raises(ValidationError, match="source_text"):
         AgentRoutingCase.model_validate(case)
+
+
+@pytest.mark.parametrize("outcome", ["success", "validation", "parse"])
+def test_workbook_verifier_closes_source_handle(
+    tmp_path: Path, outcome: str
+) -> None:
+    """Own the real source handle through successful and failed reads."""
+    case, root = _workbook_case(tmp_path)
+    if outcome == "validation":
+        case = case.model_copy(
+            update={"source": case.source.model_copy(update={"row": 2})}
+        )
+    elif outcome == "parse":
+        (root / "source.xlsx").write_bytes(b"invalid workbook")
+
+    with patch(
+        "openpyxl.load_workbook",
+        wraps=__import__("openpyxl").load_workbook,
+    ) as load_workbook:
+        if outcome == "success":
+            verify_workbook_sources((case,), root)
+        else:
+            expected_error = (
+                BadZipFile if outcome == "parse" else DatasetValidationError
+            )
+            with pytest.raises(expected_error):
+                verify_workbook_sources((case,), root)
+
+    load_workbook.assert_called_once()
+    source_handle = load_workbook.call_args.args[0]
+    assert isinstance(source_handle, BufferedReader)
+    assert source_handle.closed
 
 
 def _synthetic_case(

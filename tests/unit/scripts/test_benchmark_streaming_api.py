@@ -11,12 +11,21 @@ import json
 from collections.abc import AsyncIterator, Callable, Sequence
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from scripts import benchmark_streaming_api as benchmark
+from tests.support.asyncio_helpers import run_coroutine_on_owned_loop
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(name="isolated_cli_event_loop")
+def _isolate_cli_event_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give CLI entrypoint tests a loop without replacing pytest's loop."""
+    runtime = SimpleNamespace(run=run_coroutine_on_owned_loop)
+    monkeypatch.setattr(benchmark, "asyncio", runtime)
 
 
 def test_count_words_is_provider_independent() -> None:
@@ -769,6 +778,7 @@ def test_print_failures_uses_line_numbers_not_queries() -> None:
     )
 
 
+@pytest.mark.usefixtures("isolated_cli_event_loop")
 def test_main_returns_zero_for_complete_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -810,6 +820,7 @@ def test_main_returns_zero_for_complete_run(
     assert captured.err == ""
 
 
+@pytest.mark.usefixtures("isolated_cli_event_loop")
 def test_main_prints_partial_metrics_and_returns_one(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -899,6 +910,7 @@ def test_main_returns_two_for_empty_query_file(
     assert "no queries" in captured.err
 
 
+@pytest.mark.usefixtures("isolated_cli_event_loop")
 def test_main_returns_130_without_metrics_when_interrupted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -938,6 +950,7 @@ def test_main_returns_130_without_metrics_when_interrupted(
     assert captured.err == "benchmark interrupted\n"
 
 
+@pytest.mark.usefixtures("isolated_cli_event_loop")
 def test_main_hides_unexpected_runtime_failure_details(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -979,9 +992,7 @@ def test_main_hides_unexpected_runtime_failure_details(
         "单个 query 平均时间: N/A\n"
         "总词数/s: N/A\n"
     )
-    assert captured.err == (
-        "benchmark failed unexpectedly\n" "成功 0/1，失败 1\n"
-    )
+    assert captured.err == "benchmark failed unexpectedly\n成功 0/1，失败 1\n"
     assert "Traceback" not in captured.err
     assert "top-secret" not in captured.out
     assert "top-secret" not in captured.err
