@@ -19,6 +19,7 @@ from mcp.shared.exceptions import McpError
 from openai import AsyncOpenAI
 from pydantic import SecretStr
 from starlette.requests import Request
+from tests.support.logging_helpers import capture_non_propagating_logger
 from tests.support.outbound_fakes import (
     bounded_await,
     bounded_wait_for_event,
@@ -876,34 +877,32 @@ async def test_every_pool_role_observation_redacts_private_markers(
         logging.INFO,
         logger="mcp_server_phytomni.runtime.outbound.registry",
     )
-    monkeypatch.setattr(
-        logging.getLogger("mcp_server_phytomni"),
-        "propagate",
-        True,
-    )
     try:
-        if role == "direct":
-            await _run_direct_privacy_attempt(
-                pool=pool,
-                pools=pools,
-                profile=profile,
-                markers=markers,
-            )
-        elif role == "relay_child":
-            await _run_relay_child_privacy_attempt(
-                pool=pool,
-                http_runtime=http_runtime,
-                markers=markers,
-                monkeypatch=monkeypatch,
-            )
-        else:
-            assert role == "operator_relay"
-            await _run_operator_privacy_attempt(
-                pool=pool,
-                http_runtime=http_runtime,
-                markers=markers,
-                monkeypatch=monkeypatch,
-            )
+        with capture_non_propagating_logger(
+            "mcp_server_phytomni.runtime.outbound.registry", caplog.handler
+        ):
+            if role == "direct":
+                await _run_direct_privacy_attempt(
+                    pool=pool,
+                    pools=pools,
+                    profile=profile,
+                    markers=markers,
+                )
+            elif role == "relay_child":
+                await _run_relay_child_privacy_attempt(
+                    pool=pool,
+                    http_runtime=http_runtime,
+                    markers=markers,
+                    monkeypatch=monkeypatch,
+                )
+            else:
+                assert role == "operator_relay"
+                await _run_operator_privacy_attempt(
+                    pool=pool,
+                    http_runtime=http_runtime,
+                    markers=markers,
+                    monkeypatch=monkeypatch,
+                )
 
         assert len(requests) == 1
         assert all(
