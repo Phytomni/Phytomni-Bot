@@ -67,7 +67,9 @@ async def iterate_owned(
     while True:
         next_item = asyncio.ensure_future(anext(stream))
         try:
-            item = await asyncio.shield(next_item)
+            # Keep cancellation and exception observation with this owner.
+            await asyncio.wait({next_item})
+            item = next_item.result()
         except StopAsyncIteration:
             return
         except asyncio.CancelledError:

@@ -152,6 +152,34 @@ async def test_thread_future_returns_worker_result() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pending_worker_failure_after_poll_timeout_has_no_loop_log() -> (
+    None
+):
+    """Polling a slow worker must not expose its later exception to logs."""
+    loop = asyncio.get_running_loop()
+    contexts: list[dict[str, Any]] = []
+    previous = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: contexts.append(context))
+    future: Future[None] = Future()
+    assert future.set_running_or_notify_cancel()
+    waiter = asyncio.create_task(wait_for_thread_future(future))
+    try:
+        await asyncio.sleep(0.035)
+        assert not waiter.done()
+        future.set_exception(OSError("synthetic-provider-secret"))
+        with pytest.raises(OSError, match="synthetic-provider-secret"):
+            await waiter
+        await asyncio.sleep(0)
+    finally:
+        loop.set_exception_handler(previous)
+        if not future.done():
+            future.set_result(None)
+        await asyncio.gather(waiter, return_exceptions=True)
+
+    assert not contexts
+
+
+@pytest.mark.asyncio
 async def test_thread_future_cancellation_does_not_cancel_running_worker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

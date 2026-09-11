@@ -10,7 +10,9 @@ import asyncio
 import threading
 from typing import Any
 
+import anyio
 import pytest
+from tests.support.logging_helpers import capture_non_propagating_logger
 
 from mcp_server_phytomni.config.defaults import ServerConfig
 from mcp_server_phytomni.runtime.outbound import (
@@ -145,6 +147,144 @@ async def test_cancellation_waits_for_thread_before_releasing_lease() -> None:
     assert snapshot.in_use == 0
     assert snapshot.cancelled == 1
     await runtime.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fail_worker", [False, True])
+async def test_repeated_cancellation_owns_worker_until_completion(
+    fail_worker: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Repeated cancellation cannot release an active SDK lease or log data."""
+    client = _RecordingObsClient()
+    pools = _pools()
+    runtime = ObsClientRuntime(pools, client)
+
+    def operation(owned: _RecordingObsClient) -> str:
+        result = owned.call("hold")
+        if fail_worker:
+            raise OSError("synthetic-provider-secret")
+        return result
+
+    task = asyncio.create_task(runtime.run(ObsProfileName.PRIMARY, operation))
+    try:
+        await _wait_thread_event(client.entered)
+        task.cancel()
+        await asyncio.sleep(0.02)
+        task.cancel()
+        await asyncio.sleep(0.02)
+        assert not task.done()
+        assert pools.snapshot(OutboundPoolName.OBS).in_use == 1
+        client.release.set()
+        with (
+            capture_non_propagating_logger(
+                "mcp_server_phytomni.runtime.async_utils", caplog.handler
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await task
+        assert pools.snapshot(OutboundPoolName.OBS).in_use == 0
+        await asyncio.sleep(0)
+        assert "synthetic-provider-secret" not in caplog.text
+        messages = [record.getMessage() for record in caplog.records]
+        assert messages.count(
+            "owned task failed operation=obs_run exception=OSError"
+        ) == int(fail_worker)
+        assert all(record.exc_info is None for record in caplog.records)
+    finally:
+        client.release.set()
+        await asyncio.gather(task, return_exceptions=True)
+        await runtime.aclose()
+
+
+@pytest.mark.asyncio
+async def test_worker_failure_propagates_without_cancellation() -> None:
+    """The operation owner still receives ordinary SDK failures."""
+    runtime = ObsClientRuntime(_pools(), _RecordingObsClient())
+
+    def fail(_client: _RecordingObsClient) -> str:
+        raise OSError("synthetic-provider-secret")
+
+    try:
+        with pytest.raises(OSError, match="synthetic-provider-secret"):
+            await runtime.run(ObsProfileName.PRIMARY, fail)
+    finally:
+        await runtime.aclose()
+
+
+@pytest.mark.asyncio
+async def test_anyio_cancellation_holds_lease_until_worker_finishes() -> None:
+    """Level cancellation cannot interrupt the owned worker drain."""
+    client = _RecordingObsClient()
+    pools = _pools()
+    runtime = ObsClientRuntime(pools, client)
+
+    async def consume() -> None:
+        with pytest.raises(asyncio.CancelledError):
+            await runtime.run(
+                ObsProfileName.PRIMARY, lambda owned: owned.call("hold")
+            )
+
+    try:
+        async with anyio.create_task_group() as group:
+            group.start_soon(consume)
+            await _wait_thread_event(client.entered)
+            group.cancel_scope.cancel()
+            with anyio.CancelScope(shield=True):
+                await asyncio.sleep(0.02)
+                assert pools.snapshot(OutboundPoolName.OBS).in_use == 1
+                client.release.set()
+        assert pools.snapshot(OutboundPoolName.OBS).in_use == 0
+    finally:
+        client.release.set()
+        await runtime.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_count", [0, 1, 2])
+async def test_close_failure_is_owned_through_cancellation(
+    cancel_count: int,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A cancelled close waits for its thread without logging SDK details."""
+    client = _RecordingObsClient()
+    runtime = ObsClientRuntime(_pools(), client)
+
+    def fail_close() -> None:
+        client.close_count += 1
+        client.entered.set()
+        client.release.wait(timeout=5)
+        raise OSError("synthetic-provider-secret")
+
+    monkeypatch.setattr(client, "close", fail_close)
+    task = asyncio.create_task(runtime.aclose())
+    try:
+        await _wait_thread_event(client.entered)
+        for _ in range(cancel_count):
+            task.cancel()
+            await asyncio.sleep(0.02)
+            assert not task.done()
+        client.release.set()
+        expected = asyncio.CancelledError if cancel_count else OSError
+        with (
+            capture_non_propagating_logger(
+                "mcp_server_phytomni.runtime.async_utils", caplog.handler
+            ),
+            pytest.raises(expected),
+        ):
+            await task
+        await asyncio.sleep(0)
+        assert client.close_count == 1
+        assert "synthetic-provider-secret" not in caplog.text
+        messages = [record.getMessage() for record in caplog.records]
+        assert messages.count(
+            "owned task failed operation=obs_close exception=OSError"
+        ) == int(bool(cancel_count))
+        assert all(record.exc_info is None for record in caplog.records)
+    finally:
+        client.release.set()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 @pytest.mark.asyncio

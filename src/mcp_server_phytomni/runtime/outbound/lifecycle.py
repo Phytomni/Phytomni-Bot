@@ -12,6 +12,7 @@ import logging
 from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Any, Final
 
 import httpx
@@ -21,6 +22,7 @@ from ...config.defaults import ServerConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
 from ...storage.obs_client import ObsClient
+from ..async_utils import log_task_failure
 from ..cleanup import aclose_cleanup_runtime
 from .http import (
     BoundAsyncRequestClient,
@@ -91,6 +93,9 @@ class OutboundRuntime:
         if self._close_state.task is None:
             self._close_state.task = asyncio.create_task(
                 self._close_resources()
+            )
+            self._close_state.task.add_done_callback(
+                partial(log_task_failure, operation="outbound_shutdown")
             )
         return self._close_state.task
 
@@ -331,7 +336,8 @@ async def aclose_outbound_runtime() -> None:
                     _RUNTIME_STATE["runtime"] = None
 
             close_task.add_done_callback(clear_slot)
-            await asyncio.shield(close_task)
+            await asyncio.wait({close_task})
+            close_task.result()
             clear_slot(close_task)
 
 

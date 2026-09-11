@@ -9,15 +9,16 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import suppress
 from enum import StrEnum
 from threading import Event, Thread
 from typing import Any, TypeVar
 
+import anyio
+
 from ...config.defaults import ServerConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
-from ...runtime.async_utils import wait_for_thread_future
+from ...runtime.async_utils import log_task_failure, wait_for_thread_future
 from ...storage.obs_client import ObsClient
 from .models import OutboundPoolName
 from .registry import OutboundPoolRegistry
@@ -31,6 +32,24 @@ __all__ = [
 
 type ObsClientFactory = Callable[..., Any]
 T = TypeVar("T")
+
+
+async def _wait_for_worker[ResultT](
+    task: asyncio.Task[ResultT], *, operation: str
+) -> ResultT:
+    """Own workers through repeated cancellation and report late failures."""
+    try:
+        await asyncio.wait({task})
+    except asyncio.CancelledError:
+        with anyio.CancelScope(shield=True):
+            while not task.done():
+                try:
+                    await asyncio.wait({task})
+                except asyncio.CancelledError:
+                    continue
+        log_task_failure(task, operation=operation)
+        raise
+    return task.result()
 
 
 class ObsProfileName(StrEnum):
@@ -77,12 +96,7 @@ class ObsClientRuntime:
                 return await wait_for_thread_future(worker)
 
             waiter = asyncio.create_task(await_worker())
-            try:
-                return await asyncio.shield(waiter)
-            except asyncio.CancelledError:
-                with suppress(BaseException):
-                    await asyncio.shield(waiter)
-                raise
+            return await _wait_for_worker(waiter, operation="obs_run")
 
     async def aclose(self) -> None:
         """Close the owned SDK client exactly once after pool drain."""
@@ -119,12 +133,7 @@ class ObsClientRuntime:
                 self._closed = True
 
             waiter = asyncio.create_task(finish_close())
-            try:
-                await asyncio.shield(waiter)
-            except asyncio.CancelledError:
-                with suppress(BaseException):
-                    await asyncio.shield(waiter)
-                raise
+            await _wait_for_worker(waiter, operation="obs_close")
 
     def _close_sync(self) -> None:
         """Close the synchronous SDK client when it exposes close."""
