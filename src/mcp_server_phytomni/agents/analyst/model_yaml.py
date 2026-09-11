@@ -86,7 +86,7 @@ def build_model_yaml(sensitive_config: Any, analyst_config: Any) -> str:
           do_execute: true
           debug: false
           max_round: 300
-          max_times_per_round: 30
+          max_times_per_round: 10
           proxy: ''
           proxy_verify: false
 
