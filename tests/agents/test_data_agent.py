@@ -23,6 +23,7 @@ from mcp_server_phytomni.agents.data.agent import DataAgent, DataAgentState
 from mcp_server_phytomni.agents.data.nl2sql import (
     Nl2SqlRequest,
     execute_nl2sql_request,
+    nl2sql,
 )
 from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
@@ -435,6 +436,47 @@ async def test_rewrite_nl2sql_keeps_explicit_thread_and_dialog_ids(
         "thread_id": "ctx-thread",
         "locale": "en-US",
     }
+
+
+@pytest.mark.parametrize("response", [{}, {"answer": "ok"}])
+async def test_nl2sql_public_entry_returns_dictionary_response(
+    monkeypatch: pytest.MonkeyPatch, response: dict[str, str]
+) -> None:
+    """The public boundary preserves valid object responses and overrides."""
+    fake = _FakePost([response])
+    _patch_transport(monkeypatch, fake)
+
+    result = await nl2sql(
+        "homologs of AT1G75370 in wheat",
+        dialog_id="dialog-explicit",
+        max_retries=0,
+        timeout=7.0,
+    )
+
+    assert result == response
+    assert fake.recorded_dialog_ids() == ["dialog-explicit"]
+    assert fake.token_timeouts == [7.0]
+    assert not fake.recorded_backoffs()
+
+
+@pytest.mark.parametrize("response", [None, ["private result"], "raw result"])
+async def test_nl2sql_public_entry_rejects_non_object_response(
+    monkeypatch: pytest.MonkeyPatch, response: object
+) -> None:
+    """Invalid JSON shapes become a safe MCP error, never a fake success."""
+    fake = _FakePost([response])
+    _patch_transport(monkeypatch, fake)
+
+    with pytest.raises(McpError) as error:
+        await nl2sql("list genes", max_retries=0)
+
+    assert error.value.error.code == INTERNAL_ERROR
+    assert error.value.error.message == (
+        "Failed to query SQL database "
+        "(upstream gateway timeout or HTTP error) after all retries"
+    )
+    assert fake.attempt_count() == 1
+    assert not fake.recorded_backoffs()
 
 
 async def test_execute_nl2sql_returns_first_success_without_rotation(
