@@ -4329,6 +4329,8 @@ user:
     protein structure based on evolution information for gene {{gene_id}}.
   protein_design_analysis_meta: |-
     Note1: You don't need to build nr database index;
+    Note2: You must add --trimul_kernel torch --triatt_kernel torch 
+    paramters when using protenix tools;
     <water usage>
         Smith-Waterman local alignment of sequences
         Version: EMBOSS:6.6.0.0
@@ -4491,7 +4493,7 @@ user:
 
       Tool Usage example:
         protenix pred --input $input_json --out_dir $output_dir
-          --use_msa_server True
+          --use_msa_server True --trimul_kernel torch --triatt_kernel torch
     </proteix usage method>
     step1, Find Gene's Protein Sequence using grep (grep -A1 $gene_id
     $fasta_file | head -n 2 > $out_file);
@@ -4916,12 +4918,14 @@ user:
   structure_analysis_meta: |-
     Note1: You don't need to install protenix software using conda;
     Note2: You need to activate af3 environment;(conda activate af3);
-    Note3: protenix commdline softwore usage is as follows:
+    Note3: You must add --trimul_kernel torch --triatt_kernel torch 
+    paramters when using protenix tools;
+    Note4: protenix commdline softwore usage is as follows:
     {{> user/_partials/protenix_usage }}
     </proteix usage method>
     <usage example>
         protenix pred --input $input_json --out_dir $output_dir
-        --use_msa_server True
+        --use_msa_server True --trimul_kernel torch --triatt_kernel torch
     </usage example>
     Note4: protenix commdline softwore input file example is as follows:
         You should filled in the protein sequence in the sequence parameter
