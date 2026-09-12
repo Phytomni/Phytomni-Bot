@@ -281,9 +281,13 @@ async def _terminal_projection(
         for event in events
         if event.type == "Custom" and event.data["name"] == "phyto.metadata"
     ]
-    assert len(answers) == len(references) == 1
+    assert len(answers) == 1
+    assert len(references) <= 1
     assert len(metadata) <= 1
-    return answers[0], references[0][0], metadata[0] if metadata else {}
+    reference: dict[str, Any] = {}
+    if references:
+        reference = references[0][0]
+    return answers[0], reference, metadata[0] if metadata else {}
 
 
 async def _complete_blocking_projection(
@@ -432,7 +436,7 @@ async def test_cited_metadata_failures_degrade_blocking_and_stream(
     case: _CitedSurfaceCase,
     failure_mode: str,
 ) -> None:
-    """Every selected miss remains successful and title-only."""
+    """SQLite misses omit silently; lookup failures stay title-only."""
     _forbid_non_sqlite_calls(monkeypatch)
     _install_handler(monkeypatch, case.tool_name)
     _install_bounded_lookup(monkeypatch, citation_db_path)
@@ -462,6 +466,21 @@ async def test_cited_metadata_failures_degrade_blocking_and_stream(
     envelope = await mcp_app.invoke_tool_enveloped(
         case.tool_name, _ARGUMENTS[case.slug]
     )
+    omit_miss = failure_mode in {"missing", "quarantined"}
+    (
+        stream_answer,
+        stream_reference,
+        stream_metadata,
+    ) = await _terminal_projection(monkeypatch, case)
+    assert stream_answer == envelope.formatted.answer
+    if omit_miss:
+        assert envelope.formatted.answer == "Claim."
+        assert envelope.formatted.references == ()
+        assert "citation_metadata_degraded" not in envelope.formatted.metadata
+        assert stream_reference == {}
+        assert stream_metadata == {}
+        return
+
     expected_reference = {
         "file_id": "f1",
         "title": "Retrieval title",
@@ -471,10 +490,5 @@ async def test_cited_metadata_failures_degrade_blocking_and_stream(
     assert envelope.formatted.answer == "Claim<sup>1</sup>."
     assert envelope.formatted.metadata["citation_metadata_degraded"] is True
     assert dict(envelope.formatted.references[0]) == expected_reference
-
-    stream_answer, stream_reference, stream_metadata = (
-        await _terminal_projection(monkeypatch, case)
-    )
-    assert stream_answer == envelope.formatted.answer
     assert stream_reference == expected_reference
     assert stream_metadata == {"citation_metadata_degraded": True}

@@ -57,9 +57,9 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
 
     async def _mark_missing(_tool_name: str, raw: Any) -> None:
         """Project a deterministic metadata miss without external lookup."""
-        raw["choices"][0]["message"]["doc_list"][0][
-            CITATION_STATUS_KEY
-        ] = CITATION_STATUS_MISSING
+        raw["choices"][0]["message"]["doc_list"][0][CITATION_STATUS_KEY] = (
+            CITATION_STATUS_MISSING
+        )
 
     monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _mark_missing)
     response = await chat_completion(
@@ -74,10 +74,10 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
     assert "event: TextMessageContent\n" in body
     assert "event: Custom\n" in body
     assert "event: RunFinished\n" in body
-    assert "Rice photosynthesis <sup>1</sup>." in body
-    assert '"formatted_citation": "T1"' in body
-    assert '"name": "phyto.metadata"' in body
-    assert '"citation_metadata_degraded": true' in body
+    assert "Rice photosynthesis." in body
+    assert '"formatted_citation": "T1"' not in body
+    assert '"name": "phyto.metadata"' not in body
+    assert '"citation_metadata_degraded": true' not in body
     assert body.rstrip().endswith("data: [DONE]")
     assert fake_app.thread_id() == extract_run_started_id(body)
 

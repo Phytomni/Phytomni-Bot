@@ -346,7 +346,7 @@ def test_normalize_citations_removes_invalid_only_marker() -> None:
         [{"file_id": "f1", "title": "Paper"}],
     )
 
-    assert text == "Unsupported  remains usable."
+    assert text == "Unsupported remains usable."
     assert not refs
     assert "<sup></sup>" not in text
 
@@ -683,7 +683,7 @@ def test_missing_status_forces_clean_title_only(status: str) -> None:
 
 
 def test_selected_metadata_miss_sets_degradation_and_sanitizes_raw() -> None:
-    """Only selected miss status projects degradation and never debug raw."""
+    """Selected SQLite-miss citations drop silently under default omit."""
     payload = {
         "choices": [
             {
@@ -708,10 +708,130 @@ def test_selected_metadata_miss_sets_degradation_and_sanitizes_raw() -> None:
 
     envelope = build_tool_result_envelope("KnowledgeAgent", payload)
 
-    assert envelope.formatted.metadata["citation_metadata_degraded"] is True
+    assert envelope.formatted.answer == "Selected."
+    assert envelope.formatted.references == ()
+    assert "citation_metadata_degraded" not in envelope.formatted.metadata
+    assert CITATION_STATUS_KEY not in str(envelope.raw)
+
+
+def test_omit_unmatched_off_restores_title_only_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Switch-off keeps a selected miss as title-only and degraded."""
+    monkeypatch.setenv("CITATION_OMIT_UNMATCHED", "false")
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": "Selected [1].",
+                    "doc_list": [
+                        {
+                            "file_id": "f1",
+                            "title": "Selected.pdf",
+                            CITATION_STATUS_KEY: CITATION_STATUS_MISSING,
+                        },
+                        {
+                            "file_id": "f2",
+                            "title": "Uncited.pdf",
+                            CITATION_STATUS_KEY: CITATION_STATUS_MISSING,
+                        },
+                    ],
+                }
+            }
+        ]
+    }
+
+    envelope = build_tool_result_envelope("KnowledgeAgent", payload)
+
     assert envelope.formatted.answer == "Selected <sup>1</sup>."
     assert envelope.formatted.references[0]["formatted_citation"] == "Selected"
-    assert CITATION_STATUS_KEY not in str(envelope.raw)
+    assert envelope.formatted.metadata["citation_metadata_degraded"] is True
+
+
+def test_mixed_omit_remaps_remaining_indices() -> None:
+    """Missing middle docs drop and remaining indices compact to 1..N."""
+    result = format_tool_result(
+        "KnowledgeAgent",
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "claim [1,2,3]",
+                        "doc_list": [
+                            {"file_id": "d1", "title": "One"},
+                            {
+                                "file_id": "d2",
+                                "title": "Two",
+                                CITATION_STATUS_KEY: CITATION_STATUS_MISSING,
+                            },
+                            {"file_id": "d3", "title": "Three"},
+                        ],
+                    }
+                }
+            ]
+        },
+    )
+
+    assert result.answer == "claim <sup>1,2</sup>"
+    assert [ref["file_id"] for ref in result.references] == ["d1", "d3"]
+    assert "citation_metadata_degraded" not in result.metadata
+
+
+def test_first_appearance_after_omit_keeps_matched() -> None:
+    """A later matched cite becomes <sup>1</sup> after an earlier miss."""
+    result = format_tool_result(
+        "KnowledgeAgent",
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "First [2] then [1].",
+                        "doc_list": [
+                            {"file_id": "d1", "title": "One"},
+                            {
+                                "file_id": "d2",
+                                "title": "Two",
+                                CITATION_STATUS_KEY: CITATION_STATUS_MISSING,
+                            },
+                        ],
+                    }
+                }
+            ]
+        },
+    )
+
+    assert result.answer == "First then <sup>1</sup>."
+    assert len(result.references) == 1
+    assert result.references[0]["file_id"] == "d1"
+
+
+def test_lookup_failed_still_degrades_with_omit_on() -> None:
+    """lookup_failed stays title-only and degraded when omit is on."""
+    envelope = build_tool_result_envelope(
+        "KnowledgeAgent",
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Selected [1].",
+                        "doc_list": [
+                            {
+                                "file_id": "f1",
+                                "title": "Selected.pdf",
+                                CITATION_STATUS_KEY: (
+                                    CITATION_STATUS_LOOKUP_FAILED
+                                ),
+                            }
+                        ],
+                    }
+                }
+            ]
+        },
+    )
+
+    assert envelope.formatted.answer == "Selected <sup>1</sup>."
+    assert envelope.formatted.references[0]["formatted_citation"] == "Selected"
+    assert envelope.formatted.metadata["citation_metadata_degraded"] is True
 
 
 def test_uncited_miss_and_no_id_fallback_do_not_degrade() -> None:
