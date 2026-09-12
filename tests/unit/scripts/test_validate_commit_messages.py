@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -29,6 +30,13 @@ VALID_MESSAGE = """\
 """
 
 
+def _subprocess_environment() -> dict[str, str]:
+    """Keep temporary Git repositories independent of the caller's index."""
+    environment = os.environ.copy()
+    environment.pop("GIT_INDEX_FILE", None)
+    return environment
+
+
 def _run_checker(
     *arguments: str,
     cwd: Path = ROOT,
@@ -37,6 +45,7 @@ def _run_checker(
     return subprocess.run(
         [sys.executable, str(SCRIPT), *arguments],
         cwd=cwd,
+        env=_subprocess_environment(),
         capture_output=True,
         text=True,
         check=False,
@@ -55,6 +64,7 @@ def _git(repository: Path, *arguments: str) -> str:
     result = subprocess.run(
         ["git", *arguments],
         cwd=repository,
+        env=_subprocess_environment(),
         capture_output=True,
         text=True,
         check=False,
@@ -95,6 +105,25 @@ def test_message_file_accepts_repository_style(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert result.stdout == "Commit message style passed: 1 message\n"
+
+
+def test_temporary_repository_isolates_parent_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An inherited parent index never belongs to a fixture repository."""
+    parent_index = tmp_path / "parent-index"
+    original = b"unrelated parent index sentinel"
+    parent_index.write_bytes(original)
+    monkeypatch.setenv("GIT_INDEX_FILE", str(parent_index))
+    repository = tmp_path / "repository"
+    _init_repository(repository)
+    revision = _commit_message(repository, tmp_path, VALID_MESSAGE)
+
+    result = _run_checker("--range", revision, cwd=repository)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "Commit message style passed: 1 commit\n"
+    assert parent_index.read_bytes() == original
     assert result.stderr == ""
 
 
