@@ -379,7 +379,7 @@ async def test_reconcile_final_report_none_without_report(
     assert record is not None
     assert record.result is not None
     assert set(record.result) == {"formatted", "execution"}
-    assert record.result["formatted"]["answer"].strip()
+    assert record.result["formatted"]["answer"] == ""
     assert record.result["execution"]["report"] == {
         "state": "degraded",
         "degraded": True,
@@ -513,9 +513,12 @@ async def test_reconcile_assembles_answer_and_paths_once(
     assert first is not None
     assert first.status == "succeeded"
     assert first.result is not None
-    assert first.result["formatted"]["answer"].startswith(
-        "The analysis reached a terminal outcome"
-    )
+    assert first.result["formatted"]["answer"] == ""
+    assert first.result["execution"]["report"] == {
+        "state": "degraded",
+        "degraded": True,
+        "source_artifact_count": 0,
+    }
     assert first.result["execution"]["artifacts"] == [
         {
             "role": "unknown",

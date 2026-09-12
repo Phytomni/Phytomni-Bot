@@ -715,25 +715,31 @@ class DeepGenomeStore(DeepGenomeTransitionMixin):
         """Read the additive report fields without changing legacy shape."""
         conn = sqlite3.connect(self.db_path)
         try:
-            row = conn.execute(
-                """
-                SELECT status, intermediate_report, final_report,
-                       report_stage, report_completeness, report_revision,
-                       report_updated_at, progress_json, degraded_reason
-                FROM tasks WHERE task_id = ?
-                """,
-                (umbrella_task_id,),
-            ).fetchone()
-            failure_rows = tuple(
-                conn.execute(
-                    "SELECT work_item_key, status, summary_markdown FROM "
-                    "deep_genome_remote_tasks WHERE umbrella_task_id = ? "
-                    "ORDER BY work_item_key",
-                    (umbrella_task_id,),
-                )
-            )
+            return self._snapshot_for_connection(conn, umbrella_task_id)
         finally:
             conn.close()
+
+    def _snapshot_for_connection(
+        self, connection: sqlite3.Connection, umbrella_task_id: str
+    ) -> DeepGenomeSnapshot | None:
+        """Read report facts through the caller's existing transaction."""
+        row = connection.execute(
+            """
+            SELECT status, intermediate_report, final_report,
+                   report_stage, report_completeness, report_revision,
+                   report_updated_at, progress_json, degraded_reason
+            FROM tasks WHERE task_id = ?
+            """,
+            (umbrella_task_id,),
+        ).fetchone()
+        failure_rows = tuple(
+            connection.execute(
+                "SELECT work_item_key, status, summary_markdown FROM "
+                "deep_genome_remote_tasks WHERE umbrella_task_id = ? "
+                "ORDER BY work_item_key",
+                (umbrella_task_id,),
+            )
+        )
         if row is None:
             return None
         progress: Mapping[str, int | bool | str] = {}

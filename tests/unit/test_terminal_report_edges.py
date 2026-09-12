@@ -413,6 +413,7 @@ async def test_assemble_rejects_non_string_summary() -> None:
         summarizer=_summarizer,
     )
     assert result.report.state == "degraded"
+    assert result.answer == ""
     assert any(
         warning.code == "report_synthesis_failed"
         for warning in result.warnings

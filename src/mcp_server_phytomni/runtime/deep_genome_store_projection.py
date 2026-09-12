@@ -36,6 +36,7 @@ from ..mcp.formatting.models import (
     ReportExecution,
 )
 from .execution_models import ExecutionWarning
+from .run_registry_delivery import result_delivery_from_result
 
 __all__ = [
     "DeepGenomeRemoteTaskRow",
@@ -349,13 +350,15 @@ def snapshot_to_canonical_result(
     snapshot: DeepGenomeSnapshot,
     *,
     existing_result: Mapping[str, Any] | None = None,
+    preserve_citation_indices: bool = False,
 ) -> dict[str, Any]:
-    """Build the canonical HTTP result for one owner-scoped snapshot."""
+    """Build canonical report data with source indices when persisting."""
     return public_snapshot_to_canonical_result(
         snapshot_to_public_dict(snapshot),
         task_id=snapshot.umbrella_task_id,
         status=snapshot.status,
         existing_result=existing_result,
+        preserve_citation_indices=preserve_citation_indices,
     )
 
 
@@ -365,6 +368,7 @@ def public_snapshot_to_canonical_result(
     task_id: str,
     status: str,
     existing_result: Mapping[str, Any] | None = None,
+    preserve_citation_indices: bool = False,
 ) -> dict[str, Any]:
     """Build a canonical result from an already-sanitized snapshot mapping."""
     public_status = _public_status(status)
@@ -381,7 +385,11 @@ def public_snapshot_to_canonical_result(
     )
     metadata = _public_metadata(existing_result)
     metadata["deep_genome"] = _snapshot_metadata(snapshot)
-    answer, references = _bind_snapshot_citations(snapshot, existing_result)
+    answer, references = _bind_snapshot_citations(
+        snapshot,
+        existing_result,
+        preserve_citation_indices=preserve_citation_indices,
+    )
     formatted = apply_compatibility_projection(
         FormattedToolResult(
             answer=answer,
@@ -401,11 +409,15 @@ def public_snapshot_to_canonical_result(
 def _bind_snapshot_citations(
     snapshot: Mapping[str, Any],
     existing_result: Mapping[str, Any] | None,
+    *,
+    preserve_citation_indices: bool = False,
 ) -> tuple[str, tuple[Mapping[str, Any], ...]]:
     """Bind report superscripts to stored references when both exist."""
     report = _best_report(snapshot)
     corpus = _existing_references(existing_result)
-    if report and corpus:
+    # The stored source report must keep its full positional corpus so future
+    # HTTP reads do not bind it against an already-pruned citation list.
+    if report and corpus and not preserve_citation_indices:
         bound_answer, bound_refs = normalize_citations(report, corpus)
         if bound_refs:
             return bound_answer, bound_refs
@@ -474,6 +486,7 @@ def _execution_for_public_snapshot(
             source_artifact_count=len(artifacts),
         ),
         diagnostics=tuple(diagnostics),
+        delivery=result_delivery_from_result(existing_result),
     )
 
 

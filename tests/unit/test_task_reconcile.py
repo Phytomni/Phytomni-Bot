@@ -857,20 +857,22 @@ async def test_reconcile_persists_live_analyst_terminal_status(
 
     assert result["status"] == "SUCCEEDED"
     assert result["output_dir"] == "/obs/done"
-    assert result["final_report"]
-    assert "no validated scientific text artifact" in result["final_report"]
+    assert result["final_report"] == ""
+    assert result["degraded"] is True
+    assert result["degraded_reason"] == "report_no_scientific_text"
     row = mgr.get_task("an-live")
     assert row is not None
     assert row["status"] == "succeeded"
     assert row["output_dir"] == "/obs/done"
     assert mgr.get_task_final_report("an-live") == result["final_report"]
+    assert mgr.get_task_degraded("an-live") == result["degraded_reason"]
 
 
 @pytest.mark.asyncio
-async def test_reconcile_fills_empty_network_success_via_assembler(
+async def test_reconcile_keeps_empty_network_science_with_degradation(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """GetTaskStatus must not return Network succeeded-without-report."""
+    """Remote success and unavailable science remain independent facts."""
     monkeypatch.setattr(
         "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
         lambda: mgr_path,
@@ -904,9 +906,11 @@ async def test_reconcile_fills_empty_network_success_via_assembler(
     result = await reconcile_task("net-live")
 
     assert result["status"] == "SUCCEEDED"
-    assert isinstance(result["final_report"], str)
-    assert result["final_report"].strip()
+    assert result["final_report"] == ""
+    assert result["degraded"] is True
+    assert result["degraded_reason"] == "report_no_scientific_text"
     assert mgr.get_task_final_report("net-live") == result["final_report"]
+    assert mgr.get_task_degraded("net-live") == result["degraded_reason"]
 
 
 @pytest.mark.parametrize(

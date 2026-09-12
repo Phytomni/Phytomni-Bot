@@ -225,13 +225,13 @@ async def _ensure_report_agent_final_report(
             query=None,
         )
     )
+    report_row = {**result, "task_id": task_id}
     persist_terminal_report(
-        [{**result, "task_id": task_id}],
+        [report_row],
         assembled,
         task_manager=manager,
     )
-    result["final_report"] = assembled.final_report
-    return result
+    return report_row
 
 
 def _persist_live_terminal_row(
@@ -484,8 +484,8 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
         empty in that case. ``final_report`` carries the assembled
         markdown DeepGenome persists on the row. Analyst-class agents
         that observe live ``SUCCEEDED`` without a stored report receive
-        the existing assembler fallback so GetTaskStatus never returns
-        an empty successful scientific run. Other agents and
+        available assembled science, or an empty body with explicit
+        degradation metadata when no science is available. Other agents and
         non-success rows still surface ``None``. The poll formatter
         and the run-aggregate can then display the report without
         re-running the workflow. DeepGenome report/progress fields are

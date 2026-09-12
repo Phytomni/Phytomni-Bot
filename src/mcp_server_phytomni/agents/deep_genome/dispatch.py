@@ -22,6 +22,7 @@ from langgraph.graph import END
 
 from ...config.relay_mode import relay_mode_enabled
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
+from ...graphs.chat_adapters import build_chat_kwargs_for
 from ...runtime.artifact_roles import append_artifact_manifest_contract
 from ...runtime.deep_genome_store import (
     DeepGenomeReservation,
@@ -955,22 +956,6 @@ class DeepGenomeDispatchMixin:
 
     def _chat_kwargs(self: Any) -> dict[str, Any]:
         """Return shared Phyto chat kwargs for report nodes."""
-        return {
-            "prompt_file": self.deep_genome_config.PROMPT_FILE,
-            "prompt_path": self.deep_genome_config.PROMPT_PATH,
-            "api_key": self.sensitive_config.API_KEY.get_secret_value(),
-            "base_url": self.sensitive_config.BASE_URL,
-            "model": self.sensitive_config.MODEL_ID,
-            "frequency_penalty": self.deep_genome_config.FREQUENCY_PENALTY,
-            "n": self.deep_genome_config.N,
-            "presence_penalty": self.deep_genome_config.PRESENCE_PENALTY,
-            "reasoning_effort": self.deep_genome_config.REASONING_EFFORT,
-            "response_format": self.deep_genome_config.RESPONSE_FORMAT,
-            "stream": self.deep_genome_config.STREAM,
-            "temperature": self.deep_genome_config.TEMPERATURE,
-            "top_p": self.deep_genome_config.TOP_P,
-            "user": self.deep_genome_config.USER,
-            "timeout": self.deep_genome_config.TIMEOUT,
-            "retriable_codes": self.deep_genome_config.RETRIABLE_CODES,
-            "max_retries": self.deep_genome_config.MAX_RETRIES,
-        }
+        return build_chat_kwargs_for(
+            self.deep_genome_config, self.sensitive_config
+        )

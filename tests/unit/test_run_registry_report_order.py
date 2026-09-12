@@ -20,14 +20,13 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.mark.asyncio
-async def test_settle_publishes_report_before_listing_output_dir(
+async def test_settle_clears_placeholder_before_listing_output_dir(
     tmp_path: Path,
 ) -> None:
-    """EI success must surface a report before harvest lists OBS objects.
+    """Clear the submit acknowledgement before harvest lists OBS objects.
 
-    Listing a shared dump can hang or pull a large tree. The scientific
-    answer has to be persisted first so Web can leave the submit-ack
-    wait without a local zip of the output directory.
+    Listing may be slow, but no scientific report exists until artifacts
+    have been admitted. The early snapshot must not invent report text.
     """
     registry = run_registry.RunRegistry(str(tmp_path / "runs.db"))
     registry.create_run(
@@ -41,14 +40,15 @@ async def test_settle_publishes_report_before_listing_output_dir(
         running = registry.get_run("run-early-report", owner="alice")
         assert running is not None
         assert running.result is not None
-        assert running.result.get("final_report")
+        assert running.result.get("final_report") == ""
+        assert running.result["formatted"]["answer"] == ""
         order.append("list")
         return []
 
     async def assemble(**_: Any) -> TerminalReportAssembly:
         order.append("assemble")
         return TerminalReportAssembly(
-            answer="EI finished",
+            answer="The synthetic treatment increased the signal.",
             report=ReportExecution(state="final"),
         )
 
@@ -76,4 +76,6 @@ async def test_settle_publishes_report_before_listing_output_dir(
     assert settled.result is not None
     formatted = settled.result.get("formatted")
     assert isinstance(formatted, dict)
-    assert formatted.get("answer") == "EI finished"
+    assert formatted.get("answer") == (
+        "The synthetic treatment increased the signal."
+    )

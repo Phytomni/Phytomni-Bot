@@ -6,10 +6,17 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi import HTTPException
+from tests.support.sqlite import closed_sqlite_connection
+from tests.unit.test_deep_genome_store_transitions import (
+    _completed_store,
+    store_run_result,
+)
 
 from mcp_server_phytomni.api import run_lifecycle as lifecycle_module
 from mcp_server_phytomni.runtime.run_registry import (
@@ -20,6 +27,91 @@ from mcp_server_phytomni.runtime.run_registry import (
 )
 
 pytestmark = pytest.mark.server
+
+
+async def test_failed_deep_genome_polling_retains_citations_and_ready_delivery(
+    tmp_path: Path,
+) -> None:
+    """Stored canonical failure can be projected repeatedly without loss."""
+    store, reservation, before = _completed_store(tmp_path)
+    references = [
+        {"file_id": "unused", "title": "Unused paper"},
+        {"file_id": "evidence", "title": "Evidence paper"},
+    ]
+    archive = {
+        "role": "result_archive",
+        "name": "analyst-results.zip",
+        "media_type": "application/zip",
+        "size_bytes": 32,
+        "downloadable": True,
+        "report_context_eligible": False,
+        "download_ref": "result-archive:sha256:" + "a" * 64,
+    }
+    delivery = {
+        "schema_version": 1,
+        "required": True,
+        "status": "ready",
+        "revision": 1,
+        "inventory_digest": "sha256:" + "a" * 64,
+        "archive": archive,
+        "error_code": None,
+        "retryable": False,
+    }
+    store_run_result(
+        store,
+        reservation,
+        {
+            "formatted": {"references": references},
+            "execution": {"artifacts": [archive], "delivery": delivery},
+        },
+    )
+    store.fail_umbrella(
+        reservation.umbrella_task_id, reason="final synthesis failed"
+    )
+    first = await lifecycle_module.fetch_owner_run(
+        reservation.run_id, owner="alice", db_path=store.db_path
+    )
+    second = await lifecycle_module.fetch_owner_run(
+        reservation.run_id, owner="alice", db_path=store.db_path
+    )
+    assert first == second
+    assert first["status"] == "failed"
+    result = first["result"]
+    assert before.intermediate_report is not None
+    assert result["formatted"]["answer"] == before.intermediate_report.replace(
+        "<sup>2</sup>", "<sup>1</sup>"
+    )
+    assert [ref["file_id"] for ref in result["formatted"]["references"]] == [
+        "evidence"
+    ]
+    assert result["execution"]["delivery"] == delivery
+    assert result["execution"]["artifacts"] == [archive]
+    assert result["execution"]["tasks"] == [
+        {
+            "id": reservation.umbrella_task_id,
+            "accepted": True,
+            "status": "failed",
+        }
+    ]
+    assert result["execution"]["report"]["degraded"] is True
+    metadata = result["formatted"]["metadata"]["deep_genome"]
+    assert metadata["progress"]["succeeded"] == 12
+    assert metadata["failure_count"] == metadata["progress"]["failed"] == 0
+    with closed_sqlite_connection(store.db_path) as connection:
+        stored = json.loads(
+            connection.execute(
+                "SELECT result_json FROM runs WHERE run_id = ?",
+                (reservation.run_id,),
+            ).fetchone()[0]
+        )
+    assert stored["formatted"]["answer"] == before.intermediate_report
+    assert stored["formatted"]["references"] == references
+    assert stored["execution"]["delivery"] == delivery
+    with pytest.raises(HTTPException) as foreign:
+        await lifecycle_module.fetch_owner_run(
+            reservation.run_id, owner="bob", db_path=store.db_path
+        )
+    assert foreign.value.status_code == 404
 
 
 @pytest.mark.parametrize(

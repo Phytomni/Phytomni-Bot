@@ -18,13 +18,18 @@ import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 
+from mcp_server_phytomni.agents.chat import service as chat_service
 from mcp_server_phytomni.agents.deep_genome import report as report_module
 from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeState
 from mcp_server_phytomni.agents.deep_genome.coordinator import (
     DeepGenomeWorkflowError,
+)
+from mcp_server_phytomni.agents.deep_genome.dispatch import (
+    DeepGenomeDispatchMixin,
 )
 from mcp_server_phytomni.agents.deep_genome.report import (
     DeepGenomeReportMixin,
@@ -38,7 +43,10 @@ from mcp_server_phytomni.runtime.deep_genome_store import (
     DeepGenomeStore,
     DeepGenomeTransitionError,
 )
-from mcp_server_phytomni.runtime.locale import SupportedLocale
+from mcp_server_phytomni.runtime.locale import (
+    SupportedLocale,
+    locale_instruction,
+)
 from tests.agents.shared.deep_genome_fixtures import (
     concrete_barrier_work_items,
     failed_concrete_barrier_data,
@@ -46,6 +54,8 @@ from tests.agents.shared.deep_genome_fixtures import (
     reserve_smep_finalization,
     successful_concrete_barrier_data,
 )
+from tests.support.config_fakes import fake_sensitive_config
+from tests.support.outbound_fakes import patch_openai_runtime
 from tests.support.sqlite import closed_sqlite_connection
 
 pytestmark = pytest.mark.unit
@@ -129,6 +139,94 @@ class _ReportProbe(DeepGenomeReportMixin):
         return {
             "choices": [{"message": {"content": f"protocol-for-{user_query}"}}]
         }
+
+
+class _ChatReportProbe(DeepGenomeReportMixin, DeepGenomeDispatchMixin):
+    """Run real Chat dispatch and kwargs construction with fake settings."""
+
+    def __init__(self) -> None:
+        self.deep_genome_config = DeepGenomeConfig(STREAM=False)
+        self.sensitive_config = fake_sensitive_config()
+
+    async def run_experiment(self, state: DeepGenomeState) -> dict[str, Any]:
+        """Expose the real experiment synthesis entry."""
+        return await self._run_report_experiment(state)
+
+
+@pytest.fixture(name="report_chat_model")
+def report_chat_model_fixture(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """Replace only the process-owned model client, not Chat validation."""
+    create = AsyncMock(
+        return_value=SimpleNamespace(
+            model_dump=lambda: {
+                "choices": [
+                    {"message": {"content": '["Validate gene expression"]'}}
+                ]
+            }
+        )
+    )
+    patch_openai_runtime(
+        monkeypatch,
+        chat_service,
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        ),
+    )
+    chat_service.clear_chat_cache()
+    return create
+
+
+@pytest.mark.parametrize("locale", ["en-US", "zh-CN"])
+async def test_report_dispatch_chat_uses_process_owned_model(
+    report_chat_model: AsyncMock, locale: SupportedLocale
+) -> None:
+    """The compiled Chat graph accepts real report kwargs in both locales."""
+    result = await _ChatReportProbe().dispatch_chat(
+        "Summarize the synthetic analysis.", locale
+    )
+
+    assert result is not None
+    message = result["choices"][0]["message"]
+    assert message["content"] == '["Validate gene expression"]'
+    assert message["follow_up_questions"] == ["Validate gene expression"]
+    assert report_chat_model.await_count == 2
+    for call in report_chat_model.await_args_list:
+        assert "api_key" not in call.kwargs
+        assert "base_url" not in call.kwargs
+        assert call.kwargs["model"] == "phyto-llm-v1"
+        assert call.kwargs["messages"][0]["content"].startswith(
+            locale_instruction(locale)
+        )
+
+
+async def test_experiment_synthesis_uses_real_chat_validation(
+    report_chat_model: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Synthetic science reaches a usable protocol through real Chat."""
+    state = _state(locale="zh-CN")
+    probe = _ChatReportProbe()
+    monkeypatch.setattr(
+        probe,
+        "_dispatch_knowledge_retrieve",
+        _ReportProbe().dispatch_knowledge_retrieve,
+    )
+
+    result = await probe.run_experiment(state)
+
+    assert result["report_triggered"] is True
+    assert result["part12_combined"] == (
+        f"{state['preamble']}\n\n{state['synthesize_report']}"
+    )
+    assert result["experiment_report"] == (
+        "## 1. Step-by-Step Validate gene expression Protocol\n\n"
+        "protocol-for-Validate gene expression\n"
+    )
+    assert report_chat_model.await_count == 2
+    messages = report_chat_model.await_args_list[0].kwargs["messages"]
+    assert state["preamble"] in messages[-1]["content"]
+    assert state["synthesize_report"] in messages[-1]["content"]
+    assert messages[0]["content"].startswith(locale_instruction("zh-CN"))
 
 
 def _state(**overrides: Any) -> DeepGenomeState:

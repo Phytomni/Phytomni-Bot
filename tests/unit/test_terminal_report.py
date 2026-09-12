@@ -320,7 +320,7 @@ async def test_synthesize_terminal_report_uses_llm_report() -> None:
 async def test_synthesize_terminal_report_falls_back_on_empty_summary() -> (
     None
 ):
-    """An empty summarizer response triggers the fallback report."""
+    """An empty summary leaves science empty with a safe warning."""
     context = TerminalReportContext(
         agent="design",
         status="succeeded",
@@ -340,12 +340,12 @@ async def test_synthesize_terminal_report_falls_back_on_empty_summary() -> (
 
     assert result.degraded
     assert result.degraded_reason == "report_synthesis_failed"
-    assert "scientific report synthesis was unavailable" in result.final_report
+    assert result.final_report == result.answer == ""
     assert "/obs/" not in result.final_report
 
 
 async def test_synthesize_report_falls_back_on_summary_exception() -> None:
-    """A summarizer exception triggers the fallback report."""
+    """A model exception leaves science empty with a safe warning."""
     context = TerminalReportContext(
         agent="analyst",
         status="succeeded",
@@ -365,7 +365,7 @@ async def test_synthesize_report_falls_back_on_summary_exception() -> None:
 
     assert result.degraded
     assert result.degraded_reason == "report_synthesis_failed"
-    assert "scientific report synthesis was unavailable" in result.final_report
+    assert result.final_report == result.answer == ""
     assert "/obs/" not in result.final_report
 
 
@@ -462,7 +462,7 @@ async def test_no_scientific_text_returns_safe_degraded_report() -> None:
         reader=reader,
     )
 
-    assert result.answer.strip()
+    assert result.answer == ""
     assert "analysis.log" not in result.answer
     assert "secret" not in result.answer
     assert result.report.state == "degraded"
@@ -504,17 +504,10 @@ async def test_scientific_data_plain_text_becomes_official_answer() -> None:
     assert result.report.source_artifact_count == 1
 
 
-@pytest.mark.parametrize(
-    ("locale", "expected"),
-    [
-        ("en-US", "scientific report synthesis was unavailable"),
-        ("zh-CN", "科学报告综合不可用"),
-    ],
-)
+@pytest.mark.parametrize("locale", ["en-US", "zh-CN"])
 @pytest.mark.asyncio
 async def test_report_synthesis_failure_is_locale_consistent(
     locale: SupportedLocale,
-    expected: str,
 ) -> None:
     """Timeouts degrade without copying private paths or task identifiers."""
 
@@ -535,7 +528,7 @@ async def test_report_synthesis_failure_is_locale_consistent(
         summarizer=summarizer,
     )
 
-    assert expected in result.answer
+    assert result.answer == ""
     assert "provider-private-path" not in result.answer
     assert "run-sentinel" not in result.answer
     assert result.report.state == "degraded"
@@ -847,6 +840,7 @@ async def test_default_summarizer_and_non_string_output(
         summarizer=cast(Any, not_text),
     )
     assert failed.report.state == "degraded"
+    assert failed.answer == ""
 
 
 @pytest.mark.asyncio
@@ -877,6 +871,7 @@ async def test_generated_report_rejects_operational_echo() -> None:
             summarizer=summarizer,
         )
         assert result.report.state == "degraded"
+        assert result.answer == ""
 
     async def _secret_summarizer(_prompt: str) -> str:
         return "mentions secret-source-path"
@@ -894,6 +889,7 @@ async def test_generated_report_rejects_operational_echo() -> None:
         summarizer=_secret_summarizer,
     )
     assert mapping_result.report.state == "degraded"
+    assert mapping_result.answer == ""
 
 
 def test_build_report_prompt_includes_legacy_and_truncated_snippets() -> None:

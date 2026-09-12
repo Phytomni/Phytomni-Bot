@@ -23,7 +23,6 @@ __all__ = (
     "derive_degraded_reason",
     "derive_progress",
     "derive_report_classification",
-    "render_failure_notices",
 )
 
 _WORK_ITEM_STATES = DEEP_GENOME_PROGRESS_FIELDS[3:]
@@ -31,11 +30,6 @@ _NONTERMINAL_STATES = frozenset(
     {"planned", "submitted", "pending", "running", "queued", "waiting"}
 )
 _SUCCESS_STATES = frozenset({"succeeded", "success", "completed", "done"})
-_UNAVAILABLE_REASONS = {
-    "failed": "analysis task failed",
-    "cancelled": "analysis task cancelled",
-    "timed_out": "analysis task timed out",
-}
 
 
 @dataclass(frozen=True)
@@ -139,11 +133,6 @@ def _is_unusable(row: Mapping[str, Any]) -> bool:
     return not _is_usable(row)
 
 
-def _unavailable_reason(row: Mapping[str, Any]) -> str:
-    """Map a terminal state to fixed local wording."""
-    return _UNAVAILABLE_REASONS.get(_status(row), "analysis task unavailable")
-
-
 def derive_progress(
     rows: ReportRows | Sequence[Mapping[str, Any]],
     work_items: Sequence[Mapping[str, Any]] | None = None,
@@ -228,21 +217,6 @@ def derive_degraded_reason(
     return f"{unavailable} of 12 optional analyses unavailable"
 
 
-def render_failure_notices(
-    rows: ReportRows | Sequence[Mapping[str, Any]],
-    work_items: Sequence[Mapping[str, Any]] | None = None,
-) -> str:
-    """Render one fixed, sanitized Markdown notice per unavailable item."""
-    normalized = _coerce_rows(rows, work_items)
-    notices = [
-        "### Unavailable: "
-        f"{_key(row, 'work_item_key')}\n\n{_unavailable_reason(row)}."
-        for row in sorted(normalized.work_items, key=_order)
-        if _is_unusable(row)
-    ]
-    return "\n\n".join(notices)
-
-
 def _title(value: str) -> str:
     """Convert a stable snake-case key to a display heading."""
     if value == "brief_gene":
@@ -303,7 +277,4 @@ def assemble_intermediate_report(
                 parts.append(f"### {_title(_key(row, 'work_item_key'))}")
             parts.append(_summary(row) or "")
 
-    notices = render_failure_notices(normalized)
-    if notices:
-        parts.append(notices)
     return "\n\n".join(part for part in parts if part.strip())

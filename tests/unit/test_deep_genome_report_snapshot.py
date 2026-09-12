@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import Any
 
 import pytest
@@ -21,6 +22,20 @@ from mcp_server_phytomni.contracts.deep_genome import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize(
+    "module_path",
+    [
+        "mcp_server_phytomni.runtime.deep_genome_report_snapshot",
+        "mcp_server_phytomni.agents.deep_genome.report_snapshot",
+    ],
+)
+def test_snapshot_api_has_no_operational_markdown_renderer(
+    module_path: str,
+) -> None:
+    """Neither snapshot API exposes the obsolete notice renderer."""
+    assert not hasattr(import_module(module_path), "render_failure_notices")
 
 
 def _section(
@@ -122,7 +137,8 @@ def test_partial_report_order_is_completion_independent() -> None:
     assert first == second
     assert first is not None
     assert first.index("BriefGene") < first.index("Expression")
-    assert "Unavailable: promoter_design" in first
+    assert "Unavailable:" not in first
+    assert "analysis task failed" not in first
     assert derive_degraded_reason(partial_rows(), existing_reason=None) == (
         "1 of 12 optional analyses unavailable"
     )
@@ -157,8 +173,8 @@ def test_complete_final_classification_is_not_degraded() -> None:
     ) == ("final", "complete", False)
 
 
-def test_failure_notices_do_not_echo_upstream_text() -> None:
-    """Unavailable output uses fixed local text, never raw failure data."""
+def test_failure_metadata_stays_outside_scientific_markdown() -> None:
+    """Neither fixed operational notices nor raw errors enter science."""
     failed_item = _item(
         "smep_analysis",
         "failed",
@@ -172,9 +188,33 @@ def test_failure_notices_do_not_echo_upstream_text() -> None:
 
     report = assemble_intermediate_report(rows)
     assert report is not None
-    assert "Unavailable: smep_analysis" in report
+    assert "Unavailable:" not in report
     assert "secret DSN" not in report
-    assert "analysis task failed" in report
+    assert "analysis task failed" not in report
+    assert derive_progress(rows)["failed"] == 1
+    assert derive_report_classification(rows) == (
+        "intermediate",
+        "partial",
+        True,
+    )
+    assert (
+        derive_degraded_reason(rows) == "1 of 12 optional analyses unavailable"
+    )
+
+
+def test_scientific_failed_experiment_prose_is_preserved() -> None:
+    """Operational cleanup never strips legitimate scientific statements."""
+    science = "The failed experiments support a condition-dependent effect."
+    rows = ReportRows(
+        (
+            _section("brief_gene", "succeeded", "BriefGene", 0),
+            _section("expression", "succeeded", None, 1),
+        ),
+        (_item("expression", "succeeded", science, order=1),),
+    )
+    report = assemble_intermediate_report(rows)
+    assert report is not None
+    assert science in report
 
 
 def test_degraded_reason_keeps_the_fixed_deep_genome_denominator() -> None:

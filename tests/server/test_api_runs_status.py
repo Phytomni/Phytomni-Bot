@@ -598,7 +598,6 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
 ) -> None:
     """A running run polls its children once and settles as succeeded."""
     registry = RunRegistry(tasks_db_path)
-    manager = TaskManager(tasks_db_path)
     ctx = RunContext(
         run_id="run-r-1",
         user_id="u1",
@@ -608,7 +607,7 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
         updated_at="2026-05-20T00:00:00+00:00",
     )
     for task_id in ("t-1", "t-2"):
-        manager.record(
+        TaskManager(tasks_db_path).record(
             Submission(
                 task_id=task_id,
                 status="submitted",
@@ -667,15 +666,37 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
     assert execution["artifacts"] == []
     assert "task_results" not in body["result"]
     assert "live_status" not in body["result"]
-    # WO-1 contract: an analyst-class terminal run always has a nonblank
-    # report answer, even when no validated scientific artifact is present.
-    answer = body["result"]["formatted"]["answer"]
-    assert answer.startswith("The analysis reached a terminal outcome")
-    assert body["result"]["execution"]["report"]["state"] == "degraded"
+    # Successful execution without scientific artifacts has no report text;
+    # report failure belongs in operational metadata and warnings only.
+    assert body["result"]["formatted"]["answer"] == ""
+    assert execution["report"] == {
+        "state": "degraded",
+        "degraded": True,
+        "source_artifact_count": 0,
+    }
+    assert execution["tracking"]["degraded"] is True
+    assert execution["warnings"] == [
+        {
+            "code": "report_no_scientific_text",
+            "retryable": False,
+            "stage": "terminal_report",
+        }
+    ]
     assert body["result"]["formatted"]["metadata"]["report"] == (
-        body["result"]["execution"]["report"]
+        execution["report"]
     )
-    assert body["answer"] == answer
+    assert body["answer"] == ""
+    assert "error" not in body
+
+    registry = RunRegistry(tasks_db_path)
+    persisted = registry.get_run("run-r-1", owner="u1")
+    assert persisted is not None and persisted.result is not None
+    assert persisted.status == "succeeded"
+    assert persisted.error is None
+    assert persisted.result["formatted"]["answer"] == ""
+    for field in ("report", "warnings", "tasks", "artifacts", "tracking"):
+        assert persisted.result["execution"][field] == execution[field]
+    assert registry.get_run("run-r-1", owner="other-owner") is None
 
 
 async def test_get_deep_genome_run_refreshes_intermediate_snapshot(

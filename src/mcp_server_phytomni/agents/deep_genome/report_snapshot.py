@@ -10,4 +10,3 @@ assemble_intermediate_report = _snapshot.assemble_intermediate_report
 derive_degraded_reason = _snapshot.derive_degraded_reason
 derive_progress = _snapshot.derive_progress
 derive_report_classification = _snapshot.derive_report_classification
-render_failure_notices = _snapshot.render_failure_notices
