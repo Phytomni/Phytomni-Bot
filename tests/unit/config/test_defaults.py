@@ -258,6 +258,47 @@ def test_citation_config_is_lazy_and_supports_both_aliases(
     assert CitationConfig().CITATION_DB_PATH == "/tmp/plain.sqlite"
 
 
+def test_citation_config_omit_unmatched_defaults_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unmatched citations are omitted unless an operator opts out."""
+    monkeypatch.delenv("CITATION_OMIT_UNMATCHED", raising=False)
+    monkeypatch.delenv("PHYTOMNI_CITATION_OMIT_UNMATCHED", raising=False)
+
+    assert CitationConfig().CITATION_OMIT_UNMATCHED is True
+
+
+def test_citation_config_omit_unmatched_plain_false_without_prefixed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The plain alias turns omit off without a prefixed value."""
+    monkeypatch.delenv("PHYTOMNI_CITATION_OMIT_UNMATCHED", raising=False)
+    monkeypatch.setenv("CITATION_OMIT_UNMATCHED", "false")
+
+    assert CitationConfig().CITATION_OMIT_UNMATCHED is False
+
+
+def test_citation_config_omit_unmatched_prefixed_zero_is_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The prefixed alias alone can restore title-only misses."""
+    monkeypatch.delenv("CITATION_OMIT_UNMATCHED", raising=False)
+    monkeypatch.setenv("PHYTOMNI_CITATION_OMIT_UNMATCHED", "0")
+
+    assert CitationConfig().CITATION_OMIT_UNMATCHED is False
+
+
+def test_citation_config_omit_unmatched_plain_alias_wins_when_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AliasChoices first-match prefers CITATION_OMIT_UNMATCHED."""
+    monkeypatch.setenv("PHYTOMNI_CITATION_OMIT_UNMATCHED", "false")
+    assert CitationConfig().CITATION_OMIT_UNMATCHED is False
+
+    monkeypatch.setenv("CITATION_OMIT_UNMATCHED", "true")
+    assert CitationConfig().CITATION_OMIT_UNMATCHED is True
+
+
 def test_citation_config_blank_path_normalizes_to_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
