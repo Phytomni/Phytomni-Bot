@@ -1552,10 +1552,17 @@ title), `so` (source/journal), `vl` (volume), `bp`/`ep` (begin/end page), `ar`
 id). `doi_missing: true` is included only when no valid DOI link can be
 formed; it is omitted when a valid link exists. Fields are additive; clients
 must treat bibliographic keys as optional and keep rendering from `title`
-when they are absent. A missing, quarantined, or failed citation lookup keeps
-the answer usable with a cleaned title-only `formatted_citation` and adds
-`metadata.citation_metadata_degraded: true` when the affected document was
-selected. A missing DOI alone does not set that degradation flag.
+when they are absent. By default (`CITATION_OMIT_UNMATCHED` true), a missing
+or quarantined selected record is not listed: its citation markers are
+removed from the formatted answer, remaining references are reindexed, and
+that omission does not set `metadata.citation_metadata_degraded`. A bounded
+lookup failure still keeps the answer usable, degrades the selected
+references to a cleaned title-only `formatted_citation`, and sets
+`metadata.citation_metadata_degraded: true`. Setting
+`CITATION_OMIT_UNMATCHED` false restores the previous title-only miss
+behavior: a missing or quarantined selected record keeps a cleaned
+title-only `formatted_citation` and adds the same degradation flag. A
+missing DOI alone does not set that degradation flag.
 
 `formatted_citation` is one escaped Markdown string assembled from the
 available metadata in Nature order:
@@ -1568,8 +1575,9 @@ Absent fragments and their separators are omitted. Pages take precedence over
 `ar`; equal page endpoints render once. A valid `di` is preferred, and a
 valid DOI-host `dl` is used only when `di` is absent. Invalid or missing DOI
 values produce no link and set `doi_missing: true`. The display string never
-contains `file_id`; a missing or failed record uses exactly the cleaned
-retrieval title as its `formatted_citation`.
+contains `file_id`. A lookup failure, or a missing record when
+`CITATION_OMIT_UNMATCHED` is false, uses exactly the cleaned retrieval title
+as its `formatted_citation`.
 
 The default OpenAI `choices[0].message.content` is projected from the
 normalized internal `formatted.answer`. In default mode the public
@@ -1615,7 +1623,8 @@ BriefGeneAgent terminal results across blocking, native-run, and stream
 projections. For a terminal cited stream, `phyto.references.doc_list` equals
 the blocking `formatted.references`; there is no stream-only citation
 formatter. `phyto.metadata` is emitted only when public terminal metadata is
-present; citation lookup degradation projects only
+present, so a miss-only omit with no remaining degradation emits no
+citation metadata frame. Citation lookup degradation projects only
 `{"citation_metadata_degraded": true}` and never the private lookup status.
 Successful streams end with a terminating
 `data: [DONE]\n\n` so the client closes its `EventSource` on the first

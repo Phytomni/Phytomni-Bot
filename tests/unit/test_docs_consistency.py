@@ -266,6 +266,7 @@ def test_citation_sqlite_docs_cover_public_contract() -> None:
         "formatted_citation",
         "doi_missing",
         "citation_metadata_degraded",
+        "CITATION_OMIT_UNMATCHED",
         "<sup>",
         "KnowledgeAgent",
         "ReviewAgent",

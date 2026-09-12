@@ -35,6 +35,12 @@ package version remains `0.1.3` until the release bump.
 
 ### Changed
 
+- **Cited unmatched omit** — Selected citations missing from the local
+  SQLite artifact are dropped from the formatted answer and reference
+  list, and remaining indices are compacted. Default on via
+  `CITATION_OMIT_UNMATCHED`. A whole-database lookup failure still
+  degrades to title-only. Set the flag false to restore title-only
+  misses.
 - **Deep Genome design polling** — Protein and promoter design jobs
   are polled together. Protein design waits up to 48h from that
   shared start, and a local timeout takes one last EI status read
