@@ -18,13 +18,22 @@ import hashlib
 import json
 import logging
 import sqlite3
+from typing import Any, Literal
 
 from ..storage.path_policy import IdFactory
-from .fingerprint_jobs import mark_job_terminal
+from .fingerprint_jobs import (
+    FingerprintClaim,
+    RegisterResult,
+    mark_job_terminal,
+    register_submitted_job,
+)
+from .request_context import current_request_user, current_run_id
+from .sqlite import sqlite_transaction
 from .task_manager import Submission, TaskManager, resolve_tasks_db_path
 
 __all__ = [
     "analyst_task_fingerprint",
+    "persist_submitted_fingerprint",
     "mint_caller_owned_task_id",
     "record_dispatch_submission",
     "should_reuse_prior_task",
@@ -110,19 +119,19 @@ def verify_live_status(
 ) -> bool:
     """Decide if a prior task is reusable from its probed live status.
 
-    The local ``tasks.status`` column is written once (``"submitted"``)
-    and never advanced, so a dead remote task would otherwise be reused
-    forever. The caller probes the platform via
+    The local ``tasks.status`` column can still be ``"submitted"`` after
+    remote completion, so it cannot authorize reuse on its own. The
+    caller probes the platform via
     ``agents.analyst.task_ops.probe_live_status`` (kept there to avoid
     the ``runtime.task_dedup`` import cycle) and passes the upper-cased
     status here:
 
-    - ``SUCCEEDED`` -> reuse (terminal output ready).
+    - ``SUCCEEDED`` -> persist success and reuse (terminal output ready).
     - ``RUNNING`` / ``PENDING`` -> reuse only when the caller polls
       elsewhere (``require_terminal_success`` False); a polling caller
-      (deep_genome) needs a terminal task, so resubmit.
+      needs a terminal task, so resubmit.
     - ``FAILED`` / ``CANCELLED`` -> never reuse; write the dead status
-      back to the local row so the SQL dead-status filter self-heals.
+      back to the task and matching fingerprint generation.
     - ``None`` / unknown status -> resubmit (fail-safe).
 
     Args:
@@ -138,50 +147,57 @@ def verify_live_status(
         True to reuse the prior ``task_id``; False to submit fresh.
     """
     if live_status == _LIVE_SUCCESS:
+        _write_back_terminal(prior, "succeeded")
         return True
     if live_status in _LIVE_IN_FLIGHT:
         return not require_terminal_success
     if live_status in _LIVE_DEAD:
-        _write_back_dead(prior)
+        _write_back_terminal(
+            prior, "cancelled" if live_status == "CANCELLED" else "failed"
+        )
     return False
 
 
-def _write_back_dead(prior: dict[str, str]) -> None:
-    """Persist a confirmed-dead remote status onto the local row.
+def _write_back_terminal(
+    prior: dict[str, str],
+    status: Literal["succeeded", "failed", "cancelled"],
+) -> None:
+    """Persist a confirmed terminal observation on its task and job.
 
-    Turns the otherwise-inert dead-status SQL filter live so a later
-    identical fingerprint hit is filtered at SQL without another remote
-    probe. Best-effort: a write failure must not break the fresh submit
-    that follows.
+    Preserve terminal identity for claim cancellation and the SQL reuse
+    filter. Best-effort writes must not break the submission decision.
 
     Args:
-        prior: Row dict whose ``task_id`` is flipped to ``"failed"``.
+        prior: Row dict carrying the task and its original remote source.
+        status: Confirmed terminal state observed by the live probe.
     """
+    prior["status"] = status
     try:
-        TaskManager(resolve_tasks_db_path()).update_task(
-            prior["task_id"],
-            "failed",
-            prior.get("analysis_id", "") or "",
-            prior.get("output_dir", "") or "",
-        )
+        db_path = resolve_tasks_db_path()
+        TaskManager(db_path)
+        with sqlite_transaction(db_path) as connection:
+            connection.execute(
+                "UPDATE tasks SET status = ? WHERE task_id = ? "
+                "AND lower(COALESCE(status, '')) "
+                "NOT IN ('cancelled', 'cancelling')",
+                (status, prior["task_id"]),
+            )
     except (sqlite3.Error, OSError):
         logger.warning(
-            "Failed to write back dead status for %s", prior["task_id"]
+            "Failed to write back terminal status for %s", prior["task_id"]
         )
-    ei_task_id = prior.get("source_task_id") or prior.get("analysis_id")
-    if not ei_task_id:
-        ei_task_id = prior.get("task_id")
+    ei_task_id = prior.get("source_task_id") or prior.get("task_id")
     if not ei_task_id:
         return
     try:
         mark_job_terminal(
             resolve_tasks_db_path(),
             str(ei_task_id),
-            "failed",
+            status,
         )
     except (sqlite3.Error, OSError, ValueError):
         logger.warning(
-            "Failed to mark fingerprint job dead for %s", prior["task_id"]
+            "Failed to mark fingerprint job terminal for %s", prior["task_id"]
         )
 
 
@@ -199,6 +215,61 @@ def mint_caller_owned_task_id(agent: str) -> str:
         A fresh ``IdFactory`` task id distinct from any prior tenant's.
     """
     return IdFactory().new_id("task", agent)
+
+
+def _apply_registered_submission(
+    result: dict[str, Any], registered: RegisterResult
+) -> None:
+    """Point a raced caller at the same job as its registered claim."""
+    if registered.orphan_ei_task_id is None:
+        return
+    result["source_task_id"] = registered.job.ei_task_id
+    result["output_dir"] = registered.job.output_dir
+    if "task_status" in result:
+        result["task_status"] = registered.job.status
+    for field in ("plan", "tool_usages"):
+        if field in result:
+            result[field] = None
+    if "job_name" in result:
+        result["job_name"] = ""
+
+
+def persist_submitted_fingerprint(
+    result: dict[str, Any],
+    fingerprint: str | None,
+    *,
+    force_new: bool = False,
+    rejected_ei_task_id: str | None = None,
+) -> str | None:
+    """Bind the caller's result and row to its claim, returning any orphan."""
+    task_id = result.get("task_id")
+    if not (isinstance(task_id, str) and task_id and fingerprint is not None):
+        return None
+    registered = None
+    try:
+        registered = register_submitted_job(
+            resolve_tasks_db_path(),
+            FingerprintClaim(
+                fingerprint=fingerprint,
+                ei_task_id=task_id,
+                output_dir=str(result.get("output_dir") or ""),
+                claimant_task_id=task_id,
+                run_id=current_run_id() or task_id,
+                user_id=current_request_user() or "anonymous",
+            ),
+            force_new=force_new,
+            rejected_ei_task_id=rejected_ei_task_id,
+        )
+        _apply_registered_submission(result, registered)
+    except (sqlite3.Error, OSError):
+        logger.warning("Failed to persist fingerprint job for %s", task_id)
+    record_dispatch_submission(
+        task_id,
+        str(result.get("output_dir") or ""),
+        fingerprint,
+        source_task_id=result.get("source_task_id"),
+    )
+    return registered.orphan_ei_task_id if registered is not None else None
 
 
 def record_dispatch_submission(

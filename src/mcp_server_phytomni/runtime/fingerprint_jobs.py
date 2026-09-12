@@ -351,6 +351,7 @@ def register_submitted_job(
     claim: FingerprintClaim,
     *,
     force_new: bool = False,
+    rejected_ei_task_id: str | None = None,
 ) -> RegisterResult:
     """Record a newly submitted EI job or attach after a lost race.
 
@@ -359,6 +360,12 @@ def register_submitted_job(
     Otherwise a concurrent miss attaches to the winner and returns the
     caller's EI id as ``orphan_ei_task_id`` so the caller can terminate
     the duplicate.
+
+    ``rejected_ei_task_id`` excludes the actual source rejected by the
+    caller, including a generation materialized while its probe awaited.
+    A concurrent replacement remains eligible for submit-race sharing.
+    Compare this identity inside the write transaction, not a pre-probe
+    snapshot of whether any generation exists.
     """
     now = _now_iso()
     with sqlite_connection(db_path) as connection:
@@ -370,6 +377,7 @@ def register_submitted_job(
                 force_new
                 or latest is None
                 or latest.status in DEAD_JOB_STATUSES
+                or latest.ei_task_id == rejected_ei_task_id
             )
             if not open_new and latest is not None:
                 _insert_claim(connection, claim, latest.generation, now)
@@ -418,7 +426,7 @@ def mark_job_terminal(
     ei_task_id: str,
     status: Literal["succeeded", "failed", "cancelled"],
 ) -> bool:
-    """Advance a running or cancelling job to a terminal status."""
+    """Settle running jobs without overriding pending cancellation intent."""
     if status not in {_JOB_SUCCEEDED, _JOB_FAILED, _JOB_CANCELLED}:
         raise ValueError("status must be a terminal fingerprint job state")
     now = _now_iso()
@@ -426,13 +434,16 @@ def mark_job_terminal(
         _ensure_schema_on(connection)
         cursor = connection.execute(
             "UPDATE fingerprint_jobs SET status = ?, updated_at = ? "
-            "WHERE ei_task_id = ? AND status IN (?, ?)",
+            "WHERE ei_task_id = ? AND "
+            "(status = ? OR (status = ? AND ? = ?))",
             (
                 status,
                 now,
                 ei_task_id,
                 _JOB_RUNNING,
                 _JOB_CANCELLING,
+                status,
+                _JOB_CANCELLED,
             ),
         )
         return int(cursor.rowcount) == 1

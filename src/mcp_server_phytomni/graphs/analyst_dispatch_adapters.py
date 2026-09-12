@@ -16,40 +16,35 @@ from __future__ import annotations
 
 import importlib
 import logging
-import sqlite3
 from collections.abc import Mapping
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
 from ..agents.analyst.state import AnalystInput
-from ..agents.analyst.task_ops import task_delete, verified_reuse_task_ids
+from ..agents.analyst.task_ops import (
+    discard_duplicate_job,
+    task_delete,
+    verified_reuse_task_ids,
+)
 from ..agents.shared.analysis import prepare_analyst_dispatch_context
 from ..agents.shared.analysis_requests import (
     build_analyst_analysis_request,
     build_analyst_prompt_parts,
 )
 from ..agents.shared.options import resolve_agent_locale
-from ..runtime.fingerprint_jobs import (
-    FingerprintClaim,
-    register_submitted_job,
-    try_attach_reuse_claim,
-)
+from ..runtime.fingerprint_jobs import try_attach_reuse_claim
 from ..runtime.request_context import current_request_user, current_run_id
 from ..runtime.result_run_layout import result_run_root_from_child
 from ..runtime.task_dedup import (
     analyst_task_fingerprint,
+    persist_submitted_fingerprint,
     record_dispatch_submission,
     should_reuse_prior_task,
 )
 from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
 
 logger = logging.getLogger(__name__)
-_ORPHAN_DELETE_ERRORS: tuple[type[Exception], ...] = (Exception,)
-_FINGERPRINT_PERSIST_ERRORS: tuple[type[Exception], ...] = (
-    sqlite3.Error,
-    OSError,
-)
 
 __all__ = [
     "build_analyst_dispatch_request",
@@ -248,8 +243,9 @@ async def submit_analyst_via_subgraph(
     context = await prepare_analyst_dispatch_context(
         config, request, fingerprint
     )
+    rejected_source_id = None
     if fingerprint is not None:
-        reused = await _reuse_prior_dispatch(
+        reused, rejected_source_id = await _reuse_prior_dispatch(
             fingerprint, require_terminal_success=is_polling
         )
         if reused is not None:
@@ -289,7 +285,9 @@ async def submit_analyst_via_subgraph(
         map_analyst_output_to_dispatch_state(final_state),
         context.analysis_type,
     )
-    await _persist_subgraph_fingerprint(result, fingerprint, is_polling)
+    await _persist_subgraph_fingerprint(
+        result, fingerprint, is_polling, rejected_source_id
+    )
     logger.info(
         "%s task completed via subgraph (task_id: %s)",
         context.analysis_type,
@@ -366,8 +364,8 @@ async def _reuse_prior_dispatch(
     fingerprint: str,
     *,
     require_terminal_success: bool,
-) -> dict[str, Any] | None:
-    """Return a reuse-shaped dispatch result, or None to submit fresh.
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Return a reuse result and the source excluded if fresh work is needed.
 
     Reads the fingerprint row, applies the cheap status gate, then the
     live verification (probe + is_polling-aware decision). The reuse
@@ -384,14 +382,15 @@ async def _reuse_prior_dispatch(
             (deep_genome), which may only reuse a terminal-success task.
 
     Returns:
-        The reuse dict on a verified-live hit, otherwise ``None``.
+        The optional reuse dict and the exact remote source considered.
     """
     db_path = resolve_tasks_db_path()
     prior = TaskManager(db_path).get_task_by_fingerprint(fingerprint)
     if prior is None:
-        return None
+        return None, None
+    source_id = str(prior.get("source_task_id") or prior["task_id"])
     if not should_reuse_prior_task(prior["status"] or ""):
-        return None
+        return None, source_id
     reuse_ids = await verified_reuse_task_ids(
         prior,
         require_terminal_success=require_terminal_success,
@@ -407,7 +406,7 @@ async def _reuse_prior_dispatch(
         ),
     )
     if claim is None:
-        return None
+        return None, source_id
     caller_task_id, source_task_id = claim
     return {
         "task_id": caller_task_id,
@@ -416,7 +415,7 @@ async def _reuse_prior_dispatch(
         "tool_usages": None,
         "task_status": prior["status"],
         "source_task_id": source_task_id,
-    }
+    }, source_id
 
 
 def _claim_run_id(claimant_task_id: str) -> str:
@@ -430,58 +429,16 @@ def _claim_user_id() -> str:
 
 
 async def _persist_subgraph_fingerprint(
-    result: Mapping[str, Any],
+    result: dict[str, Any],
     fingerprint: str | None,
     force_new: bool,
+    rejected_source_id: str | None,
 ) -> None:
     """Record a new fingerprint job when the subgraph minted a task id."""
-    task_id = result.get("task_id")
-    if not (isinstance(task_id, str) and task_id and fingerprint is not None):
-        return
-    output_dir = str(result.get("output_dir") or "")
-    try:
-        await _record_submitted_fingerprint_job(
-            fingerprint,
-            task_id,
-            output_dir,
-            force_new=force_new,
-        )
-    except _FINGERPRINT_PERSIST_ERRORS:
-        logger.warning("Failed to persist fingerprint job for %s", task_id)
-    record_dispatch_submission(task_id, output_dir, fingerprint)
-
-
-async def _record_submitted_fingerprint_job(
-    fingerprint: str,
-    task_id: str,
-    output_dir: str,
-    *,
-    force_new: bool,
-) -> None:
-    """Persist a new generation and best-effort drop a raced duplicate."""
-    registered = register_submitted_job(
-        resolve_tasks_db_path(),
-        FingerprintClaim(
-            fingerprint=fingerprint,
-            ei_task_id=task_id,
-            output_dir=output_dir,
-            claimant_task_id=task_id,
-            run_id=_claim_run_id(task_id),
-            user_id=_claim_user_id(),
-        ),
+    orphan = persist_submitted_fingerprint(
+        result,
+        fingerprint,
         force_new=force_new,
+        rejected_ei_task_id=rejected_source_id,
     )
-    orphan = registered.orphan_ei_task_id
-    if not orphan:
-        return
-    logger.warning(
-        "Dropping duplicate fingerprint job after a lost submit race"
-    )
-    try:
-        await task_delete(orphan)
-    except _ORPHAN_DELETE_ERRORS as exc:
-        logger.warning(
-            "Could not terminate a raced duplicate fingerprint job; "
-            "error_type=%s",
-            type(exc).__name__,
-        )
+    await discard_duplicate_job(orphan, task_delete)
