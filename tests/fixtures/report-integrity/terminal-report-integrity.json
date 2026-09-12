@@ -42,9 +42,7 @@
           "status": "ready"
         },
         "diagnostics": [],
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "report": {
           "degraded": true,
           "source_artifact_count": 1,
@@ -78,9 +76,7 @@
             "state": "degraded"
           }
         },
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "references": [],
         "tabular": null
       }
@@ -122,9 +118,7 @@
           "status": "ready"
         },
         "diagnostics": [],
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "report": {
           "degraded": true,
           "source_artifact_count": 0,
@@ -158,9 +152,7 @@
             "state": "degraded"
           }
         },
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "references": [],
         "tabular": null
       }
@@ -211,9 +203,7 @@
           "status": "ready"
         },
         "diagnostics": [],
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "report": {
           "degraded": true,
           "source_artifact_count": 1,
@@ -247,9 +237,7 @@
             "state": "degraded"
           }
         },
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "references": [],
         "tabular": null
       }
@@ -291,9 +279,7 @@
           "status": "ready"
         },
         "diagnostics": [],
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "report": {
           "degraded": true,
           "source_artifact_count": 0,
@@ -327,9 +313,7 @@
             "state": "degraded"
           }
         },
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "references": [],
         "tabular": null
       }
@@ -380,9 +364,7 @@
           "status": "ready"
         },
         "diagnostics": [],
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "report": {
           "degraded": true,
           "source_artifact_count": 1,
@@ -416,9 +398,7 @@
             "state": "degraded"
           }
         },
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "references": [],
         "tabular": null
       }
@@ -460,9 +440,7 @@
           "status": "ready"
         },
         "diagnostics": [],
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "report": {
           "degraded": true,
           "source_artifact_count": 0,
@@ -496,9 +474,7 @@
             "state": "degraded"
           }
         },
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "references": [],
         "tabular": null
       }
@@ -549,9 +525,7 @@
           "status": "ready"
         },
         "diagnostics": [],
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "report": {
           "degraded": true,
           "source_artifact_count": 1,
@@ -585,9 +559,7 @@
             "state": "degraded"
           }
         },
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "references": [],
         "tabular": null
       }
@@ -629,9 +601,7 @@
           "status": "ready"
         },
         "diagnostics": [],
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "report": {
           "degraded": true,
           "source_artifact_count": 0,
@@ -665,9 +635,7 @@
             "state": "degraded"
           }
         },
-        "output_dirs": [
-          "/obs/synthetic-bucket/fixture-owner/run-fixture"
-        ],
+        "output_dirs": ["/obs/synthetic-bucket/fixture-owner/run-fixture"],
         "references": [],
         "tabular": null
       }
