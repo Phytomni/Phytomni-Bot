@@ -246,6 +246,20 @@ def test_inventory_does_not_salvage_listing_failure_unknown_files() -> None:
     assert exc.value.retryable is True
 
 
+def test_inventory_rejects_truncated_listing_as_inventory_limit() -> None:
+    """Never publish a partial archive from an over-cap object listing."""
+    truncated = ExecutionWarning(
+        "artifact_listing_truncated", False, "artifact_listing"
+    )
+    with pytest.raises(
+        ResultArchiveError, match="archive_inventory_limit_exceeded"
+    ) as exc:
+        build_result_archive_inventory(
+            _groups(_set(_artifact("report.md"), warnings=(truncated,)))
+        )
+    assert exc.value.retryable is False
+
+
 @pytest.mark.parametrize(
     "path",
     [

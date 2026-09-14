@@ -566,6 +566,8 @@ def _raise_group_errors(group: _ReportArtifactGroup) -> bool:
     codes = {warning.code for warning in group.artifact_set.warnings}
     if "artifact_listing_failed" in codes:
         raise ResultArchiveError("artifact_listing_failed", retryable=True)
+    if "artifact_listing_truncated" in codes:
+        raise ResultArchiveError("archive_inventory_limit_exceeded")
     salvage = bool(
         {"artifact_manifest_missing", "artifact_manifest_invalid"} & codes
     )

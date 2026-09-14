@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from mcp_server_phytomni.mcp.formatting.models import (
+    ReportExecution,
     ResultArchiveDescriptor,
     ResultDelivery,
 )
@@ -19,6 +20,9 @@ from mcp_server_phytomni.mcp.formatting.redaction import strip_agent_result
 from mcp_server_phytomni.runtime.artifact_roles import (
     ArtifactRole,
     ClassifiedArtifact,
+)
+from mcp_server_phytomni.runtime.execution_defaults import (
+    empty_execution_projection,
 )
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -31,14 +35,19 @@ from mcp_server_phytomni.runtime.run_registry_delivery import (
     settle_delivery_ready,
 )
 from mcp_server_phytomni.runtime.run_registry_reports import (
+    ReportArtifactSources,
     ReportTerminalState,
+    _ReportSettlementRequest,
     canonical_terminal_payload,
+    settle_report_terminal,
 )
 from mcp_server_phytomni.runtime.terminal_artifacts import TerminalArtifactSet
 from mcp_server_phytomni.runtime.terminal_report import (
+    TerminalReportAssembly,
     TerminalReportContext,
     assemble_terminal_report,
 )
+from mcp_server_phytomni.storage.artifact_listing import ListedArtifactObject
 
 pytestmark = pytest.mark.server
 
@@ -211,3 +220,94 @@ async def test_empty_science_preserves_canonical_ready_archive(
         json.dumps(public, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     _assert_public_golden(agent, scenario, ready.status, public)
+
+
+@pytest.mark.asyncio
+async def test_truncated_listing_keeps_successful_report_when_archive_fails(
+    tmp_path: Path,
+) -> None:
+    """A bounded listing failure does not discard a successful report."""
+    run_id = "run-truncated-listing"
+    db_path = str(tmp_path / "runs.sqlite")
+    registry = RunRegistry(db_path)
+    registry.create_run(
+        RunSpec(run_id, "fixture-owner", "analyst", "remote"),
+        outcome=RunOutcome(
+            status="running",
+            result=empty_execution_projection(result_archive_required=True),
+        ),
+    )
+    current = registry.get_run(run_id, owner="fixture-owner")
+    assert current is not None
+
+    async def object_lister(_output_dir: str) -> list[ListedArtifactObject]:
+        """Return one more object than the terminal listing cap."""
+        return [
+            ListedArtifactObject(
+                relative_path=f"unknown-{index:03d}.txt",
+                source_path=f"fixture://unknown-{index:03d}.txt",
+                size_bytes=1,
+                download_ref=f"fixture:unknown-{index:03d}.txt",
+            )
+            for index in range(201)
+        ]
+
+    async def manifest_loader(_output_dir: str) -> dict[str, object]:
+        """Return an empty manifest so truncation is the only warning."""
+        return {"version": "1.0", "artifacts": []}
+
+    async def assemble(**_: object) -> TerminalReportAssembly:
+        """Return the already successful scientific report body."""
+        return TerminalReportAssembly(
+            answer="# Preserved report\n\nThe run completed successfully.",
+            report=ReportExecution(
+                state="final", degraded=False, source_artifact_count=0
+            ),
+        )
+
+    settled = await settle_report_terminal(
+        _ReportSettlementRequest(
+            registry=registry,
+            current=current,
+            status="succeeded",
+            live=[
+                {
+                    "task_id": "child-fixture",
+                    "status": "succeeded",
+                    "output_dir": "/obs/synthetic-bucket/fixture-owner/run",
+                }
+            ],
+            sources=ReportArtifactSources(
+                object_lister=object_lister,
+                manifest_loader=manifest_loader,
+            ),
+            assembler=assemble,
+        )
+    )
+
+    assert settled is not None
+    assert settled.status == "succeeded"
+    assert settled.result is not None
+    assert (
+        settled.result["formatted"]["answer"]
+        == "# Preserved report\n\nThe run completed successfully."
+    )
+    assert settled.result["execution"]["report"] == {
+        "state": "final",
+        "degraded": False,
+        "source_artifact_count": 0,
+    }
+    assert settled.result["execution"]["delivery"] == {
+        "schema_version": 1,
+        "required": True,
+        "status": "failed",
+        "revision": 1,
+        "inventory_digest": "",
+        "archive": None,
+        "error_code": "archive_inventory_limit_exceeded",
+        "retryable": False,
+    }
+    warning_codes = {
+        warning["code"] for warning in settled.result["execution"]["warnings"]
+    }
+    assert "artifact_listing_truncated" in warning_codes
