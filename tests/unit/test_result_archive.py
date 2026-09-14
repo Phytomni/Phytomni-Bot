@@ -226,6 +226,39 @@ def test_inventory_salvages_unknown_data_on_invalid_manifest(
     validate_result_archive_inventory(inventory)
 
 
+def test_inventory_salvages_unknown_sibling_beside_valid_report() -> None:
+    """A valid report child and an invalid UNKNOWN listing both archive."""
+    warning = _manifest_warning("artifact_manifest_invalid")
+    inventory = build_result_archive_inventory(
+        _groups(
+            _set(
+                _artifact(
+                    "scientific_report.md",
+                    role=ArtifactRole.SCIENTIFIC_REPORT,
+                )
+            ),
+            _set(
+                _artifact("data/result.dat", role=ArtifactRole.UNKNOWN),
+                _artifact("inventory.json", role=ArtifactRole.UNKNOWN),
+                _artifact("nested.zip", role=ArtifactRole.UNKNOWN),
+                _artifact(
+                    ".phytomni-artifacts.json",
+                    role=ArtifactRole.DIAGNOSTIC,
+                ),
+                warnings=(warning,),
+            ),
+        )
+    )
+    assert [member.archive_path for member in inventory.members] == [
+        "results/part-001/scientific_report.md",
+        "results/part-002/data/result.dat",
+    ]
+    assert inventory.members[0].role is ArtifactRole.SCIENTIFIC_REPORT
+    assert inventory.members[1].role is ArtifactRole.UNKNOWN
+    assert inventory.members[1].media_type == "application/octet-stream"
+    validate_result_archive_inventory(inventory)
+
+
 def test_inventory_excludes_nested_archives_on_invalid_manifest() -> None:
     """Salvage still drops nested archives, inventories, and the manifest."""
     warning = _manifest_warning("artifact_manifest_invalid")
