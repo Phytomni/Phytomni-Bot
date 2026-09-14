@@ -494,7 +494,7 @@ async def test_salvaged_unknown_octet_stream_does_not_enter_report() -> None:
         reader=reader,
     )
 
-    assert reads == []
+    assert not reads
     assert result.answer == ""
     assert result.report.state == "degraded"
     assert result.report.source_artifact_count == 0
