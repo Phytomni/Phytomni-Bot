@@ -977,7 +977,6 @@ def failed_task_ids(live: Sequence[Mapping[str, Any]]) -> list[str]:
 
 
 def _json_compatible(value: Any) -> Any:
-    """Normalize dataclass tuples to the JSON shape stored in SQLite."""
     return json.loads(json.dumps(value))
 
 

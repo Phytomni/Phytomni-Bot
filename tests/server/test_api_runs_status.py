@@ -123,12 +123,18 @@ def _seed_delivery_run(
     run_id: str,
     *,
     owner: str = "u1",
-    status: Literal["pending", "ready", "failed"] = "failed",
-    retryable: bool = True,
-    error_code: str = "archive_publish_failed",
     agent: str = "analyst",
+    **delivery_options: Any,
 ) -> None:
     """Persist one terminal delivery state for the HTTP route tests."""
+    status = cast(
+        Literal["pending", "ready", "failed"],
+        delivery_options.get("status", "failed"),
+    )
+    retryable = bool(delivery_options.get("retryable", True))
+    error_code = str(
+        delivery_options.get("error_code", "archive_publish_failed")
+    )
     RunRegistry(tasks_db_path).create_run(
         RunSpec(run_id, owner, agent, "remote"),
         outcome=RunOutcome(
@@ -191,11 +197,12 @@ async def test_retry_legacy_inventory_failure_reconciles_children_only(
         error_code="no_user_deliverables",
         agent="design",
     )
+    child_output_dir = "/obs/runs/legacy/children/part-001"
     TaskManager(tasks_db_path).record(
         Submission(
             task_id="legacy-child",
             status="succeeded",
-            output_dir="/obs/runs/legacy/children/part-001",
+            output_dir=child_output_dir,
             run_context=RunContext(
                 run_id,
                 "u1",
