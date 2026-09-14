@@ -594,16 +594,15 @@ async def test_report_settlement_persists_report_assembly_stage(
             report=ReportExecution(state="final"),
         )
 
-    settled = await settle_report_terminal(
-        _ReportSettlementRequest(
-            registry=registry,
-            current=current,
-            status="succeeded",
-            live=[],
-            sources=ReportArtifactSources(),
-            assembler=assemble,
-        )
+    settlement = _ReportSettlementRequest(
+        registry=registry,
+        current=current,
+        status="succeeded",
+        live=[],
+        sources=ReportArtifactSources(),
+        assembler=assemble,
     )
+    settled = await settle_report_terminal(settlement)
     assert settled is not None
     assert registry.transitions == [("report_assembly", "report_assembly")]
     assert settled.status == "succeeded"

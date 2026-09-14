@@ -297,16 +297,15 @@ async def test_truncated_listing_keeps_successful_report_when_archive_fails(
         "degraded": False,
         "source_artifact_count": 0,
     }
-    assert settled.result["execution"]["delivery"] == {
-        "schema_version": 1,
-        "required": True,
-        "status": "failed",
-        "revision": 1,
-        "inventory_digest": "",
-        "archive": None,
-        "error_code": "archive_inventory_limit_exceeded",
-        "retryable": False,
-    }
+    delivery = settled.result["execution"]["delivery"]
+    assert delivery["schema_version"] == 1
+    assert delivery["required"] is True
+    assert delivery["status"] == "failed"
+    assert delivery["revision"] == 1
+    assert delivery["inventory_digest"] == ""
+    assert delivery["archive"] is None
+    assert delivery["error_code"] == "archive_inventory_limit_exceeded"
+    assert delivery["retryable"] is False
     warning_codes = {
         warning["code"] for warning in settled.result["execution"]["warnings"]
     }
