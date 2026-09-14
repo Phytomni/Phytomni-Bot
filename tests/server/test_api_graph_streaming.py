@@ -57,9 +57,9 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
 
     async def _mark_missing(_tool_name: str, raw: Any) -> None:
         """Project a deterministic metadata miss without external lookup."""
-        raw["choices"][0]["message"]["doc_list"][0][CITATION_STATUS_KEY] = (
-            CITATION_STATUS_MISSING
-        )
+        raw["choices"][0]["message"]["doc_list"][0][
+            CITATION_STATUS_KEY
+        ] = CITATION_STATUS_MISSING
 
     monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _mark_missing)
     response = await chat_completion(

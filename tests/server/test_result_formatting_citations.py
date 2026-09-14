@@ -138,7 +138,7 @@ def test_deep_genome_submit_envelope_still_uses_task_formatter() -> None:
     )
 
     assert result.answer == "Task created successfully:dg-1"
-    assert result.references == ()
+    assert not result.references
     assert result.metadata["task_id"] == "dg-1"
 
 
@@ -709,7 +709,7 @@ def test_selected_metadata_miss_sets_degradation_and_sanitizes_raw() -> None:
     envelope = build_tool_result_envelope("KnowledgeAgent", payload)
 
     assert envelope.formatted.answer == "Selected."
-    assert envelope.formatted.references == ()
+    assert not envelope.formatted.references
     assert "citation_metadata_degraded" not in envelope.formatted.metadata
     assert CITATION_STATUS_KEY not in str(envelope.raw)
 

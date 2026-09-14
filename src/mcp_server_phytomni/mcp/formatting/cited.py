@@ -192,7 +192,7 @@ def _normalize_citations_detailed(
 
     def replace_citation_or_superscript(match: re.Match[str]) -> str:
         lead = match.group("lead") or ""
-        token = match.group(0)[len(lead) :]
+        token = match.group(0).removeprefix(lead)
         if token.lower().startswith("<sup"):
             sup_match = _SUP_PATTERN.fullmatch(token)
             inner = sup_match.group(1) if sup_match is not None else ""
