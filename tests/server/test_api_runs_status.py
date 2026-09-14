@@ -105,9 +105,7 @@ def _delivery_run_result(
             ),
             archive=archive,
             error_code=(
-                None
-                if status in {"pending", "ready"}
-                else error_code
+                None if status in {"pending", "ready"} else error_code
             ),
             retryable=retryable,
         )

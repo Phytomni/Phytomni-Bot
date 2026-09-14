@@ -103,9 +103,12 @@ def test_begin_delivery_reconcile_reopens_legacy_inventory_failure(
         )
     )
 
-    assert begin_delivery_reconcile(
-        registry, "legacy-archive-failure", owner="alice"
-    ) is True
+    assert (
+        begin_delivery_reconcile(
+            registry, "legacy-archive-failure", owner="alice"
+        )
+        is True
+    )
     current = registry.get_run("legacy-archive-failure", owner="alice")
     assert current is not None
     assert current.status == "running"
