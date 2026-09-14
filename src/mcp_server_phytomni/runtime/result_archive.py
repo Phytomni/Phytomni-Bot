@@ -58,6 +58,8 @@ FORBIDDEN_NESTED_ARCHIVE_SUFFIXES = (
     ".tgz",
     ".7z",
 )
+_SALVAGE_EXCLUDED_NAMES = frozenset({"inventory.json"})
+_SALVAGE_MEDIA_TYPE = "application/octet-stream"
 _ALLOWED_ERROR_CODES = frozenset(
     {
         "artifact_listing_failed",
@@ -126,30 +128,32 @@ class ResultArchiveInventory:
 def build_result_archive_inventory(
     groups: Sequence[_ReportArtifactGroup],
 ) -> ResultArchiveInventory:
-    """Select bounded manifest-backed user deliverables from child groups."""
+    """Select bounded user deliverables, salvaging unknown files if needed."""
     if not groups:
         raise ResultArchiveError("no_user_deliverables")
     run_root = _run_root(groups)
     members: list[ResultArchiveMember] = []
     paths: set[str] = set()
     for child_index, group in enumerate(groups, start=1):
-        if _raise_group_errors(group):
-            continue
+        salvage = _raise_group_errors(group)
         for artifact in group.artifact_set.artifacts:
             relative_path = _safe_relative_path(artifact.relative_path)
             if _excluded_artifact(relative_path, artifact.role):
                 continue
-            if artifact.role not in ARCHIVE_ELIGIBLE_ROLES:
-                continue
+            if salvage:
+                if not _is_archive_salvage_member(artifact, relative_path):
+                    continue
+                media_type = _SALVAGE_MEDIA_TYPE
+            else:
+                if artifact.role not in ARCHIVE_ELIGIBLE_ROLES:
+                    continue
+                media_type = artifact.media_type
             if (
                 not isinstance(artifact.download_ref, str)
                 or not artifact.download_ref
             ):
                 raise ResultArchiveError("archive_contract_invalid")
-            if (
-                not isinstance(artifact.media_type, str)
-                or not artifact.media_type
-            ):
+            if not isinstance(media_type, str) or not media_type:
                 raise ResultArchiveError("archive_contract_invalid")
             if (
                 isinstance(artifact.size_bytes, bool)
@@ -167,7 +171,7 @@ def build_result_archive_inventory(
                     download_ref=artifact.download_ref,
                     archive_path=archive_path,
                     role=artifact.role,
-                    media_type=artifact.media_type,
+                    media_type=media_type,
                     size_bytes=artifact.size_bytes,
                 )
             )
@@ -231,7 +235,10 @@ def validate_result_archive_inventory(
     for member in inventory.members:
         _validate_member_scalars(member)
         _safe_archive_path(member.archive_path, member.child_index)
-        if member.role not in ARCHIVE_ELIGIBLE_ROLES:
+        if (
+            member.role not in ARCHIVE_ELIGIBLE_ROLES
+            and member.role is not ArtifactRole.UNKNOWN
+        ):
             raise ResultArchiveError("archive_contract_invalid")
         if member.archive_path in paths:
             raise ResultArchiveError("archive_contract_invalid")
@@ -558,12 +565,22 @@ def _validate_member_scalars(member: ResultArchiveMember) -> None:
 
 
 def _raise_group_errors(group: _ReportArtifactGroup) -> bool:
-    """Raise retryable listing errors; return True to omit a bad manifest."""
+    """Raise listing errors; return True when UNKNOWN files may be salvaged."""
     codes = {warning.code for warning in group.artifact_set.warnings}
     if "artifact_listing_failed" in codes:
         raise ResultArchiveError("artifact_listing_failed", retryable=True)
-    return bool(
+    salvage = bool(
         {"artifact_manifest_missing", "artifact_manifest_invalid"} & codes
+    )
+    return salvage and bool(group.artifact_set.artifacts)
+
+
+def _is_archive_salvage_member(artifact: Any, relative_path: str) -> bool:
+    """Keep only unknown files that are not reserved inventory names."""
+    name = PurePosixPath(relative_path).name
+    return (
+        artifact.role is ArtifactRole.UNKNOWN
+        and name not in _SALVAGE_EXCLUDED_NAMES
     )
 
 

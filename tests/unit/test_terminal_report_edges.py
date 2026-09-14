@@ -25,6 +25,7 @@ from mcp_server_phytomni.runtime.terminal_report import (
     TextArtifactSnippet,
     _admit_report_artifacts,
     _all_artifact_paths,
+    _artifact_is_plain_conclusion,
     _artifact_is_report_eligible,
     _artifact_name,
     _artifact_read_reference,
@@ -175,6 +176,17 @@ async def test_read_obs_text_artifact_decodes_utf8(
 
     monkeypatch.setattr(report_mod, "download_obs_file", _download)
     assert await read_obs_text_artifact("obs://report.md") == "obs-body"
+
+
+def test_plain_conclusion_rejects_salvage_octet_stream() -> None:
+    """UNKNOWN octet-stream objects cannot enter the plain-conclusion path."""
+    artifact = _classified(
+        "data/result.dat",
+        role=ArtifactRole.UNKNOWN,
+        media_type="application/octet-stream",
+    )
+    assert _artifact_is_plain_conclusion(artifact) is False
+    assert _artifact_is_report_eligible(artifact) is False
 
 
 def test_mapping_artifact_helpers_cover_invalid_roles() -> None:

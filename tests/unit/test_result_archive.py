@@ -182,6 +182,112 @@ def test_inventory_keeps_valid_sibling_when_one_manifest_is_invalid() -> None:
     ]
 
 
+def _manifest_warning(code: str) -> ExecutionWarning:
+    return ExecutionWarning(code, False, "artifact_manifest")
+
+
+@pytest.mark.parametrize(
+    "warning_code",
+    ["artifact_manifest_invalid", "artifact_manifest_missing"],
+)
+def test_inventory_salvages_unknown_data_on_invalid_manifest(
+    warning_code: str,
+) -> None:
+    """Unknown listed data is archived without promoting its role."""
+    warning = _manifest_warning(warning_code)
+    inventory = build_result_archive_inventory(
+        _groups(
+            _set(
+                _artifact("data/result.dat", role=ArtifactRole.UNKNOWN),
+                _artifact("scores.json", role=ArtifactRole.UNKNOWN),
+                _artifact("inventory.json", role=ArtifactRole.UNKNOWN),
+                _artifact("nested.zip", role=ArtifactRole.UNKNOWN),
+                _artifact(
+                    ".phytomni-artifacts.json",
+                    role=ArtifactRole.DIAGNOSTIC,
+                ),
+                warnings=(warning,),
+            )
+        )
+    )
+    assert [member.archive_path for member in inventory.members] == [
+        "results/part-001/data/result.dat",
+        "results/part-001/scores.json",
+    ]
+    assert all(
+        member.role is ArtifactRole.UNKNOWN for member in inventory.members
+    )
+    assert all(
+        member.media_type == "application/octet-stream"
+        for member in inventory.members
+    )
+    assert inventory.members[0].download_ref.endswith("data/result.dat")
+    assert inventory.members[0].size_bytes == 3
+    validate_result_archive_inventory(inventory)
+
+
+def test_inventory_excludes_nested_archives_on_invalid_manifest() -> None:
+    """Salvage still drops nested archives, inventories, and the manifest."""
+    warning = _manifest_warning("artifact_manifest_invalid")
+    with pytest.raises(ResultArchiveError, match="no_user_deliverables"):
+        build_result_archive_inventory(
+            _groups(
+                _set(
+                    _artifact("inventory.json", role=ArtifactRole.UNKNOWN),
+                    _artifact("nested.zip", role=ArtifactRole.UNKNOWN),
+                    _artifact(
+                        ".phytomni-artifacts.json",
+                        role=ArtifactRole.DIAGNOSTIC,
+                    ),
+                    warnings=(warning,),
+                )
+            )
+        )
+
+
+def test_inventory_invalid_manifest_without_eligible_listed_objects_raises() -> (
+    None
+):
+    """An invalid group with nothing salvageable still has no deliverables."""
+    warning = _manifest_warning("artifact_manifest_invalid")
+    with pytest.raises(ResultArchiveError, match="no_user_deliverables"):
+        build_result_archive_inventory(_groups(_set(warnings=(warning,))))
+
+
+def test_inventory_skips_undeclared_unknown_when_manifest_is_valid() -> None:
+    """Valid groups keep UNKNOWN objects out of the archive selection."""
+    inventory = build_result_archive_inventory(
+        _groups(
+            _set(
+                _artifact("report.md"),
+                _artifact("extra.dat", role=ArtifactRole.UNKNOWN),
+            )
+        )
+    )
+    assert [member.archive_path for member in inventory.members] == [
+        "results/part-001/report.md"
+    ]
+
+
+def test_inventory_does_not_salvage_listing_failure_unknown_files() -> None:
+    """Listing failure stays retryable and is never converted into salvage."""
+    listing = ExecutionWarning(
+        "artifact_listing_failed", True, "artifact_listing"
+    )
+    with pytest.raises(
+        ResultArchiveError, match="artifact_listing_failed"
+    ) as exc:
+        build_result_archive_inventory(
+            _groups(
+                _set(
+                    _artifact("data/result.dat", role=ArtifactRole.UNKNOWN),
+                    warnings=(listing,),
+                )
+            )
+        )
+    assert exc.value.retryable is True
+
+
 @pytest.mark.parametrize(
     "path",
     [

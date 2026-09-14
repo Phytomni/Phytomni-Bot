@@ -471,6 +471,37 @@ async def test_no_scientific_text_returns_safe_degraded_report() -> None:
 
 
 @pytest.mark.asyncio
+async def test_salvaged_unknown_octet_stream_does_not_enter_report() -> None:
+    """Archive-only UNKNOWN binaries must not become report input."""
+    reads: list[str] = []
+
+    async def reader(reference: str) -> str:
+        reads.append(reference)
+        return "SALVAGE-SENTINEL"
+
+    result = await assemble_terminal_report(
+        context=_report_context(),
+        artifacts=(
+            ClassifiedArtifact(
+                source_path="fixture://data/result.dat",
+                relative_path="data/result.dat",
+                role=ArtifactRole.UNKNOWN,
+                media_type="application/octet-stream",
+                size_bytes=32,
+                download_ref="download://data/result.dat",
+            ),
+        ),
+        reader=reader,
+    )
+
+    assert reads == []
+    assert result.answer == ""
+    assert result.report.state == "degraded"
+    assert result.report.source_artifact_count == 0
+    assert result.warnings[0].code == "report_no_scientific_text"
+
+
+@pytest.mark.asyncio
 async def test_scientific_data_plain_text_becomes_official_answer() -> None:
     """A line-count txt declared as scientific_data becomes the official
     body."""
