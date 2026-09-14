@@ -115,11 +115,15 @@ ARCHIVE_ELIGIBLE_ROLES = frozenset(
 class ArtifactManifestItem(BaseModel):
     """One producer-declared artifact path and semantic role."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
     path: StrictStr = Field(min_length=1, max_length=1024)
     role: ArtifactRole
-    media_type: StrictStr = Field(min_length=1, max_length=255)
+    media_type: StrictStr = Field(
+        default=_UNKNOWN_MEDIA_TYPE,
+        min_length=1,
+        max_length=255,
+    )
 
     @field_validator("role")
     @classmethod
@@ -155,7 +159,7 @@ class ArtifactManifestItem(BaseModel):
 class ArtifactManifest(BaseModel):
     """Strict producer manifest for one output directory."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
     version: Literal["1.0"]
     artifacts: list[ArtifactManifestItem] = Field(
