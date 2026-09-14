@@ -233,7 +233,7 @@ def _assert_mixed_artifact_delivery(
     assert "total_files" not in answer
     assert "inventory.json" not in answer
     inventory = captured["inventory"]
-    assert captured.get("persisted") is inventory
+    assert captured["persisted"] is inventory
     archive_paths = [member.archive_path for member in inventory.members]
     assert archive_paths == [
         "results/part-001/scientific_report.md",

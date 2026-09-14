@@ -205,9 +205,7 @@ def test_inventory_excludes_nested_archives_on_invalid_manifest() -> None:
         )
 
 
-def test_inventory_invalid_manifest_without_eligible_listed_objects_raises() -> (
-    None
-):
+def test_inventory_invalid_manifest_without_salvageable_files_raises() -> None:
     """An invalid group with nothing salvageable still has no deliverables."""
     warning = _manifest_warning("artifact_manifest_invalid")
     with pytest.raises(ResultArchiveError, match="no_user_deliverables"):

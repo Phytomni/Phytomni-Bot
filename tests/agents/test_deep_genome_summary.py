@@ -262,7 +262,7 @@ _INVALID_INVENTORY_MANIFEST = '{"files": ["inventory.json", "run.py"]}'
 def _write_design_salvage_tree(
     results: Path, manifest: str | bytes, known: tuple[str, ...]
 ) -> None:
-    """Write known design files, rejected siblings, and an unusable manifest."""
+    """Write known design files, rejected siblings, and a bad manifest."""
     for name in known:
         path = results / name
         if name.endswith((".png", ".cif")):

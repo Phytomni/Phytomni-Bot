@@ -35,6 +35,12 @@ package version remains `0.1.3` until the release bump.
 
 ### Changed
 
+- **Terminal artifact salvage** — Analyst, Network, Research, and
+  Design salvage listed `UNKNOWN` files into the downloadable archive
+  when the producer manifest is missing or invalid, without admitting
+  those files into scientific report context. Deep Genome salvages
+  known design summaries, legends, and figures only. Default on. The
+  package version remains `0.1.3`.
 - **Cited unmatched omit** — Selected citations missing from the local
   SQLite artifact are dropped from the formatted answer and reference
   list, and remaining indices are compacted. Default on via

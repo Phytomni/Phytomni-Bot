@@ -471,7 +471,7 @@ def _design_known_name_globs(work_item_key: str) -> tuple[str, ...]:
 def _salvage_known_design_paths(
     results_dir: Path, work_item_key: str
 ) -> tuple[Path, ...]:
-    """Admit only analysis-spec files when the producer manifest is unusable."""
+    """Admit analysis-spec files when the producer manifest is unusable."""
     globs = _design_known_name_globs(work_item_key)
     known = tuple(
         path

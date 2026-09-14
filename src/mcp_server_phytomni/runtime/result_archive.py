@@ -140,14 +140,11 @@ def build_result_archive_inventory(
             relative_path = _safe_relative_path(artifact.relative_path)
             if _excluded_artifact(relative_path, artifact.role):
                 continue
-            if salvage:
-                if not _is_archive_salvage_member(artifact, relative_path):
-                    continue
-                media_type = _SALVAGE_MEDIA_TYPE
-            else:
-                if artifact.role not in ARCHIVE_ELIGIBLE_ROLES:
-                    continue
-                media_type = artifact.media_type
+            media_type = _eligible_archive_media_type(
+                artifact, relative_path, salvage
+            )
+            if media_type is None:
+                continue
             if (
                 not isinstance(artifact.download_ref, str)
                 or not artifact.download_ref
@@ -573,6 +570,19 @@ def _raise_group_errors(group: _ReportArtifactGroup) -> bool:
         {"artifact_manifest_missing", "artifact_manifest_invalid"} & codes
     )
     return salvage and bool(group.artifact_set.artifacts)
+
+
+def _eligible_archive_media_type(
+    artifact: Any, relative_path: str, salvage: bool
+) -> str | None:
+    """Return a member media type, or None when the artifact is skipped."""
+    if salvage:
+        if _is_archive_salvage_member(artifact, relative_path):
+            return _SALVAGE_MEDIA_TYPE
+        return None
+    if artifact.role in ARCHIVE_ELIGIBLE_ROLES:
+        return artifact.media_type
+    return None
 
 
 def _is_archive_salvage_member(artifact: Any, relative_path: str) -> bool:
