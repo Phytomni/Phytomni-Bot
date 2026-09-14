@@ -13,6 +13,7 @@ returns report data plus the next figure index.
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -442,7 +443,51 @@ def _relative_result_name(path: Path, results_dir: Path) -> str:
     return path.relative_to(results_dir).as_posix()
 
 
-def _design_result_paths(results_dir: Path) -> tuple[Path, ...]:
+_DESIGN_ANALYSIS_TYPES = {
+    "protein_design": "protein_design_analysis",
+    "promoter_design": "promoter_analysis",
+}
+_PROTEIN_STRUCTURE_GLOB = "*_seed_101_sample_0.cif"
+
+
+def _design_known_name_globs(work_item_key: str) -> tuple[str, ...]:
+    """Return filename globs from the work item's existing summary spec."""
+    analysis_type = _DESIGN_ANALYSIS_TYPES[work_item_key]
+    spec = next(
+        item
+        for item in IMAGE_SUMMARY_SPECS
+        if item.analysis_type == analysis_type
+    )
+    globs = (
+        spec.image_pattern,
+        spec.summary_pattern.replace("{gene_id}", "*"),
+        spec.legend_pattern.replace("{gene_id}", "*"),
+    )
+    if work_item_key == "protein_design":
+        return (*globs, _PROTEIN_STRUCTURE_GLOB)
+    return globs
+
+
+def _salvage_known_design_paths(
+    results_dir: Path, work_item_key: str
+) -> tuple[Path, ...]:
+    """Admit only analysis-spec files when the producer manifest is unusable."""
+    globs = _design_known_name_globs(work_item_key)
+    known = tuple(
+        path
+        for path in sorted(results_dir.rglob("*"))
+        if path.is_file()
+        and path.name not in RESERVED_RESULT_PATHS
+        and any(fnmatch(path.name, pattern) for pattern in globs)
+    )
+    if not known:
+        raise UnusableAnalysisResultError("design manifest invalid")
+    return known
+
+
+def _design_result_paths(
+    results_dir: Path, work_item_key: str
+) -> tuple[Path, ...]:
     """Apply the existing producer manifest contract before file admission."""
     manifest_path = results_dir / ARTIFACT_MANIFEST_FILENAME
     allowed: set[str] | None = None
@@ -462,10 +507,8 @@ def _design_result_paths(results_dir: Path) -> tuple[Path, ...]:
             manifest = ArtifactManifest.model_validate(
                 json.loads(content, object_pairs_hook=_unique_json_object)
             )
-        except (ValueError, UnicodeError) as exc:
-            raise UnusableAnalysisResultError(
-                "design manifest invalid"
-            ) from exc
+        except (ValueError, UnicodeError):
+            return _salvage_known_design_paths(results_dir, work_item_key)
         allowed = {
             item.path
             for item in manifest.artifacts
@@ -564,7 +607,7 @@ def build_design_work_item_summary(
         if work_item_key == "protein_design"
         else ("Promoter Design")
     )
-    paths = _design_result_paths(root)
+    paths = _design_result_paths(root, work_item_key)
     summaries = _nonblank_summary_files(root, paths)
     if summaries:
         body = "\n\n".join(f"### {name}\n\n{text}" for name, text in summaries)

@@ -26,10 +26,12 @@ from mcp_server_phytomni.agents.deep_genome.coordinator import (
 )
 from mcp_server_phytomni.agents.deep_genome.summary import (
     UnusableAnalysisResultError,
+    _design_result_paths,
     build_design_work_item_summary,
     build_sub_summary,
 )
 from mcp_server_phytomni.runtime.artifact_roles import ArtifactManifest
+from mcp_server_phytomni.runtime.terminal_artifacts import _MAX_MANIFEST_BYTES
 
 pytestmark = pytest.mark.agent
 
@@ -241,6 +243,97 @@ def test_design_summary_rejects_invalid_manifest(
     )
     with pytest.raises(UnusableAnalysisResultError):
         build_design_work_item_summary("promoter_design", tmp_path)
+
+
+_PROTEIN_SALVAGE_KNOWN = (
+    "AT1G73950_protein_design.summary",
+    "AT1G73950_protein_design.legend",
+    "psap_scores.png",
+)
+_PROMOTER_SALVAGE_KNOWN = (
+    "AT1G73950_motif.summary",
+    "AT1G73950_motif.legend",
+    "motif_all_logo.png",
+)
+_SALVAGE_REJECTED = ("inventory.json", "run.py", "nested.zip")
+_INVALID_INVENTORY_MANIFEST = '{"files": ["inventory.json", "run.py"]}'
+
+
+def _write_design_salvage_tree(
+    results: Path, manifest: str | bytes, known: tuple[str, ...]
+) -> None:
+    """Write known design files, rejected siblings, and an unusable manifest."""
+    for name in known:
+        path = results / name
+        if name.endswith((".png", ".cif")):
+            path.write_bytes(b"binary")
+        else:
+            path.write_text("usable content", encoding="utf-8")
+    (results / "inventory.json").write_text("{}", encoding="utf-8")
+    (results / "run.py").write_text("print(1)\n", encoding="utf-8")
+    (results / "nested.zip").write_bytes(b"PK\x03\x04")
+    (results / "random.cif").write_bytes(b"nope")
+    target = results / ".phytomni-artifacts.json"
+    if isinstance(manifest, bytes):
+        target.write_bytes(manifest)
+    else:
+        target.write_text(manifest, encoding="utf-8")
+
+
+def _assert_salvaged_design_files(
+    results: Path, work_item: str, known: tuple[str, ...]
+) -> None:
+    """Admit known design files and keep junk out of the summary."""
+    report = build_design_work_item_summary(work_item, results)
+    assert known[0] in report
+    assert "usable content" in report
+    for rejected in _SALVAGE_REJECTED:
+        assert rejected not in report
+    names = {path.name for path in _design_result_paths(results, work_item)}
+    assert set(known) <= names
+    assert names.isdisjoint(_SALVAGE_REJECTED)
+    assert "random.cif" not in names
+
+
+@pytest.mark.parametrize(
+    ("work_item", "known"),
+    [
+        ("protein_design", _PROTEIN_SALVAGE_KNOWN),
+        ("promoter_design", _PROMOTER_SALVAGE_KNOWN),
+    ],
+)
+def test_design_summary_salvages_known_files_on_invalid_manifest(
+    tmp_path: Path, work_item: str, known: tuple[str, ...]
+) -> None:
+    """Known analysis files survive a directory-inventory JSON manifest."""
+    _write_design_salvage_tree(tmp_path, _INVALID_INVENTORY_MANIFEST, known)
+    _assert_salvaged_design_files(tmp_path, work_item, known)
+
+
+@pytest.mark.parametrize(
+    ("work_item", "known"),
+    [
+        ("protein_design", _PROTEIN_SALVAGE_KNOWN),
+        ("promoter_design", _PROMOTER_SALVAGE_KNOWN),
+    ],
+)
+def test_design_summary_salvages_known_files_on_oversize_manifest(
+    tmp_path: Path, work_item: str, known: tuple[str, ...]
+) -> None:
+    """Known analysis files survive a manifest larger than the 32 KiB cap."""
+    _write_design_salvage_tree(
+        tmp_path, b"x" * (_MAX_MANIFEST_BYTES + 1), known
+    )
+    _assert_salvaged_design_files(tmp_path, work_item, known)
+
+
+def test_design_summary_salvages_protein_structure_on_invalid_manifest(
+    tmp_path: Path,
+) -> None:
+    """Salvage the existing protein-structure glob, not arbitrary CIFs."""
+    known = _PROTEIN_SALVAGE_KNOWN + ("AT1G73950_seed_101_sample_0.cif",)
+    _write_design_salvage_tree(tmp_path, "not JSON", known)
+    _assert_salvaged_design_files(tmp_path, "protein_design", known)
 
 
 async def test_inventory_only_design_leaves_successful_siblings_usable(
