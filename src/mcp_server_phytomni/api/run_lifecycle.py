@@ -763,8 +763,28 @@ async def retry_owner_delivery(
         raise HTTPException(status_code=409, detail="delivery retry conflict")
     if delivery.status == "pending":
         return _public_result_delivery(delivery)
-    if delivery.status != "failed" or not delivery.retryable:
+    if delivery.status != "failed":
         raise HTTPException(status_code=409, detail="delivery retry conflict")
+
+    if not delivery.retryable:
+        if not registry.begin_delivery_reconcile(run_id, owner=owner):
+            raise HTTPException(
+                status_code=409, detail="delivery retry conflict"
+            )
+        # Reuse the persisted child task ids and terminal report pipeline.
+        # This only polls/collects existing work; it never submits EI again.
+        await registry.reconcile(run_id, owner=owner)
+        current = registry.get_run(run_id, owner=owner)
+        current_delivery = (
+            result_delivery_from_result(current.result)
+            if current is not None
+            else None
+        )
+        if current_delivery is None or current_delivery.status != "pending":
+            raise HTTPException(
+                status_code=409, detail="delivery retry conflict"
+            )
+        return _public_result_delivery(current_delivery)
 
     if not registry.begin_delivery_retry(run_id, owner=owner):
         current = registry.get_run(run_id, owner=owner)

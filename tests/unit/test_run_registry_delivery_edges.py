@@ -33,6 +33,7 @@ from mcp_server_phytomni.runtime.run_registry_delivery import (
     DeliveryFailure,
     DeliveryRevision,
     PrivateDeliveryState,
+    begin_delivery_reconcile,
     begin_delivery_retry,
     carry_required_delivery,
     claim_delivery_attempt,
@@ -46,10 +47,80 @@ from mcp_server_phytomni.runtime.run_registry_delivery import (
     settle_delivery_failure,
     settle_delivery_ready,
 )
+from mcp_server_phytomni.runtime.task_manager import (
+    RunContext,
+    Submission,
+    TaskManager,
+)
 
 pytestmark = pytest.mark.unit
 
 _DIGEST = "sha256:" + "a" * 64
+
+
+@pytest.mark.parametrize(
+    "error_code",
+    [
+        "no_user_deliverables",
+        "artifact_manifest_invalid",
+        "archive_inventory_limit_exceeded",
+    ],
+)
+def test_begin_delivery_reconcile_reopens_legacy_inventory_failure(
+    tmp_path: Path, error_code: str
+) -> None:
+    """Legacy failed inventories can be recollected without rerunning EI."""
+    registry = RunRegistry(str(tmp_path / "tasks.db"))
+    result = empty_execution_projection(result_archive_required=True)
+    result["formatted"]["answer"] = "scientific answer"
+    result["execution"]["delivery"] = {
+        "schema_version": 1,
+        "required": True,
+        "status": "failed",
+        "revision": 1,
+        "inventory_digest": "",
+        "archive": None,
+        "error_code": error_code,
+        "retryable": False,
+    }
+    registry.create_run(
+        RunSpec("legacy-archive-failure", "alice", "design", "remote"),
+        outcome=RunOutcome(status="succeeded", result=result),
+    )
+    TaskManager(registry.db_path).record(
+        Submission(
+            task_id="legacy-child",
+            status="succeeded",
+            output_dir="/obs/runs/legacy/children/part-001",
+            run_context=RunContext(
+                "legacy-archive-failure",
+                "alice",
+                "design",
+                "remote",
+                "2026-09-15T00:00:00+00:00",
+                "2026-09-15T00:00:00+00:00",
+            ),
+        )
+    )
+
+    assert begin_delivery_reconcile(
+        registry, "legacy-archive-failure", owner="alice"
+    ) is True
+    current = registry.get_run("legacy-archive-failure", owner="alice")
+    assert current is not None
+    assert current.status == "running"
+
+    orphan_registry = RunRegistry(str(tmp_path / "orphan.db"))
+    orphan_registry.create_run(
+        RunSpec("orphan-archive-failure", "alice", "design", "remote"),
+        outcome=RunOutcome(status="succeeded", result=result),
+    )
+    assert (
+        begin_delivery_reconcile(
+            orphan_registry, "orphan-archive-failure", owner="alice"
+        )
+        is False
+    )
 
 
 def _archive() -> ResultArchiveDescriptor:

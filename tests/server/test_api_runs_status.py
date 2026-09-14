@@ -76,6 +76,7 @@ def _delivery_run_result(
     status: Literal["pending", "ready", "failed"],
     retryable: bool,
     revision: int = 1,
+    error_code: str = "archive_publish_failed",
 ) -> dict[str, Any]:
     """Build one bounded result with private retry coordination state."""
     result = empty_execution_projection(result_archive_required=True)
@@ -106,7 +107,7 @@ def _delivery_run_result(
             error_code=(
                 None
                 if status in {"pending", "ready"}
-                else "archive_publish_failed"
+                else error_code
             ),
             retryable=retryable,
         )
@@ -126,13 +127,19 @@ def _seed_delivery_run(
     owner: str = "u1",
     status: Literal["pending", "ready", "failed"] = "failed",
     retryable: bool = True,
+    error_code: str = "archive_publish_failed",
+    agent: str = "analyst",
 ) -> None:
     """Persist one terminal delivery state for the HTTP route tests."""
     RunRegistry(tasks_db_path).create_run(
-        RunSpec(run_id, owner, "analyst", "remote"),
+        RunSpec(run_id, owner, agent, "remote"),
         outcome=RunOutcome(
             status="succeeded",
-            result=_delivery_run_result(status=status, retryable=retryable),
+            result=_delivery_run_result(
+                status=status,
+                retryable=retryable,
+                error_code=error_code,
+            ),
         ),
     )
 
@@ -169,6 +176,78 @@ async def test_retry_delivery_is_owner_scoped_idempotent_and_public(
     assert first.json()["revision"] == 2
     assert "/private/obs/inventory.json" not in first.text
     assert "archive_publish_failed" not in first.text
+
+
+async def test_retry_legacy_inventory_failure_reconciles_children_only(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy inventory failures retry collection without resubmitting EI."""
+    run_id = "run-legacy-inventory-retry"
+    _seed_delivery_run(
+        tasks_db_path,
+        run_id,
+        retryable=False,
+        error_code="no_user_deliverables",
+        agent="design",
+    )
+    TaskManager(tasks_db_path).record(
+        Submission(
+            task_id="legacy-child",
+            status="succeeded",
+            output_dir="/obs/runs/legacy/children/part-001",
+            run_context=RunContext(
+                run_id,
+                "u1",
+                "design",
+                "remote",
+                "2026-09-15T00:00:00+00:00",
+                "2026-09-15T00:00:00+00:00",
+            ),
+        )
+    )
+    reconcile_calls: list[str] = []
+
+    async def reconcile_only(
+        registry: RunRegistry, child_run_id: str, *, owner: str, **_: Any
+    ) -> Any:
+        """Model child polling and delivery reconstruction without EI."""
+        reconcile_calls.append(child_run_id)
+        current = registry.get_run(child_run_id, owner=owner)
+        assert current is not None and current.result is not None
+        result = current.result
+        result["execution"]["delivery"] = asdict(
+            ResultDelivery(
+                schema_version=1,
+                required=True,
+                status="pending",
+                revision=1,
+                inventory_digest=_DELIVERY_DIGEST,
+                archive=None,
+                error_code=None,
+                retryable=False,
+            )
+        )
+        registry.settle_run(
+            child_run_id,
+            owner=owner,
+            status="succeeded",
+            result=result,
+            expected_revision=current.revision,
+        )
+        return registry.get_run(child_run_id, owner=owner)
+
+    monkeypatch.setattr(RunRegistry, "reconcile", reconcile_only)
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/delivery/retry",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
+    assert reconcile_calls == [run_id]
 
 
 async def test_retry_delivery_hides_missing_and_foreign_runs(

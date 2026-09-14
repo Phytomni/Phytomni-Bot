@@ -401,6 +401,11 @@ async def settle_report_terminal(request: ReportSettlementRequest) -> Any:
             request.registry, current, state
         )
     delivery = initial_pending_delivery(inventory.digest)
+    if marker is not None and marker.status == "failed":
+        # A legacy failed marker already consumed a delivery revision.  Keep
+        # the child-only reconciliation monotonic so Web can install the new
+        # inventory without confusing it with the stale terminal snapshot.
+        delivery = replace(delivery, revision=marker.revision + 1)
     state = replace(state, delivery=delivery)
     return _store_pending_report_delivery(
         request.registry,
