@@ -256,6 +256,38 @@ async def test_collect_set_invalidates_failed_manifest_loader() -> None:
     assert result.warnings[0].code == "artifact_manifest_invalid"
 
 
+async def test_collect_set_invalid_manifest_keeps_listed_objects_unknown() -> (
+    None
+):
+    """Collecting a salvage listing does not infer scientific roles."""
+
+    async def _listed_objects(
+        _output_dir: str,
+    ) -> list[ListedArtifactObject]:
+        return [
+            _listed("data/result.dat"),
+            _listed("inventory.json"),
+            _listed("nested.zip"),
+            _listed(".phytomni-artifacts.json"),
+        ]
+
+    async def _loader(_output_dir: str) -> dict[str, Any]:
+        return {"gene": "AT1G73950", "total_files": 116}
+
+    result = await collect_terminal_artifact_set(
+        task_id="task-1",
+        output_dir="owner/out",
+        lister=_listed_objects,
+        manifest_loader=_loader,
+    )
+    by_path = {item.relative_path: item for item in result.artifacts}
+    assert by_path["data/result.dat"].role is ArtifactRole.UNKNOWN
+    assert by_path["inventory.json"].role is ArtifactRole.UNKNOWN
+    assert by_path["nested.zip"].role is ArtifactRole.UNKNOWN
+    assert by_path[".phytomni-artifacts.json"].role is ArtifactRole.DIAGNOSTIC
+    assert result.warnings[0].code == "artifact_manifest_invalid"
+
+
 def test_structured_collect_requires_task_and_output_dir() -> None:
     """The structured seam rejects a missing task or output directory."""
     with pytest.raises(ValueError, match="task_id and output_dir"):

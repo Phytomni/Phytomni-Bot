@@ -4,7 +4,6 @@
 """Unit tests for the shared SQLite bibliographic citation enricher."""
 
 import logging
-import sqlite3
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -24,6 +23,7 @@ from mcp_server_phytomni.runtime.request_context import (
     reset_request_var,
 )
 from tests.support.citation_database import install_inline_citation_lookup
+from tests.support.sqlite import closed_sqlite_connection
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +34,7 @@ def _run_lookup_in_test_thread(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _insert_record(path: Path, **record: str | None) -> None:
     columns = ("file_id", *CITATION_RECORD_FIELDS)
-    with sqlite3.connect(path) as connection:
+    with closed_sqlite_connection(path) as connection:
         connection.execute(
             f"INSERT INTO citation_records ({','.join(columns)}) "
             f"VALUES ({','.join('?' for _ in columns)})",
@@ -68,7 +68,7 @@ async def test_enrich_marks_normal_and_quarantined_misses(
     citation_db_path: Path,
 ) -> None:
     """Absent and quarantined IDs retain retrieval data and become missing."""
-    with sqlite3.connect(citation_db_path) as connection:
+    with closed_sqlite_connection(citation_db_path) as connection:
         connection.execute(
             "INSERT INTO citation_conflicts (file_id, conflict_json) "
             "VALUES (?, ?)",

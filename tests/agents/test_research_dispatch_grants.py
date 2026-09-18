@@ -145,8 +145,8 @@ async def test_explicit_child_fingerprint_reaches_context(
             thread_id="thread-001",
         )
 
-    async def fake_reuse(*_: Any, **__: Any) -> None:
-        return None
+    async def fake_reuse(*_: Any, **__: Any) -> tuple[None, None]:
+        return None, None
 
     async def ainvoke(_state: Any, *, config: Any) -> dict[str, Any]:
         """Return one accepted child task for the adapter seam."""
@@ -173,6 +173,8 @@ async def test_explicit_child_fingerprint_reaches_context(
     )
 
     assert result["task_id"] == "task-001"
+    assert result["output_dir"] == "/obs/out"
+    assert result.get("source_task_id") is None
     assert captured["fingerprint"] == "sha256-fixture"
 
 

@@ -17,6 +17,7 @@ from mcp.types import INTERNAL_ERROR
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..agents.knowledge.retrieval_result import RETRIEVAL_UNAVAILABLE_MESSAGE
+from ..common.http import UpstreamConnectionError, UpstreamTimeoutError
 from ..runtime.locale import message_for
 from ..runtime.stage_trace import current_stage_trace
 from .app_support import _SAFE_DEFAULT_MESSAGES, _ErrorResponseOptions
@@ -129,6 +130,19 @@ def register_error_handlers(
         exc: McpError,
     ) -> JSONResponse:
         """Project only fixed MCP failures into safe HTTP errors."""
+        if isinstance(exc, (UpstreamConnectionError, UpstreamTimeoutError)):
+            is_timeout = isinstance(exc, UpstreamTimeoutError)
+            status = 504 if is_timeout else 502
+            return app_attr("_error_response")(
+                status,
+                _SAFE_DEFAULT_MESSAGES[status],
+                options=_ErrorResponseOptions(
+                    code=(
+                        "upstream_timeout" if is_timeout else "upstream_failed"
+                    ),
+                    retryable=True,
+                ),
+            )
         if (
             exc.error.code == INTERNAL_ERROR
             and exc.error.message == RETRIEVAL_UNAVAILABLE_MESSAGE

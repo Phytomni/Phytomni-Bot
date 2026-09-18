@@ -445,9 +445,10 @@ def _verify_workbook_case(
     source = case.source
     workbook_path = _workbook_path(source, source_root, resolved_root)
     if source.workbook not in workbooks:
-        workbooks[source.workbook] = load_workbook(
-            workbook_path, data_only=True
-        )
+        with workbook_path.open("rb") as source_file:
+            workbooks[source.workbook] = load_workbook(
+                source_file, data_only=True
+            )
     workbook = workbooks[source.workbook]
     source_id = _workbook_cell_value(source, workbook, source.source_id_column)
     if source.source_id != source_id:

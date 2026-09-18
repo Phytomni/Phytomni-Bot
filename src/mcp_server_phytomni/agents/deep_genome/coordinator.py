@@ -408,6 +408,96 @@ async def _resolve_success(
     )
 
 
+async def _settle_remote_status(
+    remote_payload: Any,
+    submission: RemoteSubmission,
+    result_resolver: ResultResolver,
+    transition_sink: TransitionSink,
+) -> WorkItemOutcome | None:
+    """Return a terminal outcome, or None to keep polling."""
+    local_status = _REMOTE_TO_LOCAL.get(_remote_status(remote_payload) or "")
+    await instrument_provider_observation(
+        provider_kind="analysis_task_platform",
+        provider_task_id=submission.submitted_task_id,
+        source_revision=None,
+        observed_status=local_status or "failed",
+    )
+    if local_status in {"pending", "running"}:
+        await _emit_transition(
+            transition_sink,
+            local_status,
+            None,
+            None,
+        )
+        return None
+    if local_status == "succeeded":
+        return await _resolve_success(
+            submission,
+            result_resolver,
+            transition_sink,
+        )
+    if local_status in _REMOTE_FAILURE_REASONS:
+        return await _emit_transition(
+            transition_sink,
+            local_status,
+            None,
+            _REMOTE_FAILURE_REASONS[local_status],
+        )
+    return await _emit_transition(
+        transition_sink,
+        "failed",
+        None,
+        _UNKNOWN_STATUS_REASON,
+    )
+
+
+async def _settle_deadline(
+    submission: RemoteSubmission,
+    status_reader: StatusReader,
+    result_resolver: ResultResolver,
+    transition_sink: TransitionSink,
+    options: WorkItemPollOptions,
+) -> WorkItemOutcome:
+    """Take one last EI read before settling a local timeout."""
+    try:
+        remote_payload = await _await_if_needed(
+            status_reader(submission.poll_task_id, options.request_timeout)
+        )
+    except _POLL_OPTIONAL_ERRORS:
+        return await _emit_transition(
+            transition_sink,
+            "timed_out",
+            None,
+            _TIMEOUT_REASON,
+        )
+    local_status = _REMOTE_TO_LOCAL.get(_remote_status(remote_payload) or "")
+    await instrument_provider_observation(
+        provider_kind="analysis_task_platform",
+        provider_task_id=submission.submitted_task_id,
+        source_revision=None,
+        observed_status=local_status or "failed",
+    )
+    if local_status == "succeeded":
+        return await _resolve_success(
+            submission,
+            result_resolver,
+            transition_sink,
+        )
+    if local_status in _REMOTE_FAILURE_REASONS:
+        return await _emit_transition(
+            transition_sink,
+            local_status,
+            None,
+            _REMOTE_FAILURE_REASONS[local_status],
+        )
+    return await _emit_transition(
+        transition_sink,
+        "timed_out",
+        None,
+        _TIMEOUT_REASON,
+    )
+
+
 async def _poll_work_item(
     submission: RemoteSubmission,
     status_reader: StatusReader,
@@ -419,11 +509,12 @@ async def _poll_work_item(
     deadline = options.monotonic() + max(0.0, options.deadline_seconds)
     while True:
         if options.monotonic() >= deadline:
-            return await _emit_transition(
+            return await _settle_deadline(
+                submission,
+                status_reader,
+                result_resolver,
                 transition_sink,
-                "timed_out",
-                None,
-                _TIMEOUT_REASON,
+                options,
             )
 
         try:
@@ -438,42 +529,12 @@ async def _poll_work_item(
                 _STATUS_LOOKUP_REASON,
             )
 
-        remote_status = _remote_status(remote_payload)
-        local_status = _REMOTE_TO_LOCAL.get(remote_status or "")
-        await instrument_provider_observation(
-            provider_kind="analysis_task_platform",
-            provider_task_id=submission.submitted_task_id,
-            source_revision=None,
-            observed_status=local_status or "failed",
-        )
-        if local_status in {"pending", "running"}:
-            await _emit_transition(
-                transition_sink,
-                local_status,
-                None,
-                None,
-            )
-            await _await_if_needed(options.sleep(options.poll_interval))
-            continue
-
-        if local_status == "succeeded":
-            return await _resolve_success(
-                submission,
-                result_resolver,
-                transition_sink,
-            )
-
-        if local_status in _REMOTE_FAILURE_REASONS:
-            return await _emit_transition(
-                transition_sink,
-                local_status,
-                None,
-                _REMOTE_FAILURE_REASONS[local_status],
-            )
-
-        return await _emit_transition(
+        outcome = await _settle_remote_status(
+            remote_payload,
+            submission,
+            result_resolver,
             transition_sink,
-            "failed",
-            None,
-            _UNKNOWN_STATUS_REASON,
         )
+        if outcome is not None:
+            return outcome
+        await _await_if_needed(options.sleep(options.poll_interval))

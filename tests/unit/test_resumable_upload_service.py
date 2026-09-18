@@ -14,6 +14,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.api.resumable_uploads import (
     ResumableUploadService,
@@ -204,7 +205,7 @@ def test_begin_failure_discards_only_unbound_allocation(
 
     assert recreated.status == "uploading"
     assert storage.begin_calls == 4
-    with sqlite3.connect(service.registry.db_path) as conn:
+    with closed_sqlite_connection(service.registry.db_path) as conn:
         active_count = conn.execute(
             "SELECT COUNT(*) FROM upload_assets WHERE status = 'uploading'"
         ).fetchone()[0]
@@ -235,7 +236,7 @@ def test_raw_begin_failure_discards_only_unbound_allocation(
     assert captured.value.status_code == 503
     assert str(captured.value) == "upload storage unavailable"
     assert "provider transport detail" not in str(captured.value)
-    with sqlite3.connect(service.registry.db_path) as conn:
+    with closed_sqlite_connection(service.registry.db_path) as conn:
         assert (
             conn.execute("SELECT COUNT(*) FROM upload_assets").fetchone()[0]
             == 0
@@ -243,7 +244,7 @@ def test_raw_begin_failure_discards_only_unbound_allocation(
 
     recreated = service.create(_request())
     assert recreated.status == "uploading"
-    with sqlite3.connect(service.registry.db_path) as conn:
+    with closed_sqlite_connection(service.registry.db_path) as conn:
         active_count, accepted_bytes, event_count = conn.execute(
             "SELECT (SELECT COUNT(*) FROM upload_assets "
             "WHERE status = 'uploading'), "
@@ -664,7 +665,7 @@ def test_bind_database_failure_compensates_and_preserves_create_accounting(
     recreated = service.create(_request())
     assert recreated.status == "uploading"
 
-    with sqlite3.connect(service.registry.db_path) as conn:
+    with closed_sqlite_connection(service.registry.db_path) as conn:
         active_count, accepted_bytes, event_count = conn.execute(
             "SELECT (SELECT COUNT(*) FROM upload_assets "
             "WHERE status = 'uploading'), "

@@ -16,6 +16,7 @@ from threading import Barrier
 from typing import cast
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.api.schemas import (
     AssetDescriptor,
@@ -102,7 +103,7 @@ def _stored_activation(
     registry: ResumableUploadRegistry, asset_id: str
 ) -> str | None:
     """Read one private activation marker directly from SQLite."""
-    with sqlite3.connect(registry.db_path) as conn:
+    with closed_sqlite_connection(registry.db_path) as conn:
         return cast(
             str | None,
             conn.execute(
@@ -132,8 +133,7 @@ class _LegacyAsset:
 
 
 def _insert_legacy_asset(
-    conn: sqlite3.Connection,
-    asset: _LegacyAsset,
+    conn: sqlite3.Connection, asset: _LegacyAsset
 ) -> None:
     """Insert a valid row from the upload schema before activation tracking."""
     conn.execute(
@@ -176,7 +176,7 @@ def _build_legacy_registry_db(db_path: Path) -> datetime:
     """Create the pre-activation schema and representative historical rows."""
     first_part_at = NOW - timedelta(hours=2)
     later_part_at = first_part_at + timedelta(minutes=1)
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         legacy_assets_ddl = _CREATE_ASSETS_TABLE.replace(
             "    activated_at TEXT,\n", ""
         )
@@ -274,7 +274,7 @@ def test_fresh_activation_column_is_internal_and_starts_null(
     registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
     asset, _secret = registry.create_or_replay(_spec(), now=NOW)
 
-    with sqlite3.connect(registry.db_path) as conn:
+    with closed_sqlite_connection(registry.db_path) as conn:
         columns = {
             row[1] for row in conn.execute("PRAGMA table_info(upload_assets)")
         }
@@ -301,7 +301,7 @@ def test_legacy_initialization_backfills_only_part_bearing_uploads(
 
     ResumableUploadRegistry(str(db_path))
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         activation_by_asset = dict(
             conn.execute(
                 "SELECT asset_id, activated_at FROM upload_assets "
@@ -335,7 +335,7 @@ def test_activation_migration_is_repeatable_and_concurrent(
     ResumableUploadRegistry(str(db_path))
     ResumableUploadRegistry(str(db_path))
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         columns = [
             row[1] for row in conn.execute("PRAGMA table_info(upload_assets)")
         ]
@@ -351,7 +351,7 @@ def test_activation_migration_is_repeatable_and_concurrent(
         for future in futures:
             future.result()
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         activated_at = conn.execute(
             "SELECT activated_at FROM upload_assets WHERE asset_id = ?",
             ("uploading-with-part",),
@@ -394,7 +394,7 @@ def test_explicit_asset_projection_reconstructs_every_record_field(
     registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
     created, _secret = registry.create_or_replay(_spec(), now=NOW)
 
-    with sqlite3.connect(registry.db_path) as conn:
+    with closed_sqlite_connection(registry.db_path) as conn:
         row = conn.execute(
             f"SELECT {_ASSET_COLUMNS} FROM upload_assets WHERE asset_id = ?",
             (created.asset_id,),
@@ -408,7 +408,7 @@ def test_explicit_asset_projection_reconstructs_every_record_field(
 def test_registry_is_additive_and_owner_scoped(tmp_path: Path) -> None:
     """New tables coexist with the legacy completed-upload table."""
     db_path = tmp_path / "tasks.db"
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         conn.execute("CREATE TABLE user_uploads (file_id TEXT PRIMARY KEY)")
     registry = ResumableUploadRegistry(str(db_path))
 
@@ -417,7 +417,7 @@ def test_registry_is_additive_and_owner_scoped(tmp_path: Path) -> None:
     assert registry.get_asset(asset.asset_id, owner="owner-1") == asset
     assert registry.get_asset(asset.asset_id, owner="owner-2") is None
     assert secret.raw_token
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         tables = {
             row[0]
             for row in conn.execute(
@@ -439,7 +439,7 @@ def test_create_is_idempotent_without_double_charging(tmp_path: Path) -> None:
 
     assert replay.asset_id == first.asset_id
     assert replay_secret.raw_token != first_secret.raw_token
-    with sqlite3.connect(registry.db_path) as conn:
+    with closed_sqlite_connection(registry.db_path) as conn:
         assert (
             conn.execute(
                 "SELECT COUNT(*) FROM upload_quota_events"
@@ -465,7 +465,7 @@ def test_conditional_discard_removes_only_a_pristine_allocation(
         discarded.asset_id, owner="owner-1"
     )
     assert registry.get_asset(discarded.asset_id, owner="owner-1") is None
-    with sqlite3.connect(registry.db_path) as conn:
+    with closed_sqlite_connection(registry.db_path) as conn:
         deleted_counts = conn.execute(
             "SELECT (SELECT COUNT(*) FROM upload_capabilities "
             "WHERE asset_id = ?), (SELECT COUNT(*) FROM upload_idempotency "
@@ -479,7 +479,7 @@ def test_conditional_discard_removes_only_a_pristine_allocation(
         _spec(key="discarded"), now=NOW
     )
     assert recreated.asset_id != discarded.asset_id
-    with sqlite3.connect(registry.db_path) as conn:
+    with closed_sqlite_connection(registry.db_path) as conn:
         accepted_bytes, event_count = conn.execute(
             "SELECT SUM(byte_size), COUNT(*) FROM upload_quota_events "
             "WHERE owner_subject = ? AND event_kind = 'create'",
@@ -844,7 +844,7 @@ def test_create_reclaims_due_owner_rows_before_quota_checks(
         "expired",
         "expired",
     ]
-    with sqlite3.connect(registry.db_path) as conn:
+    with closed_sqlite_connection(registry.db_path) as conn:
         event_count, accepted_bytes = conn.execute(
             "SELECT COUNT(*), SUM(byte_size) FROM upload_quota_events "
             "WHERE owner_subject = ? AND event_kind = 'create'",
@@ -903,7 +903,7 @@ def test_idempotency_replays_preserve_terminal_error_distinctions(
         with pytest.raises(UploadStateError) as error:
             registry.create_or_replay(_spec(key=key), now=NOW)
         assert error.value.code == "upload_state_conflict"
-    with sqlite3.connect(registry.db_path) as conn:
+    with closed_sqlite_connection(registry.db_path) as conn:
         assert (
             conn.execute("SELECT COUNT(*) FROM upload_assets").fetchone()[0]
             == 3
@@ -957,7 +957,7 @@ def test_shared_terminalization_releases_all_ephemeral_state(
     registry.abort_asset(aborted.asset_id, owner="owner-1", now=NOW)
     registry.cleanup_expired(now=NOW + timedelta(minutes=180))
 
-    with sqlite3.connect(registry.db_path) as conn:
+    with closed_sqlite_connection(registry.db_path) as conn:
         rows = conn.execute(
             "SELECT status, state_version, reserved_bytes "
             "FROM upload_assets ORDER BY status"

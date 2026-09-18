@@ -166,6 +166,39 @@ async def test_summary_prep_node_packs_six_subsections(
     assert "Content: c6" in blob
 
 
+@pytest.mark.parametrize("section_count", [4, 6, 10])
+async def test_summary_prep_renders_all_sections_with_real_prompt(
+    section_count: int,
+) -> None:
+    """The real summary template retains every title, body, and citation."""
+    headings = [f"Evidence section {index}" for index in range(section_count)]
+    bodies = [
+        f"Audited claim {index} [document {index + 1:03d}]."
+        for index in range(section_count)
+    ]
+    result = await _build_agent().summary_prep_node(
+        cast(
+            DeepResearchState,
+            {
+                "original_user_query": "Rice wax review",
+                "research_dimensions": headings,
+                "revised_reports": [
+                    {"revised_report": body} for body in bodies
+                ],
+            },
+        )
+    )
+    prompt = result["chat_payload"]["user_query"]
+    assert "{{" not in prompt
+    assert "Rice wax review" in prompt
+    positions = []
+    for heading, body in zip(headings, bodies, strict=True):
+        section = f"Title: {heading}\nContent: {body}"
+        assert prompt.count(section) == 1
+        positions.append(prompt.index(section))
+    assert positions == sorted(positions)
+
+
 async def test_summary_prep_node_rejects_short_dimension_lists() -> None:
     """Fewer than four dimensions cannot enter summary assembly."""
     agent = _build_agent()

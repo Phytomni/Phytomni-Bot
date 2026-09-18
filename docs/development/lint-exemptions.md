@@ -70,7 +70,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 - Symbol:
   `DeepGenomeConfig`
 - Fingerprint:
-  `sha256:f55dce363c2648d8d0b3780718ea17784cb6ee62ef588d3067d2ae85d16129f8`
+  `sha256:1c9a1090da72affd029ae135fe0dc870ae1964e7c743eaea171f02ec89442f1a`
 - Owner:
   `bot-maintainers`
 - Introduced:

@@ -13,10 +13,15 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from ..config.defaults import ServerConfig
-from ..mcp.formatting.execution import apply_compatibility_projection
+from ..mcp.formatting.execution import (
+    PUBLIC_ARTIFACT_KEYS,
+    apply_compatibility_projection,
+    build_execution_projection,
+)
 from ..mcp.formatting.models import (
     ExecutionProjection,
     FormattedToolResult,
+    ReportExecution,
     ResultDelivery,
 )
 from ..runtime.outbound import current_obs_runtime
@@ -57,6 +62,7 @@ from .terminal_report import (
     TerminalReportContext,
     TerminalReportResult,
     assemble_terminal_report,
+    is_scientific_report_text,
     persist_terminal_report,
 )
 
@@ -107,6 +113,7 @@ class ReportTerminalState:
     report: TerminalReportAssembly
     warnings: list[dict[str, Any]] | None = None
     delivery: ResultDelivery | None = None
+    previous_result: Mapping[str, Any] | None = None
 
 
 async def collect_report_artifact_set(
@@ -291,15 +298,11 @@ def _persist_running_scientific_report(
     live: list[dict[str, Any]],
     report: TerminalReportAssembly,
 ) -> Any:
-    """Publish the scientific answer before harvest or archive work.
-
-    EI completion is independent of OBS listing and zip delivery. Persist
-    the floor report on the still-running umbrella so Web can leave the
-    submit-ack wait state without downloading the output tree.
-    """
+    """Clear a non-scientific placeholder before slow artifact listing."""
     current_result = current.result if isinstance(current.result, dict) else {}
     formatted = dict(current_result.get("formatted") or {})
     formatted["answer"] = report.answer
+    formatted["references"] = []
     next_result = {
         **current_result,
         "formatted": formatted,
@@ -322,18 +325,15 @@ def _persist_running_scientific_report(
 
 async def settle_report_terminal(request: ReportSettlementRequest) -> Any:
     """Assemble and persist one analyst-class terminal report."""
-    current: Any = _persist_running_scientific_report(
-        request.registry,
-        request.current,
-        request.live,
-        await _assemble_report(
-            request.current,
-            request.status,
+    current: Any = request.current
+    retained = _retained_scientific_report(current, request.live)
+    if retained is None:
+        current = _persist_running_scientific_report(
+            request.registry,
+            current,
             request.live,
-            TerminalArtifactSet(artifacts=(), warnings=()),
-            None,
-        ),
-    )
+            TerminalReportAssembly(answer="", report=ReportExecution()),
+        )
     groups = await collect_report_artifact_groups(
         request.live,
         lister=request.sources.lister,
@@ -356,6 +356,15 @@ async def settle_report_terminal(request: ReportSettlementRequest) -> Any:
         artifact_set,
         request.assembler,
     )
+    if not report.answer.strip() and retained is not None:
+        report = replace(
+            report,
+            answer=retained.answer,
+            report=replace(
+                retained.report,
+                degraded=retained.report.degraded or report.report.degraded,
+            ),
+        )
     warnings = stored_submission_warnings(current.result)
     marker = result_delivery_from_result(current.result)
     state = ReportTerminalState(
@@ -365,8 +374,9 @@ async def settle_report_terminal(request: ReportSettlementRequest) -> Any:
         report=report,
         warnings=warnings,
         delivery=marker,
+        previous_result=request.current.result,
     )
-    if not marker or request.status != "succeeded":
+    if not marker or marker.status == "ready" or request.status != "succeeded":
         return _settle_report_without_delivery(
             request.registry, current, state
         )
@@ -391,6 +401,11 @@ async def settle_report_terminal(request: ReportSettlementRequest) -> Any:
             request.registry, current, state
         )
     delivery = initial_pending_delivery(inventory.digest)
+    if marker is not None and marker.status == "failed":
+        # A legacy failed marker already consumed a delivery revision.  Keep
+        # the child-only reconciliation monotonic so Web can install the new
+        # inventory without confusing it with the stale terminal snapshot.
+        delivery = replace(delivery, revision=marker.revision + 1)
     state = replace(state, delivery=delivery)
     return _store_pending_report_delivery(
         request.registry,
@@ -398,6 +413,56 @@ async def settle_report_terminal(request: ReportSettlementRequest) -> Any:
         state,
         inventory_ref,
         delivery,
+    )
+
+
+def _canonical_section(result: Any, key: str) -> Mapping[str, Any]:
+    """Read one canonical section, never legacy provider payloads."""
+    value = result.get(key) if isinstance(result, Mapping) else None
+    return value if isinstance(value, Mapping) else {}
+
+
+def _retained_scientific_report(
+    current: Any, live: list[dict[str, Any]]
+) -> TerminalReportAssembly | None:
+    """Admit a previously persisted canonical scientific body only."""
+    formatted = _canonical_section(current.result, "formatted")
+    execution = _canonical_section(current.result, "execution")
+    report = build_execution_projection("", {"execution": execution}).report
+    answer = formatted.get("answer")
+    if (
+        report is None
+        or report.state not in {"intermediate", "final", "degraded"}
+        or report.state != _canonical_section(execution, "report").get("state")
+        or not isinstance(answer, str)
+    ):
+        return None
+    context = TerminalReportContext(
+        agent=current.spec.agent,
+        status=current.status,
+        live=live,
+        artifacts=(),
+        query=current.request_info.query,
+    )
+    artifacts = _retained_artifacts(current.result)
+    if not is_scientific_report_text(context, artifacts, answer):
+        return None
+    return TerminalReportAssembly(answer=answer, report=report)
+
+
+def _retained_artifacts(result: Any) -> tuple[Mapping[str, Any], ...]:
+    """Keep public descriptors without re-admitting report sources."""
+    artifacts = _canonical_section(result, "execution").get("artifacts")
+    if not isinstance(artifacts, (list, tuple)):
+        return ()
+    return tuple(
+        {
+            key: value
+            for key, value in item.items()
+            if key in PUBLIC_ARTIFACT_KEYS
+        }
+        for item in artifacts
+        if isinstance(item, Mapping)
     )
 
 
@@ -510,8 +575,28 @@ def canonical_terminal_payload(
 ) -> tuple[dict[str, Any], str | None]:
     """Build the single persisted projection for analyst-class runs."""
     execution = _build_execution_projection(state)
+    previous = _canonical_section(state.previous_result, "formatted")
+    references = previous.get("references")
+    retain_bindings = (
+        bool(state.report.answer)
+        and previous.get("answer") == state.report.answer
+    )
     formatted = apply_compatibility_projection(
-        FormattedToolResult(answer=state.report.answer), execution
+        FormattedToolResult(
+            answer=state.report.answer,
+            references=(
+                tuple(references)
+                if retain_bindings and isinstance(references, (list, tuple))
+                else ()
+            ),
+            tabular=(
+                previous.get("tabular")
+                if retain_bindings
+                and isinstance(previous.get("tabular"), Mapping)
+                else None
+            ),
+        ),
+        execution,
     )
     payload = _json_compatible(
         {"formatted": asdict(formatted), "execution": asdict(execution)}
@@ -564,6 +649,18 @@ def _build_execution_projection(
     """Build the bounded operational projection for a terminal report."""
     submission_warnings = _execution_warnings(state.warnings)
     failure_warnings = _failure_warnings(state.status, state.live)
+    artifacts = list(_retained_artifacts(state.previous_result))
+    for artifact in state.artifact_set.artifacts:
+        descriptor = asdict(artifact.to_public())
+        if descriptor not in artifacts:
+            artifacts.append(descriptor)
+    previous_execution = _canonical_section(state.previous_result, "execution")
+    previous_dirs = build_execution_projection(
+        "", {"execution": previous_execution}
+    ).output_dirs
+    output_dirs = tuple(
+        dict.fromkeys((*previous_dirs, *_public_output_dirs(state.live)))
+    )
     return ExecutionProjection(
         tracking={
             "degraded": _tracking_is_degraded(
@@ -581,11 +678,8 @@ def _build_execution_projection(
             *state.report.warnings,
         ),
         tasks=tuple(_public_task_row(row) for row in state.live),
-        artifacts=tuple(
-            asdict(artifact.to_public())
-            for artifact in state.artifact_set.artifacts
-        ),
-        output_dirs=tuple(_public_output_dirs(state.live)),
+        artifacts=tuple(artifacts),
+        output_dirs=output_dirs,
         report=state.report.report,
         diagnostics=tuple(_failure_diagnostics(state.status, state.live)),
         delivery=state.delivery,
@@ -883,7 +977,6 @@ def failed_task_ids(live: Sequence[Mapping[str, Any]]) -> list[str]:
 
 
 def _json_compatible(value: Any) -> Any:
-    """Normalize dataclass tuples to the JSON shape stored in SQLite."""
     return json.loads(json.dumps(value))
 
 

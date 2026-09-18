@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable
+from types import SimpleNamespace
 from typing import Any, cast
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -18,23 +20,222 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
+from tests.support.http_fakes import open_asgi_client
+from tests.support.openai_errors import (
+    openai_connection_error,
+    openai_timeout_error,
+)
 
+from mcp_server_phytomni.agents.chat.completion_validation import (
+    InvalidChatCompletionError,
+)
 from mcp_server_phytomni.agents.knowledge.retrieval_result import (
     RETRIEVAL_UNAVAILABLE_MESSAGE,
 )
-from mcp_server_phytomni.api.app_support import _ErrorResponseOptions
+from mcp_server_phytomni.api import agent_runs
+from mcp_server_phytomni.api.agent_runs import _invoke_prepared_agent_run
+from mcp_server_phytomni.api.app_support import (
+    _ErrorResponseOptions,
+    error_response,
+    request_context_middleware,
+)
 from mcp_server_phytomni.api.error_handlers import register_error_handlers
 from mcp_server_phytomni.api.lifecycle_contract import (
     LifecycleInvariantError,
     SafeApiError,
     SafeErrorCode,
 )
+from mcp_server_phytomni.api.stage_errors import project_data_stage_error
+from mcp_server_phytomni.common.http import retry_network_or_raise
 from mcp_server_phytomni.runtime.stage_trace import (
+    DataStage,
     StageTraceEvent,
     bind_stage_trace,
+    trace_data_stage,
 )
 
 pytestmark = pytest.mark.server
+
+_TRANSPORT_SECRET = "https://private-upstream.invalid/private?token=hidden"
+
+
+@pytest.mark.parametrize(
+    ("exc", "status", "code", "message"),
+    [
+        *[
+            pytest.param(
+                error_type(_TRANSPORT_SECRET),
+                502,
+                "upstream_failed",
+                "upstream service failed",
+                id=error_type.__name__,
+            )
+            for error_type in (
+                httpx.ConnectError,
+                httpx.ReadError,
+                httpx.WriteError,
+                httpx.CloseError,
+                httpx.RemoteProtocolError,
+                httpx.ProxyError,
+            )
+        ],
+        *[
+            pytest.param(
+                error_type(_TRANSPORT_SECRET),
+                504,
+                "upstream_timeout",
+                "upstream service timed out",
+                id=error_type.__name__,
+            )
+            for error_type in (
+                httpx.ConnectTimeout,
+                httpx.ReadTimeout,
+                httpx.WriteTimeout,
+                httpx.PoolTimeout,
+            )
+        ],
+        pytest.param(
+            openai_connection_error(_TRANSPORT_SECRET),
+            502,
+            "upstream_failed",
+            "upstream service failed",
+            id="APIConnectionError",
+        ),
+        pytest.param(
+            openai_timeout_error(_TRANSPORT_SECRET),
+            504,
+            "upstream_timeout",
+            "upstream service timed out",
+            id="APITimeoutError",
+        ),
+    ],
+)
+async def test_exhausted_transport_has_safe_http_classification(
+    monkeypatch: pytest.MonkeyPatch,
+    exc: Exception,
+    status: int,
+    code: str,
+    message: str,
+) -> None:
+    """Direct transport types survive MCP wrapping without leaking details."""
+    exc.__cause__ = (
+        httpx.ReadTimeout(_TRANSPORT_SECRET)
+        if status == 502
+        else httpx.ConnectError(_TRANSPORT_SECRET)
+    )
+    app = FastAPI()
+    register_error_handlers(app, lambda name: error_response)
+
+    @app.get("/failure")
+    async def fail() -> None:
+        await retry_network_or_raise(exc, attempt=0, max_retries=0)
+
+    async with open_asgi_client(
+        monkeypatch,
+        request_context_middleware(app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/failure")
+
+    assert response.status_code == status
+    request_id = response.headers["X-Request-Id"]
+    assert request_id and request_id != "unknown"
+    assert response.json() == {
+        "error": {
+            "code": code,
+            "message": message,
+            "request_id": request_id,
+            "retryable": True,
+        }
+    }
+    assert _TRANSPORT_SECRET not in response.text
+    assert "private-upstream" not in str(response.headers)
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RuntimeError("Network error: timed out"),
+        InvalidChatCompletionError("missing_choices"),
+        httpx.LocalProtocolError("Network error"),
+        httpx.UnsupportedProtocol("timeout"),
+        McpError(ErrorData(code=INTERNAL_ERROR, message="Network error")),
+    ],
+    ids=lambda exc: type(exc).__name__,
+)
+async def test_untyped_failures_with_transport_causes_stay_internal(
+    exc: Exception,
+) -> None:
+    """Messages and nested causes cannot promote unknown failures to 502."""
+    exc.__cause__ = httpx.ConnectError(_TRANSPORT_SECRET)
+    with pytest.raises(McpError) as raised:
+        await retry_network_or_raise(exc, attempt=0, max_retries=0)
+    assert raised.value.__class__ is McpError
+    assert raised.value.__cause__ is exc
+    app = FastAPI()
+    register_error_handlers(app, lambda name: error_response)
+    for unknown in (raised.value, exc):
+        handler = app.exception_handlers[
+            McpError if isinstance(unknown, McpError) else Exception
+        ]
+        response = await cast(Awaitable[Any], handler(_request(), unknown))
+        assert response.status_code == 500
+        assert json.loads(response.body) == {
+            "error": {
+                "code": "internal_invariant_failed",
+                "message": "internal server error",
+                "request_id": "unknown",
+                "retryable": False,
+            }
+        }
+
+
+@pytest.mark.parametrize(
+    "exc", [httpx.ConnectError("x"), httpx.ReadTimeout("x")]
+)
+async def test_data_stage_projection_precedes_transport_http_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+    exc: Exception,
+) -> None:
+    """Native Data's existing classified stage wins over generic transport."""
+
+    async def fail_tool(_name: str, _arguments: Any) -> None:
+        async with trace_data_stage(DataStage.DATA_REWRITE, dependency="llm"):
+            await retry_network_or_raise(exc, attempt=0, max_retries=0)
+
+    monkeypatch.setattr(
+        agent_runs,
+        "_app_module",
+        lambda: SimpleNamespace(
+            invoke_tool_enveloped=fail_tool,
+            _factory=SimpleNamespace(
+                project_data_stage_error=project_data_stage_error
+            ),
+        ),
+    )
+    with pytest.raises(SafeApiError) as raised:
+        await _invoke_prepared_agent_run(
+            {"agent": "data", "arguments": {}},
+            cast(Any, SimpleNamespace(tool_name="DataAgent")),
+        )
+    assert isinstance(raised.value.__cause__, McpError)
+    assert raised.value.__cause__.__class__ is not McpError
+    app = FastAPI()
+    register_error_handlers(app, lambda name: error_response)
+    response = await cast(
+        Awaitable[Any],
+        app.exception_handlers[SafeApiError](_request(), raised.value),
+    )
+    assert response.status_code == 500
+    assert json.loads(response.body) == {
+        "error": {
+            "code": "stage_failed",
+            "message": "internal server error",
+            "request_id": "unknown",
+            "stage": "data_rewrite",
+            "retryable": False,
+        }
+    }
 
 
 def _error_response(

@@ -17,6 +17,7 @@ import json
 import sqlite3
 import time
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -542,7 +543,7 @@ def _read_research_grant_rows(
         f"WHERE grant_id IN ({placeholders})"
     )
     try:
-        with sqlite3.connect(grant_store.db_path) as connection:
+        with closing(sqlite3.connect(grant_store.db_path)) as connection:
             connection.row_factory = sqlite3.Row
             return list(connection.execute(query, grant_ids))
     except (OSError, sqlite3.Error):

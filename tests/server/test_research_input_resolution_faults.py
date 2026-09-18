@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -15,6 +14,7 @@ from typing import Any, cast
 
 import pytest
 from tests.support.research_fakes import research_callbacks_through
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.research.input_contracts import (
     ResearchCoordinatorDependencies,
@@ -282,7 +282,7 @@ async def test_sync_rejections_create_no_research_run(
 
     assert caught.value.code == case.code
     assert caught.value.http_status_hint == case.status
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM runs WHERE agent = 'research'"
         ).fetchone() == (0,)
@@ -529,7 +529,7 @@ def test_direct_admission_query_limit_is_a_no_run_413(tmp_path: Path) -> None:
 
     assert caught.value.code == "research_input_limit_exceeded"
     assert caught.value.http_status_hint == 413
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM runs WHERE agent = 'research'"
         ).fetchone() == (0,)
@@ -621,7 +621,7 @@ def _failed_admission_rows(
     store: ResearchInputStore,
 ) -> tuple[tuple[Any, ...], tuple[Any, ...] | None]:
     """Load the safe parent and root states after an admitted failure."""
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         row = connection.execute(
             "SELECT run_id, status, failure_json FROM runs "
             "WHERE agent = 'research'"

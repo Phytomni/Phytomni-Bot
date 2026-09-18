@@ -26,6 +26,7 @@ from tests.support.resumable_asset_fakes import (
     ResumableAssetSpec,
     build_resumable_asset,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.api import asset_resolver as asset_resolver_module
 from mcp_server_phytomni.api.asset_resolver import (
@@ -149,8 +150,8 @@ def test_historical_chat_attachment_reads_as_document_without_row_update(
         tmp_path,
         spec=ResumableAssetSpec(purpose="chat_attachment"),
     )
-    with sqlite3.connect(harness.service.registry.db_path) as connection:
-        before = connection.execute(
+    with closed_sqlite_connection(harness.service.registry.db_path) as conn:
+        before = conn.execute(
             "SELECT purpose FROM upload_assets WHERE asset_id = ?",
             (harness.asset_id,),
         ).fetchone()[0]
@@ -159,8 +160,8 @@ def test_historical_chat_attachment_reads_as_document_without_row_update(
         [{"asset_id": harness.asset_id}], harness.owner
     )
 
-    with sqlite3.connect(harness.service.registry.db_path) as connection:
-        after = connection.execute(
+    with closed_sqlite_connection(harness.service.registry.db_path) as conn:
+        after = conn.execute(
             "SELECT purpose FROM upload_assets WHERE asset_id = ?",
             (harness.asset_id,),
         ).fetchone()[0]
@@ -625,8 +626,8 @@ def test_resolve_bundle_rejects_unknown_persisted_purpose(
         "session_expires_at": uploaded.session_expires_at.isoformat(),
         "completed_at": uploaded.completed_at.isoformat(),
     }
-    with sqlite3.connect(harness.service.registry.db_path) as connection:
-        connection.execute(
+    with closed_sqlite_connection(harness.service.registry.db_path) as conn:
+        conn.execute(
             f"INSERT INTO upload_assets "
             f"({', '.join(corrupt_record)}) "
             f"VALUES ({', '.join('?' for _key in corrupt_record)})",

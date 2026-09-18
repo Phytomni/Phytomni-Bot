@@ -7,12 +7,15 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
+from collections.abc import Coroutine
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, Literal, cast
 
 import pytest
+from tests.support.asyncio_helpers import run_coroutine_on_owned_loop
 
 import mcp_server_phytomni.api.research_capabilities as module
 from mcp_server_phytomni.api.research_capabilities import (
@@ -379,7 +382,10 @@ def test_snapshot_and_refresh_skip_direct_mode() -> None:
     config = cast(ApiConfig, SimpleNamespace(RELAY_MODE=False))
     assert module.current_research_relay_snapshot(config) is None
     assert (
-        asyncio.run(module.refresh_research_relay_capability(config)) is None
+        run_coroutine_on_owned_loop(
+            module.refresh_research_relay_capability(config)
+        )
+        is None
     )
 
 
@@ -461,6 +467,30 @@ async def test_schedule_refresh_guards_and_abort_cancel() -> None:
             lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("no loop")),
         )
         assert cache.schedule_refresh(cast(RelayClient, client), now) is False
+
+
+def test_schedule_refresh_closes_coroutine_when_task_creation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected task leaves no unawaited capability refresh coroutine."""
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    cache = ResearchRelayCapabilityCache()
+    client = _FakeRelayClient(_capability(now))
+    rejected: list[Coroutine[Any, Any, object]] = []
+
+    def reject_task(coroutine: Coroutine[Any, Any, object]) -> None:
+        rejected.append(coroutine)
+        raise RuntimeError("no running event loop")
+
+    monkeypatch.setattr(asyncio, "create_task", reject_task)
+    try:
+        assert cache.schedule_refresh(cast(RelayClient, client), now) is False
+        assert len(rejected) == 1
+        assert inspect.getcoroutinestate(rejected[0]) == inspect.CORO_CLOSED
+        assert client.calls == 0
+    finally:
+        for coroutine in rejected:
+            coroutine.close()
 
 
 def test_descriptor_and_direct_constructible_fail_closed(
@@ -551,7 +581,7 @@ def test_observe_refresh_task_consumes_exceptions() -> None:
             await task
         getattr(module, "_observe_refresh_task")(cast(Any, task))
 
-    asyncio.run(_run())
+    run_coroutine_on_owned_loop(_run())
 
 
 def test_current_relay_client_imports_lazily(

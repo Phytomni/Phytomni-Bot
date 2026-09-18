@@ -99,6 +99,14 @@ commands in the [citation database runbook](../ops/citation-database-runbook.md)
 runtime citation lookup has no GaussDB fallback. `GAUSS_DSN` and relay BI
 remain configuration for unrelated database paths.
 
+`CITATION_OMIT_UNMATCHED` / `PHYTOMNI_CITATION_OMIT_UNMATCHED` is a boolean
+that defaults to **true**. When true, selected SQLite misses, including
+quarantined or conflict IDs, are omitted from the formatted answer and
+reference list, and remaining citations are reindexed. When false, selected
+misses stay title-only with `citation_metadata_degraded`. A bounded
+`lookup_failed` result is always title-only with that degradation flag.
+This switch does not relax `CITATION_DB_PATH` serving startup.
+
 Legacy `AccessKeyID` and `SecretAccessKey` aliases are still accepted for
 compatibility. New local configuration should use `ACCESS_KEY_ID` and
 `SECRET_ACCESS_KEY`.
@@ -893,6 +901,14 @@ real CA bundle instead.
   **Sensitive?:** no
   **Purpose:** Maximum local polling duration for long-running
   Analyst/DeepGenome work.
+
+- **Variable:** `PROTEIN_DESIGN_MAX_POLL`
+  **Default:** `172800`
+  **Sensitive?:** no
+  **Purpose:** DeepGenome protein-design local polling budget. Promoter
+  design keeps `MAX_POLL`; protein design starts this clock when both
+  design jobs are polled together so a long EI protein job is not cut
+  off after the promoter returns.
 
 - **Variable:** `ANALYSIS_JOB_TIMEOUT`
   **Default:** `86400`

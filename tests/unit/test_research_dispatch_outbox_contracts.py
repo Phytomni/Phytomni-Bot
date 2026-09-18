@@ -5,10 +5,10 @@
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 from tests.unit.test_research_dispatch_outbox import (
     _authority_verifier,
     _plan,
@@ -32,7 +32,7 @@ pytestmark = pytest.mark.unit
 
 def _corrupt_payload(store: ResearchInputStore, dispatch_id: str) -> None:
     """Inject malformed JSON through the durable test database seam."""
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         connection.execute(
             "UPDATE research_dispatch_outbox SET payload_json=? "
             "WHERE outbox_id=?",

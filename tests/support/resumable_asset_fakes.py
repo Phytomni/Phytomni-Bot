@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import secrets
-import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -47,6 +46,7 @@ from tests.support.http_fakes import (
     install_tool_handler,
     open_asgi_client,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,7 @@ def _seed_historical_completed_chat_attachment(
     )
     storage.complete(session, (stored,))
     part_count = ceil(len(spec.content) / registry.part_size_bytes)
-    with sqlite3.connect(registry.db_path) as connection:
+    with closed_sqlite_connection(registry.db_path) as connection:
         connection.execute(
             "INSERT INTO upload_assets VALUES ("
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"

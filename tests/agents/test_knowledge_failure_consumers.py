@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,6 +42,7 @@ from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.runtime.task_manager import TaskManager
 from tests.agents._subgraph_branch_fakes import install_chat_subgraph_mocks
 from tests.support.asyncio_helpers import GRAPH_CANCELLATION
+from tests.support.sqlite import closed_sqlite_connection
 
 pytestmark = pytest.mark.agent
 
@@ -306,7 +306,7 @@ def analyst_preset_input(output_dir: Path) -> AnalystInput:
 
 def assert_no_task_rows(db_path: Path) -> None:
     """Assert no submitted or running task was persisted."""
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         count = connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
     assert count == 0
 

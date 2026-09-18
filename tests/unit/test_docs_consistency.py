@@ -266,6 +266,7 @@ def test_citation_sqlite_docs_cover_public_contract() -> None:
         "formatted_citation",
         "doi_missing",
         "citation_metadata_degraded",
+        "CITATION_OMIT_UNMATCHED",
         "<sup>",
         "KnowledgeAgent",
         "ReviewAgent",
@@ -368,7 +369,12 @@ def test_gauss_docs_require_all_three_read_only_layers() -> None:
         assert phrase in runbook
     assert "External" in runbook
     assert "Pending until the authorized probe" in runbook
-    for name in ("TIMEOUT", "MAX_POLL", "ANALYSIS_JOB_TIMEOUT"):
+    for name in (
+        "TIMEOUT",
+        "MAX_POLL",
+        "ANALYSIS_JOB_TIMEOUT",
+        "PROTEIN_DESIGN_MAX_POLL",
+    ):
         assert f"`{name}`" in configuration
 
 

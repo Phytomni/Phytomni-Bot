@@ -11,7 +11,6 @@ parsing or resolving any user input.
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +18,7 @@ from typing import Any, cast
 
 import httpx
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.research import (
     dispatch_runtime as research_dispatch_runtime,
@@ -114,7 +114,7 @@ async def _assert_launch_failure(
     )
     assert getattr(caught.value, "http_status_hint", None) == 503
     assert getattr(caught.value, "retryable", None) is True
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         run = connection.execute(
             "SELECT run_id, status, error, failure_json, expires_at, revision "
             "FROM runs "
@@ -256,7 +256,7 @@ async def test_false_worker_launch_fails_closed_after_admission(
     )
     with pytest.raises(ValueError):
         await invalid_retry.admit(_request())
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         assert connection.execute(
             "SELECT status FROM runs WHERE run_id = ?", (run_id,)
         ).fetchone() == ("failed",)
@@ -276,7 +276,7 @@ async def test_false_worker_launch_fails_closed_after_admission(
     assert retried.replay is False
     assert retried.worker_owner is True
     assert launches == ["false", "true"]
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         retried_row = connection.execute(
             "SELECT status, error, stage, failure_json, expires_at, revision "
             "FROM runs WHERE run_id = ?",
@@ -319,7 +319,7 @@ async def test_nonretryable_worker_failure_is_replayed_as_terminal(
     )
     assert getattr(caught.value, "http_status_hint", None) == 422
     assert getattr(caught.value, "retryable", None) is False
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         row = connection.execute(
             "SELECT run_id, status, error, failure_json, expires_at, revision "
             "FROM runs WHERE agent = 'research' "

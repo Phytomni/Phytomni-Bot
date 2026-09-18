@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import multiprocessing
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -18,6 +17,7 @@ from typing import Any
 import pytest
 import tests.conftest as test_config
 from tests.support.research_fakes import local_server_pytest_generate_tests
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.research.dispatch_outbox import (
     persist_plan_and_outbox,
@@ -225,7 +225,7 @@ def test_lease_reclaim_discards_late_completion_and_reuses_success(
     )
     assert current is None
 
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         row = connection.execute(
             "SELECT revision FROM research_work_units WHERE unit_id = ?",
             (second.unit_id,),
@@ -266,7 +266,7 @@ def test_cancellation_blocks_late_callback_and_purge_removes_old_run(
     assert outcome.status == "cancelled"
     restarted.purge_run("run-cancel")
 
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         old_run = connection.execute(
             "SELECT run_id FROM runs WHERE run_id = 'run-cancel'"
         ).fetchone()
@@ -312,7 +312,7 @@ def test_restart_keeps_one_child_plan_and_one_outbox_row(
     restarted = ResearchInputStore(database)
 
     assert len(records) == 1
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         rows = connection.execute(
             "SELECT outbox_id, state FROM research_dispatch_outbox "
             "WHERE run_id = 'run-outbox'"

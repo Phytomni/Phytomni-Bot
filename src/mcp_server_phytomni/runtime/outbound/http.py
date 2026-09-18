@@ -10,11 +10,13 @@ import ssl
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 import httpx
 
 from ...config.defaults import ServerConfig
+from ..async_utils import log_task_failure
 from ..cleanup import run_bounded_cleanup
 from .models import OutboundHttpProfile, OutboundPoolName
 from .registry import OutboundPoolRegistry
@@ -152,7 +154,11 @@ class OutboundHttpRuntime:
         """Close both owned profiles exactly once."""
         if self._close_task is None:
             self._close_task = asyncio.create_task(self._close_resources())
-        await asyncio.shield(self._close_task)
+            self._close_task.add_done_callback(
+                partial(log_task_failure, operation="http_shutdown")
+            )
+        await asyncio.wait({self._close_task})
+        self._close_task.result()
 
 
 def build_outbound_http_runtime(

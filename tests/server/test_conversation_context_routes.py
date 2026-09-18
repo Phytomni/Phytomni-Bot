@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,7 @@ from uuid import UUID
 import httpx
 import pytest
 from tests.support.http_fakes import open_asgi_client
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
 from mcp_server_phytomni.api.app import create_app
@@ -749,7 +749,7 @@ async def test_tombstone_clears_state_and_deletes_sync_threads(
     assert context is not None
     assert context.context == {}
     assert context.checkpoint_cleanup_state == "complete"
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM conversation_turns "
             "WHERE conversation_key = ?",

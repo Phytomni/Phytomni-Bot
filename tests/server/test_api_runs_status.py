@@ -13,7 +13,6 @@ settles the run as terminal when all children are success-like.
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from dataclasses import asdict
 from typing import Any, Literal, cast
 from unittest.mock import AsyncMock
@@ -33,6 +32,7 @@ from tests.support.run_registry_fakes import (
     seed_foreign_run,
     seed_remote_run_with_task,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
@@ -76,6 +76,7 @@ def _delivery_run_result(
     status: Literal["pending", "ready", "failed"],
     retryable: bool,
     revision: int = 1,
+    error_code: str = "archive_publish_failed",
 ) -> dict[str, Any]:
     """Build one bounded result with private retry coordination state."""
     result = empty_execution_projection(result_archive_required=True)
@@ -104,9 +105,7 @@ def _delivery_run_result(
             ),
             archive=archive,
             error_code=(
-                None
-                if status in {"pending", "ready"}
-                else "archive_publish_failed"
+                None if status in {"pending", "ready"} else error_code
             ),
             retryable=retryable,
         )
@@ -124,15 +123,27 @@ def _seed_delivery_run(
     run_id: str,
     *,
     owner: str = "u1",
-    status: Literal["pending", "ready", "failed"] = "failed",
-    retryable: bool = True,
+    agent: str = "analyst",
+    **delivery_options: Any,
 ) -> None:
     """Persist one terminal delivery state for the HTTP route tests."""
+    status = cast(
+        Literal["pending", "ready", "failed"],
+        delivery_options.get("status", "failed"),
+    )
+    retryable = bool(delivery_options.get("retryable", True))
+    error_code = str(
+        delivery_options.get("error_code", "archive_publish_failed")
+    )
     RunRegistry(tasks_db_path).create_run(
-        RunSpec(run_id, owner, "analyst", "remote"),
+        RunSpec(run_id, owner, agent, "remote"),
         outcome=RunOutcome(
             status="succeeded",
-            result=_delivery_run_result(status=status, retryable=retryable),
+            result=_delivery_run_result(
+                status=status,
+                retryable=retryable,
+                error_code=error_code,
+            ),
         ),
     )
 
@@ -169,6 +180,79 @@ async def test_retry_delivery_is_owner_scoped_idempotent_and_public(
     assert first.json()["revision"] == 2
     assert "/private/obs/inventory.json" not in first.text
     assert "archive_publish_failed" not in first.text
+
+
+async def test_retry_legacy_inventory_failure_reconciles_children_only(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy inventory failures retry collection without resubmitting EI."""
+    run_id = "run-legacy-inventory-retry"
+    _seed_delivery_run(
+        tasks_db_path,
+        run_id,
+        retryable=False,
+        error_code="no_user_deliverables",
+        agent="design",
+    )
+    child_output_dir = "/obs/runs/legacy/children/part-001"
+    TaskManager(tasks_db_path).record(
+        Submission(
+            task_id="legacy-child",
+            status="succeeded",
+            output_dir=child_output_dir,
+            run_context=RunContext(
+                run_id,
+                "u1",
+                "design",
+                "remote",
+                "2026-09-15T00:00:00+00:00",
+                "2026-09-15T00:00:00+00:00",
+            ),
+        )
+    )
+    reconcile_calls: list[str] = []
+
+    async def reconcile_only(
+        registry: RunRegistry, child_run_id: str, *, owner: str, **_: Any
+    ) -> Any:
+        """Model child polling and delivery reconstruction without EI."""
+        reconcile_calls.append(child_run_id)
+        current = registry.get_run(child_run_id, owner=owner)
+        assert current is not None and current.result is not None
+        result = current.result
+        result["execution"]["delivery"] = asdict(
+            ResultDelivery(
+                schema_version=1,
+                required=True,
+                status="pending",
+                revision=1,
+                inventory_digest=_DELIVERY_DIGEST,
+                archive=None,
+                error_code=None,
+                retryable=False,
+            )
+        )
+        registry.settle_run(
+            child_run_id,
+            owner=owner,
+            status="succeeded",
+            result=result,
+            expected_revision=current.revision,
+        )
+        return registry.get_run(child_run_id, owner=owner)
+
+    monkeypatch.setattr(RunRegistry, "reconcile", reconcile_only)
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/delivery/retry",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
+    assert reconcile_calls == [run_id]
 
 
 async def test_retry_delivery_hides_missing_and_foreign_runs(
@@ -417,40 +501,35 @@ async def test_get_run_preserves_request_and_task_identity(
     assert body["task_ids"] == [task_id]
 
 
-async def test_get_nonterminal_run_does_not_hang_through_send(
+async def test_get_nonterminal_run_never_reaches_live_send(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    outbound_runtime: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A running child must not hang GET /v1/runs via live send.
-
-    ``api_client`` restores ``httpx.AsyncClient.request`` for ASGI.
-    Outbound ``BoundAsyncRequestClient`` talks through ``send``.
-    Swapping the trusted profile onto a default HTTPX client
-    reproduces the old hang: ``task_status`` would open a real
-    socket. The offline send guard must fail that path quickly.
-    """
+    """A running child is projected without any provider status request."""
     run_id = "run-nonterminal-send"
     seed_remote_run_with_task(
         tasks_db_path,
         remote_analyst_seed(run_id, "task-nonterminal-send", "running"),
     )
-    live_client = httpx.AsyncClient()
-    original = outbound_runtime.runtime.http.trusted
-    outbound_runtime.runtime.http.trusted = live_client
-    try:
-        with pytest.raises(RuntimeError, match="HTTP requests are disabled"):
-            await asyncio.wait_for(
-                api_client.get(
-                    f"/v1/runs/{run_id}",
-                    headers={"Authorization": f"Bearer {issued_api_key}"},
-                ),
-                timeout=2.0,
-            )
-    finally:
-        outbound_runtime.runtime.http.trusted = original
-        await live_client.aclose()
+
+    async def forbid_reconcile(_task_id: str) -> dict[str, Any]:
+        raise AssertionError("GET must not reconcile provider tasks")
+
+    monkeypatch.setattr(
+        run_registry_module, "reconcile_task", forbid_reconcile
+    )
+    response = await asyncio.wait_for(
+        api_client.get(
+            f"/v1/runs/{run_id}",
+            headers={"Authorization": f"Bearer {issued_api_key}"},
+        ),
+        timeout=2.0,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "running"
 
 
 async def test_get_run_does_not_fuzzy_match_task_metadata(
@@ -565,7 +644,7 @@ async def test_get_zero_child_orphan_background_run_is_a_pure_read(
             "raw": {"path": "/private/input.fa"},
         },
     )
-    with sqlite3.connect(tasks_db_path) as conn:
+    with closed_sqlite_connection(tasks_db_path) as conn:
         conn.execute(
             "UPDATE runs SET error = ? WHERE run_id = ?",
             ("error-sentinel: /private/input.fa", run_id),
@@ -598,7 +677,6 @@ async def test_get_run_does_not_reconcile_non_terminal_children(
 ) -> None:
     """A running GET projects state without executing supervisor work."""
     registry = RunRegistry(tasks_db_path)
-    manager = TaskManager(tasks_db_path)
     ctx = RunContext(
         run_id="run-r-1",
         user_id="u1",
@@ -608,7 +686,7 @@ async def test_get_run_does_not_reconcile_non_terminal_children(
         updated_at="2026-05-20T00:00:00+00:00",
     )
     for task_id in ("t-1", "t-2"):
-        manager.record(
+        TaskManager(tasks_db_path).record(
             Submission(
                 task_id=task_id,
                 status="submitted",

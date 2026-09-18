@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from types import MappingProxyType, SimpleNamespace
@@ -46,6 +45,7 @@ from mcp_server_phytomni.storage.research_objects import (
     ResearchObjectVerifyRequest,
 )
 from tests.support.research_fakes import research_callbacks_through
+from tests.support.sqlite import closed_sqlite_connection
 
 pytestmark = pytest.mark.agent
 
@@ -854,7 +854,7 @@ async def test_production_runtime_wires_analyst_and_rotation(
         submitted[0][0]["research_grant_sidecar"]["objects"][0]["grant_id"]
         == "grant-001"
     )
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         task = connection.execute(
             "SELECT run_id, input_fingerprint, status FROM tasks "
             "WHERE task_id='analyst-task-001'"
@@ -909,7 +909,7 @@ async def test_production_runtime_recovers_expired_remote_task(
         ),
     )[0]
     expired = datetime.now(UTC) - timedelta(minutes=2)
-    with sqlite3.connect(recovery_store.db_path) as connection:
+    with closed_sqlite_connection(recovery_store.db_path) as connection:
         connection.execute(
             "UPDATE research_dispatch_outbox SET state='sent', "
             "lease_owner='dead-worker', remote_task_id='analyst-existing', "

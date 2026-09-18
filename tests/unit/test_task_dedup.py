@@ -21,6 +21,13 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 
 from mcp_server_phytomni.agents.analyst import task_ops
 from mcp_server_phytomni.runtime import task_dedup
+from mcp_server_phytomni.runtime.fingerprint_jobs import (
+    FingerprintClaim,
+    get_latest_job,
+    register_submitted_job,
+    try_attach_reuse_claim,
+)
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 from mcp_server_phytomni.runtime.task_dedup import (
     analyst_task_fingerprint,
     should_reuse_prior_task,
@@ -252,3 +259,121 @@ def test_record_dispatch_submission_writes_fingerprint_row(
     assert found["task_id"] == "T-seam"
     assert found["output_dir"] == "/out/seam"
     assert found["status"] == "submitted"
+
+
+@pytest.mark.parametrize("terminal", ["SUCCEEDED", "FAILED", "CANCELLED"])
+@pytest.mark.parametrize("chained", [False, True])
+async def test_terminal_probe_updates_only_the_observed_remote_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    terminal: str,
+    chained: bool,
+) -> None:
+    """Neither analysis_id nor the latest generation replaces the probe ID."""
+    db = str(tmp_path / "tasks.sqlite")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", db)
+    fingerprint = "f" * 64
+    task_id = "T-caller" if chained else "EI-observed"
+    manager = TaskManager(db)
+    manager.record(
+        Submission(
+            task_id=task_id,
+            status="submitted",
+            output_dir="/out/prior",
+            analysis_id="EI-newer",
+            input_fingerprint=fingerprint,
+            source_task_id="EI-observed" if chained else None,
+        )
+    )
+    for remote in ("EI-observed", "EI-newer"):
+        register_submitted_job(
+            db,
+            FingerprintClaim(
+                fingerprint, remote, "/out/prior", remote, remote, "alice"
+            ),
+            force_new=True,
+        )
+    prior = manager.get_task_by_fingerprint(fingerprint)
+    assert prior is not None
+
+    async def status(remote_id: str, **_kwargs: Any) -> dict[str, str]:
+        assert remote_id == "EI-observed"
+        return {"status": terminal}
+
+    monkeypatch.setattr(task_ops, "task_status", status)
+    result = await task_ops.verified_reuse_task_ids(
+        prior, require_terminal_success=False
+    )
+    assert (result is not None) == (terminal == "SUCCEEDED")
+    with sqlite_transaction(db) as connection:
+        assert (
+            connection.execute(
+                "SELECT status FROM fingerprint_jobs WHERE ei_task_id = ?",
+                ("EI-observed",),
+            ).fetchone()[0]
+            == terminal.lower()
+        )
+    latest = get_latest_job(db, fingerprint)
+    assert latest is not None
+    assert latest.ei_task_id == "EI-newer"
+    assert latest.status == "running"
+    row = manager.get_task(task_id)
+    assert row is not None
+    assert row["status"] == terminal.lower()
+
+
+async def test_successful_probe_promotes_missing_fingerprint_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The observed success survives first-time claim materialization."""
+    db = str(tmp_path / "tasks.sqlite")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", db)
+    task_dedup.record_dispatch_submission("EI-root", "/out/prior", "a" * 64)
+    manager = TaskManager(db)
+    prior = manager.get_task_by_fingerprint("a" * 64)
+    assert prior is not None
+
+    async def succeeded(task_id: str, **_kwargs: Any) -> dict[str, str]:
+        assert task_id == "EI-root"
+        return {"status": "SUCCEEDED"}
+
+    monkeypatch.setattr(task_ops, "task_status", succeeded)
+    reuse_ids = await task_ops.verified_reuse_task_ids(
+        prior, require_terminal_success=False
+    )
+    assert reuse_ids is not None
+    attached = try_attach_reuse_claim(
+        db,
+        fingerprint="a" * 64,
+        prior=prior,
+        reuse_ids=reuse_ids,
+        identity=("run-bob", "bob"),
+    )
+    assert attached == reuse_ids
+    job = get_latest_job(db, "a" * 64)
+    assert job is not None
+    assert job.status == "succeeded"
+
+
+def test_success_probe_preserves_a_cancelled_caller_row(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A late live success cannot rewrite an already cancelled owner task."""
+    db = str(tmp_path / "tasks.sqlite")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", db)
+    manager = TaskManager(db)
+    manager.record(Submission("T-prior", "submitted", "/out/prior"))
+    prior = dict(_PRIOR)
+    manager.update_task("T-prior", "cancelled", "A-current", "/out/current")
+    task_dedup.verify_live_status(
+        prior,
+        live_status="SUCCEEDED",
+        require_terminal_success=False,
+    )
+    row = manager.get_task("T-prior")
+    assert row is not None
+    assert row["status"] == "cancelled"
+    assert row["analysis_id"] == "A-current"
+    assert row["output_dir"] == "/out/current"

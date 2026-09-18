@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -233,3 +234,66 @@ def test_private_upload_path_is_one_to_one(tmp_path: Path) -> None:
     result = cancel_run_claims(db, run_id="run-private", user_id="alice")
 
     assert result.terminate_ei_ids == ("EI-private",)
+
+
+@pytest.mark.parametrize("terminal", ["succeeded", "failed"])
+def test_probe_does_not_override_pending_cancellation(
+    tmp_path: Path, terminal: Literal["succeeded", "failed"]
+) -> None:
+    """Only cancellation acknowledgement can settle cancelling jobs."""
+    db = str(tmp_path / "tasks.sqlite")
+    _register(db, "EI-old", ("T-alice", "run-alice", "alice"))
+    cancelled = cancel_run_claims(db, run_id="run-alice", user_id="alice")
+    assert cancelled.terminate_ei_ids == ("EI-old",)
+    assert not mark_job_terminal(db, "EI-old", terminal)
+    job = get_latest_job(db, _FP)
+    assert job is not None and job.status == "cancelling"
+    with pytest.raises(FingerprintJobDeadError):
+        attach_reuse_claim(db, _claim("EI-old", "T-bob", "run-bob", "bob"))
+    assert mark_job_terminal(db, "EI-old", "cancelled")
+    assert not mark_job_terminal(db, "EI-old", "cancelled")
+
+
+def test_rejected_source_opens_new_generation_without_marking_old_dead(
+    tmp_path: Path,
+) -> None:
+    """An unobservable source cannot gain the fresh submitter's claim."""
+    db = str(tmp_path / "tasks.sqlite")
+    _register(db, "EI-old", ("T-alice", "run-alice", "alice"))
+    result = register_submitted_job(
+        db,
+        _claim("EI-fresh", "T-bob", "run-bob", "bob"),
+        rejected_ei_task_id="EI-old",
+    )
+    assert result.job.ei_task_id == "EI-fresh"
+    assert result.job.generation == 2
+    assert result.orphan_ei_task_id is None
+    assert cancel_run_claims(
+        db, run_id="run-alice", user_id="alice"
+    ).terminate_ei_ids == ("EI-old",)
+    assert cancel_run_claims(
+        db, run_id="run-bob", user_id="bob"
+    ).terminate_ei_ids == ("EI-fresh",)
+
+
+def test_rejected_source_does_not_exclude_concurrent_replacement(
+    tmp_path: Path,
+) -> None:
+    """Compare source identity inside registration, not a presence flag."""
+    db = str(tmp_path / "tasks.sqlite")
+    _register(db, "EI-old", ("T-alice", "run-alice", "alice"))
+    _register(db, "EI-winner", ("T-bob", "run-bob", "bob"), force_new=True)
+    result = register_submitted_job(
+        db,
+        _claim("EI-loser", "T-carol", "run-carol", "carol"),
+        rejected_ei_task_id="EI-old",
+    )
+    assert result.job.ei_task_id == "EI-winner"
+    assert result.job.generation == 2
+    assert result.orphan_ei_task_id == "EI-loser"
+    assert not cancel_run_claims(
+        db, run_id="run-bob", user_id="bob"
+    ).terminate_ei_ids
+    assert cancel_run_claims(
+        db, run_id="run-carol", user_id="carol"
+    ).terminate_ei_ids == ("EI-winner",)

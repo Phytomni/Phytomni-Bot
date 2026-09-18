@@ -31,12 +31,15 @@ from mcp_server_phytomni.agents.research.agent import (
 from mcp_server_phytomni.agents.shared.remote_analysis import (
     RemoteAnalysisRequest,
 )
+from mcp_server_phytomni.config.models.agents import ComputeResourceName
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.agent
 
 
-def _build_agent() -> InSilicoResearchAgents:
+def _build_agent(
+    compute_resource: ComputeResourceName | None = None,
+) -> InSilicoResearchAgents:
     """Build a research agent for analyst-subgraph dispatch tests.
 
     The analyst stub is a ``SimpleNamespace`` whose ``arun`` is an
@@ -44,7 +47,11 @@ def _build_agent() -> InSilicoResearchAgents:
     ``submit_remote_analysis`` so the call is observable
     without constructing a real ``AnalystAgent``.
     """
-    config = InSilicoResearchConfig()
+    config = (
+        InSilicoResearchConfig()
+        if compute_resource is None
+        else InSilicoResearchConfig(COMPUTE_RESOURCE=compute_resource)
+    )
     analyst_stub = SimpleNamespace(
         arun=AsyncMock(return_value={"task_id": "legacy-task"})
     )
@@ -67,8 +74,10 @@ def _sample_task() -> ResearchTaskContext:
     )
 
 
+@pytest.mark.parametrize("compute_resource", [None, "medium", "large"])
 async def test_submit_task_uses_subgraph(
     monkeypatch: pytest.MonkeyPatch,
+    compute_resource: ComputeResourceName | None,
 ) -> None:
     """Dispatch delegates to ``submit_remote_analysis``.
 
@@ -76,7 +85,7 @@ async def test_submit_task_uses_subgraph(
     the dispatch request and bypasses the direct ``arun`` call; the
     test asserts both observable conditions.
     """
-    agent = _build_agent()
+    agent = _build_agent(compute_resource)
     subgraph_mock = AsyncMock(
         return_value={
             "task_id": "subgraph-task",
@@ -104,7 +113,7 @@ async def test_submit_task_uses_subgraph(
     assert request.meta == "preset-plan-meta"
     assert request.data_list == {"sample_a.tsv": "expression matrix"}
     assert request.output_dir == "/tmp/research-out"
-    assert request.compute_resource == "medium"
+    assert request.compute_resource == (compute_resource or "small")
     # Research keeps fire-and-poll-elsewhere semantics: the helper
     # is called with is_polling=False (the submit-return default).
     assert call_args.kwargs["is_polling"] is False

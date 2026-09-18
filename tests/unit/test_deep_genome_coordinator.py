@@ -282,6 +282,21 @@ async def test_poll_work_item_uses_monotonic_deadline() -> None:
     assert sleeps == [2.0]
 
 
+async def test_poll_work_item_accepts_success_on_deadline_reread() -> None:
+    """A last EI read at the deadline can still settle success."""
+    outcome, transitions, sleeps = await _run_poll_fixture(
+        ["PENDING", "SUCCEEDED"],
+        clock=[0.0, 9.0, 10.0],
+    )
+
+    assert outcome == WorkItemOutcome("succeeded", "# usable result", None)
+    assert [transition[0] for transition in transitions] == [
+        "pending",
+        "succeeded",
+    ]
+    assert sleeps == [2.0]
+
+
 async def test_remote_success_requires_nonblank_summary() -> None:
     """Do not classify an empty remote result as locally usable."""
     outcome, transitions, sleeps = await _run_poll_fixture(

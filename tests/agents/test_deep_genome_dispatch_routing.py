@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable
 from functools import partial
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -488,15 +489,18 @@ async def test_dispatch_coordinator_receives_effective_poll_id(
 
 
 async def test_default_analyst_adapter_submit_return(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The standalone adapter default is submit-return (GetRun waits)."""
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
     captured: list[bool] = []
 
     async def prepare_context(*_args: Any) -> SimpleNamespace:
         """Return a prepared context through the async helper seam."""
         return SimpleNamespace(
             analysis_type="standalone",
+            target_id="gene-1",
             output_dir="/obs/out",
             thread_id="thread-1",
         )
@@ -507,9 +511,9 @@ async def test_default_analyst_adapter_submit_return(
         prepare_context,
     )
 
-    async def no_reuse(*_args: Any, **_kwargs: Any) -> None:
+    async def no_reuse(*_args: Any, **_kwargs: Any) -> tuple[None, None]:
         """Keep the adapter on its fresh-submission path."""
-        return None
+        return None, None
 
     monkeypatch.setattr(
         analyst_dispatch_adapters, "_reuse_prior_dispatch", no_reuse
@@ -526,11 +530,6 @@ async def test_default_analyst_adapter_submit_return(
         "map_send_payload_to_analyst_input",
         capture_input,
     )
-    monkeypatch.setattr(
-        analyst_dispatch_adapters,
-        "record_dispatch_submission",
-        lambda *_args, **_kwargs: None,
-    )
     agent = SimpleNamespace(
         app=SimpleNamespace(
             ainvoke=AsyncMock(
@@ -542,7 +541,7 @@ async def test_default_analyst_adapter_submit_return(
         )
     )
 
-    await analyst_dispatch_adapters.submit_analyst_via_subgraph(
+    result = await analyst_dispatch_adapters.submit_analyst_via_subgraph(
         agent,
         SimpleNamespace(USER_ID="alice"),
         SimpleNamespace(),
@@ -555,6 +554,12 @@ async def test_default_analyst_adapter_submit_return(
     )
 
     assert captured == [False]
+    assert result["task_id"] == "standalone-1"
+    assert result["output_dir"] == "/obs/out"
+    assert result.get("source_task_id") is None
+    agent.app.ainvoke.assert_awaited_once_with(
+        {}, config={"configurable": {"thread_id": "thread-1"}}
+    )
 
 
 async def test_prepare_tasks_includes_protein_structure() -> None:

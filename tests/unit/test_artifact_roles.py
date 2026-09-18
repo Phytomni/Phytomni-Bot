@@ -152,6 +152,24 @@ def test_invalid_manifest_keeps_objects_unknown() -> None:
     ]
 
 
+def test_invalid_manifest_keeps_listed_objects_unknown_for_salvage() -> None:
+    """Salvage listings stay unknown; only the manifest is diagnostic."""
+    artifacts, warnings = classify_artifacts(
+        listed=(
+            listed_object("data/result.dat"),
+            listed_object("inventory.json"),
+            listed_object("nested.zip"),
+            listed_object(".phytomni-artifacts.json"),
+        ),
+        manifest={"gene": "AT1G73950", "total_files": 116},
+    )
+    assert all(item.role is ArtifactRole.UNKNOWN for item in artifacts[:-1])
+    assert artifacts[-1].role is ArtifactRole.DIAGNOSTIC
+    assert warnings[0].code == "artifact_manifest_invalid"
+    assert ArtifactRole.UNKNOWN not in ARCHIVE_ELIGIBLE_ROLES
+    assert all(item.report_context_eligible is False for item in artifacts)
+
+
 def test_valid_manifest_assigns_declared_role_and_actual_size() -> None:
     """Valid producer semantics are projected without changing size."""
     artifacts, warnings = classify_artifacts(
@@ -245,3 +263,53 @@ def test_manifest_rejects_duplicate_paths() -> None:
                 ],
             }
         )
+
+
+def test_manifest_rejects_invalid_version() -> None:
+    """Unsupported producer versions fail at the model layer."""
+    with pytest.raises(ValidationError):
+        ArtifactManifest.model_validate(
+            {
+                "version": "broken",
+                "artifacts": [],
+            }
+        )
+
+
+def test_manifest_ignores_nonsemantic_producer_fields() -> None:
+    """Extra producer fields are dropped and never become model attributes."""
+    manifest = ArtifactManifest.model_validate(
+        {
+            "version": "1.0",
+            "task_type": "protein_design_analysis",
+            "organism": "Arabidopsis thaliana",
+            "pipeline": {"name": "external"},
+            "artifacts": [
+                {
+                    "path": "scientific_report.md",
+                    "role": "scientific_report",
+                    "media_type": "text/markdown",
+                    "description": "Producer description",
+                }
+            ],
+        }
+    )
+    assert len(manifest.artifacts) == 1
+    assert not hasattr(manifest.artifacts[0], "description")
+
+
+def test_manifest_defaults_missing_media_type() -> None:
+    """A missing media_type is filled with the opaque binary default."""
+    manifest = ArtifactManifest.model_validate(
+        {
+            "version": "1.0",
+            "artifacts": [
+                {
+                    "path": "plot.png",
+                    "role": "scientific_figure",
+                    "description": "optional producer field",
+                }
+            ],
+        }
+    )
+    assert manifest.artifacts[0].media_type == "application/octet-stream"

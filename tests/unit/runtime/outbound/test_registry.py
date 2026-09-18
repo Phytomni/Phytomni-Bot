@@ -428,23 +428,22 @@ async def test_terminal_logs_publish_safe_cumulative_outcome_counters(
     registry = OutboundPoolRegistry(_capacities(llm=1), wait_warn_seconds=0.01)
     logger_name = "mcp_server_phytomni.runtime.outbound.registry"
     caplog.set_level(logging.INFO, logger=logger_name)
+    marker = "https://secret.invalid/query-user-run-task"
+    entered = asyncio.Event()
+
+    async def cancel_in_flight() -> None:
+        """Hold one lease until the caller cancels the task."""
+        async with registry.lease(OutboundPoolName.LLM):
+            entered.set()
+            await asyncio.Event().wait()
 
     with capture_non_propagating_logger(logger_name, caplog.handler):
         async with registry.lease(OutboundPoolName.LLM):
             pass
 
-        marker = "https://secret.invalid/query-user-run-task"
         with pytest.raises(RuntimeError, match="secret.invalid"):
             async with registry.lease(OutboundPoolName.LLM):
                 raise RuntimeError(marker)
-
-        entered = asyncio.Event()
-
-        async def cancel_in_flight() -> None:
-            """Hold one lease until the caller cancels the task."""
-            async with registry.lease(OutboundPoolName.LLM):
-                entered.set()
-                await asyncio.Event().wait()
 
         task = asyncio.create_task(cancel_in_flight(), name=marker)
         await entered.wait()
@@ -491,17 +490,15 @@ async def test_wait_warning_uses_only_fixed_pool_and_counter_fields(
             return None
 
     caplog.set_level(logging.WARNING)
-    logger = logging.getLogger("mcp_server_phytomni.runtime.outbound.registry")
-    logger.addHandler(caplog.handler)
-    try:
+    with capture_non_propagating_logger(
+        "mcp_server_phytomni.runtime.outbound.registry", caplog.handler
+    ):
         holder_task = asyncio.create_task(holder())
         await entered.wait()
         waiter_task = asyncio.create_task(waiter())
         await _wait_for_waiters(registry, OutboundPoolName.LLM, 1)
         release.set()
         await asyncio.gather(holder_task, waiter_task)
-    finally:
-        logger.removeHandler(caplog.handler)
     messages = [record.getMessage() for record in caplog.records]
     assert any("pool=llm" in message for message in messages)
     assert all("https://" not in message for message in messages)

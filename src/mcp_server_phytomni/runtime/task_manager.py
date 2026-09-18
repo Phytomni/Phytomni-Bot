@@ -11,6 +11,7 @@ Functions: resolve_tasks_db_path.
 import json
 import sqlite3
 import uuid
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -191,6 +192,15 @@ _DEAD_TASK_STATUSES: tuple[str, ...] = (
 )
 
 
+def ensure_tasks_table(conn: sqlite3.Connection) -> None:
+    """Create or widen tasks without committing or closing the connection."""
+    conn.execute(_CREATE_TASKS_DDL)
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    for column, statement in _TASK_ADD_COLUMN_STATEMENTS:
+        if column not in existing:
+            conn.execute(statement)
+
+
 class TaskManager:
     """Manages tasks in a SQLite database.
 
@@ -220,15 +230,10 @@ class TaskManager:
         column form); pre-existing rows get ``NULL`` for the new
         columns automatically.
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute(_CREATE_TASKS_DDL)
-        existing = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
-        for column, statement in _TASK_ADD_COLUMN_STATEMENTS:
-            if column not in existing:
-                conn.execute(statement)
-        conn.commit()
-        conn.close()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            ensure_tasks_table(conn)
+            conn.commit()
         ensure_schema(self.db_path)
 
     def _get_connection(self):
@@ -246,16 +251,15 @@ class TaskManager:
             str: The ID of the newly created task.
         """
         task_id = str(uuid.uuid4())
-        conn = self._get_connection()
-        conn.execute(
-            """
-            INSERT INTO tasks (task_id, status, analysis_id, output_dir)
-            VALUES (?, ?, ?, ?)
-        """,
-            (task_id, "running", "unupdated", "unupdated"),
-        )
-        conn.commit()
-        conn.close()
+        with closing(self._get_connection()) as conn:
+            conn.execute(
+                """
+                INSERT INTO tasks (task_id, status, analysis_id, output_dir)
+                VALUES (?, ?, ?, ?)
+            """,
+                (task_id, "running", "unupdated", "unupdated"),
+            )
+            conn.commit()
         return task_id
 
     def update_task(self, task_id, status, analysis_id, output_dir):
@@ -267,16 +271,16 @@ class TaskManager:
             analysis_id (str): The new analysis ID of the task.
             output_dir (str): The new output directory of the task.
         """
-        conn = self._get_connection()
-        conn.execute(
-            """
-            UPDATE tasks
-            SET status = ?, analysis_id = ?, output_dir = ? WHERE task_id = ?
-        """,
-            (status, analysis_id, output_dir, task_id),
-        )
-        conn.commit()
-        conn.close()
+        with closing(self._get_connection()) as conn:
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = ?, analysis_id = ?, output_dir = ?
+                WHERE task_id = ?
+            """,
+                (status, analysis_id, output_dir, task_id),
+            )
+            conn.commit()
 
     def record(self, submission: Submission) -> None:
         """Upsert one task row from a ``Submission`` spec.
@@ -299,48 +303,47 @@ class TaskManager:
             submission: The full per-row write spec.
         """
         ctx = submission.run_context or RunContext()
-        conn = self._get_connection()
-        conn.execute(
-            """
-            INSERT INTO tasks (
-                task_id, status, analysis_id, output_dir,
-                run_id, user_id, agent, origin, created_at, updated_at,
-                input_fingerprint, source_task_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(task_id) DO UPDATE SET
-                status = excluded.status,
-                analysis_id = excluded.analysis_id,
-                output_dir = excluded.output_dir,
-                run_id = excluded.run_id,
-                user_id = excluded.user_id,
-                agent = excluded.agent,
-                origin = excluded.origin,
-                created_at = excluded.created_at,
-                updated_at = excluded.updated_at,
-                input_fingerprint = COALESCE(
-                    excluded.input_fingerprint, tasks.input_fingerprint
+        with closing(self._get_connection()) as conn:
+            conn.execute(
+                """
+                INSERT INTO tasks (
+                    task_id, status, analysis_id, output_dir,
+                    run_id, user_id, agent, origin, created_at, updated_at,
+                    input_fingerprint, source_task_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(task_id) DO UPDATE SET
+                    status = excluded.status,
+                    analysis_id = excluded.analysis_id,
+                    output_dir = excluded.output_dir,
+                    run_id = excluded.run_id,
+                    user_id = excluded.user_id,
+                    agent = excluded.agent,
+                    origin = excluded.origin,
+                    created_at = excluded.created_at,
+                    updated_at = excluded.updated_at,
+                    input_fingerprint = COALESCE(
+                        excluded.input_fingerprint, tasks.input_fingerprint
+                    ),
+                    source_task_id = COALESCE(
+                        excluded.source_task_id, tasks.source_task_id
+                    )
+            """,
+                (
+                    submission.task_id,
+                    submission.status,
+                    submission.analysis_id,
+                    submission.output_dir,
+                    ctx.run_id,
+                    ctx.user_id,
+                    ctx.agent,
+                    ctx.origin,
+                    ctx.created_at,
+                    ctx.updated_at,
+                    submission.input_fingerprint,
+                    submission.source_task_id,
                 ),
-                source_task_id = COALESCE(
-                    excluded.source_task_id, tasks.source_task_id
-                )
-        """,
-            (
-                submission.task_id,
-                submission.status,
-                submission.analysis_id,
-                submission.output_dir,
-                ctx.run_id,
-                ctx.user_id,
-                ctx.agent,
-                ctx.origin,
-                ctx.created_at,
-                ctx.updated_at,
-                submission.input_fingerprint,
-                submission.source_task_id,
-            ),
-        )
-        conn.commit()
-        conn.close()
+            )
+            conn.commit()
 
     def get_task_by_fingerprint(
         self, input_fingerprint: str

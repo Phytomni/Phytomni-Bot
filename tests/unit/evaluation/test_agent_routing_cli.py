@@ -20,13 +20,14 @@ from scripts.agent_routing_eval.runner import (
     EvaluationIncompleteError,
     RunOutcome,
 )
+from tests.support.asyncio_helpers import run_coroutine_on_owned_loop
 
 pytestmark = pytest.mark.unit
 
 
 @pytest.fixture(autouse=True)
 def _stub_outbound_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep CLI lifecycle tests offline until they inject event observers."""
+    """Own CLI test loops and keep outbound lifecycle checks offline."""
 
     async def init() -> None:
         return None
@@ -36,6 +37,14 @@ def _stub_outbound_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(cli, "init_outbound_runtime", init, raising=False)
     monkeypatch.setattr(cli, "aclose_outbound_runtime", close, raising=False)
+    monkeypatch.setattr(
+        cli,
+        "asyncio",
+        SimpleNamespace(
+            run=run_coroutine_on_owned_loop,
+            CancelledError=asyncio.CancelledError,
+        ),
+    )
 
 
 def _case() -> AgentRoutingCase:

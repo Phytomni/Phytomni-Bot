@@ -41,7 +41,12 @@ jobs:
           pip install uv
           uv pip install --system --resolution lowest-direct -e ".[dev,demo]"
       - name: Check the minimum dependency environment
-        run: uv pip check --system
+        run: |
+          python --version
+          uv pip list --system --format freeze
+          uv pip check --system
+      - name: Type check at dependency floors
+        run: mypy --python-version 3.12 src tests e2e scripts
       - name: Run offline tests at dependency floors
         env:
           PHYTOMNI_TESTING: "1"
@@ -134,6 +139,8 @@ jobs:
           uv pip install --system -e ".[dev]"
       - name: Type check with mypy
         run: |
+          python --version
+          uv pip list --system --format freeze
           mypy --python-version ${{ matrix.python-version }} \
             src tests e2e scripts
 
@@ -251,6 +258,8 @@ jobs:
           EMBED_API_KEY: pytest-embed-api-key
           GAUSS_DSN: postgresql://pytest:pytest@localhost:5432/pytest
         run: |
+          python --version
+          uv pip list --system --format freeze
           pytest \
             --cov=mcp_server_phytomni \
             --cov=mcp_client_phytomni \
@@ -259,10 +268,13 @@ jobs:
             --cov-report=json:coverage.json
           python scripts/check_module_coverage.py
       - name: Upload coverage report
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-xml-python-${{ matrix.python-version }}
-          path: coverage.xml
+          path: |
+            coverage.xml
+            coverage.json
 
   yamllint:
     runs-on: ubuntu-latest

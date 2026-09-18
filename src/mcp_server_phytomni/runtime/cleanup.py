@@ -9,7 +9,6 @@ import asyncio
 import logging
 import weakref
 from collections.abc import Awaitable
-from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, Final
 
@@ -52,8 +51,12 @@ def _observe_task_result(task: asyncio.Future[Any]) -> None:
     """Retrieve a lifecycle-owned cleanup result without surfacing detail."""
     if task.cancelled():
         return
-    with suppress(Exception):
-        task.exception()
+    error = task.exception()
+    if error is not None:
+        logger.warning(
+            "stream cleanup failed after owner transfer exception=%s",
+            type(error).__name__,
+        )
 
 
 def _own_overdue_cleanup(task: asyncio.Future[Any]) -> None:
@@ -119,7 +122,9 @@ async def run_bounded_cleanup(
             shield=True,
         ) as scope:
             try:
-                await asyncio.shield(task)
+                # The cleanup owner, not a shield callback, observes failures.
+                await asyncio.wait({task})
+                task.result()
             except asyncio.CancelledError:
                 if task.done() and task.cancelled():
                     if cancelled_is_success:

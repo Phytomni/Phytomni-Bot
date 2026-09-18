@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -30,6 +29,7 @@ from tests.agents.test_research_description_resolver import (
     _single_dataset_request,
     _single_observation_output,
 )
+from tests.support.sqlite import closed_sqlite_connection
 from tests.unit.test_research_work_recovery import _store
 
 pytestmark = pytest.mark.agent
@@ -205,7 +205,7 @@ async def test_real_store_executor_resolver_recovers_four_binding_output(
     assert provider.query_calls == [binding.provider_request_digest]
     assert provider.invocations == 0
     assert not resolver_provider.requests
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         row = connection.execute(
             "SELECT state, execution_fingerprint, evidence_digest "
             "FROM research_work_units WHERE unit_id = ?",

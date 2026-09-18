@@ -10,10 +10,23 @@ The builder reads downloaded analyst files, normalizes image/table labels, and
 returns report data plus the next figure index.
 """
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, NamedTuple
+
+from ...runtime.artifact_roles import (
+    ARCHIVE_ELIGIBLE_ROLES,
+    ARTIFACT_MANIFEST_FILENAME,
+    ArtifactManifest,
+)
+from ...runtime.result_archive import RESERVED_RESULT_PATHS
+from ...runtime.terminal_artifacts import (
+    _MAX_MANIFEST_BYTES,
+    _unique_json_object,
+)
 
 READ_ERRORS = (StopIteration, FileNotFoundError, OSError, IOError)
 
@@ -430,13 +443,97 @@ def _relative_result_name(path: Path, results_dir: Path) -> str:
     return path.relative_to(results_dir).as_posix()
 
 
-def _nonblank_summary_files(results_dir: Path) -> list[tuple[str, str]]:
+_DESIGN_ANALYSIS_TYPES = {
+    "protein_design": "protein_design_analysis",
+    "promoter_design": "promoter_analysis",
+}
+_PROTEIN_STRUCTURE_GLOB = "*_seed_101_sample_0.cif"
+
+
+def _design_known_name_globs(work_item_key: str) -> tuple[str, ...]:
+    """Return filename globs from the work item's existing summary spec."""
+    analysis_type = _DESIGN_ANALYSIS_TYPES[work_item_key]
+    spec = next(
+        item
+        for item in IMAGE_SUMMARY_SPECS
+        if item.analysis_type == analysis_type
+    )
+    globs = (
+        spec.image_pattern,
+        spec.summary_pattern.replace("{gene_id}", "*"),
+        spec.legend_pattern.replace("{gene_id}", "*"),
+    )
+    if work_item_key == "protein_design":
+        return (*globs, _PROTEIN_STRUCTURE_GLOB)
+    return globs
+
+
+def _salvage_known_design_paths(
+    results_dir: Path, work_item_key: str
+) -> tuple[Path, ...]:
+    """Admit analysis-spec files when the producer manifest is unusable."""
+    globs = _design_known_name_globs(work_item_key)
+    known = tuple(
+        path
+        for path in sorted(results_dir.rglob("*"))
+        if path.is_file()
+        and path.name not in RESERVED_RESULT_PATHS
+        and any(fnmatch(path.name, pattern) for pattern in globs)
+    )
+    if not known:
+        raise UnusableAnalysisResultError("design manifest invalid")
+    return known
+
+
+def _design_result_paths(
+    results_dir: Path, work_item_key: str
+) -> tuple[Path, ...]:
+    """Apply the existing producer manifest contract before file admission."""
+    manifest_path = results_dir / ARTIFACT_MANIFEST_FILENAME
+    allowed: set[str] | None = None
+    try:
+        with manifest_path.open("rb") as source:
+            content = source.read(_MAX_MANIFEST_BYTES + 1)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise UnusableAnalysisResultError(
+            "design manifest unavailable"
+        ) from exc
+    else:
+        try:
+            if len(content) > _MAX_MANIFEST_BYTES:
+                raise ValueError("artifact manifest exceeds size cap")
+            manifest = ArtifactManifest.model_validate(
+                json.loads(content, object_pairs_hook=_unique_json_object)
+            )
+        except (ValueError, UnicodeError):
+            return _salvage_known_design_paths(results_dir, work_item_key)
+        allowed = {
+            item.path
+            for item in manifest.artifacts
+            if item.role in ARCHIVE_ELIGIBLE_ROLES
+        }
+    return tuple(
+        path
+        for path in sorted(results_dir.rglob("*"))
+        if path.is_file()
+        and path.name not in RESERVED_RESULT_PATHS
+        and (
+            allowed is None
+            or _relative_result_name(path, results_dir) in allowed
+        )
+    )
+
+
+def _nonblank_summary_files(
+    results_dir: Path, paths: tuple[Path, ...]
+) -> list[tuple[str, str]]:
     """Read nonblank summary files in deterministic path order."""
     summaries: list[tuple[str, str]] = []
-    for path in sorted(
-        results_dir.rglob("*.summary"),
-        key=lambda candidate: _relative_result_name(candidate, results_dir),
-    ):
+    for path in paths:
+        if path.suffix != ".summary":
+            continue
         try:
             text = path.read_text(encoding="utf-8").strip()
         except (FileNotFoundError, OSError, UnicodeError):
@@ -446,23 +543,28 @@ def _nonblank_summary_files(results_dir: Path) -> list[tuple[str, str]]:
     return summaries
 
 
-def _design_artifacts(work_item_key: str, results_dir: Path) -> list[str]:
+def _design_artifacts(
+    work_item_key: str, results_dir: Path, paths: tuple[Path, ...]
+) -> list[str]:
     """Return the allow-listed design artifacts in stable order."""
     names: set[str] = set()
-    for path in results_dir.rglob("*"):
-        if not path.is_file():
+    for path in paths:
+        if path.stat().st_size == 0:
             continue
         relative = _relative_result_name(path, results_dir)
+        if path.suffix == ".legend":
+            try:
+                if path.read_text(encoding="utf-8").strip():
+                    names.add(relative)
+            except (FileNotFoundError, OSError, UnicodeError):
+                continue
+            continue
         if (
-            path.suffix in {".legend", ".json"}
-            or (
-                work_item_key == "promoter_design"
-                and path.name == "motif_all_logo.png"
-            )
-            or (
-                work_item_key == "protein_design"
-                and path.name == "psap_scores.png"
-            )
+            work_item_key == "promoter_design"
+            and path.name == "motif_all_logo.png"
+        ) or (
+            work_item_key == "protein_design"
+            and path.name == "psap_scores.png"
         ):
             names.add(relative)
     return sorted(names)
@@ -475,11 +577,10 @@ def build_design_work_item_summary(
     """Build deterministic Markdown for one Digital Design work item.
 
     A successful promoter result commonly contains several summary files;
-    all nonblank files are joined in filename order.  Some platform
-    versions only emit the motif image and manifest artifacts, so the
-    fallback lists the allow-listed artifacts rather than manufacturing
-    scientific prose.  The same deterministic contract is used for the
-    protein work item, which keeps both concrete jobs independently
+    all nonblank files are joined in filename order. Without summary text,
+    supported images and nonblank legends remain available. JSON inventories
+    are operational metadata, not scientific results. The same contract serves
+    the protein work item, which keeps both concrete jobs independently
     resolvable by the coordinator.
 
     Args:
@@ -506,11 +607,12 @@ def build_design_work_item_summary(
         if work_item_key == "protein_design"
         else ("Promoter Design")
     )
-    summaries = _nonblank_summary_files(root)
+    paths = _design_result_paths(root, work_item_key)
+    summaries = _nonblank_summary_files(root, paths)
     if summaries:
         body = "\n\n".join(f"### {name}\n\n{text}" for name, text in summaries)
         return f"## {title}\n\n{body}\n"
-    artifacts = _design_artifacts(work_item_key, root)
+    artifacts = _design_artifacts(work_item_key, root, paths)
     if not artifacts:
         raise UnusableAnalysisResultError(
             f"{work_item_key} result contains no usable content"

@@ -6,14 +6,15 @@
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
+from tests.support.asyncio_helpers import run_coroutine_on_owned_loop
 from tests.support.research_fakes import persist_research_resolution
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.research.recovery import (
     ResearchContextLengthRejected,
@@ -541,7 +542,7 @@ async def test_verified_context_rejection_replaces_parent_with_children(
     disposition = await executor.execute("unit-1", "worker-a")
     assert disposition.state == "reclaimed"
     assert disposition.failure_code == "research_input_resolution_unavailable"
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         rows = connection.execute(
             "SELECT unit_id, state FROM research_work_units ORDER BY unit_id"
         ).fetchall()
@@ -572,7 +573,7 @@ async def test_unverified_context_rejection_stays_ambiguous(
     )
     disposition = await executor.execute("unit-1", "worker-a")
     assert disposition.state == "ambiguous"
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         rows = connection.execute(
             "SELECT unit_id, state FROM research_work_units ORDER BY unit_id"
         ).fetchall()
@@ -638,7 +639,7 @@ def test_cancel_requested_is_a_work_cas_barrier(tmp_path: Path) -> None:
     claimed = store.claim_work("unit-1", "worker-a", _NOW)
     assert claimed is not None
     persist_research_resolution(store, "run-1", query_length=1)
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         connection.execute(
             "UPDATE research_input_resolutions SET cancel_requested = 1 "
             "WHERE run_id = 'run-1'"
@@ -649,7 +650,7 @@ def test_cancel_requested_is_a_work_cas_barrier(tmp_path: Path) -> None:
         is None
     )
     assert not store.complete_work(claimed, "succeeded", _NOW)
-    disposition = asyncio.run(
+    disposition = run_coroutine_on_owned_loop(
         ResearchWorkExecutor(
             store,
             _Provider(),

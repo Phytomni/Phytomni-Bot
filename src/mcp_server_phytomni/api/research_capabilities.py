@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
+from contextlib import closing, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
@@ -114,10 +114,12 @@ class ResearchRelayCapabilityCache:
         task = self._refresh_task
         if task is not None and not task.done():
             return False
+        refresh = self._refresh(client, now)
         try:
-            task = asyncio.create_task(self._refresh(client, now))
+            task = asyncio.create_task(refresh)
         except RuntimeError:
-            return False
+            with closing(refresh):
+                return False
         self._refresh_task = task
         task.add_done_callback(_observe_refresh_task)
         return True

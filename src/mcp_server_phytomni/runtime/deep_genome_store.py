@@ -33,11 +33,7 @@ from .deep_genome_transitions import (
     DeepGenomeTransitionError,
     DeepGenomeTransitionMixin,
 )
-from .task_manager import (
-    _CREATE_TASKS_DDL,
-    _TASK_ADD_COLUMN_STATEMENTS,
-    _expires_at_for,
-)
+from .task_manager import _expires_at_for, ensure_tasks_table
 
 if TYPE_CHECKING:
     from ..agents.deep_genome.work_items import WorkItemSpec
@@ -132,13 +128,7 @@ class DeepGenomeStore(DeepGenomeTransitionMixin):
             conn.execute("PRAGMA foreign_keys=ON")
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute(_CREATE_TASKS_DDL)
-            existing = {
-                row[1] for row in conn.execute("PRAGMA table_info(tasks)")
-            }
-            for column, statement in _TASK_ADD_COLUMN_STATEMENTS:
-                if column not in existing:
-                    conn.execute(statement)
+            ensure_tasks_table(conn)
             conn.execute(_CREATE_SECTIONS_DDL)
             conn.execute(_CREATE_REMOTE_TASKS_DDL)
             conn.commit()
@@ -725,25 +715,31 @@ class DeepGenomeStore(DeepGenomeTransitionMixin):
         """Read the additive report fields without changing legacy shape."""
         conn = sqlite3.connect(self.db_path)
         try:
-            row = conn.execute(
-                """
-                SELECT status, intermediate_report, final_report,
-                       report_stage, report_completeness, report_revision,
-                       report_updated_at, progress_json, degraded_reason
-                FROM tasks WHERE task_id = ?
-                """,
-                (umbrella_task_id,),
-            ).fetchone()
-            failure_rows = tuple(
-                conn.execute(
-                    "SELECT work_item_key, status, summary_markdown FROM "
-                    "deep_genome_remote_tasks WHERE umbrella_task_id = ? "
-                    "ORDER BY work_item_key",
-                    (umbrella_task_id,),
-                )
-            )
+            return self._snapshot_for_connection(conn, umbrella_task_id)
         finally:
             conn.close()
+
+    def _snapshot_for_connection(
+        self, connection: sqlite3.Connection, umbrella_task_id: str
+    ) -> DeepGenomeSnapshot | None:
+        """Read report facts through the caller's existing transaction."""
+        row = connection.execute(
+            """
+            SELECT status, intermediate_report, final_report,
+                   report_stage, report_completeness, report_revision,
+                   report_updated_at, progress_json, degraded_reason
+            FROM tasks WHERE task_id = ?
+            """,
+            (umbrella_task_id,),
+        ).fetchone()
+        failure_rows = tuple(
+            connection.execute(
+                "SELECT work_item_key, status, summary_markdown FROM "
+                "deep_genome_remote_tasks WHERE umbrella_task_id = ? "
+                "ORDER BY work_item_key",
+                (umbrella_task_id,),
+            )
+        )
         if row is None:
             return None
         progress: Mapping[str, int | bool | str] = {}

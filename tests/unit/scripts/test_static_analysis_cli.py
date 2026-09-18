@@ -7,8 +7,11 @@
 from __future__ import annotations
 
 import io
+import json
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import scripts.check_static_analysis_exemptions as cli
@@ -147,9 +150,14 @@ def test_cli_render_docs_check_reports_drift(tmp_path) -> None:
 
 
 def test_require_zero_temporary_rejects_a_valid_temporary_row(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The closure flag fails even when a temporary row reconciles exactly."""
+    clock = Mock(wraps=date)
+    clock.today.return_value = date(2026, 7, 17)
+    monkeypatch.setattr(cli, "date", clock)
     registry = tmp_path / "registry.toml"
     fingerprint = "sha256:" + "a" * 64
     registry.write_text(
@@ -180,21 +188,29 @@ tests = ["tests/unit/test_example.py"]
 """,
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli, "collect_inventory", lambda *_args, **_kwargs: ())
-
-    assert (
-        cli.main(
-            [
-                "check",
-                "--scope",
-                "full",
-                "--registry",
-                str(registry),
-                "--require-zero-temporary",
-            ]
-        )
-        == 1
+    finding = replace(
+        make_finding(), symbol="example", fingerprint=fingerprint
     )
+    monkeypatch.setattr(
+        cli, "collect_inventory", lambda *_args, **_kwargs: (finding,)
+    )
+    args = ["check", "--scope", "full", "--registry", str(registry)]
+
+    assert cli.main(args) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["clean"] is True
+    assert len(report["matched"]) == 1
+
+    assert cli.main([*args, "--require-zero-temporary"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["clean"] is False
+    assert report["stale"] == []
+    assert report["unregistered"] == []
+    assert [row["id"] for row in report["expired"]] == ["SAE-TMP-0001"]
+
+    clock.today.return_value = date(2026, 9, 1)
+    assert cli.main(args) == 2
+    assert "is expired" in capsys.readouterr().err
 
 
 def _exemption(

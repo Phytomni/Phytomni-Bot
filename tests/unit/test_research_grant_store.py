@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.api.relay.research_grants import (
     RESEARCH_GRANT_PURGE_GRACE,
@@ -202,7 +203,7 @@ def test_resolve_rejects_duplicate_source_authority_ids(
     with pytest.raises(ResearchGrantError):
         ResearchGrantStore(str(database)).resolve_or_replay(request, _now())
 
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM research_object_grants"
         ).fetchone() == (0,)
@@ -267,7 +268,7 @@ def test_rotation_preserves_private_source_authority_binding(
     assert not hasattr(grant, "source_authority_id")
     assert not hasattr(rotated, "source_authority_id")
     assert "metadata-port-authority" not in repr(rotated)
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         bindings = connection.execute(
             "SELECT source_authority_id, state "
             "FROM research_object_grants ORDER BY revision"
@@ -302,7 +303,7 @@ def test_initialization_additively_upgrades_legacy_grant_table(
 ) -> None:
     """Same-table legacy grants are retained but made safely unusable."""
     database = tmp_path / "relay.sqlite3"
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         connection.execute(
             "CREATE TABLE research_object_grants (grant_id TEXT PRIMARY KEY)"
         )
@@ -313,7 +314,7 @@ def test_initialization_additively_upgrades_legacy_grant_table(
     store = ResearchGrantStore(str(database))
     ResearchGrantStore(str(database))
 
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         columns = {
             row[1]
             for row in connection.execute(
@@ -360,7 +361,9 @@ def test_initialization_rolls_back_when_index_creation_fails(
             return sqlite3.SQLITE_DENY
         return sqlite3.SQLITE_OK
 
-    with sqlite3.connect(database, isolation_level=None) as connection:
+    with closed_sqlite_connection(
+        database, isolation_level=None
+    ) as connection:
         connection.row_factory = sqlite3.Row
         connection.execute(
             "CREATE TABLE research_object_grants (grant_id TEXT PRIMARY KEY)"
@@ -398,7 +401,7 @@ def test_initialization_rolls_back_when_index_creation_fails(
     assert version_table is None
 
     ResearchGrantStore(str(database))
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         version = connection.execute(
             "SELECT version FROM research_grant_schema_versions "
             "WHERE schema_name = 'research_object_grants'"
@@ -439,7 +442,7 @@ def test_resolve_replays_after_restart_and_under_concurrent_calls(
         .resolve_or_replay(request, _now())[0]
         .grant_id
     }
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM research_object_grants"
         ).fetchone() == (1,)
@@ -642,7 +645,7 @@ def test_purge_deletes_unobserved_active_grant_after_expiry_grace(
         )
         == 1
     )
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         remaining = connection.execute(
             "SELECT grant_id FROM research_object_grants WHERE grant_id = ?",
             (grant.grant_id,),

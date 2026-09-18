@@ -20,6 +20,7 @@ from ...agents.shared.citation_metadata import (
     canonical_doi_urls,
     normalize_doi,
 )
+from ...config import CitationConfig
 from ..universal_failures import project_universal_failure_metadata
 from ._shared import (
     first_message,
@@ -45,7 +46,9 @@ _SUP_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _CITATION_OR_SUP_PATTERN = re.compile(
-    rf"(?:{_CITATION_BLOCK_PATTERN.pattern})|(?:{_SUP_PATTERN.pattern})",
+    rf"(?P<lead>[ \t]*)"
+    rf"(?:(?:{_CITATION_BLOCK_PATTERN.pattern})"
+    rf"|(?:{_SUP_PATTERN.pattern}))",
     re.IGNORECASE,
 )
 _ANNOTATION_MARKER_PATTERN = re.compile(
@@ -135,6 +138,11 @@ def format_cited_message_result(
     )
 
 
+def _omit_unmatched_enabled() -> bool:
+    """Return whether unmatched cited documents should be omitted."""
+    return bool(CitationConfig().CITATION_OMIT_UNMATCHED)
+
+
 def normalize_citations(
     answer: str,
     doc_list: Sequence[Mapping[str, Any]],
@@ -147,8 +155,12 @@ def normalize_citations(
 def _normalize_citations_detailed(
     answer: str,
     doc_list: Sequence[Mapping[str, Any]],
+    *,
+    omit_unmatched: bool | None = None,
 ) -> _CitationNormalization:
     """Return normalized citations plus selected metadata status."""
+    if omit_unmatched is None:
+        omit_unmatched = _omit_unmatched_enabled()
     citation_order = citation_order_for(answer)
     selected_docs: list[Mapping[str, Any]] = []
     old_to_new: dict[int, int] = {}
@@ -159,12 +171,17 @@ def _normalize_citations_detailed(
         if old_index < 1 or old_index > len(doc_list):
             continue
         doc = doc_list[old_index - 1]
+        if (
+            omit_unmatched
+            and doc.get(CITATION_STATUS_KEY) == CITATION_STATUS_MISSING
+        ):
+            continue
         doc_key = document_key(doc, old_index)
         if doc_key in seen_keys:
             old_to_new[old_index] = seen_keys[doc_key]
             continue
         if doc.get(CITATION_STATUS_KEY) in {
-            CITATION_STATUS_MISSING,
+            CITATION_STATUS_MISSING,  # switch off only reaches here
             CITATION_STATUS_LOOKUP_FAILED,
         }:
             metadata_degraded = True
@@ -174,9 +191,12 @@ def _normalize_citations_detailed(
         old_to_new[old_index] = new_ref
 
     def replace_citation_or_superscript(match: re.Match[str]) -> str:
-        token = match.group(0)
+        lead = match.group("lead") or ""
+        token = match.group(0).removeprefix(lead)
         if token.lower().startswith("<sup"):
-            source_numbers = list(numbers_from_compact(match.group(1) or ""))
+            sup_match = _SUP_PATTERN.fullmatch(token)
+            inner = sup_match.group(1) if sup_match is not None else ""
+            source_numbers = list(numbers_from_compact(inner))
         else:
             source_numbers = [
                 old_index
@@ -189,7 +209,9 @@ def _normalize_citations_detailed(
             if old_index in old_to_new
         ]
         compacted = compact_citation_numbers(new_numbers)
-        return f"<sup>{compacted}</sup>" if compacted else ""
+        if compacted:
+            return f"{lead}<sup>{compacted}</sup>"
+        return ""
 
     rewritten = _CITATION_OR_SUP_PATTERN.sub(
         replace_citation_or_superscript, answer

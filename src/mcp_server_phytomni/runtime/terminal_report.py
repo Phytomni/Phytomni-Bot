@@ -76,30 +76,6 @@ _REPORT_TEXT_ROLES = frozenset(
     }
 )
 
-_NO_TEXT_FALLBACK: dict[SupportedLocale, str] = {
-    "en-US": (
-        "The analysis reached a terminal outcome, but no validated "
-        "scientific text artifact was available for synthesis. Review the "
-        "downloadable scientific artifacts and execution warnings before "
-        "drawing conclusions."
-    ),
-    "zh-CN": (
-        "分析已到达终态，但没有可用于综合的已验证科学文本产物。"
-        "在形成结论前，请结合可下载的科学产物和执行警告进行审阅。"
-    ),
-}
-_SYNTHESIS_FAILURE_FALLBACK: dict[SupportedLocale, str] = {
-    "en-US": (
-        "The analysis reached a terminal outcome, but scientific report "
-        "synthesis was unavailable. The validated scientific artifacts "
-        "remain available for review before drawing conclusions."
-    ),
-    "zh-CN": (
-        "分析已到达终态，但科学报告综合不可用。"
-        "在形成结论前，仍可审阅已验证的科学产物。"
-    ),
-}
-
 _REPORT_LABELS: dict[SupportedLocale, dict[str, str]] = {
     "en-US": {
         "summary": "Summary",
@@ -606,25 +582,12 @@ async def _admit_report_artifacts(
     return tuple(snippets), tuple(warnings)
 
 
-def _report_scope(context: TerminalReportContext) -> str:
-    """Describe completion scope without task or infrastructure details."""
-    succeeded = _success_count(context.live)
-    total = len(context.live)
-    if context.locale == "zh-CN":
-        return f"本次终态包含 {total} 个任务，其中 {succeeded} 个任务成功。"
-    return (
-        f"The terminal outcome covered {total} tasks, "
-        f"with {succeeded} successful."
-    )
-
-
 def _no_text_assembly(
-    context: TerminalReportContext,
     warnings: Iterable[ExecutionWarning],
 ) -> TerminalReportAssembly:
-    """Return the fixed degraded result for a role-empty context."""
+    """Keep missing science in metadata, not in the scientific answer."""
     return TerminalReportAssembly(
-        answer=_NO_TEXT_FALLBACK[context.locale],
+        answer="",
         report=ReportExecution(
             state="degraded",
             degraded=True,
@@ -638,16 +601,13 @@ def _no_text_assembly(
 
 
 def _failed_synthesis_assembly(
-    context: TerminalReportContext,
     warnings: Iterable[ExecutionWarning],
     *,
     source_artifact_count: int,
 ) -> TerminalReportAssembly:
-    """Return a fixed degraded result after synthesis failure."""
-    base = _SYNTHESIS_FAILURE_FALLBACK[context.locale]
-    answer = f"{base} {_report_scope(context)}"
+    """Keep synthesis failure in metadata, not in the scientific answer."""
     return TerminalReportAssembly(
-        answer=answer,
+        answer="",
         report=ReportExecution(
             state="degraded",
             degraded=True,
@@ -703,6 +663,51 @@ def _generated_report_contains_operational_data(
     return any(value.casefold() in lowered for value in values)
 
 
+def is_scientific_report_text(
+    context: TerminalReportContext,
+    artifacts: Iterable[ReportArtifact],
+    report: str,
+) -> bool:
+    """Exclude empty bodies, operational echoes, and known status templates."""
+    if not report.strip() or _generated_report_contains_operational_data(
+        context, artifacts, report
+    ):
+        return False
+    candidate = report.strip()
+    if context.query:
+        for label in ("Query", "查询"):
+            candidate = candidate.removesuffix(f"\n\n{label}: {context.query}")
+    # Match whole owned acknowledgements, never words inside scientific prose.
+    return not any(
+        re.fullmatch(pattern, candidate, re.IGNORECASE)
+        for pattern in (
+            r"Analysis complete: [0-9]+/[0-9]+ tasks succeeded\.",
+            r"\*\*Analysis (?:complete|failed)\*\* \u2014 "
+            r"[0-9]+/[0-9]+ tasks (?:succeeded|failed)\.",
+            r"分析(?:完成|失败)：[0-9]+/[0-9]+ 个任务(?:成功|失败)。",
+            r"(?:LLM summary failed: |LLM 总结失败：)[^\n]+",
+            r"LLM summary returned empty content\.?",
+            r"No readable text artifacts were available for LLM summary\.?",
+            r"(?:LLM 总结返回了空内容|没有可供 LLM 总结的可读文本工件)。?",
+            r"The analysis reached a terminal outcome, but no validated "
+            r"scientific text artifact was available for synthesis\."
+            r"(?: Review the downloadable scientific artifacts and execution "
+            r"warnings before drawing conclusions\.)?",
+            r"The analysis reached a terminal outcome, but scientific report "
+            r"synthesis was unavailable\."
+            r"(?: The validated scientific artifacts remain available for "
+            r"review before drawing conclusions\.)?"
+            r"(?: The terminal outcome covered [0-9]+ tasks, with [0-9]+ "
+            r"successful\.)?",
+            r"分析已到达终态，但没有可用于综合的已验证科学文本产物。"
+            r"(?:在形成结论前，请结合可下载的科学产物和执行警告进行审阅。)?",
+            r"分析已到达终态，但科学报告综合不可用。"
+            r"(?:在形成结论前，仍可审阅已验证的科学产物。)?"
+            r"(?: 本次终态包含 [0-9]+ 个任务，其中 [0-9]+ 个任务成功。)?",
+        )
+    )
+
+
 async def assemble_terminal_report(
     *,
     context: TerminalReportContext,
@@ -710,7 +715,7 @@ async def assemble_terminal_report(
     reader: ArtifactTextReader | None = None,
     summarizer: ReportSummarizer | None = None,
 ) -> TerminalReportAssembly:
-    """Assemble a role-gated report with a safe deterministic floor."""
+    """Assemble role-gated science with separate failure metadata."""
     artifact_values = tuple(artifacts)
     use_reader = reader or _read_report_artifact
     snippets, warnings = await _admit_report_artifacts(
@@ -725,11 +730,25 @@ async def assemble_terminal_report(
         )
         warnings = warnings + extra_warnings
         if not snippets:
-            return _no_text_assembly(context, warnings)
+            return _no_text_assembly(warnings)
         total_chars = sum(len(snippet.content) for snippet in snippets)
         if total_chars <= _DIRECT_CONCLUSION_MAX_CHARS:
+            answer = (
+                _format_plain_conclusion(context, snippets)
+                if all(
+                    is_scientific_report_text(
+                        context, artifact_values, snippet.content
+                    )
+                    for snippet in snippets
+                )
+                else ""
+            )
+            if not is_scientific_report_text(context, artifact_values, answer):
+                return _failed_synthesis_assembly(
+                    warnings, source_artifact_count=len(snippets)
+                )
             return TerminalReportAssembly(
-                answer=_format_plain_conclusion(context, snippets),
+                answer=answer,
                 report=ReportExecution(
                     state="final",
                     degraded=False,
@@ -762,29 +781,20 @@ async def assemble_terminal_report(
         TimeoutError,
     ):
         return _failed_synthesis_assembly(
-            context,
             warnings,
             source_artifact_count=len(snippets),
         )
-    if not isinstance(generated, str):
-        return _failed_synthesis_assembly(
-            context,
-            warnings,
-            source_artifact_count=len(snippets),
-        )
-    generated = generated.strip()
-    if not generated or _generated_report_contains_operational_data(
+    if not isinstance(generated, str) or not is_scientific_report_text(
         context,
         artifact_values,
         generated,
     ):
         return _failed_synthesis_assembly(
-            context,
             warnings,
             source_artifact_count=len(snippets),
         )
     return TerminalReportAssembly(
-        answer=generated,
+        answer=generated.strip(),
         report=ReportExecution(
             state="final",
             degraded=False,
@@ -818,7 +828,7 @@ async def synthesize_terminal_report(
     )
     return TerminalReportResult(
         final_report=assembly.answer,
-        answer=_report_answer(context),
+        answer=_report_answer(context) if assembly.answer else "",
         degraded=assembly.report.degraded,
         degraded_reason=degraded_reason,
     )

@@ -79,7 +79,7 @@ def test_content_stream_rejects_regression_and_is_owner_scoped() -> None:
     )
 
 
-def test_publish_next_allocates_utf8_end_offsets() -> None:
+def test_publish_next_allocates_unicode_scalar_end_offsets() -> None:
     from mcp_server_phytomni.runtime.execution_content_stream_v2 import (
         ExecutionContentStreamV2,
     )
@@ -98,4 +98,10 @@ def test_publish_next_allocates_utf8_end_offsets() -> None:
         delta="rice",
     )
 
-    assert (first.offset, second.offset) == (3, 7)
+    assert (first.offset, second.offset) == (1, 5)
+    assert stream.list_after(
+        owner="alice",
+        execution_id="turn-1",
+        output_revision=1,
+        after_offset=first.offset,
+    ) == (second,)

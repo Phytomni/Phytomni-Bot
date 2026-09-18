@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, cast
@@ -66,6 +65,7 @@ from tests.support.research_fakes import (
     research_inventory_entry,
     staged_document_payload,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 pytestmark = pytest.mark.agent
 
@@ -895,7 +895,7 @@ def _assert_restart_safe(loaded: dict[str, Any], database: str) -> None:
     """Prove decoded and raw SQLite state contain no document plaintext."""
     serialized = json.dumps(loaded, sort_keys=True)
     assert _RESTART_SENTINEL not in serialized
-    with sqlite3.connect(database) as connection:
+    with closed_sqlite_connection(database) as connection:
         raw = connection.execute(
             "SELECT source_map_json, candidates_json, managed_snapshot_json "
             "FROM research_input_resolutions WHERE run_id = ?",

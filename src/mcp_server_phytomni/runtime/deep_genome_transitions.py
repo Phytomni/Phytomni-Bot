@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -20,6 +21,7 @@ from .deep_genome_report_snapshot import (
     derive_progress,
     derive_report_classification,
 )
+from .deep_genome_store_projection import snapshot_to_canonical_result
 from .task_manager import _expires_at_for
 
 if TYPE_CHECKING:
@@ -78,6 +80,12 @@ class DeepGenomeTransitionMixin:
 
     def get_snapshot(self, umbrella_task_id: str) -> DeepGenomeSnapshot | None:
         """Return one snapshot from the concrete store implementation."""
+        raise NotImplementedError
+
+    def _snapshot_for_connection(
+        self, connection: sqlite3.Connection, umbrella_task_id: str
+    ) -> DeepGenomeSnapshot | None:
+        """Read a snapshot through the concrete store's active transaction."""
         raise NotImplementedError
 
     @staticmethod
@@ -693,7 +701,7 @@ class DeepGenomeTransitionMixin:
             connection.execute("BEGIN IMMEDIATE")
             parent = connection.execute(
                 "SELECT t.status, t.run_id, t.output_dir, "
-                "t.degraded_reason, r.status "
+                "t.degraded_reason, r.status, r.result_json "
                 "FROM tasks AS t JOIN runs AS r ON r.run_id = t.run_id "
                 "WHERE t.task_id = ? AND t.agent = 'deep_genome' "
                 "AND r.agent = 'deep_genome'",
@@ -705,13 +713,6 @@ class DeepGenomeTransitionMixin:
                 )
             if parent[0] != "running" or parent[4] != "running":
                 raise DeepGenomeTransitionError("umbrella task is terminal")
-            payload = self._terminal_run_payload(
-                umbrella_task_id,
-                "failed",
-                str(parent[2] or ""),
-                None,
-                True,
-            )
             degraded_reason = parent[3] or failure_reason
             task_cursor = connection.execute(
                 "UPDATE tasks SET status = 'failed', final_report = NULL, "
@@ -723,6 +724,26 @@ class DeepGenomeTransitionMixin:
                 raise DeepGenomeTrackingError(
                     "reserved umbrella task is missing"
                 )
+            snapshot = self._snapshot_for_connection(
+                connection, umbrella_task_id
+            )
+            if snapshot is None:
+                raise DeepGenomeTrackingError(
+                    "reserved umbrella task is missing"
+                )
+            try:
+                existing_result = json.loads(parent[5]) if parent[5] else None
+            except json.JSONDecodeError:
+                existing_result = None
+            payload = snapshot_to_canonical_result(
+                snapshot,
+                existing_result=(
+                    existing_result
+                    if isinstance(existing_result, Mapping)
+                    else None
+                ),
+                preserve_citation_indices=True,
+            )
             run_cursor = connection.execute(
                 "UPDATE runs SET status = 'failed', result_json = ?, "
                 "error = ?, updated_at = ?, expires_at = ? "
@@ -744,9 +765,6 @@ class DeepGenomeTransitionMixin:
             raise
         finally:
             connection.close()
-        snapshot = self.get_snapshot(umbrella_task_id)
-        if snapshot is None:
-            raise DeepGenomeTrackingError("reserved umbrella task is missing")
         return snapshot
 
 

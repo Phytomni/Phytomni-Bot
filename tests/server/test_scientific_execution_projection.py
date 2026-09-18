@@ -8,10 +8,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.unit.test_deep_genome_store import _seeded_store
 
+from mcp_server_phytomni.agents.deep_genome.work_items import (
+    build_work_item_plan,
+)
 from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api.a2ui_projection import format_review_result
 from mcp_server_phytomni.api.lifecycle_contract import (
@@ -31,6 +36,60 @@ from mcp_server_phytomni.runtime.deep_genome_store_projection import (
 )
 
 pytestmark = pytest.mark.server
+
+
+@pytest.mark.parametrize("unavailable_status", ["failed", "succeeded"])
+def test_optional_failure_has_typed_warning_without_markdown_notice(
+    tmp_path: Path, unavailable_status: str
+) -> None:
+    """One unavailable analysis leaves eleven scientific sections usable."""
+    store, reservation = _seeded_store(tmp_path)
+    plan = build_work_item_plan("osa", "Os01g0100100", "Os01g0100100")
+    for index, item in enumerate(plan):
+        store.apply_work_item_transition(
+            reservation.umbrella_task_id,
+            work_item_key=item.work_item_key,
+            status=unavailable_status if index == 11 else "succeeded",
+            summary_markdown=(
+                None if index == 11 else f"Scientific evidence {index}."
+            ),
+            failure_reason=(
+                "private upstream traceback" if index == 11 else None
+            ),
+        )
+    snapshot = store.get_snapshot(reservation.umbrella_task_id)
+    assert snapshot is not None
+    result = snapshot_to_canonical_result(snapshot)
+    answer = result["formatted"]["answer"]
+    for index in range(11):
+        assert f"Scientific evidence {index}." in answer
+    assert "Unavailable:" not in answer
+    assert "analysis task failed" not in answer
+    assert "private upstream" not in json.dumps(result)
+    assert snapshot.degraded_reason == "1 of 12 optional analyses unavailable"
+    assert snapshot.failures == (
+        {
+            "work_item_key": plan[-1].work_item_key,
+            "status": unavailable_status,
+            "reason": (
+                "analysis task failed"
+                if unavailable_status == "failed"
+                else "analysis task unavailable"
+            ),
+        },
+    )
+    metadata = result["formatted"]["metadata"]["deep_genome"]
+    assert metadata["failure_count"] == 1
+    assert metadata["progress"]["failed"] == int(
+        unavailable_status == "failed"
+    )
+    assert metadata["progress"]["succeeded"] == 11 + int(
+        unavailable_status == "succeeded"
+    )
+    assert result["execution"]["report"]["degraded"] is True
+    assert "deep_genome_report_degraded" in {
+        warning["code"] for warning in result["execution"]["warnings"]
+    }
 
 
 def _sentinel_payload() -> dict[str, Any]:

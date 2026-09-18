@@ -16,8 +16,8 @@ from typing import Any
 
 import httpx
 import pytest
-from tests.support.asyncio_helpers import wait_until
 from tests.support.resolver_fakes import post_native_run
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.shared import (
@@ -40,7 +40,6 @@ from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
 from mcp_server_phytomni.common import relay_client
 from mcp_server_phytomni.mcp import app as mcp_app
-from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
 
@@ -136,7 +135,7 @@ def _canned_result() -> dict[str, Any]:
 
 def _install_record(path: Path) -> None:
     """Insert the one canonical record used by the surface matrix."""
-    with sqlite3.connect(path) as connection:
+    with closed_sqlite_connection(path) as connection:
         connection.execute(
             """
             INSERT INTO citation_records (
@@ -166,7 +165,7 @@ def _install_bounded_lookup(
     async def lookup(file_ids: Any) -> CitationLookupResult:
         columns = ("file_id", *CITATION_RECORD_FIELDS)
         records: dict[str, dict[str, str | None]] = {}
-        with sqlite3.connect(path) as connection:
+        with closed_sqlite_connection(path) as connection:
             connection.row_factory = sqlite3.Row
             for file_id in dict.fromkeys(file_ids):
                 row = connection.execute(
@@ -280,9 +279,13 @@ async def _terminal_projection(
         for event in events
         if event.type == "Custom" and event.data["name"] == "phyto.metadata"
     ]
-    assert len(answers) == len(references) == 1
+    assert len(answers) == 1
+    assert len(references) <= 1
     assert len(metadata) <= 1
-    return answers[0], references[0][0], metadata[0] if metadata else {}
+    reference: dict[str, Any] = {}
+    if references:
+        reference = references[0][0]
+    return answers[0], reference, metadata[0] if metadata else {}
 
 
 async def _complete_blocking_projection(
@@ -372,26 +375,8 @@ async def _assert_native_projection(
         ),
         timeout=5,
     )
-    if case.slug == "review":
-        assert response.status_code == 202
-        run_id = response.json()["run_id"]
-
-        def completed() -> bool:
-            record = RunRegistry(api_app.resolve_tasks_db_path()).get_run(
-                run_id, owner="u1"
-            )
-            return record is not None and record.status == "succeeded"
-
-        await wait_until(completed)
-        fetched = await context.api_client.get(
-            f"/v1/runs/{run_id}",
-            headers={"Authorization": f"Bearer {context.issued_api_key}"},
-        )
-        assert fetched.status_code == 200
-        formatted = fetched.json()["result"]["formatted"]
-    else:
-        assert response.status_code == 200
-        formatted = response.json()["result"]["formatted"]
+    assert response.status_code == 200
+    formatted = response.json()["result"]["formatted"]
     assert formatted["answer"] == envelope.formatted.answer
     assert formatted["references"] == [_EXPECTED_REFERENCE]
 
@@ -432,13 +417,13 @@ async def test_cited_metadata_failures_degrade_blocking_and_stream(
     case: _CitedSurfaceCase,
     failure_mode: str,
 ) -> None:
-    """Every selected miss remains successful and title-only."""
+    """SQLite misses omit silently; lookup failures stay title-only."""
     _ = tasks_db_path
     _forbid_non_sqlite_calls(monkeypatch)
     _install_handler(monkeypatch, case.tool_name)
     _install_bounded_lookup(monkeypatch, citation_db_path)
     if failure_mode == "quarantined":
-        with sqlite3.connect(citation_db_path) as connection:
+        with closed_sqlite_connection(citation_db_path) as connection:
             connection.execute(
                 """
                 INSERT INTO citation_conflicts (
@@ -463,6 +448,21 @@ async def test_cited_metadata_failures_degrade_blocking_and_stream(
     envelope = await mcp_app.invoke_tool_enveloped(
         case.tool_name, _ARGUMENTS[case.slug]
     )
+    omit_miss = failure_mode in {"missing", "quarantined"}
+    (
+        stream_answer,
+        stream_reference,
+        stream_metadata,
+    ) = await _terminal_projection(monkeypatch, case)
+    assert stream_answer == envelope.formatted.answer
+    if omit_miss:
+        assert envelope.formatted.answer == "Claim."
+        assert envelope.formatted.references == ()
+        assert "citation_metadata_degraded" not in envelope.formatted.metadata
+        assert stream_reference == {}
+        assert stream_metadata == {}
+        return
+
     expected_reference = {
         "file_id": "f1",
         "title": "Retrieval title",
@@ -472,10 +472,5 @@ async def test_cited_metadata_failures_degrade_blocking_and_stream(
     assert envelope.formatted.answer == "Claim<sup>1</sup>."
     assert envelope.formatted.metadata["citation_metadata_degraded"] is True
     assert dict(envelope.formatted.references[0]) == expected_reference
-
-    stream_answer, stream_reference, stream_metadata = (
-        await _terminal_projection(monkeypatch, case)
-    )
-    assert stream_answer == envelope.formatted.answer
     assert stream_reference == expected_reference
     assert stream_metadata == {"citation_metadata_degraded": True}

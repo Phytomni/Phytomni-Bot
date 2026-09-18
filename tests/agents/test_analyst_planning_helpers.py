@@ -23,6 +23,7 @@ import pytest
 from mcp_server_phytomni.agents.analyst import planning as analyst_planning
 from mcp_server_phytomni.agents.analyst import task_ops as analyst_task_ops
 from mcp_server_phytomni.agents.analyst.planning import retrieve_plan_submit
+from mcp_server_phytomni.runtime import task_dedup
 
 pytestmark = pytest.mark.agent
 
@@ -357,7 +358,7 @@ async def test_submit_keeps_result_when_fingerprint_persist_fails(
     def boom(*_args: Any, **_kwargs: Any) -> None:
         raise sqlite3.OperationalError("disk I/O error")
 
-    monkeypatch.setattr(analyst_planning, "register_submitted_job", boom)
+    monkeypatch.setattr(task_dedup, "register_submitted_job", boom)
 
     result = await retrieve_plan_submit(
         goal_description="E",

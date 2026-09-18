@@ -12,6 +12,7 @@ import sqlite3
 import stat
 import sys
 from collections.abc import Sequence
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -80,13 +81,11 @@ def _next_backup_path(path: Path) -> Path:
 
 def _create_backup(source_path: Path, backup_path: Path, mode: int) -> None:
     """Copy a live SQLite database through the SQLite backup API."""
-    source = sqlite3.connect(source_path)
-    backup = sqlite3.connect(backup_path)
-    try:
+    with (
+        closing(sqlite3.connect(source_path)) as source,
+        closing(sqlite3.connect(backup_path)) as backup,
+    ):
         source.backup(backup)
-    finally:
-        backup.close()
-        source.close()
     os.chmod(backup_path, mode)
 
 

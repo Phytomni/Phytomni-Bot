@@ -36,6 +36,7 @@ from .run_registry_delivery import (
     DeliveryRevision,
     PrivateDeliveryState,
     ResultDeliveryDependencies,
+    begin_delivery_reconcile,
     begin_delivery_retry,
     default_result_delivery_dependencies,
     delivery_attempts_exhausted,
@@ -788,6 +789,10 @@ class RunRegistry(RunRegistryViewsMixin):
     def begin_delivery_retry(self, run_id: str, *, owner: str) -> bool:
         """Transition an owned retryable delivery failure to a new revision."""
         return begin_delivery_retry(self, run_id, owner=owner)
+
+    def begin_delivery_reconcile(self, run_id: str, *, owner: str) -> bool:
+        """Reopen a legacy archive failure for child-only reconciliation."""
+        return begin_delivery_reconcile(self, run_id, owner=owner)
 
     def _schedule_delivery(
         self, current: RunRecord, delivery: ResultDelivery

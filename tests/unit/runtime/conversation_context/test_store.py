@@ -20,6 +20,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
 from mcp_server_phytomni.runtime.conversation_context.projection import (
@@ -122,38 +123,39 @@ def test_review_classmethod_seams_preserve_subclass_dispatch() -> None:
 
 def test_review_marker_write_preserves_subclass_dispatch() -> None:
     """Review marker writes use a subclass's private encoder override."""
-    connection = sqlite3.connect(":memory:")
-    connection.execute(
-        "CREATE TABLE conversation_turns ("
-        "delta_json TEXT, updated_at TEXT, conversation_key TEXT, turn_id TEXT"
-        ")"
-    )
-    connection.execute(
-        "INSERT INTO conversation_turns VALUES (?, ?, ?, ?)",
-        ("before", "before", "key", "turn"),
-    )
+    with closed_sqlite_connection(":memory:") as connection:
+        connection.execute(
+            "CREATE TABLE conversation_turns ("
+            "delta_json TEXT, updated_at TEXT, "
+            "conversation_key TEXT, turn_id TEXT"
+            ")"
+        )
+        connection.execute(
+            "INSERT INTO conversation_turns VALUES (?, ?, ?, ?)",
+            ("before", "before", "key", "turn"),
+        )
 
-    class OverrideStore(ConversationContextStore):
-        """Override marker encoding for subclass dispatch coverage."""
+        class OverrideStore(ConversationContextStore):
+            """Override marker encoding for subclass dispatch coverage."""
 
-        @staticmethod
-        def _with_review_record(
-            _decoded: dict[str, Any], _marker: Mapping[str, Any]
-        ) -> str:
-            return "encoded-by-subclass"
+            @staticmethod
+            def _with_review_record(
+                _decoded: dict[str, Any], _marker: Mapping[str, Any]
+            ) -> str:
+                return "encoded-by-subclass"
 
-    request = _ReviewMarkerWriteRequest(
-        connection=connection,
-        key="key",
-        turn_id="turn",
-        decoded={},
-        marker={},
-        now="now",
-    )
-    assert getattr(OverrideStore, "_write_review_marker")(request)
-    assert connection.execute(
-        "SELECT delta_json, updated_at FROM conversation_turns"
-    ).fetchone() == ("encoded-by-subclass", "now")
+        request = _ReviewMarkerWriteRequest(
+            connection=connection,
+            key="key",
+            turn_id="turn",
+            decoded={},
+            marker={},
+            now="now",
+        )
+        assert getattr(OverrideStore, "_write_review_marker")(request)
+        assert connection.execute(
+            "SELECT delta_json, updated_at FROM conversation_turns"
+        ).fetchone() == ("encoded-by-subclass", "now")
 
 
 def test_review_claim_row_failure_preserves_instance_dispatch() -> None:
@@ -168,17 +170,18 @@ def test_review_claim_row_failure_preserves_instance_dispatch() -> None:
         ) -> tuple[int, str]:
             return (0, "tombstoned")
 
-    request = _ReviewClaimLookupRequest(
-        connection=sqlite3.connect(":memory:"),
-        key="key",
-        row=("staged", "ledger", 0, "delta"),
-        expected_ledger_version=None,
-        expected_base_context_version=None,
-    )
-    instance = object.__new__(OverrideStore)
-    failure = getattr(instance, "_claim_row_failure")(request)
-    assert failure is not None
-    assert failure.status == "conflict"
+    with closed_sqlite_connection(":memory:") as connection:
+        request = _ReviewClaimLookupRequest(
+            connection=connection,
+            key="key",
+            row=("staged", "ledger", 0, "delta"),
+            expected_ledger_version=None,
+            expected_base_context_version=None,
+        )
+        instance = object.__new__(OverrideStore)
+        failure = getattr(instance, "_claim_row_failure")(request)
+        assert failure is not None
+        assert failure.status == "conflict"
 
 
 def test_review_reservation_preflight_preserves_subclass_dispatch() -> None:
@@ -249,7 +252,7 @@ def test_init_is_idempotent_and_adds_only_context_tables(
     """The additive schema can be initialized repeatedly in one task DB."""
     duplicate = ConversationContextStore(store.db_path)
 
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         tables = {
             row[0]
             for row in connection.execute(
@@ -445,7 +448,7 @@ def test_duplicate_staging_returns_the_byte_equivalent_terminal_result(
     )
 
     assert duplicate == first
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM conversation_turns"
         ).fetchone() == (1,)
@@ -530,7 +533,7 @@ def test_review_candidate_registration_is_bounded_and_idempotent(
     )
     assert store.list_checkpoint_cleanup_candidates() == ()
 
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         row = connection.execute(
             "SELECT staged_at, eligible_at, tombstone_pending "
             "FROM conversation_review_checkpoint_cleanup "
@@ -564,7 +567,7 @@ def test_review_candidate_registration_fails_closed_after_tombstone(
     assert not store.register_review_candidate(
         key, turn_id, "new_review", stable, candidate
     )
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(1) FROM conversation_review_checkpoint_cleanup "
             "WHERE conversation_key = ?",
@@ -771,7 +774,7 @@ def test_tombstone_fences_and_retains_review_candidate_threads(
         key, "1", claim_token=claim.claim_token
     )
     store.complete_checkpoint_cleanup(key)
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(1) FROM conversation_review_checkpoint_cleanup "
             "WHERE conversation_key = ?",
@@ -850,7 +853,7 @@ def test_tombstone_clears_context_and_turns_then_refuses_new_work(
     assert context.state == "tombstoned"
     assert context.context == {}
     assert context.checkpoint_cleanup_state == "pending"
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM conversation_turns "
             "WHERE conversation_key = ?",
@@ -872,7 +875,7 @@ def test_repeated_tombstone_is_idempotent(
     assert context is not None
     assert context.state == "tombstoned"
     assert context.checkpoint_cleanup_state == "pending"
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM conversation_turns "
             "WHERE conversation_key = ?",
@@ -886,7 +889,7 @@ def test_staged_rows_expire_using_the_success_ttl(
     """Staged terminal results reuse the existing successful-run retention."""
     store.begin_turn("conversation-1", "1", "append", 0)
     store.stage_turn("conversation-1", "1", _staged())
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         expires_at = connection.execute(
             "SELECT expires_at FROM conversation_turns"
         ).fetchone()[0]
@@ -898,7 +901,7 @@ def test_staged_rows_expire_using_the_success_ttl(
     )
 
     assert store.purge_expired_staged(expiry) == 1
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM conversation_turns"
         ).fetchone() == (0,)
@@ -924,7 +927,7 @@ def test_expired_review_turn_retains_candidate_for_later_tombstone(
         "1",
         _staged(stage_metadata={"_review_settlement": metadata}),
     )
-    with sqlite3.connect(store.db_path) as connection:
+    with closed_sqlite_connection(store.db_path) as connection:
         expires_at = connection.execute(
             "SELECT expires_at FROM conversation_turns "
             "WHERE conversation_key = ? AND turn_id = ?",

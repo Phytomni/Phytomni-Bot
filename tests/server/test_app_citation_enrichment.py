@@ -3,12 +3,12 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """The cited-tool enrichment hook in invoke_tool_enveloped."""
 
-import sqlite3
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from tests.support.citation_database import install_inline_citation_lookup
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.agents.shared import sql as shared_sql
 from mcp_server_phytomni.agents.shared.citation_metadata import (
@@ -92,7 +92,7 @@ async def test_end_to_end_enriched_references_via_sqlite(
 ) -> None:
     """SQLite rows reach formatted.references without any BI seam."""
     monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
-    with sqlite3.connect(citation_db_path) as connection:
+    with closed_sqlite_connection(citation_db_path) as connection:
         connection.execute(
             "INSERT INTO citation_records (file_id, au, so) VALUES (?, ?, ?)",
             ("f1", "Smith J", "Nature"),
@@ -133,7 +133,7 @@ async def test_review_terminal_result_enriches_citations(
 ) -> None:
     """A2UI terminal Review result enriches after the graph completes."""
     monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
-    with sqlite3.connect(citation_db_path) as connection:
+    with closed_sqlite_connection(citation_db_path) as connection:
         connection.execute(
             "INSERT INTO citation_records (file_id, au, so) VALUES (?, ?, ?)",
             ("f1", "Smith J", "Nature"),

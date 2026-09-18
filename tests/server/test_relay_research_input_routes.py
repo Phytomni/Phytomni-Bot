@@ -18,9 +18,10 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from starlette.responses import Response
 from tests.support.http_fakes import open_asgi_client
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.relay import research_grants, research_input
@@ -657,7 +658,7 @@ async def test_verify_rejects_expired_grant(
         ),
     )
     grant = resolved.json()["grants"][0]
-    with sqlite3.connect(grant_database) as connection:
+    with closed_sqlite_connection(grant_database) as connection:
         connection.execute(
             "UPDATE research_object_grants "
             "SET expires_at = ? WHERE grant_id = ?",
@@ -765,6 +766,36 @@ async def test_analysis_relay_verifies_and_strips_research_sidecar(
     }
     assert grant["grant_id"].encode() not in captured[0]
     assert _REFERENCE.encode() not in captured[0]
+
+
+@pytest.mark.parametrize("missing_table", [False, True])
+def test_research_sidecar_lookup_closes_database_on_every_exit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing_table: bool,
+) -> None:
+    """Grant lookups close their handle on success and database faults."""
+    store = ResearchGrantStore(str(tmp_path / "sidecar.sqlite"))
+    connection = sqlite3.connect(store.db_path)
+    try:
+        if missing_table:
+            connection.execute("DROP TABLE research_object_grants")
+            connection.commit()
+        connect = Mock(return_value=connection)
+        monkeypatch.setattr(relay_routes.sqlite3, "connect", connect)
+        read_rows = getattr(relay_routes, "_read_research_grant_rows")
+        if missing_table:
+            with pytest.raises(HTTPException) as caught:
+                read_rows(store, ("unknown-grant",))
+            assert caught.value.status_code == 400
+            assert caught.value.detail == "invalid research grant sidecar"
+        else:
+            assert not read_rows(store, ("unknown-grant",))
+        connect.assert_called_once_with(store.db_path)
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            connection.execute("SELECT 1")
+    finally:
+        connection.close()
 
 
 async def test_analysis_relay_binds_ordinary_body_to_operator_app(

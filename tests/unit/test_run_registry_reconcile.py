@@ -6,13 +6,13 @@
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 from tests.support.run_registry_fakes import fixed_run_context
+from tests.support.sqlite import closed_sqlite_connection
 from tests.unit.test_run_registry import (
     _make_registry,
     _seed_async_run,
@@ -217,7 +217,7 @@ async def test_reconcile_cancelled_run_does_not_poll(
     """A legacy cancelled coordinator run remains terminal during reconcile."""
     registry, _, _ = _make_registry(tmp_path)
     registry.create_run(RunSpec("run-cancelled", "alice", "research", "api"))
-    with sqlite3.connect(registry.db_path) as connection:
+    with closed_sqlite_connection(registry.db_path) as connection:
         connection.execute(
             "UPDATE runs SET status = 'cancelled' WHERE run_id = ?",
             ("run-cancelled",),
@@ -379,7 +379,7 @@ async def test_reconcile_final_report_none_without_report(
     assert record is not None
     assert record.result is not None
     assert set(record.result) == {"formatted", "execution"}
-    assert record.result["formatted"]["answer"].strip()
+    assert record.result["formatted"]["answer"] == ""
     assert record.result["execution"]["report"] == {
         "state": "degraded",
         "degraded": True,
@@ -513,9 +513,12 @@ async def test_reconcile_assembles_answer_and_paths_once(
     assert first is not None
     assert first.status == "succeeded"
     assert first.result is not None
-    assert first.result["formatted"]["answer"].startswith(
-        "The analysis reached a terminal outcome"
-    )
+    assert first.result["formatted"]["answer"] == ""
+    assert first.result["execution"]["report"] == {
+        "state": "degraded",
+        "degraded": True,
+        "source_artifact_count": 0,
+    }
     assert first.result["execution"]["artifacts"] == [
         {
             "role": "unknown",

@@ -676,3 +676,101 @@ async def test_async_publish_rejects_downloaded_size_mismatch(
             summary_markdown="ok",
             obs_runtime=CountingObsRuntime(object()),
         )
+
+
+@pytest.mark.parametrize(
+    "warning_code",
+    ["artifact_manifest_invalid", "artifact_manifest_missing"],
+)
+def test_inventory_salvages_unknown_data_on_invalid_manifest(
+    warning_code: str,
+) -> None:
+    """Unknown listed data is archived without promoting its role."""
+    warning = ExecutionWarning(warning_code, False, "artifact_manifest")
+    inventory = build_result_archive_inventory(
+        (
+            _group(
+                _classified(
+                    "data/result.dat",
+                    role=ArtifactRole.UNKNOWN,
+                    media_type="application/octet-stream",
+                    download_ref="/obs/phytomni/runs/r/data/result.dat",
+                ),
+                _classified(
+                    "scores.json",
+                    role=ArtifactRole.UNKNOWN,
+                    media_type="application/octet-stream",
+                ),
+                _classified(
+                    "inventory.json",
+                    role=ArtifactRole.UNKNOWN,
+                    media_type="application/octet-stream",
+                ),
+                _classified(
+                    "nested.zip",
+                    role=ArtifactRole.UNKNOWN,
+                    media_type="application/octet-stream",
+                ),
+                _classified(
+                    ".phytomni-artifacts.json",
+                    role=ArtifactRole.DIAGNOSTIC,
+                ),
+                warnings=(warning,),
+            ),
+        )
+    )
+    assert [member.archive_path for member in inventory.members] == [
+        "results/part-001/data/result.dat",
+        "results/part-001/scores.json",
+    ]
+    assert all(
+        member.role is ArtifactRole.UNKNOWN for member in inventory.members
+    )
+    assert all(
+        member.media_type == "application/octet-stream"
+        for member in inventory.members
+    )
+    assert inventory.members[0].download_ref.endswith("data/result.dat")
+    assert inventory.members[0].size_bytes == 3
+    validate_result_archive_inventory(inventory)
+
+
+def test_inventory_salvages_unknown_sibling_beside_valid_report() -> None:
+    """A valid report child and an invalid UNKNOWN listing both archive."""
+    warning = ExecutionWarning(
+        "artifact_manifest_invalid", False, "artifact_manifest"
+    )
+    inventory = build_result_archive_inventory(
+        (
+            _group(
+                _classified(
+                    "scientific_report.md",
+                    role=ArtifactRole.SCIENTIFIC_REPORT,
+                    media_type="application/octet-stream",
+                )
+            ),
+            _group(
+                _classified(
+                    "data/result.dat",
+                    role=ArtifactRole.UNKNOWN,
+                    media_type="application/octet-stream",
+                ),
+                _classified("inventory.json", role=ArtifactRole.UNKNOWN),
+                _classified("nested.zip", role=ArtifactRole.UNKNOWN),
+                _classified(
+                    ".phytomni-artifacts.json",
+                    role=ArtifactRole.DIAGNOSTIC,
+                ),
+                warnings=(warning,),
+                output_dir="/obs/phytomni/runs/r/part-002",
+            ),
+        )
+    )
+    assert [member.archive_path for member in inventory.members] == [
+        "results/part-001/scientific_report.md",
+        "results/part-002/data/result.dat",
+    ]
+    assert inventory.members[0].role is ArtifactRole.SCIENTIFIC_REPORT
+    assert inventory.members[1].role is ArtifactRole.UNKNOWN
+    assert inventory.members[1].media_type == "application/octet-stream"
+    validate_result_archive_inventory(inventory)

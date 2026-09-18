@@ -170,6 +170,15 @@ def map_analyst_output_to_dispatch_state(
     }
 
 
+def _stamp_analysis_type(
+    result: dict[str, Any], analysis_type: str
+) -> dict[str, Any]:
+    """Copy the producer analysis_type onto one Analyst submit dict."""
+    if not analysis_type or result.get("analysis_type"):
+        return result
+    return {**result, "analysis_type": analysis_type}
+
+
 async def submit_analyst_via_subgraph(
     analyst_agent: Any,
     config: Any,
@@ -226,12 +235,11 @@ async def submit_analyst_via_subgraph(
         config, request, fingerprint
     )
     if fingerprint is not None:
-        reused = await _reuse_prior_dispatch(
+        reused, _rejected_source_id = await _reuse_prior_dispatch(
             fingerprint, require_terminal_success=is_polling
         )
         if reused is not None:
             reused = _normalize_reused_submission(reused)
-            reused["analysis_type"] = context.analysis_type
             logger.info(
                 "Reusing prior %s task via fingerprint dedup "
                 "(caller task_id: %s, source_task_id: %s)",
@@ -245,7 +253,7 @@ async def submit_analyst_via_subgraph(
                 fingerprint,
                 source_task_id=reused["source_task_id"],
             )
-            return reused
+            return _stamp_analysis_type(reused, context.analysis_type)
     enriched_request = {
         **request,
         "output_dir": context.output_dir,
@@ -263,8 +271,10 @@ async def submit_analyst_via_subgraph(
     final_state = await invoke_graph(
         analyst_agent.app, analyst_input, config=runnable_config
     )
-    result = map_analyst_output_to_dispatch_state(final_state)
-    result["analysis_type"] = context.analysis_type
+    result = _stamp_analysis_type(
+        map_analyst_output_to_dispatch_state(final_state),
+        context.analysis_type,
+    )
     task_id = result.get("task_id")
     if isinstance(task_id, str) and task_id and fingerprint is not None:
         record_dispatch_submission(
@@ -348,8 +358,8 @@ async def _reuse_prior_dispatch(
     fingerprint: str,
     *,
     require_terminal_success: bool,
-) -> dict[str, Any] | None:
-    """Return a reuse-shaped dispatch result, or None to submit fresh.
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Return a reuse result and the source excluded from fresh work.
 
     Reads the fingerprint row, applies the cheap status gate, then the
     live verification (probe + is_polling-aware decision). The reuse
@@ -366,21 +376,22 @@ async def _reuse_prior_dispatch(
             (deep_genome), which may only reuse a terminal-success task.
 
     Returns:
-        The reuse dict on a verified-live hit, otherwise ``None``.
+        The optional reuse dict and the exact remote source considered.
     """
     prior = TaskManager(resolve_tasks_db_path()).get_task_by_fingerprint(
         fingerprint
     )
     if prior is None:
-        return None
+        return None, None
+    source_id = str(prior.get("source_task_id") or prior["task_id"])
     if not should_reuse_prior_task(prior["status"] or ""):
-        return None
+        return None, source_id
     reuse_ids = await verified_reuse_task_ids(
         prior,
         require_terminal_success=require_terminal_success,
     )
     if reuse_ids is None:
-        return None
+        return None, source_id
     caller_task_id, source_task_id = reuse_ids
     return {
         "task_id": caller_task_id,
@@ -389,4 +400,4 @@ async def _reuse_prior_dispatch(
         "tool_usages": None,
         "task_status": prior["status"],
         "source_task_id": source_task_id,
-    }
+    }, source_id

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from concurrent.futures import Future
 from typing import Any
 
@@ -17,6 +18,19 @@ def _retrieve_future_result(
     """Retrieve a completed future without propagating its result."""
     if not future.cancelled():
         future.exception()
+
+
+def log_task_failure(task: asyncio.Task[Any], *, operation: str) -> None:
+    """Observe an owned task once and log only fixed operation metadata."""
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        logging.getLogger(__name__).warning(
+            "owned task failed operation=%s exception=%s",
+            operation,
+            type(error).__name__,
+        )
 
 
 def _observe_cancelled_thread_wait(
@@ -71,13 +85,9 @@ async def wait_for_thread_future(future: Future[Any]) -> Any:
     wrapped = asyncio.wrap_future(future)
     try:
         while not future.done():
-            try:
-                await asyncio.wait_for(
-                    asyncio.shield(wrapped),
-                    timeout=0.01,
-                )
-            except TimeoutError:
-                continue
+            await asyncio.wait({wrapped}, timeout=0.01)
+            if wrapped.done():
+                return wrapped.result()
         return _completed_thread_future_result(future, wrapped)
     except asyncio.CancelledError:
         _observe_cancelled_thread_wait(future, wrapped)

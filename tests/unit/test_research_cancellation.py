@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -122,7 +121,7 @@ def _seed_research_parent(
 
 def _run_row(db_path: str, run_id: str) -> tuple[object, ...]:
     """Read the public cancellation fields without projecting them."""
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         row = connection.execute(
             "SELECT status, stage, revision FROM runs WHERE run_id = ?",
             (run_id,),
@@ -367,7 +366,7 @@ def test_cancel_research_run_cas_marks_private_work_and_parent_terminal(
         None,
         1,
     )
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         resolution = connection.execute(
             "SELECT cancel_requested FROM research_input_resolutions "
             "WHERE run_id = ?",
@@ -410,7 +409,7 @@ def test_cancel_research_run_cascades_sent_child(
         None,
         1,
     )
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         outbox = connection.execute(
             "SELECT state FROM research_dispatch_outbox WHERE run_id = ?",
             ("run-cancel-after-send",),
@@ -464,7 +463,7 @@ def test_cancel_wins_against_a_claimed_callback_completion_race(
     assert outcome.status == "cancelled"
     assert completion is False
     assert _run_row(db_path, "run-cancel-race") == ("cancelled", None, 1)
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         root = connection.execute(
             "SELECT state, output_json FROM research_work_units "
             "WHERE unit_id = ?",
@@ -561,14 +560,14 @@ async def test_recovery_retries_pending_grant_revoke_without_reopening_parent(
         grant_revoke=revoke,
     )
     await service.recover_once(datetime(2026, 8, 9, tzinfo=UTC))
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         assert connection.execute(
             "SELECT state FROM research_grant_revocations "
             "WHERE run_id = 'run-cancel-grant'"
         ).fetchone() == ("pending",)
 
     await service.recover_once(datetime(2026, 8, 9, tzinfo=UTC))
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         assert connection.execute(
             "SELECT state FROM research_grant_revocations "
             "WHERE run_id = 'run-cancel-grant'"
@@ -679,12 +678,12 @@ async def test_production_runtime_wires_metadata_revoke_for_cancelled_grants(
             authority_ids=(grant_id,),
         )
     )
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         assert connection.execute(
             "SELECT state FROM research_grant_revocations "
             "WHERE run_id = 'run-cancel-production-grant'"
         ).fetchone() == ("revoked",)
-    with sqlite3.connect(authority_store.db_path) as connection:
+    with closed_sqlite_connection(authority_store.db_path) as connection:
         assert connection.execute(
             "SELECT state FROM research_object_grants WHERE grant_id = ?",
             (grant_id,),

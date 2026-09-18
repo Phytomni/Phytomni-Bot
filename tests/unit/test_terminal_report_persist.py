@@ -5,15 +5,135 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+from pathlib import Path
+
 import pytest
 
 from mcp_server_phytomni.runtime import terminal_report as report_mod
+from mcp_server_phytomni.runtime.artifact_roles import (
+    ArtifactRole,
+    ClassifiedArtifact,
+)
+from mcp_server_phytomni.runtime.locale import SupportedLocale
+from mcp_server_phytomni.runtime.run_registry_reports import (
+    persist_report_compatibility,
+)
+from mcp_server_phytomni.runtime.task_manager import Submission, TaskManager
 from mcp_server_phytomni.runtime.terminal_report import (
+    TerminalReportContext,
     TerminalReportResult,
     persist_terminal_report,
+    synthesize_terminal_report,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def _synthesis_context(
+    agent: str, locale: SupportedLocale, scenario: str
+) -> TerminalReportContext:
+    """Build admitted synthetic inputs for the persistence matrix."""
+    artifact = ClassifiedArtifact(
+        source_path="fixture://result.md",
+        relative_path="result.md",
+        role=ArtifactRole.SCIENTIFIC_REPORT,
+        media_type="text/markdown",
+        size_bytes=32,
+        download_ref="download://result.md",
+    )
+    return TerminalReportContext(
+        agent=agent,
+        status="succeeded",
+        live=[{"task_id": "task-fixture", "status": "succeeded"}],
+        artifacts=() if scenario == "no_text" else (artifact,),
+        query="compare synthetic measurements",
+        locale=locale,
+    )
+
+
+@pytest.mark.parametrize("agent", ["analyst", "research", "network", "design"])
+@pytest.mark.parametrize("locale", ["en-US", "zh-CN"])
+@pytest.mark.parametrize(
+    "scenario",
+    ["no_text", "timeout", "error", "empty", "operational", "valid"],
+)
+@pytest.mark.asyncio
+async def test_scientific_answer_survives_real_synthesis_and_persistence(
+    tmp_path: Path, agent: str, locale: SupportedLocale, scenario: str
+) -> None:
+    """Persist science or empty text, never an operational failure body."""
+    context = _synthesis_context(agent, locale, scenario)
+    model_calls: list[str] = []
+    science = "# Results\n\nThe synthetic treatment increased the signal."
+
+    async def reader(_reference: str) -> str:
+        """Return synthetic scientific input without storage access."""
+        assert scenario != "no_text"
+        return "The synthetic treatment increased the signal."
+
+    async def summarizer(prompt: str) -> str:
+        """Model only the external synthesis outcome."""
+        model_calls.append(prompt)
+        assert scenario != "no_text"
+        if scenario == "timeout":
+            raise TimeoutError("private-provider /tmp/private-fixture")
+        if scenario == "error":
+            raise RuntimeError("private-provider task-fixture")
+        if scenario == "empty":
+            return " \n "
+        if scenario == "operational":
+            return "Execution log: /tmp/private-fixture task-fixture"
+        return science
+
+    assembly = await report_mod.assemble_terminal_report(
+        reader=reader,
+        summarizer=summarizer,
+        context=context,
+        artifacts=context.artifacts,
+    )
+    result = await synthesize_terminal_report(
+        context, reader=reader, summarizer=summarizer
+    )
+    manager = TaskManager(str(tmp_path / "tasks.sqlite"))
+    manager.record(
+        Submission(task_id="task-fixture", status="succeeded", output_dir="")
+    )
+    persist_terminal_report(context.live, result, task_manager=manager)
+    persisted = manager.get_task("task-fixture")
+    assert persisted is not None
+    expected = science if scenario == "valid" else ""
+    assert assembly.answer == result.final_report == expected
+    assert manager.get_task_final_report("task-fixture") == expected
+    assert context.live[0]["final_report"] == expected
+    assert persisted["status"] == context.live[0]["status"] == "succeeded"
+    assert len(model_calls) == (0 if scenario == "no_text" else 2)
+    if scenario != "valid":
+        assert result.answer == ""
+    assert result.degraded is (scenario != "valid")
+    assert asdict(assembly.report) == {
+        "state": "final" if scenario == "valid" else "degraded",
+        "degraded": scenario != "valid",
+        "source_artifact_count": len(context.artifacts),
+    }
+    code = (
+        "report_no_scientific_text"
+        if scenario == "no_text"
+        else "report_synthesis_failed"
+    )
+    assert [warning.code for warning in assembly.warnings] == (
+        [] if scenario == "valid" else [code]
+    )
+    if scenario != "valid":
+        assert result.degraded_reason == code
+        assert manager.get_task_degraded("task-fixture") == code
+        assert context.live[0]["degraded"]
+    assert "private-provider" not in str(asdict(assembly))
+    assert "/tmp/private-fixture" not in str(asdict(assembly))
+    persist_report_compatibility(context.live, assembly, manager.db_path)
+    persisted = manager.get_task("task-fixture")
+    assert persisted is not None
+    assert manager.get_task_final_report("task-fixture") == expected
 
 
 def test_persist_terminal_report_records_storage_failure() -> None:

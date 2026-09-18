@@ -17,8 +17,13 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.support.config_fakes import (
+    fake_chat_config,
+    fake_sensitive_config,
+)
 from tests.support.logging_helpers import capture_non_propagating_logger
 
+from mcp_server_phytomni.agents.chat import service as chat_service
 from mcp_server_phytomni.agents.deep_genome import (
     dispatch as deep_genome_dispatch,
 )
@@ -36,6 +41,11 @@ from mcp_server_phytomni.agents.deep_genome.dispatch import (
 from mcp_server_phytomni.agents.deep_genome.remote_io import (
     DeepGenomeRemoteIO,
     RemoteIOHooks,
+)
+from mcp_server_phytomni.runtime.locale import (
+    SupportedLocale,
+    bind_effective_locale,
+    locale_instruction,
 )
 from mcp_server_phytomni.storage.path_policy import IdFactory, RunIdentity
 
@@ -102,6 +112,48 @@ class DispatchHarness(DeepGenomeDispatchMixin):
             OBS_SERVER="https://example.invalid",
         )
         self.sensitive_config = FakeSensitiveConfig()
+
+
+@pytest.mark.parametrize(
+    ("locale", "stream"), [("en-US", False), ("zh-CN", True)]
+)
+def test_chat_kwargs_pass_real_provider_validation(
+    locale: SupportedLocale, stream: bool
+) -> None:
+    """Report options retain functional settings without provider ownership."""
+    config = fake_chat_config(
+        FREQUENCY_PENALTY=0.3,
+        N=2,
+        PRESENCE_PENALTY=0.4,
+        REASONING_EFFORT="high",
+        RESPONSE_FORMAT={"type": "json_object"},
+        STREAM=stream,
+        TEMPERATURE=0.6,
+        TOP_P=0.8,
+        TIMEOUT=45.0,
+        RETRIABLE_CODES=[429, 503],
+        MAX_RETRIES=1,
+        RELAY_TIMEOUT_PROFILE="deep_genome_report",
+    )
+    sensitive = fake_sensitive_config()
+    host = SimpleNamespace(
+        deep_genome_config=config, sensitive_config=sensitive
+    )
+    token = bind_effective_locale(locale)
+    try:
+        kwargs = getattr(DeepGenomeDispatchMixin, "_chat_kwargs")(host)
+        options = getattr(chat_service, "_chat_options")(kwargs)
+    finally:
+        token.var.reset(token)
+
+    expected = {
+        **{key.lower(): value for key, value in vars(config).items()},
+        "model": sensitive.MODEL_ID,
+        "locale": locale,
+        "locale_instruction": locale_instruction(locale),
+    }
+    assert kwargs == expected
+    assert {key: options[key] for key in expected} == expected
 
 
 async def test_dispatch_polls_normalized_submit_ack_before_download(

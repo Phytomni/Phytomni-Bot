@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from tests.unit.test_research_dispatch_outbox import (
@@ -22,6 +22,7 @@ from mcp_server_phytomni.agents.research.dispatch_outbox import (
     ResearchDispatchRecord,
     persist_plan_and_outbox,
 )
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 pytestmark = pytest.mark.unit
 
@@ -183,3 +184,131 @@ async def test_non_memory_failure_does_not_relaunch(
     loaded = outbox.load(record.dispatch_id)
     assert loaded.payload["compute_resource"] == "small"
     assert loaded.remote_task_id == "ei-1"
+
+
+@pytest.mark.asyncio
+async def test_memory_relaunch_missing_child_does_not_submit(
+    tmp_path: Path,
+) -> None:
+    """A missing dispatch row remains ambiguous without a provider call."""
+    outbox, records, submitted, _ = await _accepted_children(tmp_path, 1)
+    before = outbox.load(records[0].dispatch_id)
+    status_payload, log_payload = _memory_failure()
+
+    result = await outbox.relaunch_memory_exhausted(
+        "missing-dispatch", status_payload, log_payload
+    )
+
+    assert result.dispatch_id == "missing-dispatch"
+    assert result.state == "ambiguous"
+    assert result.remote_task_id is None
+    assert result.failure_code == "research_run_tracking_failed"
+    assert len(submitted) == 1
+    assert outbox.load(records[0].dispatch_id) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["unbound", "raised", "missing_id"])
+async def test_memory_relaunch_submission_failure_preserves_child(
+    tmp_path: Path,
+    failure: Literal["unbound", "raised", "missing_id"],
+) -> None:
+    """An unsuccessful submit must not persist a tier or remote id change."""
+    original, records, submitted, dispatched = await _accepted_children(
+        tmp_path, 1
+    )
+    before = original.load(records[0].dispatch_id)
+    attempts: list[ResearchDispatchRecord] = []
+
+    async def submit(row: ResearchDispatchRecord) -> object:
+        attempts.append(row)
+        if failure == "raised":
+            raise RuntimeError("provider unavailable")
+        return {}
+
+    outbox = ResearchDispatchOutbox(
+        original.store, submit=None if failure == "unbound" else submit
+    )
+    status_payload, log_payload = _memory_failure()
+
+    result = await outbox.relaunch_memory_exhausted(
+        before.dispatch_id, status_payload, log_payload
+    )
+
+    assert result == dispatched[0]
+    assert outbox.load(before.dispatch_id) == before
+    assert len(submitted) == 1
+    if failure == "unbound":
+        assert not attempts
+    else:
+        assert len(attempts) == 1
+        assert attempts[0].dispatch_id == before.dispatch_id
+        assert attempts[0].payload == {
+            **before.payload,
+            "compute_resource": "medium",
+            "compute_resource_generation": 1,
+        }
+
+
+@pytest.mark.asyncio
+async def test_memory_relaunch_cancelled_parent_does_not_submit(
+    tmp_path: Path,
+) -> None:
+    """A cancelled parent blocks resubmission of an accepted child."""
+    outbox, records, submitted, _ = await _accepted_children(tmp_path, 1)
+    before = outbox.load(records[0].dispatch_id)
+    with sqlite_transaction(outbox.store.db_path) as connection:
+        connection.execute(
+            "UPDATE research_input_resolutions SET cancel_requested = 1 "
+            "WHERE run_id = ?",
+            (before.run_id,),
+        )
+    status_payload, log_payload = _memory_failure()
+
+    result = await outbox.relaunch_memory_exhausted(
+        before.dispatch_id, status_payload, log_payload
+    )
+
+    assert result.state == "cancelled"
+    assert result.remote_task_id is None
+    assert result.failure_code == "research_input_resolution_unavailable"
+    assert len(submitted) == 1
+    assert outbox.load(before.dispatch_id) == before
+
+
+@pytest.mark.asyncio
+async def test_memory_relaunch_accepts_synchronous_submit_port(
+    tmp_path: Path,
+) -> None:
+    """A synchronous submit result persists the same bounded tier bump."""
+    original, records, _, _ = await _accepted_children(tmp_path, 1)
+    before = original.load(records[0].dispatch_id)
+    attempts: list[ResearchDispatchRecord] = []
+
+    def submit(row: ResearchDispatchRecord) -> object:
+        attempts.append(row)
+        return {"task_id": "ei-sync"}
+
+    outbox = ResearchDispatchOutbox(original.store, submit=submit)
+    status_payload, log_payload = _memory_failure()
+
+    result = await outbox.relaunch_memory_exhausted(
+        before.dispatch_id, status_payload, log_payload
+    )
+
+    assert result.state == "accepted"
+    assert result.remote_task_id == "ei-sync"
+    assert result.failure_code is None
+    assert len(attempts) == 1
+    bumped = outbox.load(before.dispatch_id)
+    assert bumped.remote_task_id == result.remote_task_id
+    assert bumped.dispatch_fingerprint == before.dispatch_fingerprint
+    assert (
+        bumped.payload
+        == attempts[0].payload
+        == {
+            **before.payload,
+            "compute_resource": "medium",
+            "compute_resource_generation": 1,
+        }
+    )

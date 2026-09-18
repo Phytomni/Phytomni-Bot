@@ -15,7 +15,10 @@ list, and failures raise ``McpError`` with the platform's error string.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
+from collections.abc import Awaitable, Callable
+from json import JSONDecodeError
 from typing import Any
 
 from mcp.shared.exceptions import McpError
@@ -38,6 +41,26 @@ from ...runtime.task_dedup import (
     verify_live_status,
 )
 from .defaults import ANALYST_CONFIG
+
+logger = logging.getLogger(__name__)
+_ORPHAN_DELETE_ERRORS: tuple[type[Exception], ...] = (Exception,)
+
+
+async def discard_duplicate_job(
+    task_id: str | None,
+    delete: Callable[[str], Awaitable[object]],
+) -> None:
+    """Best-effort cleanup after the caller is bound to the winning job."""
+    if task_id is None:
+        return
+    try:
+        await delete(task_id)
+    except _ORPHAN_DELETE_ERRORS as exc:
+        logger.warning(
+            "Could not terminate a raced duplicate fingerprint job; "
+            "error_type=%s",
+            type(exc).__name__,
+        )
 
 
 def _common_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -150,7 +173,7 @@ async def probe_live_status(task_id: str) -> str | None:
             retriable_codes=ANALYST_CONFIG.RETRIABLE_CODES,
             max_retries=ANALYST_CONFIG.MAX_RETRIES,
         )
-    except McpError:
+    except (McpError, JSONDecodeError):
         return None
     if isinstance(live, dict):
         return str(live.get("status") or "").upper() or None

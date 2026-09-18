@@ -18,6 +18,13 @@ class CitationConfig(BaseSettings):
             "CITATION_DB_PATH", "PHYTOMNI_CITATION_DB_PATH"
         ),
     )
+    CITATION_OMIT_UNMATCHED: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "CITATION_OMIT_UNMATCHED",
+            "PHYTOMNI_CITATION_OMIT_UNMATCHED",
+        ),
+    )
 
     @field_validator("CITATION_DB_PATH", mode="before")
     @classmethod

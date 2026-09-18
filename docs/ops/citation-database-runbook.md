@@ -101,7 +101,9 @@ artifact. Do not copy these counts to a different source without a new audit.
 
 Conflicts are quality evidence, not an automatic build failure. The builder
 quarantines every row for an ID with more than one canonical variant; runtime
-lookup then treats that ID as a metadata miss and uses title-only formatting.
+lookup then treats that ID as a metadata miss. With
+`CITATION_OMIT_UNMATCHED` true (the default), that miss is omitted from the
+formatted answer and reference list rather than rendered title-only.
 
 Inspect at most 100 selected conflict summaries explicitly, using an
 operator-supplied ID list, without placing the list in default CLI output:
@@ -177,10 +179,13 @@ Authors. Title. *Source* **Volume,** pages-or-article (Year). [DOI label](DOI UR
 Absent fragments are omitted, pages take precedence over `ar`, and a valid
 `di` takes precedence over a valid DOI-host `dl`. A missing or invalid DOI
 sets `doi_missing: true` and does not by itself set
-`citation_metadata_degraded`. A missing, quarantined, or failed selected
-record uses exactly the cleaned retrieval title and sets
-`citation_metadata_degraded=true`. The display string never contains
-`file_id`; the structured reference may retain it.
+`citation_metadata_degraded`. With `CITATION_OMIT_UNMATCHED` true (the
+default), a missing or quarantined selected record is omitted from the
+formatted answer and reference list without setting the degradation flag.
+A failed lookup still uses exactly the cleaned retrieval title and sets
+`citation_metadata_degraded=true`. Setting `CITATION_OMIT_UNMATCHED` false
+restores title-only formatting for missing selected records. The display
+string never contains `file_id`; the structured reference may retain it.
 
 ## Disposable startup and cited smokes
 
@@ -242,9 +247,10 @@ integrity checks. A failed build leaves the previous artifact unchanged.
 Runtime lookups use short-lived read-only connections. Requests that already
 opened the prior artifact finish against that inode; the next lookup opens the
 replacement. If a replacement is corrupt or incompatible after startup,
-lookups preserve answers and degrade selected references to title-only until a
-valid artifact is restored or the process restarts. A restart revalidates the
-artifact and refuses an invalid one.
+lookups preserve answers; a corrupt-artifact lookup failure still degrades
+selected references to title-only until a valid artifact is restored or the
+process restarts. Unmatched IDs under the default omit switch still omit.
+A restart revalidates the artifact and refuses an invalid one.
 
 To roll back, restore the prior validated artifact and restart, or redeploy
 the prior Bot revision and its matching environment. There is no request-time

@@ -41,6 +41,7 @@ __all__ = [
     "ResultArchivePublisher",
     "ResultDeliveryDependencies",
     "begin_delivery_retry",
+    "begin_delivery_reconcile",
     "claim_delivery_attempt",
     "default_result_delivery_dependencies",
     "delivery_attempts_exhausted",
@@ -64,6 +65,13 @@ __all__ = [
 _DELIVERY_INTERNAL = "delivery_internal"
 _MAX_AUTOMATIC_ATTEMPTS = 3
 _DELIVERY_WARNING = "result_archive_delivery_failed"
+_RECONCILABLE_FAILURES = frozenset(
+    {
+        "archive_inventory_limit_exceeded",
+        "artifact_manifest_invalid",
+        "no_user_deliverables",
+    }
+)
 _BACKOFF_SECONDS = (0.05, 0.1)
 _CONFIG = ServerConfig()
 
@@ -223,6 +231,50 @@ def begin_delivery_retry(
             "WHERE run_id = ? AND user_id = ? "
             "AND status = 'succeeded'",
             (json.dumps(result), _now_iso(), run_id, owner),
+        )
+        return cursor.rowcount == 1
+
+
+def begin_delivery_reconcile(
+    registry: RunRegistry, run_id: str, *, owner: str
+) -> bool:
+    """Reopen a legacy archive failure for child-only reconciliation.
+
+    Older terminal rows may have a successful scientific run but no persisted
+    inventory digest.  They can be safely re-collected from their existing
+    child rows; they must not be sent back through EI.  The status transition
+    is owner-scoped and revision-checked so only one caller can reopen it.
+    """
+    with sqlite_transaction(registry.db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT result_json, revision FROM runs "
+            "WHERE run_id = ? AND user_id = ? AND status = 'succeeded'",
+            (run_id, owner),
+        ).fetchone()
+        if row is None:
+            return False
+        result = _result_mapping(row[0])
+        delivery = result_delivery_from_result(result)
+        if (
+            delivery is None
+            or delivery.status != "failed"
+            or delivery.retryable
+            or delivery.inventory_digest
+            or delivery.error_code not in _RECONCILABLE_FAILURES
+        ):
+            return False
+        has_child = conn.execute(
+            "SELECT 1 FROM tasks WHERE run_id = ? LIMIT 1", (run_id,)
+        ).fetchone()
+        if has_child is None:
+            return False
+        cursor = conn.execute(
+            "UPDATE runs SET status = 'running', error = NULL, "
+            "updated_at = ?, expires_at = NULL, revision = revision + 1 "
+            "WHERE run_id = ? AND user_id = ? AND status = 'succeeded' "
+            "AND revision = ?",
+            (_now_iso(), run_id, owner, row[1]),
         )
         return cursor.rowcount == 1
 

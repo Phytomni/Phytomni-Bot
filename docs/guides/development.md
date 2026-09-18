@@ -118,6 +118,19 @@ Tests are grouped by directory and automatically marked as `unit`, `server`,
 `PHYTOMNI_RUN_INTEGRATION=1` is set. Tests marked `network` stay skipped
 unless `PHYTOMNI_ALLOW_NETWORK=1` is set.
 
+Resource leaks, unawaited coroutines, and unraisable exceptions are failures:
+the shared pytest configuration promotes `ResourceWarning`, `RuntimeWarning`,
+and `PytestUnraisableExceptionWarning` to errors locally and in CI. Close
+SQLite connections explicitly; their transaction context manager commits or
+rolls back but does not close the connection. Tests can reuse
+`tests.support.sqlite.closed_sqlite_connection` for both responsibilities.
+Prefer async tests for coroutine behavior. Synchronous tests that must run
+a coroutine can reuse
+`tests.support.asyncio_helpers.run_coroutine_on_owned_loop` to preserve
+pytest's event-loop policy state.
+The root test bootstrap also disables ONNX Runtime telemetry before package
+imports, keeping offline tests free of telemetry requests and session files.
+
 ## Lint and Type Checks
 
 Useful individual checks (scopes match `.github/workflows/lint.yml`):
@@ -128,9 +141,10 @@ uv run ruff check .
 uv run flake8 src tests e2e scripts --count --statistics
 uv run mypy src tests e2e scripts
 pyright src scripts
-PYTHONPATH=src uv run pylint --persistent=no --disable=R0801,R0903 \
-  $(git ls-files '*.py')
-uv run python scripts/check_pylint_baseline.py
+uv run python scripts/check_static_analysis_exemptions.py \
+  check-pylint --python-version 3.12 --files-from-git
+uv run python scripts/check_static_analysis_exemptions.py check --scope full
+uv run python scripts/check_static_analysis_exemptions.py render-docs --check
 uv run yamllint .
 ```
 
@@ -138,11 +152,11 @@ In restricted local sandboxes, `uv run --no-sync ...` can reuse an already
 installed environment when plain `uv run` tries to rebuild the package or
 access a read-only uv cache.
 
-Pylint's ordinary rules run without global project configuration disables. The
-two cross-file/test-fake rules `R0801` and `R0903` are disabled on the main
-invocation and checked separately by `scripts/check_pylint_baseline.py`; local
-waivers remain guarded by style tests and are reserved for documented
-framework boundaries.
+Pylint runs without global rule disables, including `R0801` and `R0903`.
+The static-analysis checker validates exact findings against the reviewed
+registry and rejects unregistered or stale exemptions. Its generated ledger
+is checked for drift; do not restore the obsolete count-based baseline or
+add broad suppression flags to local commands.
 
 ## Local Quality Gate
 
@@ -263,6 +277,34 @@ The pylint job installs `[dev,demo]` so `demo_data/scripts` imports of
 `reportlab` and `openpyxl` resolve. GitHub workflow files are checked with
 both yamllint shape validation and actionlint workflow semantics.
 
+The mypy, pytest, and dependency-floor jobs record their interpreter and
+resolved dependency versions. Pytest uploads both XML and per-file JSON
+coverage, including after test or coverage-check failures when reports exist.
+A passing gate in an existing local environment is not proof that a newly
+resolved CI environment passes. To reproduce CI without changing a shared
+`.venv`, create a disposable environment:
+
+```bash
+uv venv --python 3.14 /tmp/phytomni-ci-repro
+uv pip install --python /tmp/phytomni-ci-repro/bin/python -e ".[dev,demo]"
+uv pip check --python /tmp/phytomni-ci-repro/bin/python
+/tmp/phytomni-ci-repro/bin/python -m mypy src tests e2e scripts
+UV_PROJECT_ENVIRONMENT=/tmp/phytomni-ci-repro UV_NO_SYNC=1 \
+  PHYTOMNI_TESTING=1 /tmp/phytomni-ci-repro/bin/python -m pytest
+```
+
+Use a separate Python 3.12 environment with `--resolution lowest-direct`
+on the install command to reproduce dependency floors. Also set
+`PHYTOMNI_DEPENDENCY_FLOOR=1` for pytest to select the floor compatibility
+fixtures, and retain CI's existing narrow
+`-W 'ignore:datetime.datetime.utcnow:DeprecationWarning'` filter for the
+upstream openpyxl deprecation. Run the full mypy command with this separate
+environment's interpreter too. Keep it separate from latest-resolution checks
+so installed packages cannot obscure which dependency window was tested.
+Pass the environment settings through to pytest: repository inventory tests
+invoke `uv` subprocesses, so selecting only the parent Python executable
+does not isolate every validation tool from the shared `.venv`.
+
 ## Documentation Checks
 
 Tracked Markdown files are checked for formatting and lint shape through
@@ -291,6 +333,24 @@ Dependency specifiers should stay as lower bounds (`>=`) unless a specific
 package needs a documented compatibility pin. Because CI does not use a
 committed lock file, dependency upgrades must update the relevant lower
 bounds in `pyproject.toml`.
+
+`starlette>=0.42.0` declares an already-used FastAPI dependency explicitly:
+relay streaming relies on its ASGI 2.4 send-failure/disconnect behavior,
+introduced in that version. Older Starlette releases incorrectly enter the
+receive-based disconnect path for this contract. The dependency-floor job
+must resolve a compatible FastAPI/Starlette pair and pass the send-error and
+caller-cancellation regressions; do not weaken those tests to admit older
+streaming behavior. This adds no separate HTTP framework or compatibility
+shim; Starlette remains the BSD-licensed upstream runtime used by FastAPI.
+
+`types-protobuf>=6.32.1.20251210,<7` bounds the existing development stubs
+to the protobuf interfaces used by the A2A SDK. An upper bound alone admits
+obsolete enum and repeated-field annotations; even the earliest 6.x stubs
+lack the container annotations corrected in the
+[upstream release](https://github.com/python/typeshed/pull/15117).
+The dependency-floor job runs full mypy as well as offline tests so runtime
+success cannot conceal an unsupported typing environment. This changes no
+runtime package or A2A protocol behavior.
 
 ### Parse-only SQL policy
 

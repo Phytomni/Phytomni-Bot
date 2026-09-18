@@ -203,7 +203,7 @@ async def test_reuse_prior_dispatch_skips_unrecognized_status(
     reuse_prior = getattr(ada, "_reuse_prior_dispatch")
     reused = await reuse_prior("fp-queued", require_terminal_success=False)
 
-    assert reused is None
+    assert reused == (None, "prior-queued")
 
 
 async def test_reuse_prior_dispatch_skips_dead_live_status(
@@ -230,7 +230,7 @@ async def test_reuse_prior_dispatch_skips_dead_live_status(
     reuse_prior = getattr(ada, "_reuse_prior_dispatch")
     reused = await reuse_prior("fp-dead", require_terminal_success=False)
 
-    assert reused is None
+    assert reused == (None, "prior-dead")
 
 
 async def test_reuse_prior_dispatch_misses_when_no_row(
@@ -240,8 +240,9 @@ async def test_reuse_prior_dispatch_misses_when_no_row(
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
     reuse_prior = getattr(ada, "_reuse_prior_dispatch")
 
-    assert (
-        await reuse_prior("fp-missing", require_terminal_success=False) is None
+    assert await reuse_prior("fp-missing", require_terminal_success=False) == (
+        None,
+        None,
     )
 
 

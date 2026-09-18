@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from types import SimpleNamespace
 from typing import Any
 
@@ -46,6 +45,7 @@ from tests.agents.test_review_conversation import (
     _projection,
     _stateful_review_agent,
 )
+from tests.support.sqlite import closed_sqlite_connection
 from tests.unit.runtime.conversation_context.test_service import (
     _envelope,
     _service,
@@ -423,7 +423,7 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
         adapter = dispatch.private_agent_state["review_adapter"]
         candidate = adapter.candidate_thread_id
         assert candidate is not None
-        with sqlite3.connect(store.db_path) as connection:
+        with closed_sqlite_connection(store.db_path) as connection:
             assert connection.execute(
                 "SELECT staged_at, eligible_at, tombstone_pending "
                 "FROM conversation_review_checkpoint_cleanup "
