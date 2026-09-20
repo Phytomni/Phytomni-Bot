@@ -11,24 +11,45 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from tests.support.execution_supervisor_v2 import (
+    bind_acknowledged_provider,
+    create_root_span,
+)
+from tests.support.provider_trace_v2 import provider_trace_adapter_result
+
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    ExecutionJournalPublicationFenceError,
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    WorkUnitStatus,
+    parse_execution_event_intent_v2,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
+from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
+    ExecutionSupervisor,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SQLiteExecutionWorkRepository,
+    WorkUnitSpec,
+)
+from mcp_server_phytomni.runtime.provider_reconciliation_v2 import (
+    ProviderObservation,
+    ProviderReconciler,
+)
+from mcp_server_phytomni.runtime.provider_trace_v2 import (
+    ProviderTraceAdapterResult,
+    ProviderTraceObservation,
+    ProviderTraceRecord,
+)
 
 
 def _seed_provider_work(db_path: Path):
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-        WorkUnitStatus,
-    )
 
     path = str(db_path)
     reservations = SQLiteExecutionReservationRepository(path)
@@ -43,14 +64,10 @@ def _seed_provider_work(db_path: Path):
             agent_slug="analyst", arguments={"query": "rice"}
         ),
     )
-    work.create_span(
-        SpanSpec(
-            owner=reservation.owner,
-            execution_id=reservation.execution_id,
-            span_id=reservation.root_span_id,
-            kind="agent",
-            label_key="agent.analyst",
-        )
+    create_root_span(
+        work,
+        reservation,
+        label_key="agent.analyst",
     )
     unit = work.create_work_unit(
         WorkUnitSpec(
@@ -70,21 +87,10 @@ def _seed_provider_work(db_path: Path):
         status=WorkUnitStatus.SUBMITTED,
         expected_revision=unit.revision,
     )
-    unit = work.bind_provider(
-        unit.execution_id,
-        unit.work_unit_id,
-        owner=unit.owner,
-        provider_kind="analysis",
+    unit = bind_acknowledged_provider(
+        work,
+        unit,
         provider_task_id="private-task-1",
-        provider_revision=0,
-        expected_revision=unit.revision,
-    )
-    unit = work.update_work_unit_status(
-        unit.execution_id,
-        unit.work_unit_id,
-        owner=unit.owner,
-        status=WorkUnitStatus.ACKNOWLEDGED,
-        expected_revision=unit.revision,
     )
     return reservations, journal, work, unit
 
@@ -92,10 +98,7 @@ def _seed_provider_work(db_path: Path):
 def test_callback_accelerates_and_poll_duplicate_is_suppressed(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.provider_reconciliation_v2 import (
-        ProviderObservation,
-        ProviderReconciler,
-    )
+    """Verify callback accelerates and poll duplicate is suppressed."""
 
     reservations, journal, work, unit = _seed_provider_work(
         tmp_path / "provider-reconcile.db"
@@ -137,10 +140,7 @@ def test_callback_accelerates_and_poll_duplicate_is_suppressed(
 def test_poll_recovery_advances_from_stored_work_without_read_api(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.provider_reconciliation_v2 import (
-        ProviderObservation,
-        ProviderReconciler,
-    )
+    """Verify poll recovery advances from stored work without read API."""
 
     reservations, journal, work, unit = _seed_provider_work(
         tmp_path / "provider-poll.db"
@@ -178,18 +178,7 @@ def test_poll_recovery_advances_from_stored_work_without_read_api(
 def test_status_and_trace_reconcile_on_independent_bounded_cadence(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        parse_execution_event_intent_v2,
-    )
-    from mcp_server_phytomni.runtime.provider_reconciliation_v2 import (
-        ProviderObservation,
-        ProviderReconciler,
-    )
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        ProviderTraceAdapterResult,
-        ProviderTraceObservation,
-        ProviderTraceRecord,
-    )
+    """Verify status and trace reconcile on independent bounded cadence."""
 
     reservations, journal, work, unit = _seed_provider_work(
         tmp_path / "provider-trace-reconcile.db"
@@ -205,25 +194,18 @@ def test_status_and_trace_reconcile_on_independent_bounded_cadence(
     async def poll_trace(current, checkpoint):
         trace_polls.append(current.work_unit_id)
         assert checkpoint.cursor is None
-        return ProviderTraceAdapterResult(
-            observation=ProviderTraceObservation(
-                schema_version=1,
-                adapter_version="analysis-delta-v1",
-                source_revision=1,
-                next_cursor="cursor-1",
-                snapshot_complete=False,
-                health="healthy",
-                records=(
-                    ProviderTraceRecord(
-                        source_identity="provider-record-1",
-                        record_class="bounded_progress",
-                        semantic_code="gene_network.infer_network",
-                        status="running",
-                        completed=1,
-                        total=3,
-                    ),
+        return provider_trace_adapter_result(
+            (
+                ProviderTraceRecord(
+                    source_identity="provider-record-1",
+                    record_class="bounded_progress",
+                    semantic_code="gene_network.infer_network",
+                    status="running",
+                    completed=1,
+                    total=3,
                 ),
             ),
+            next_cursor="cursor-1",
             overlap_identities=("provider-record-1",),
         )
 
@@ -292,14 +274,7 @@ def test_status_and_trace_reconcile_on_independent_bounded_cadence(
 def test_trace_outage_does_not_block_authoritative_status_settlement(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.provider_reconciliation_v2 import (
-        ProviderObservation,
-        ProviderReconciler,
-    )
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        ProviderTraceAdapterResult,
-        ProviderTraceObservation,
-    )
+    """Verify trace outage does not block authoritative status settlement."""
 
     reservations, journal, work, unit = _seed_provider_work(
         tmp_path / "provider-trace-outage.db"
@@ -372,12 +347,7 @@ def test_trace_outage_does_not_block_authoritative_status_settlement(
 def test_trace_checkpoint_and_public_facts_commit_atomically(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        ExecutionJournalPublicationFenceError,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        parse_execution_event_intent_v2,
-    )
+    """Verify trace checkpoint and public facts commit atomically."""
 
     _reservations, journal, work, unit = _seed_provider_work(
         tmp_path / "provider-trace-atomic.db"
@@ -433,17 +403,7 @@ def test_trace_checkpoint_and_public_facts_commit_atomically(
 def test_terminal_provider_work_stops_status_and_trace_supervision(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
-        ExecutionSupervisor,
-    )
-    from mcp_server_phytomni.runtime.provider_reconciliation_v2 import (
-        ProviderObservation,
-        ProviderReconciler,
-    )
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        ProviderTraceAdapterResult,
-        ProviderTraceObservation,
-    )
+    """Verify terminal provider work stops status and trace supervision."""
 
     reservations, journal, work, _unit = _seed_provider_work(
         tmp_path / "provider-trace-terminal-stop.db"

@@ -14,7 +14,10 @@ from .execution_journal_v2 import (
     ExecutionJournalValidationError,
     parse_execution_event_intent_v2,
 )
-from .execution_trace_detail import OPERATION_PRESENTER_REGISTRY
+from .execution_trace_detail import (
+    OPERATION_PRESENTER_REGISTRY,
+    OperationPresenterCapability,
+)
 from .execution_work_store_v2 import WorkUnitRecord
 from .provider_trace_v2 import ProviderTraceObservation, ProviderTraceRecord
 
@@ -24,6 +27,25 @@ _PUBLIC_SUMMARY_CODES_BY_AGENT = {
         "gene_network.workflow_selected": "decision",
     },
 }
+
+
+def _presenter_matches_record(
+    record: ProviderTraceRecord,
+    trace_operations: tuple[str, ...],
+    presenter: OperationPresenterCapability,
+) -> bool:
+    """Check one normalized record against its public presenter contract."""
+    if record.semantic_code not in trace_operations:
+        return False
+    if presenter.operation_key != record.semantic_code:
+        return False
+    if presenter.semantic_kind not in {"phase", "tool"}:
+        return False
+    required_kind = {
+        "semantic_phase": "phase",
+        "semantic_tool": "tool",
+    }.get(record.record_class)
+    return required_kind is None or presenter.semantic_kind == required_kind
 
 
 def present_agent_provider_record(
@@ -51,22 +73,11 @@ def present_agent_provider_record(
         )
     if record.record_class == "artifact_available":
         return ()
-    if record.semantic_code not in spec.trace_operations:
-        return ()
-
     presenter = OPERATION_PRESENTER_REGISTRY.resolve(record.semantic_code)
-    if presenter.operation_key != record.semantic_code:
-        return ()
-    if presenter.semantic_kind not in {"phase", "tool"}:
-        return ()
-    if (
-        record.record_class == "semantic_phase"
-        and presenter.semantic_kind != "phase"
-    ):
-        return ()
-    if (
-        record.record_class == "semantic_tool"
-        and presenter.semantic_kind != "tool"
+    if not _presenter_matches_record(
+        record,
+        spec.trace_operations,
+        presenter,
     ):
         return ()
 

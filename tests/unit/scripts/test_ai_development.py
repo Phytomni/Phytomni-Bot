@@ -21,6 +21,7 @@ def _module():
 
 
 def test_inventory_contains_agents_graphs_and_authorities() -> None:
+    """Verify inventory contains agents graphs and authorities."""
     payload = _module().architecture_inventory()
     assert len(payload["public_agents"]) == 10
     assert payload["graphs"]["environment"]["classification"] == "internal"
@@ -28,6 +29,7 @@ def test_inventory_contains_agents_graphs_and_authorities() -> None:
 
 
 def test_verification_plan_maps_cross_repo_paths() -> None:
+    """Verify verification plan maps cross repo paths."""
     plan = _module().verification_plan(
         [
             "src/mcp_server_phytomni/graphs/manifest.py",
@@ -45,6 +47,7 @@ def test_verification_plan_maps_cross_repo_paths() -> None:
 
 
 def test_evidence_summary_never_infers_external_activation() -> None:
+    """Verify evidence summary never infers external activation."""
     payload = _module().evidence_summary(
         [{"command": "pytest -q", "exit_code": 0, "scope": "focused"}]
     )
@@ -56,6 +59,7 @@ def test_evidence_summary_never_infers_external_activation() -> None:
 
 
 def test_current_execution_convergence_has_no_unaccounted_bypass() -> None:
+    """Verify current execution convergence has no unaccounted bypass."""
     helper = _module()
     assert helper.execution_convergence_violations() == []
 
@@ -63,6 +67,7 @@ def test_current_execution_convergence_has_no_unaccounted_bypass() -> None:
 def test_canonical_runtime_has_no_legacy_activation_or_background_map() -> (
     None
 ):
+    """Verify canonical runtime has no legacy activation or background map."""
     root = Path(__file__).resolve().parents[3]
     sources = "\n".join(
         path.read_text(encoding="utf-8")
@@ -77,6 +82,7 @@ def test_canonical_runtime_has_no_legacy_activation_or_background_map() -> (
 def test_execution_convergence_reports_a_new_direct_agent_task(
     tmp_path: Path,
 ) -> None:
+    """Verify execution convergence reports a new direct agent task."""
     helper = _module()
     source = tmp_path / "src/mcp_server_phytomni/agents/new_agent.py"
     source.parent.mkdir(parents=True)
@@ -94,6 +100,7 @@ def test_execution_convergence_reports_a_new_direct_agent_task(
 def test_execution_convergence_reports_direct_agent_lifecycle_logging(
     tmp_path: Path,
 ) -> None:
+    """Verify execution convergence reports direct agent lifecycle logging."""
     helper = _module()
     source = tmp_path / "src/mcp_server_phytomni/agents/new_agent.py"
     source.parent.mkdir(parents=True)
@@ -109,6 +116,7 @@ def test_execution_convergence_reports_direct_agent_lifecycle_logging(
 def test_execution_convergence_rejects_terminal_journal_writer(
     tmp_path: Path,
 ) -> None:
+    """Verify execution convergence rejects terminal journal writer."""
     helper = _module()
     source = (
         tmp_path / "src/mcp_server_phytomni/runtime/rogue_terminal_writer.py"
@@ -129,6 +137,7 @@ def test_execution_convergence_rejects_terminal_journal_writer(
 def test_execution_convergence_rejects_legacy_turn_id_mint(
     tmp_path: Path,
 ) -> None:
+    """Verify execution convergence rejects legacy turn ID mint."""
     helper = _module()
     source = tmp_path / "src/mcp_server_phytomni/api/legacy.py"
     source.parent.mkdir(parents=True)
@@ -150,6 +159,7 @@ def test_execution_convergence_rejects_legacy_turn_id_mint(
 def test_direct_graph_execution_is_always_rejected(
     tmp_path: Path,
 ) -> None:
+    """Verify direct graph execution is always rejected."""
     helper = _module()
     source = tmp_path / "src/mcp_server_phytomni/mcp/app.py"
     source.parent.mkdir(parents=True)
@@ -167,6 +177,7 @@ def test_direct_graph_execution_is_always_rejected(
 def test_docstrings_and_remote_mcp_tools_are_not_graph_bypasses(
     tmp_path: Path,
 ) -> None:
+    """Verify docstrings and remote MCP tools are not graph bypasses."""
     helper = _module()
     source = tmp_path / "src/mcp_server_phytomni/interop/mcp_client.py"
     source.parent.mkdir(parents=True)
@@ -185,6 +196,7 @@ def test_docstrings_and_remote_mcp_tools_are_not_graph_bypasses(
 def test_detached_public_agent_work_is_always_rejected(
     tmp_path: Path,
 ) -> None:
+    """Verify detached public agent work is always rejected."""
     helper = _module()
     source = (
         tmp_path / "src/mcp_server_phytomni/runtime/background_submission.py"
@@ -203,6 +215,7 @@ def test_detached_public_agent_work_is_always_rejected(
 
 
 def test_legacy_sync_run_writer_is_always_rejected(tmp_path: Path) -> None:
+    """Verify legacy sync run writer is always rejected."""
     helper = _module()
     source = tmp_path / "src/mcp_server_phytomni/api/routes/agents.py"
     source.parent.mkdir(parents=True)
@@ -219,6 +232,7 @@ def test_legacy_sync_run_writer_is_always_rejected(tmp_path: Path) -> None:
 
 
 def test_legacy_stream_run_writer_is_always_rejected(tmp_path: Path) -> None:
+    """Verify legacy stream run writer is always rejected."""
     helper = _module()
     source = tmp_path / "src/mcp_server_phytomni/api/streaming.py"
     source.parent.mkdir(parents=True)
@@ -240,6 +254,7 @@ def test_legacy_stream_run_writer_is_always_rejected(tmp_path: Path) -> None:
 def test_secondary_public_runtime_writer_is_always_rejected(
     tmp_path: Path,
 ) -> None:
+    """Verify secondary public runtime writer is always rejected."""
     helper = _module()
     source = tmp_path / "src/mcp_server_phytomni/api/a2a/runtime.py"
     source.parent.mkdir(parents=True)
@@ -259,6 +274,7 @@ def test_secondary_public_runtime_writer_is_always_rejected(
 def test_retired_a2ui_persistence_module_cannot_return(
     tmp_path: Path,
 ) -> None:
+    """Verify retired A2UI persistence module cannot return."""
     helper = _module()
     source = (
         tmp_path / "src/mcp_server_phytomni/api/a2ui_review_persistence.py"
@@ -275,6 +291,8 @@ def test_retired_a2ui_persistence_module_cannot_return(
 def test_lease_heartbeats_and_file_io_threads_are_not_execution_bypasses(
     tmp_path: Path,
 ) -> None:
+    """Verify lease heartbeats and file io threads are not execution
+    bypasses."""
     helper = _module()
     recovery = tmp_path / "src/mcp_server_phytomni/agents/research/recovery.py"
     report = tmp_path / "src/mcp_server_phytomni/agents/deep_genome/report.py"
@@ -302,6 +320,7 @@ def test_lease_heartbeats_and_file_io_threads_are_not_execution_bypasses(
 def test_advertised_todo_cannot_exist_only_as_an_unreachable_helper(
     tmp_path: Path,
 ) -> None:
+    """Verify advertised todo cannot exist only as an unreachable helper."""
     helper = _module()
     runtime = (
         tmp_path / "src/mcp_server_phytomni/runtime/execution_runtime_v2.py"
@@ -321,6 +340,7 @@ def test_advertised_todo_cannot_exist_only_as_an_unreachable_helper(
 def test_advertised_public_summary_requires_a_business_call_site(
     tmp_path: Path,
 ) -> None:
+    """Verify advertised public summary requires a business call site."""
     helper = _module()
     runtime = (
         tmp_path / "src/mcp_server_phytomni/runtime/execution_runtime_v2.py"

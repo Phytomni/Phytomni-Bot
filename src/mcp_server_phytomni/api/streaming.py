@@ -131,6 +131,15 @@ class _PrivateStreamContext:
 
 
 @dataclass(frozen=True)
+class _StreamRuntimeInput:
+    """Optional Runtime-owned event source for one prepared stream."""
+
+    raw_event_factory: Callable[[str], AsyncIterator[AguiEvent]] | None = None
+    run_id: str | None = None
+    prepared_events: AsyncIterator[AguiEvent] | None = None
+
+
+@dataclass(frozen=True)
 class _StreamPreparationRequest:
     """Inputs needed to prepare and prime one ordinary stream."""
 
@@ -140,9 +149,7 @@ class _StreamPreparationRequest:
     user_query: str
     dependencies: StreamingDependencies
     private_context: _PrivateStreamContext = _PrivateStreamContext()
-    raw_event_factory: Callable[[str], AsyncIterator[AguiEvent]] | None = None
-    runtime_run_id: str | None = None
-    runtime_prepared_events: AsyncIterator[AguiEvent] | None = None
+    runtime: _StreamRuntimeInput = _StreamRuntimeInput()
 
 
 @dataclass(frozen=True)
@@ -269,14 +276,14 @@ async def _prepare_stream(
 ) -> _PreparedStream:
     """Prepare, persist, prime, and shape one ordinary stream."""
     agent_slug = request.dependencies.request.agent_slug(request.payload.model)
-    run_id = request.runtime_run_id or request.dependencies.request.new_run_id(
+    run_id = request.runtime.run_id or request.dependencies.request.new_run_id(
         "run", agent_slug or "chat"
     )
     try:
-        if request.raw_event_factory is not None:
-            raw_events = request.raw_event_factory(run_id)
-        elif request.runtime_prepared_events is not None:
-            raw_events = request.runtime_prepared_events
+        if request.runtime.raw_event_factory is not None:
+            raw_events = request.runtime.raw_event_factory(run_id)
+        elif request.runtime.prepared_events is not None:
+            raw_events = request.runtime.prepared_events
         else:
             private_kwargs: dict[str, Any] = {}
             if request.private_context.conversation_messages:
@@ -448,6 +455,33 @@ def _replay_stream_events(result: dict[str, Any]) -> list[AguiEvent]:
     return events
 
 
+async def _iter_replay_events(
+    events: Sequence[AguiEvent],
+) -> AsyncIterator[AguiEvent]:
+    """Yield one stored replay without reopening the business stream."""
+    for event in events:
+        yield event
+
+
+def _context_replay_response(
+    prepared: PreparedTurn,
+    payload: ChatCompletionRequest,
+) -> StreamingResponse:
+    """Return the OpenAI stream response for one already-staged turn."""
+    if prepared.result is None:
+        raise HTTPException(
+            status_code=500, detail="conversation context replay failed"
+        )
+    events = _replay_stream_events(prepared.result)
+    return StreamingResponse(
+        to_chat_completion_chunks(
+            _iter_replay_events(events),
+            payload.model,
+        ),
+        media_type="text/event-stream",
+    )
+
+
 def _record_replay_event(
     events: list[dict[str, Any]], event: AguiEvent
 ) -> None:
@@ -593,115 +627,37 @@ def _tasks_db_path() -> str:
     return str(_default_tasks_db_path())
 
 
-async def stream_chat_completion(
+def _terminal_stream_result(
+    prepared: _PreparedStream,
     *,
-    dependencies: StreamingDependencies,
-    **request: Unpack[ChatStreamCall],
+    partial: bool,
+) -> dict[str, Any]:
+    """Build the transport-neutral terminal result exposed to Runtime V2."""
+    snapshot = prepared.accumulator.snapshot
+    return {
+        "formatted": {"answer": snapshot.answer},
+        "execution": empty_agent_result()["execution"],
+        "raw": None,
+        "stream": True,
+        "truncated": snapshot.truncated,
+        "partial": partial,
+    }
+
+
+def _prepared_stream_response(
+    prepared: _PreparedStream,
+    payload: ChatCompletionRequest,
+    context_stream: _PreparedContextStream | None,
 ) -> StreamingResponse:
-    """Prepare and wrap one streamed tool response."""
-    tool_name = request["tool_name"]
-    payload = request["payload"]
-    user_query = request["user_query"]
-    if (
-        tool_name == "ChatAgent"
-        and payload.conversation is None
-        and dependencies.a2ui.select_widget(user_query) is not None
-    ):
-        runtime_run_id = request.get("runtime_run_id")
-        if runtime_run_id is None:
-            raise HTTPException(
-                status_code=500,
-                detail="execution runtime boundary required",
-            )
-        return await stream_chat_a2ui_confirm(
-            arguments=request["arguments"],
-            payload=payload,
-            user_query=user_query,
-            dependencies=dependencies,
-            runtime_run_id=runtime_run_id,
-        )
-
-    context_stream, replay_prepared = await _prepare_context_stream(
-        tool_name=tool_name,
-        _arguments=request["arguments"],
-        payload=payload,
-    )
-    if replay_prepared is not None:
-        if replay_prepared.result is None:
-            raise HTTPException(
-                status_code=500, detail="conversation context replay failed"
-            )
-        replay_events = _replay_stream_events(replay_prepared.result)
-
-        async def _replayed_events() -> AsyncIterator[AguiEvent]:
-            for event in replay_events:
-                yield event
-
-        return StreamingResponse(
-            to_chat_completion_chunks(_replayed_events(), payload.model),
-            media_type="text/event-stream",
-        )
-
-    try:
-        prepared = await _prepare_stream(
-            _StreamPreparationRequest(
-                tool_name=tool_name,
-                arguments=request["arguments"],
-                payload=payload,
-                user_query=user_query,
-                dependencies=dependencies,
-                private_context=_PrivateStreamContext(
-                    conversation_messages=request.get(
-                        "conversation_messages", ()
-                    ),
-                    agent_state=request.get("private_agent_state"),
-                ),
-                raw_event_factory=(
-                    (
-                        lambda run_id: _prepare_contextual_raw_events(
-                            dependencies=dependencies,
-                            tool_name=tool_name,
-                            arguments=request["arguments"],
-                            run_id=run_id,
-                            _payload=payload,
-                            context_stream=context_stream,
-                        )
-                    )
-                    if context_stream is not None
-                    else None
-                ),
-                runtime_run_id=request.get("runtime_run_id"),
-                runtime_prepared_events=request.get("runtime_prepared_events"),
-            )
-        )
-    except Exception:
-        if context_stream is not None:
-            _mark_context_stream_failed(context_stream)
-        raise
+    """Wrap a prepared event stream and expose its Runtime settlement state."""
 
     def _settle_terminal_success() -> bool:
-        snapshot = prepared.accumulator.snapshot
-        terminal_result = {
-            "formatted": {"answer": snapshot.answer},
-            "execution": empty_agent_result()["execution"],
-            "raw": None,
-            "stream": True,
-            "truncated": snapshot.truncated,
-            "partial": False,
-        }
+        terminal_result = _terminal_stream_result(prepared, partial=False)
         setattr(response, "runtime_terminal_result", lambda: terminal_result)
         return True
 
     def _settle_terminal_failure() -> bool:
-        snapshot = prepared.accumulator.snapshot
-        terminal_result = {
-            "formatted": {"answer": snapshot.answer},
-            "execution": empty_agent_result()["execution"],
-            "raw": None,
-            "stream": True,
-            "truncated": snapshot.truncated,
-            "partial": True,
-        }
+        terminal_result = _terminal_stream_result(prepared, partial=True)
         setattr(response, "runtime_terminal_result", lambda: terminal_result)
         return True
 
@@ -763,6 +719,83 @@ async def stream_chat_completion(
         lambda: prepared.lifecycle_state.durably_settled,
     )
     return response
+
+
+async def stream_chat_completion(
+    *,
+    dependencies: StreamingDependencies,
+    **request: Unpack[ChatStreamCall],
+) -> StreamingResponse:
+    """Prepare and wrap one streamed tool response."""
+    tool_name = request["tool_name"]
+    payload = request["payload"]
+    user_query = request["user_query"]
+    if (
+        tool_name == "ChatAgent"
+        and payload.conversation is None
+        and dependencies.a2ui.select_widget(user_query) is not None
+    ):
+        runtime_run_id = request.get("runtime_run_id")
+        if runtime_run_id is None:
+            raise HTTPException(
+                status_code=500,
+                detail="execution runtime boundary required",
+            )
+        return await stream_chat_a2ui_confirm(
+            arguments=request["arguments"],
+            payload=payload,
+            user_query=user_query,
+            dependencies=dependencies,
+            runtime_run_id=runtime_run_id,
+        )
+
+    context_stream, replay_prepared = await _prepare_context_stream(
+        tool_name=tool_name,
+        _arguments=request["arguments"],
+        payload=payload,
+    )
+    if replay_prepared is not None:
+        return _context_replay_response(replay_prepared, payload)
+
+    try:
+        prepared = await _prepare_stream(
+            _StreamPreparationRequest(
+                tool_name=tool_name,
+                arguments=request["arguments"],
+                payload=payload,
+                user_query=user_query,
+                dependencies=dependencies,
+                private_context=_PrivateStreamContext(
+                    conversation_messages=request.get(
+                        "conversation_messages", ()
+                    ),
+                    agent_state=request.get("private_agent_state"),
+                ),
+                runtime=_StreamRuntimeInput(
+                    raw_event_factory=(
+                        (
+                            lambda run_id: _prepare_contextual_raw_events(
+                                dependencies=dependencies,
+                                tool_name=tool_name,
+                                arguments=request["arguments"],
+                                run_id=run_id,
+                                _payload=payload,
+                                context_stream=context_stream,
+                            )
+                        )
+                        if context_stream is not None
+                        else None
+                    ),
+                    run_id=request.get("runtime_run_id"),
+                    prepared_events=request.get("runtime_prepared_events"),
+                ),
+            )
+        )
+    except Exception:
+        if context_stream is not None:
+            _mark_context_stream_failed(context_stream)
+        raise
+    return _prepared_stream_response(prepared, payload, context_stream)
 
 
 async def _project_context_stage(

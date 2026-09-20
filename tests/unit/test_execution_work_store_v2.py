@@ -11,36 +11,25 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from tests.support.execution_event_fixtures import seed_execution_run
 
-from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
-
-
-def _seed_execution(db_path: Path, owner: str, execution_id: str) -> None:
-    from mcp_server_phytomni.runtime.run_registry import RunRegistry
-    from mcp_server_phytomni.runtime.run_registry_models import local_run_spec
-
-    registry = RunRegistry(str(db_path))
-    registry.create_run(local_run_spec(f"run-{execution_id}", owner, "chat"))
-    with sqlite_transaction(db_path) as connection:
-        connection.execute(
-            "UPDATE runs SET execution_id = ? WHERE run_id = ?",
-            (execution_id, f"run-{execution_id}"),
-        )
-        connection.commit()
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    ExecutionWorkConflictError,
+    ExecutionWorkInvariantError,
+    ExecutionWorkNotFoundError,
+    SpanSpec,
+    SQLiteExecutionWorkRepository,
+    WorkUnitSpec,
+)
 
 
 def test_spans_have_stable_identity_parent_validation_and_revision(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        ExecutionWorkConflictError,
-        ExecutionWorkInvariantError,
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-    )
+    """Verify spans have stable identity parent validation and revision."""
 
     db_path = tmp_path / "spans.db"
-    _seed_execution(db_path, "alice", "turn-spans")
+    seed_execution_run(db_path, "alice", "turn-spans")
     repository = SQLiteExecutionWorkRepository(str(db_path))
     root = repository.create_span(
         SpanSpec(
@@ -96,16 +85,11 @@ def test_spans_have_stable_identity_parent_validation_and_revision(
 def test_work_unit_attempt_lease_provider_cancel_and_deadline(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        ExecutionWorkConflictError,
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-    )
+    """Verify work unit attempt lease provider cancel and deadline."""
 
     now = datetime(2026, 8, 19, tzinfo=UTC)
     db_path = tmp_path / "work.db"
-    _seed_execution(db_path, "alice", "turn-work")
+    seed_execution_run(db_path, "alice", "turn-work")
     repository = SQLiteExecutionWorkRepository(str(db_path), clock=lambda: now)
     repository.create_span(
         SpanSpec(
@@ -181,15 +165,11 @@ def test_work_unit_attempt_lease_provider_cancel_and_deadline(
 def test_provider_trace_state_round_trips_privately_with_cas(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-    )
+    """Verify provider trace state round trips privately with cas."""
 
     now = datetime(2026, 8, 23, tzinfo=UTC)
     db_path = tmp_path / "provider-trace-state.db"
-    _seed_execution(db_path, "alice", "turn-provider-trace")
+    seed_execution_run(db_path, "alice", "turn-provider-trace")
     repository = SQLiteExecutionWorkRepository(str(db_path), clock=lambda: now)
     repository.create_span(
         SpanSpec(
@@ -239,14 +219,11 @@ def test_provider_trace_state_round_trips_privately_with_cas(
 def test_provider_contact_refresh_is_monotonic_without_claiming_revision(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-    )
+    """Verify provider contact refresh is monotonic without claiming
+    revision."""
 
     db_path = tmp_path / "provider-contact.db"
-    _seed_execution(db_path, "alice", "turn-provider-contact")
+    seed_execution_run(db_path, "alice", "turn-provider-contact")
     repository = SQLiteExecutionWorkRepository(str(db_path))
     repository.create_span(
         SpanSpec(
@@ -327,15 +304,10 @@ def test_provider_contact_refresh_is_monotonic_without_claiming_revision(
 def test_invalid_join_policy_or_foreign_execution_fails_closed(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        ExecutionWorkNotFoundError,
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-    )
+    """Verify invalid join policy or foreign execution fails closed."""
 
     db_path = tmp_path / "invalid.db"
-    _seed_execution(db_path, "alice", "turn-owned")
+    seed_execution_run(db_path, "alice", "turn-owned")
     repository = SQLiteExecutionWorkRepository(str(db_path))
     repository.create_span(
         SpanSpec(
@@ -366,15 +338,10 @@ def test_provider_due_scan_excludes_in_process_tool_work(
     tmp_path: Path,
 ) -> None:
     """Provider recovery must not lease work owned by the live request."""
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-    )
 
     now = datetime(2026, 8, 22, tzinfo=UTC)
     db_path = tmp_path / "provider-due.db"
-    _seed_execution(db_path, "alice", "turn-provider-due")
+    seed_execution_run(db_path, "alice", "turn-provider-due")
     repository = SQLiteExecutionWorkRepository(str(db_path), clock=lambda: now)
     repository.create_span(
         SpanSpec(

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from .execution_event_projection import fold_execution_events
@@ -66,6 +67,7 @@ class V1ExecutionCompatibilityReader:
         after_seq: int = 0,
         limit: int | None = None,
     ) -> ExecutionEventPage | None:
+        """Replay V2 facts as V1 events, falling back for legacy runs."""
         binding = self._binding(run_id, owner)
         if binding is None:
             return self._v1.list_events(
@@ -94,6 +96,7 @@ class V1ExecutionCompatibilityReader:
         *,
         owner: str,
     ) -> ExecutionEventV1 | None:
+        """Read one event through the V2-to-V1 compatibility projection."""
         binding = self._binding(run_id, owner)
         if binding is None:
             return self._v1.get_event(run_id, event_id, owner=owner)
@@ -101,6 +104,7 @@ class V1ExecutionCompatibilityReader:
         return None if event is None else _project_event(event, run_id)
 
     def get_projection(self, run_id: str, *, owner: str):
+        """Build a V1 projection from V2 facts or retained V1 history."""
         binding = self._binding(run_id, owner)
         if binding is None:
             return self._v1.get_projection(run_id, owner=owner)
@@ -160,15 +164,21 @@ def _project_event(event: ExecutionEventV2, run_id: str) -> ExecutionEventV1:
 
 def _payload(event: ExecutionEventV2, kind: str) -> dict[str, Any]:
     source = event.public_payload.model_dump(mode="json", exclude_none=True)
-    if kind in {
-        "run.started",
-        "run.accepted",
-        "run.waiting_input",
-        "run.resumed",
-        "run.succeeded",
-        "run.cancelled",
-    }:
-        return {}
+    if kind.startswith("run."):
+        return _run_payload(event, kind, source)
+    if kind.startswith("phase."):
+        return _phase_payload(event, kind, source)
+    if kind.startswith("tool."):
+        return _tool_payload(event, kind, source)
+    return _auxiliary_payload(kind, source)
+
+
+def _run_payload(
+    event: ExecutionEventV2,
+    kind: str,
+    source: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project one execution-level lifecycle payload."""
     if kind == "run.failed":
         return {
             "code": str(
@@ -176,6 +186,15 @@ def _payload(event: ExecutionEventV2, kind: str) -> dict[str, Any]:
             ),
             "retryable": bool(source.get("retryable", False)),
         }
+    return {}
+
+
+def _phase_payload(
+    event: ExecutionEventV2,
+    kind: str,
+    source: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project one span lifecycle payload."""
     if kind in {"phase.started", "phase.completed"}:
         return {
             "phase": str(source.get("phase") or event.span_id),
@@ -192,18 +211,34 @@ def _payload(event: ExecutionEventV2, kind: str) -> dict[str, Any]:
             "phase": str(source.get("phase") or event.span_id),
             "code": str(source.get("code") or "phase_failed"),
         }
-    if kind in {"tool.started", "tool.completed", "tool.failed"}:
-        payload: dict[str, Any] = {
-            "tool_key": str(source.get("operation_key") or "operation"),
-            "call_id": event.work_unit_id or event.span_id,
-        }
-        if kind != "tool.started":
-            payload["duration_ms"] = int(source.get("duration_ms", 0))
-        if kind == "tool.failed":
-            payload["code"] = str(source.get("code") or "operation_failed")
-        return payload
+    return {}
+
+
+def _tool_payload(
+    event: ExecutionEventV2,
+    kind: str,
+    source: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project one logical tool-operation payload."""
+    payload: dict[str, Any] = {
+        "tool_key": str(source.get("operation_key") or "operation"),
+        "call_id": event.work_unit_id or event.span_id,
+    }
+    if kind != "tool.started":
+        payload["duration_ms"] = int(source.get("duration_ms", 0))
+    if kind == "tool.failed":
+        payload["code"] = str(source.get("code") or "operation_failed")
+    return payload
+
+
+def _auxiliary_payload(
+    kind: str,
+    source: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project bounded Todo, checkpoint, artifact, and tracking facts."""
+    payload: dict[str, Any] = {}
     if kind == "todo.snapshot":
-        return {
+        payload = {
             "items": [
                 item
                 for item in source.get("items", [])
@@ -211,27 +246,30 @@ def _payload(event: ExecutionEventV2, kind: str) -> dict[str, Any]:
                 in {"pending", "in_progress", "completed"}
             ]
         }
-    if kind in {"reasoning.summary", "decision.note"}:
-        return {"text": source["text"]}
-    if kind == "input.required":
-        return {"surface_id": source["surface_id"], "widget": source["widget"]}
-    if kind == "input.resolved":
-        return {
+    elif kind in {"reasoning.summary", "decision.note"}:
+        payload = {"text": source["text"]}
+    elif kind == "input.required":
+        payload = {
+            "surface_id": source["surface_id"],
+            "widget": source["widget"],
+        }
+    elif kind == "input.resolved":
+        payload = {
             "surface_id": source["surface_id"],
             "outcome": source["outcome"],
         }
-    if kind == "artifact.published":
-        return {
+    elif kind == "artifact.published":
+        payload = {
             "name": source["name"],
             "media_type": source["media_type"],
             "size_bytes": source["size_bytes"],
         }
-    if kind == "tracking.degraded":
-        return {
+    elif kind == "tracking.degraded":
+        payload = {
             "code": str(source.get("code") or "tracking_degraded"),
             "retryable": bool(source.get("retryable", False)),
         }
-    return {}
+    return payload
 
 
 def _status(value: str) -> str:

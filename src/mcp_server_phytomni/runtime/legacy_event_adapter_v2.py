@@ -34,6 +34,21 @@ _STATUS_MAP = {
 }
 
 
+def _valid_progress_values(
+    phase: object,
+    completed: object,
+    total: object,
+) -> bool:
+    """Validate the finite legacy progress scalar contract."""
+    if not isinstance(phase, str):
+        return False
+    if isinstance(completed, bool) or not isinstance(completed, int):
+        return False
+    if isinstance(total, bool) or not isinstance(total, int):
+        return False
+    return total >= 1 and completed >= 0
+
+
 def adapt_legacy_event_intent_to_v2(intent: ExecutionEventIntent) -> bool:
     """Mirror one finite V1 producer through the active execution boundary."""
     boundary = current_execution_boundary()
@@ -75,15 +90,7 @@ def adapt_agui_custom_to_v2(name: str, value: Any) -> bool:
         phase = value.get("phase")
         completed = value.get("completed", value.get("current"))
         total = value.get("total")
-        if (
-            not isinstance(phase, str)
-            or isinstance(completed, bool)
-            or not isinstance(completed, int)
-            or isinstance(total, bool)
-            or not isinstance(total, int)
-            or total < 1
-            or completed < 0
-        ):
+        if not _valid_progress_values(phase, completed, total):
             return False
         return _append_custom(
             event_type="span.progress",
@@ -141,18 +148,7 @@ def _public_payload(
         phase = payload.get("phase")
         return {"phase": phase} if isinstance(phase, str) else None
     if kind == "phase.progress":
-        phase = payload.get("phase")
-        completed = payload.get("completed")
-        total = payload.get("total")
-        if (
-            isinstance(phase, str)
-            and isinstance(completed, int)
-            and not isinstance(completed, bool)
-            and isinstance(total, int)
-            and not isinstance(total, bool)
-        ):
-            return {"phase": phase, "completed": completed, "total": total}
-        return None
+        return _phase_progress_payload(payload)
     if kind == "phase.failed":
         code = payload.get("code")
         return {
@@ -165,6 +161,18 @@ def _public_payload(
     if kind in {"reasoning.summary", "decision.note"}:
         text = payload.get("text")
         return {"text": text} if isinstance(text, str) else None
+    return None
+
+
+def _phase_progress_payload(
+    payload: Mapping[str, object],
+) -> dict[str, object] | None:
+    """Normalize one legacy phase progress payload."""
+    phase = payload.get("phase")
+    completed = payload.get("completed")
+    total = payload.get("total")
+    if _valid_progress_values(phase, completed, total):
+        return {"phase": phase, "completed": completed, "total": total}
     return None
 
 

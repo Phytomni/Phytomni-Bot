@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol, cast
 
+from ...runtime.async_utils import wait_for_stop
 from ...runtime.research_input_store import (
     RESEARCH_HEARTBEAT_INTERVAL,
     RESEARCH_RECOVERY_BATCH_SIZE,
@@ -787,11 +788,8 @@ class ResearchWorkExecutor:
         if not self.heartbeat_enabled:
             return
         while not stop.is_set():
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=interval)
+            if await wait_for_stop(stop, timeout_seconds=interval):
                 return
-            except TimeoutError:
-                pass
             if stop.is_set() or bool(lease["lost"]):
                 return
             try:

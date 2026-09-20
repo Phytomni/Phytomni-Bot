@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import math
 import re
+from abc import abstractmethod
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Final, Literal, Protocol, Unpack, runtime_checkable
 
 from ..public_agent_catalog import PublicAgentSpec
 from .execution_journal_store_v2 import ExecutionJournal
@@ -25,6 +26,7 @@ from .execution_journal_v2 import (
 )
 from .execution_work_store_v2 import (
     CancellationState,
+    ProviderBindingFields,
     SpanRecord,
     SpanSpec,
     WorkUnitRecord,
@@ -34,6 +36,15 @@ from .execution_work_store_v2 import (
 CancellationOutcome = Literal[
     "requested", "confirmed", "best_effort", "unsupported"
 ]
+TERMINAL_EXECUTION_STATUSES: Final = frozenset(
+    {
+        ExecutionStatus.SUCCEEDED,
+        ExecutionStatus.PARTIAL,
+        ExecutionStatus.FAILED,
+        ExecutionStatus.CANCELLED,
+        ExecutionStatus.TIMED_OUT,
+    }
+)
 
 
 class DriverOperation(StrEnum):
@@ -47,17 +58,29 @@ class DriverOperation(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ExecutionContext:
-    """Stable execution identity plus the current causal span."""
+class _ExecutionIdentity:
+    """Stable owner and idempotency identity for one execution."""
 
     owner_ref: str
     execution_id: str
     fingerprint_version: int
     fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ExecutionRoute(_ExecutionIdentity):
+    """Canonical Agent and causal route for one execution."""
+
     agent: PublicAgentSpec
     root_span_id: str
     current_span_id: str
     transport: str
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionContext(_ExecutionRoute):
+    """Stable execution identity plus the current causal span."""
+
     parent_span_id: str | None = None
     run_id: str | None = None
     deadline_at: datetime | None = None
@@ -264,13 +287,8 @@ class DriverOutcome:
 
     @property
     def terminal(self) -> bool:
-        return self.status in {
-            ExecutionStatus.SUCCEEDED,
-            ExecutionStatus.PARTIAL,
-            ExecutionStatus.FAILED,
-            ExecutionStatus.CANCELLED,
-            ExecutionStatus.TIMED_OUT,
-        }
+        """Return whether the driver outcome closes the execution."""
+        return self.status in TERMINAL_EXECUTION_STATUSES
 
     @classmethod
     def running(
@@ -281,6 +299,7 @@ class DriverOutcome:
         tracking_health: TrackingHealth = TrackingHealth.HEALTHY,
         cancellation_outcome: CancellationOutcome | None = None,
     ) -> DriverOutcome:
+        """Build a non-terminal outcome with optional progress metadata."""
         return cls(
             status=ExecutionStatus.RUNNING,
             result=result,
@@ -291,10 +310,12 @@ class DriverOutcome:
 
     @classmethod
     def succeeded(cls, result: TransportNeutralResult) -> DriverOutcome:
+        """Build a successful terminal outcome carrying the public result."""
         return cls(status=ExecutionStatus.SUCCEEDED, result=result)
 
     @classmethod
     def failed(cls, *, code: str, retryable: bool = False) -> DriverOutcome:
+        """Build a failed terminal outcome with a stable error code."""
         return cls(
             status=ExecutionStatus.FAILED,
             failure=DriverFailure(code=code, retryable=retryable),
@@ -327,7 +348,14 @@ class ExecutionReservationSnapshot(Protocol):
     """Minimum persisted reservation view needed by shared instrumentation."""
 
     @property
-    def supervisor_revision(self) -> int: ...
+    def execution_id(self) -> str:
+        """Return the stable execution identity."""
+        raise NotImplementedError
+
+    @property
+    def supervisor_revision(self) -> int:
+        """Return the optimistic revision used for terminal settlement."""
+        raise NotImplementedError
 
 
 class ExecutionReservationService(Protocol):
@@ -338,24 +366,32 @@ class ExecutionReservationService(Protocol):
         *,
         owner: str,
         execution_id: str,
-    ) -> ExecutionReservationSnapshot: ...
+    ) -> ExecutionReservationSnapshot:
+        """Read one owner-scoped execution reservation."""
+        raise NotImplementedError
 
     def terminal_authority(
         self, context: ExecutionContext
-    ) -> TerminalSettlementAuthority: ...
+    ) -> TerminalSettlementAuthority:
+        """Issue optimistic authority for one Runtime terminal write."""
+        raise NotImplementedError
 
     def settle_terminal(
         self,
         authority: TerminalSettlementAuthority,
         outcome: DriverOutcome,
-    ) -> bool: ...
+    ) -> bool:
+        """Commit the terminal outcome when the authority remains current."""
+        raise NotImplementedError
 
 
 @runtime_checkable
 class ExecutionWorkService(Protocol):
     """Minimal logical-work seam used by Drivers."""
 
-    def create_span(self, spec: SpanSpec) -> SpanRecord: ...
+    def create_span(self, spec: SpanSpec) -> SpanRecord:
+        """Create or recover one stable causal span."""
+        raise NotImplementedError
 
     def find_span_by_work_unit_id(
         self,
@@ -363,7 +399,9 @@ class ExecutionWorkService(Protocol):
         work_unit_id: str,
         *,
         owner: str,
-    ) -> SpanRecord | None: ...
+    ) -> SpanRecord | None:
+        """Find the latest span associated with a logical work unit."""
+        raise NotImplementedError
 
     def update_span_status(
         self,
@@ -373,9 +411,13 @@ class ExecutionWorkService(Protocol):
         owner: str,
         status: SpanStatus | str,
         expected_revision: int,
-    ) -> SpanRecord: ...
+    ) -> SpanRecord:
+        """CAS-update one span lifecycle state."""
+        raise NotImplementedError
 
-    def create_work_unit(self, spec: WorkUnitSpec) -> WorkUnitRecord: ...
+    def create_work_unit(self, spec: WorkUnitSpec) -> WorkUnitRecord:
+        """Create or recover one stable logical work unit."""
+        raise NotImplementedError
 
     def get_work_unit(
         self,
@@ -383,7 +425,9 @@ class ExecutionWorkService(Protocol):
         work_unit_id: str,
         *,
         owner: str,
-    ) -> WorkUnitRecord: ...
+    ) -> WorkUnitRecord:
+        """Read one owner-scoped logical work unit."""
+        raise NotImplementedError
 
     def update_work_unit_status(
         self,
@@ -393,7 +437,9 @@ class ExecutionWorkService(Protocol):
         owner: str,
         status: WorkUnitStatus | str,
         expected_revision: int,
-    ) -> WorkUnitRecord: ...
+    ) -> WorkUnitRecord:
+        """CAS-update one work-unit lifecycle state."""
+        raise NotImplementedError
 
     def find_work_unit_by_provider_task_id(
         self,
@@ -402,19 +448,18 @@ class ExecutionWorkService(Protocol):
         *,
         owner: str,
         provider_kind: str,
-    ) -> WorkUnitRecord | None: ...
+    ) -> WorkUnitRecord | None:
+        """Resolve a logical unit from its durable provider identity."""
+        raise NotImplementedError
 
     def bind_provider(
         self,
         execution_id: str,
         work_unit_id: str,
-        *,
-        owner: str,
-        provider_kind: str,
-        provider_task_id: str,
-        provider_revision: int,
-        expected_revision: int,
-    ) -> WorkUnitRecord: ...
+        **binding: Unpack[ProviderBindingFields],
+    ) -> WorkUnitRecord:
+        """Bind an immutable provider identity at the expected revision."""
+        raise NotImplementedError
 
     def set_cancellation_state(
         self,
@@ -424,7 +469,9 @@ class ExecutionWorkService(Protocol):
         owner: str,
         state: CancellationState,
         expected_revision: int,
-    ) -> WorkUnitRecord: ...
+    ) -> WorkUnitRecord:
+        """CAS-update the finite cancellation state."""
+        raise NotImplementedError
 
     def observe_provider_contact(
         self,
@@ -433,7 +480,9 @@ class ExecutionWorkService(Protocol):
         *,
         owner: str,
         observed_at: str,
-    ) -> bool: ...
+    ) -> bool:
+        """Record monotonic evidence of provider contact."""
+        raise NotImplementedError
 
 
 @dataclass(frozen=True, slots=True)
@@ -447,16 +496,20 @@ class ExecutionServices:
 
 
 @runtime_checkable
+@dataclass(init=False, repr=False, eq=False, match_args=False)
 class ExecutionDriver(Protocol):
     """Common operation contract implemented by every Driver kind."""
 
+    @abstractmethod
     def execute(
         self,
         operation: DriverOperation,
         context: ExecutionContext,
         command: ExecutionCommand,
         services: ExecutionServices,
-    ) -> Awaitable[DriverOutcome]: ...
+    ) -> Awaitable[DriverOutcome]:
+        """Execute one normalized operation through explicit services."""
+        raise NotImplementedError
 
 
 class ExecutionRuntimeError(RuntimeError):

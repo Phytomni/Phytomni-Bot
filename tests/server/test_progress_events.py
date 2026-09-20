@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -118,17 +119,15 @@ def test_progress_event_preserves_protocol_projection_inputs() -> None:
 def test_emit_progress_also_adapts_to_context_bound_canonical_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify emit progress also adapts to context bound canonical event."""
     intents: list[Any] = []
-
-    class Sink:
-        def emit(self, intent: Any) -> None:
-            intents.append(intent)
+    sink = SimpleNamespace(emit=intents.append)
 
     monkeypatch.setattr(
         "mcp_server_phytomni.mcp.progress_events.get_stream_writer",
         lambda: lambda _event: None,
     )
-    with bind_execution_event_sink(Sink()):
+    with bind_execution_event_sink(sink):
         emit_progress(
             "retrieving",
             3,

@@ -337,12 +337,6 @@ keeps operator probes and does not repeat the full list.
   cleanup.
 
 - **Method:** `GET`
-  **Path:** `/v1/runs/{run_id}/stream`
-  **Auth:** yes
-  **Purpose:** Replays buffered AG-UI frames for one owner-scoped run, then
-  tails the live producer as `text/event-stream`.
-
-- **Method:** `GET`
   **Path:** `/v1/runs/{run_id}/logs`
   **Auth:** yes
   **Purpose:** Returns reconciled task logs for a run.
@@ -1754,9 +1748,9 @@ Auth, rate-limit, request-id, OBS-file processing, and message
 flattening all complete *before* the stream starts, so a
 `stream=true` request that fails any precondition surfaces as a
 normal JSON error envelope (`401` / `429` / `400`) instead of an
-empty `text/event-stream`. After the stream drains, the run record is settled
-from the wrapper
-`finally` block:
+empty `text/event-stream`. A typed terminal event is durably projected before
+the corresponding terminal SSE frame is exposed; closing the response only
+closes the upstream iterators and never invents a domain outcome:
 
 - **ChatAgent (`phyto-chat`)**: `result` is
   `{"formatted": {"answer": "<accumulated text>"}, "raw": null,`
@@ -1764,14 +1758,17 @@ from the wrapper
   `answer` is the concatenation of every `TextMessageContent` delta,
   soft-capped by `STREAM_ANSWER_MAX_BYTES` / `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`
   (default 1 MiB). The SSE wire stream is never truncated.
-  `truncated` is true when the stored blob hit the cap; `partial` is
-  true when the run settled `failed` or `cancelled` (client disconnect
-  or owner Stop before `RunFinished`, or an observed mid-stream
-  `RunError`). A client disconnect before `RunFinished` settles failed
-  without attempting to write a synthetic frame. Owner
-  `POST /v1/runs/{id}/cancel` settles `cancelled` and keeps the
-  accumulated text as a draft. Cancellation after `RunFinished`
-  preserves the succeeded settlement.
+  `truncated` is true when the stored blob hit the cap; `partial` is true only
+  when the durable execution settles `failed` or `cancelled`, such as after an
+  observed mid-stream `RunError`. A client disconnect before `RunFinished`
+  closes the upstream iterator without emitting a synthetic `RunError` or
+  `RunFinished`; the execution remains `running` for durable supervisor
+  recovery. Explicit cancellation follows the agent's advertised cancellation
+  policy and may be `best_effort`, so transport closure alone never creates a
+  cancelled draft. Closing the response after `RunFinished` preserves the
+  succeeded settlement. Use the run/execution event and content cursors to
+  inspect or resume the durable projection rather than replaying the retired
+  in-process AG-UI stream.
   The client cancellation contract is also enforced for A2UI pause streams.
 - **ChatAgent A2UI short-circuit** (`phyto-chat`, heuristic match): when
   `select_chat_a2ui_widget(user_query)` returns
@@ -1850,11 +1847,13 @@ On the `deep_genome` and `design` native runs paths,
 arguments — `arguments.gene_id` AND `arguments.species_code` — because
 the `DeepGenomeAgent` and `DigitalDesignAgent` input schemas require
 both fields. The caller therefore sends only `user_query` +
-`resolve_gene_id: true` and the HTTP layer fills in the pair before
-the agent's Pydantic schema runs. If the resolver cannot determine a
-species from the query, the request returns `400` carrying the
-resolver reason rather than falling back to a blank `species_code`
-that would Pydantic-fail downstream.
+`resolve_gene_id: true` and the HTTP layer fills in the pair inside the
+already-admitted Runtime execution, before the agent's Pydantic schema
+runs. If the resolver cannot determine a species from the query, the
+asynchronous request returns `202` with `status: "failed"` and
+`task_ids: []`; the one Runtime execution is terminal, creates no child task,
+and does not expose the resolver exception. It never falls back to a blank
+`species_code` that would Pydantic-fail downstream.
 
 `resolve_to_id` is `network`-only. The resolver injects the customer-
 curated Plant Trait Ontology catalog (`config/to_ontology.json`,
@@ -1873,9 +1872,11 @@ A `user_query` that, after trimming, consists only of an exact
 committed catalog, the resolver deterministically uses that id and
 defaults `species_code` to `osa` (rice). A syntactically valid bare TO
 id outside the catalog is rejected without an LLM call or downstream
-task submission. On the asynchronous native-runs path, resolver errors
-settle the already-accepted parent run as failed with no child task;
-synchronous resolver consumers map the same error to `400`.
+task submission. On the asynchronous `deep_genome`, `design`, and `network`
+native-runs paths, resolver errors return `202` while settling the
+already-accepted execution as failed with no child task. The synchronous
+BriefGene native run and OpenAI-compatible chat consumers map the same error
+to `400`.
 
 Of the 573 catalog ids, 32 carry `status: deprecated_upstream` because
 the upstream PTO release either marks them `is_obsolete: true` (31, no
@@ -1893,19 +1894,25 @@ the id, which is opaque to the Bot.
 
 Both flags share the same misuse / failure contract:
 
-- The flag must come with a non-blank `user_query` field in the
-  request. Missing or blank `user_query` with the flag on returns
-  `400` before any LLM call.
+- The flag must come with a non-blank `user_query` field in the request.
+  Missing or blank input triggers no LLM call. An already-selected
+  asynchronous `deep_genome`, `design`, or `network` execution returns `202`
+  with `status: "failed"` and no child task; the synchronous BriefGene native
+  run and OpenAI-compatible chat consumers return `400`.
 - The flag is rejected with `400` when passed to an ineligible model
   or agent slug.
 - Resolver failures (blank input, empty candidates, non-JSON LLM
-  output, timeout, hallucinated TO id outside the catalog) return
-  `400` carrying the resolver reason in `error.message`; failed
-  resolutions never silently fall through to a raw user_query call.
-- A blank `species_code` from the LLM returns `400` for the
-  `deep_genome`, `design`, and `network` slugs because their agent
-  schemas require the field; failed species determination never
-  silently falls through to a Pydantic ValidationError. A non-blank
+  output, timeout, hallucinated TO id outside the catalog) follow the same
+  transport mapping: asynchronous `deep_genome`, `design`, and `network`
+  native or Expert requests return `202` with `status: "failed"`,
+  `task_ids: []`, and no raw resolver reason, while synchronous BriefGene
+  native and OpenAI-compatible requests return `400`. Failed resolutions
+  never silently fall through to a raw `user_query` call.
+- A blank `species_code` from the LLM fails the already-admitted
+  `deep_genome`, `design`, or `network` execution and returns the same
+  sanitized `202` failed response with no child task. Failed species
+  determination never silently falls through to a Pydantic ValidationError.
+  A non-blank
   `species_code` is **not** rejected against a fixed catalog — the
   schema accepts any three-letter string — but one outside the bundled
   species data map is logged at `WARNING` (with the code and the query)
@@ -2761,12 +2768,13 @@ the routing model and may be empty. After selection, `deep_genome` /
 `design` / `network` open the native `resolve_gene_id` /
 `resolve_to_id` seam when the structured ids are missing (`@` pin,
 one-tool allowlist, or a partial extraction). A complete extraction is
-not rewritten. Resolver failure follows the native runs contract
-(DeepGenome HTTP `400`; Design / Network accept then settle
-`failed`). Obs attachments reach `chat` / `knowledge` / `review` plus
-document-capable `analyst` / `research` / `design` / `network`
-targets. `data`, `brief_gene`, and `deep_genome` do not expose an
-attachment channel.
+not rewritten. Resolver failure follows the asynchronous native-runs
+contract for all three agents: the Expert response is `202` with
+`status: "failed"` and `task_ids: []`, the one Runtime execution is terminal
+with no child task, and the resolver exception is not exposed. Obs attachments
+reach `chat` / `knowledge` / `review` plus document-capable `analyst` and
+`research` targets. `data`, `brief_gene`, `deep_genome`, `design`, and
+`network` do not expose an attachment channel.
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/v1/query/route \

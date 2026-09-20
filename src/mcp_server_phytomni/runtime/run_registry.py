@@ -12,8 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any
 
 from ..mcp.formatting.models import ResultDelivery
 from .execution_defaults import empty_execution_projection
@@ -23,42 +22,28 @@ from .execution_event_producers import (
     emit_run_settlement,
     emit_run_started,
 )
-from .execution_event_store import purge_execution_event_children
-from .execution_journal_schema import migrate_execution_journal_v2
+from .execution_store_support_v2 import validate_provider_join_lease_token
 from .live_tasks import (
     is_live_running,
     register_live_task,
 )
-from .research_input_store import purge_research_children
 from .research_input_store_support import queue_grants
 from .run_registry_delivery import (
     DeliveryFailure,
     DeliveryRevision,
-    PrivateDeliveryState,
     ResultDeliveryDependencies,
+    RunningResultWrite,
     begin_delivery_reconcile,
     begin_delivery_retry,
     default_result_delivery_dependencies,
     delivery_attempts_exhausted,
     delivery_task_key,
-    private_delivery_from_result,
     replace_running_result,
-    result_delivery_from_result,
     run_delivery_worker,
     settle_delivery_failure,
 )
 from .run_registry_models import (
-    _A2A_COLUMNS,
-    _CREATE_A2A_TASK_INDEX,
-    _CREATE_A2UI_ACTIONS_DDL,
-    _CREATE_A2UI_OWNER_ACTION_INDEX,
-    _CREATE_RUNS_DDL,
-    _CREATE_RUNS_EXECUTION_INDEX,
-    _CREATE_RUNS_USER_INDEX,
-    _CREATE_TASKS_RUN_INDEX,
     _NON_POLLABLE_RUN_STATUSES,
-    _REQUEST_INFO_COLUMNS,
-    _RESEARCH_COORDINATOR_COLUMNS,
     _TERMINAL_RUN_STATUSES,
     A2ACorrelation,
     A2UIActionAudit,
@@ -86,6 +71,7 @@ from .run_registry_protocols import (
 from .run_registry_reports import (
     ReportArtifactSources,
     _ReportSettlementRequest,
+    annotate_live_with_stored_tasks,
     attach_partial_child_degraded,
     mark_partial_child_failure,
     settle_report_terminal,
@@ -93,14 +79,26 @@ from .run_registry_reports import (
     touch_running_run,
 )
 from .run_registry_reports import legacy_terminal_payload as _terminal_payload
+from .run_registry_support import (
+    bind_settle_run_request as _bind_settle_run_request,
+)
+from .run_registry_support import (
+    expires_at_for as _expires_at_for,
+)
+from .run_registry_support import (
+    initialize_run_registry,
+    purge_run_children,
+)
+from .run_registry_support import (
+    pending_delivery as _pending_delivery,
+)
+from .run_registry_support import (
+    private_delivery as _private_delivery,
+)
 from .run_registry_views import RunRegistryViewsMixin
 from .sqlite import sqlite_transaction
 from .task_manager import (
-    TaskManager,
     resolve_tasks_db_path,
-)
-from .task_manager import (
-    _expires_at_for as _task_expires_at_for,
 )
 from .task_reconcile import reconcile_task
 from .terminal_answer import TerminalAnswerContext, synthesize_terminal_answer
@@ -122,47 +120,6 @@ _RESEARCH_STAGE_RANK = {
 }
 
 
-class _SettleRunRequest(NamedTuple):
-    """Validated arguments for one compatibility settlement call."""
-
-    run_id: str
-    owner: str
-    status: str
-    result: dict[str, Any] | None
-    error: str | None
-    expected_revision: int | None
-
-
-def _bind_settle_run_request(
-    registry: Any, *args: Any, **kwargs: Any
-) -> _SettleRunRequest:
-    """Bind the historical settlement signature and validate its CAS key."""
-    bound = _SETTLE_RUN_SIGNATURE.bind(registry, *args, **kwargs)
-    bound.apply_defaults()
-    expected_revision = bound.arguments["expected_revision"]
-    if expected_revision is not None and (
-        isinstance(expected_revision, bool)
-        or not isinstance(expected_revision, int)
-        or expected_revision < 0
-    ):
-        raise ValueError("expected_revision must be non-negative")
-    return _SettleRunRequest(
-        run_id=bound.arguments["run_id"],
-        owner=bound.arguments["owner"],
-        status=bound.arguments["status"],
-        result=bound.arguments["result"],
-        error=bound.arguments["error"],
-        expected_revision=expected_revision,
-    )
-
-
-def _expires_at_for(status: str, now_iso: str) -> str | None:
-    """Apply the shared terminal TTL policy, including cancellation."""
-    if status == "cancelled":
-        return _task_expires_at_for("failed", now_iso)
-    return _task_expires_at_for(status, now_iso)
-
-
 __all__ = [
     "A2ACorrelation",
     "A2UIActionAudit",
@@ -179,37 +136,6 @@ __all__ = [
     "local_run_spec",
     "purge_run_children",
 ]
-
-
-def purge_run_children(
-    connection: sqlite3.Connection, run_ids: Sequence[str]
-) -> None:
-    """Delete DeepGenome children before their owning task and run rows."""
-    ids = tuple(run_ids)
-    if not ids:
-        return
-    purge_execution_event_children(connection, ids)
-    purge_research_children(connection, ids)
-    placeholders = ",".join("?" for _ in ids)
-    for table in ("deep_genome_remote_tasks", "deep_genome_sections"):
-        exists = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-            (table,),
-        ).fetchone()
-        if exists is None:
-            continue
-        connection.execute(
-            f"DELETE FROM {table} WHERE umbrella_task_id IN ("
-            "SELECT task_id FROM tasks WHERE run_id IN ("
-            f"{placeholders}))",
-            ids,
-        )
-    connection.execute(
-        f"DELETE FROM tasks WHERE run_id IN ({placeholders})", ids
-    )
-    connection.execute(
-        f"DELETE FROM runs WHERE run_id IN ({placeholders})", ids
-    )
 
 
 if TYPE_CHECKING:
@@ -238,63 +164,17 @@ class RunRegistry(RunRegistryViewsMixin):
         self._delivery_dependencies = (
             delivery_dependencies or default_result_delivery_dependencies()
         )
-        if expected_provider_join_lease_token is not None and (
-            not expected_provider_join_lease_token
-            or len(expected_provider_join_lease_token) > 128
-        ):
-            raise ValueError("invalid provider join lease token")
         self._expected_provider_join_lease_token = (
-            expected_provider_join_lease_token
+            validate_provider_join_lease_token(
+                expected_provider_join_lease_token
+            )
         )
-        self._init_db()
+        initialize_run_registry(self.db_path)
 
     if TYPE_CHECKING:
         # Runtime installation below keeps the historical explicit signature
         # while this annotation preserves the public static call seam.
         record_reserved_submissions: RecordReservedSubmissionsCallable
-
-    def _init_db(self) -> None:
-        """Create the ``runs`` table and shared indices if missing.
-
-        Eagerly initialises the ``tasks`` table via ``TaskManager`` (its
-        constructor is idempotent) so the ``idx_tasks_run`` index can be
-        created even when the registry is opened before any task write.
-        The request-context and coordinator columns are added through
-        introspection so a legacy database catches up without rewriting rows.
-        """
-        TaskManager(self.db_path)
-        conn = sqlite3.connect(self.db_path)
-        try:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=5000")
-            conn.execute("BEGIN IMMEDIATE")
-            conn.execute(_CREATE_RUNS_DDL)
-            existing = {
-                row[1] for row in conn.execute("PRAGMA table_info(runs)")
-            }
-            for column, column_type in (
-                *_REQUEST_INFO_COLUMNS,
-                *_A2A_COLUMNS,
-                *_RESEARCH_COORDINATOR_COLUMNS,
-            ):
-                if column not in existing:
-                    conn.execute(
-                        f"ALTER TABLE runs ADD COLUMN {column} {column_type}"
-                    )
-            conn.execute(_CREATE_RUNS_USER_INDEX)
-            conn.execute(_CREATE_RUNS_EXECUTION_INDEX)
-            conn.execute(_CREATE_TASKS_RUN_INDEX)
-            conn.execute(_CREATE_A2A_TASK_INDEX)
-            conn.execute(_CREATE_A2UI_ACTIONS_DDL)
-            conn.execute(_CREATE_A2UI_OWNER_ACTION_INDEX)
-            migrate_execution_journal_v2(conn)
-            conn.commit()
-        except BaseException:
-            if conn.in_transaction:
-                conn.rollback()
-            raise
-        finally:
-            conn.close()
 
     def create_run(
         self,
@@ -562,11 +442,13 @@ class RunRegistry(RunRegistryViewsMixin):
         with sqlite_transaction(self.db_path) as conn:
             return replace_running_result(
                 conn,
-                run_id=run_id,
-                owner=owner,
-                result=result,
-                expected_provider_join_lease_token=(
-                    self._expected_provider_join_lease_token
+                RunningResultWrite(
+                    run_id=run_id,
+                    owner=owner,
+                    result=result,
+                    expected_provider_join_lease_token=(
+                        self._expected_provider_join_lease_token
+                    ),
                 ),
             )
 
@@ -581,10 +463,16 @@ class RunRegistry(RunRegistryViewsMixin):
         with sqlite_transaction(self.db_path) as conn:
             return replace_running_result(
                 conn,
-                run_id=run_id,
-                owner=owner,
-                result=result,
-                statuses=("running", "input_required", "waiting_input"),
+                RunningResultWrite(
+                    run_id=run_id,
+                    owner=owner,
+                    result=result,
+                    statuses=(
+                        "running",
+                        "input_required",
+                        "waiting_input",
+                    ),
+                ),
             )
 
     def transition_research_stage(
@@ -856,6 +744,7 @@ class RunRegistry(RunRegistryViewsMixin):
     ) -> RunRecord | None:
         """Poll children once and settle the resulting aggregate status."""
         live = [await reconcile_task(task_id) for task_id in current.task_ids]
+        live = annotate_live_with_stored_tasks(live, current.result)
         emit_remote_progress(
             self.db_path,
             run_id=current.spec.run_id,
@@ -1088,31 +977,3 @@ class RunRegistry(RunRegistryViewsMixin):
 
 
 install_record_reserved_submissions_facade(RunRegistry)
-
-
-def _terminal_delivery_marker(result: object) -> ResultDelivery | None:
-    """Read a validated canonical delivery block without private state."""
-    return result_delivery_from_result(result)
-
-
-def _delivery_required(result: object) -> bool:
-    """Return the submit-time delivery marker without inferring by agent."""
-    delivery = _terminal_delivery_marker(result)
-    return delivery is not None and delivery.required
-
-
-def _pending_delivery(result: object) -> ResultDelivery | None:
-    """Return an actionable delivery only after immutable inventory exists."""
-    delivery = _terminal_delivery_marker(result)
-    if (
-        delivery is None
-        or delivery.status != "pending"
-        or not delivery.inventory_digest
-    ):
-        return None
-    return delivery
-
-
-def _private_delivery(result: object) -> PrivateDeliveryState | None:
-    """Read bounded private delivery coordination from a stored result."""
-    return private_delivery_from_result(result)

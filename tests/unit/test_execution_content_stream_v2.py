@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import pytest
 
+from mcp_server_phytomni.runtime.execution_content_stream_v2 import (
+    ExecutionContentConflictError,
+    ExecutionContentStreamV2,
+)
+
 
 def test_content_stream_resumes_by_revision_and_offset() -> None:
-    from mcp_server_phytomni.runtime.execution_content_stream_v2 import (
-        ExecutionContentStreamV2,
-    )
+    """Verify content stream resumes by revision and offset."""
 
     stream = ExecutionContentStreamV2(max_frames_per_execution=4)
     first = stream.publish(
@@ -46,10 +49,7 @@ def test_content_stream_resumes_by_revision_and_offset() -> None:
 
 
 def test_content_stream_rejects_regression_and_is_owner_scoped() -> None:
-    from mcp_server_phytomni.runtime.execution_content_stream_v2 import (
-        ExecutionContentConflictError,
-        ExecutionContentStreamV2,
-    )
+    """Verify content stream rejects regression and is owner scoped."""
 
     stream = ExecutionContentStreamV2(max_frames_per_execution=2)
     stream.publish(
@@ -68,21 +68,16 @@ def test_content_stream_rejects_regression_and_is_owner_scoped() -> None:
             offset=8,
             delta="stale",
         )
-    assert (
-        stream.list_after(
-            owner="u2",
-            execution_id="turn-content",
-            output_revision=0,
-            after_offset=0,
-        )
-        == ()
+    assert not stream.list_after(
+        owner="u2",
+        execution_id="turn-content",
+        output_revision=0,
+        after_offset=0,
     )
 
 
 def test_publish_next_allocates_unicode_scalar_end_offsets() -> None:
-    from mcp_server_phytomni.runtime.execution_content_stream_v2 import (
-        ExecutionContentStreamV2,
-    )
+    """Verify publish next allocates unicode scalar end offsets."""
 
     stream = ExecutionContentStreamV2()
     first = stream.publish_next(

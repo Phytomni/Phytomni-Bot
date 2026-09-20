@@ -12,14 +12,25 @@ from typing import Any
 import pytest
 from fastapi.responses import StreamingResponse
 
-from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
+from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.api.schemas import (
+    ChatCompletionRequest,
+    ChatMessage,
+    ResumeRequest,
+)
+from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
+    invoke_public_agent,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
 
 
 @pytest.mark.asyncio
 async def test_openai_stream_response_is_built_inside_runtime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mcp_server_phytomni.api import app as api_app
+    """Verify openai stream response is built inside runtime."""
 
     captured: dict[str, Any] = {}
 
@@ -48,10 +59,12 @@ async def test_openai_stream_response_is_built_inside_runtime(
     )
     monkeypatch.setattr(api_app, "resolve_tasks_db_path", lambda: "ignored.db")
     monkeypatch.setattr(
-        api_app._request_context, "current_request_user", lambda: "alice"
+        getattr(api_app, "_request_context"),
+        "current_request_user",
+        lambda: "alice",
     )
 
-    response = await api_app._stream_chat_response(
+    response = await getattr(api_app, "_stream_chat_response")(
         tool_name="ChatAgent",
         arguments={"user_query": "rice", "obs_file_list": []},
         payload=ChatCompletionRequest(
@@ -78,14 +91,7 @@ async def test_review_resume_uses_runtime_operation_for_v2_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mcp_server_phytomni.api import app as api_app
-    from mcp_server_phytomni.api.schemas import ResumeRequest
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
+    """Verify review resume uses runtime operation for V2 run."""
 
     db_path = tmp_path / "resume-routing.db"
 
@@ -110,13 +116,15 @@ async def test_review_resume_uses_runtime_operation_for_v2_run(
 
     monkeypatch.setattr(api_app, "resolve_tasks_db_path", lambda: str(db_path))
     monkeypatch.setattr(
-        api_app._request_context, "current_request_user", lambda: "alice"
+        getattr(api_app, "_request_context"),
+        "current_request_user",
+        lambda: "alice",
     )
     monkeypatch.setattr(
         api_app.a2ui_runtime, "resume_review_run", domain_resume
     )
 
-    result = await api_app._resume_review_run(
+    result = await getattr(api_app, "_resume_review_run")(
         thread_id=reservation.run_id,
         payload=ResumeRequest(approved=True),
     )

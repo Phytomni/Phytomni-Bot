@@ -682,32 +682,8 @@ def _read_existing_admission(
 def _insert_admission(
     connection: Connection, request: Mapping[str, Any], now: str
 ) -> None:
-    existing_run = connection.execute(
-        "SELECT user_id, agent FROM runs WHERE run_id = ?",
-        (request["run_id"],),
-    ).fetchone()
-    if existing_run is None:
-        connection.execute(
-            _RUN_INSERT_SQL,
-            (
-                request["run_id"],
-                request["owner"],
-                now,
-                now,
-                request["locale"],
-            ),
-        )
-    elif (
-        existing_run["user_id"] != request["owner"]
-        or existing_run["agent"] != "research"
-    ):
-        raise sqlite3.IntegrityError("research runtime run mismatch")
-    else:
-        connection.execute(
-            "UPDATE runs SET locale = COALESCE(locale, ?), "
-            "stage = 'input_resolution', updated_at = ? WHERE run_id = ?",
-            (request["locale"], now, request["run_id"]),
-        )
+    ensure_run = _s.ensure_admission_run
+    ensure_run(connection, request, now, insert_sql=_RUN_INSERT_SQL)
     connection.execute(
         _BINDING_INSERT_SQL,
         (

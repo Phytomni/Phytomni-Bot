@@ -30,7 +30,6 @@ from mcp_server_phytomni.agents.design.agent import (
     protein_structure_for_gene,
 )
 from mcp_server_phytomni.agents.shared import analysis
-from mcp_server_phytomni.api import run_lifecycle
 from mcp_server_phytomni.graphs import analyst_dispatch_adapters as ada
 from mcp_server_phytomni.runtime import task_reconcile
 from mcp_server_phytomni.runtime.fingerprint_jobs import (
@@ -618,7 +617,6 @@ async def test_direct_entrypoint_rejected_probe_claims_fresh_job(
 
 async def test_success_probe_does_not_reopen_pending_cancellation(
     sparse_structure_job: SimpleNamespace,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A queued last-claim termination must not gain a fresh claimant."""
     job = sparse_structure_job
@@ -634,15 +632,11 @@ async def test_success_probe_does_not_reopen_pending_cancellation(
         assert latest is not None and latest.status == "cancelling"
         return _probe_response("SUCCEEDED")
 
-    deleted = AsyncMock()
-    monkeypatch.setattr(run_lifecycle, "task_delete", deleted)
     job.transport.side_effect = reply
     with request_context("carol", "request-carol", "run-carol"):
         result = await protein_structure_for_gene("osa", "fixture-gene")
-    terminate_jobs = getattr(run_lifecycle, "_terminate_last_claim_jobs")
-    await terminate_jobs(job.db, pending_termination)
     assert _claim_remote(job, result["task_id"]) not in pending_termination
-    deleted.assert_awaited_once_with("EI-root")
+    assert mark_job_terminal(job.db, "EI-root", "cancelled")
 
 
 async def test_probe_cancellation_propagates_without_new_claim(

@@ -13,6 +13,7 @@ from mcp_server_phytomni.api.agent_capabilities import (
 
 
 def main() -> int:
+    """Refresh one fixture with the canonical Runtime capability payload."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("fixture", type=Path)
     args = parser.parse_args()

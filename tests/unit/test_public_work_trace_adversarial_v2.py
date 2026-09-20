@@ -12,6 +12,23 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
+from mcp_server_phytomni.runtime.execution_trace_detail import (
+    OPERATION_PRESENTER_REGISTRY,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import WorkUnitRecord
+from mcp_server_phytomni.runtime.gene_network_provider_trace_v2 import (
+    present_gene_network_provider_record,
+)
+from mcp_server_phytomni.runtime.provider_trace_v2 import (
+    FullSnapshotProviderTraceAdapter,
+    ProviderTraceObservation,
+    ProviderTraceRecord,
+)
+from mcp_server_phytomni.runtime.public_execution_safety import (
+    PublicExecutionDataError,
+    validate_public_execution_value,
+)
+
 
 @pytest.mark.parametrize(
     "field",
@@ -33,10 +50,7 @@ from pydantic import ValidationError
 def test_named_private_fields_are_rejected_by_shared_public_boundary(
     field: str,
 ) -> None:
-    from mcp_server_phytomni.runtime.public_execution_safety import (
-        PublicExecutionDataError,
-        validate_public_execution_value,
-    )
+    """Verify named private fields are rejected by shared public boundary."""
 
     with pytest.raises(PublicExecutionDataError):
         validate_public_execution_value(
@@ -45,13 +59,7 @@ def test_named_private_fields_are_rejected_by_shared_public_boundary(
 
 
 def test_adapter_and_presenter_discard_private_provider_shapes() -> None:
-    from mcp_server_phytomni.runtime.execution_trace_detail import (
-        OPERATION_PRESENTER_REGISTRY,
-    )
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        FullSnapshotProviderTraceAdapter,
-        ProviderTraceRecord,
-    )
+    """Verify adapter and presenter discard private provider shapes."""
 
     forbidden = {
         "prompt": "hidden prompt",
@@ -98,7 +106,7 @@ def test_adapter_and_presenter_discard_private_provider_shapes() -> None:
         detail=forbidden,
         target={"kind": "url", "id": "private-provider-task"},
     )
-    assert presented.detail == {}
+    assert not presented.detail
     assert presented.target is None
 
 
@@ -114,13 +122,7 @@ def test_adapter_and_presenter_discard_private_provider_shapes() -> None:
 def test_explicit_provider_summary_still_passes_public_safety_gate(
     unsafe_text: str,
 ) -> None:
-    from mcp_server_phytomni.runtime.gene_network_provider_trace_v2 import (
-        present_gene_network_provider_record,
-    )
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        ProviderTraceObservation,
-        ProviderTraceRecord,
-    )
+    """Verify explicit provider summary still passes public safety gate."""
 
     record = ProviderTraceRecord(
         source_identity="private-source-id",
@@ -137,9 +139,6 @@ def test_explicit_provider_summary_still_passes_public_safety_gate(
         snapshot_complete=False,
         health="healthy",
         records=(record,),
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        WorkUnitRecord,
     )
 
     unit = cast(
@@ -163,9 +162,7 @@ def test_explicit_provider_summary_still_passes_public_safety_gate(
 
 
 def test_normalized_record_contract_forbids_arbitrary_private_fields() -> None:
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        ProviderTraceRecord,
-    )
+    """Verify normalized record contract forbids arbitrary private fields."""
 
     with pytest.raises(ValidationError):
         ProviderTraceRecord.model_validate(

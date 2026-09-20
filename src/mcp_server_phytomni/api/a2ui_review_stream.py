@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
-from typing import Any
+from typing import Any, TypedDict, Unpack
 
 from fastapi.responses import StreamingResponse
 
@@ -53,6 +53,22 @@ class ReviewStreamHooks:
     project_interrupt: Callable[[Mapping[str, Any]], dict[str, Any]]
 
 
+class _ReviewStreamRuntimeOptions(TypedDict):
+    """Run identity supplied by the outer Review stream runtime."""
+
+    runtime_run_id: str
+
+
+class _A2UIStreamRequestOptions(TypedDict):
+    """Domain inputs used to construct one shared A2UI stream request."""
+
+    arguments: dict[str, Any]
+    payload: ChatCompletionRequest
+    user_query: str
+    dependencies: Any
+    runtime_run_id: str
+
+
 @dataclass(frozen=True, slots=True)
 class A2UIStreamInputs:
     """Domain inputs shared by Chat and Review A2UI stream requests."""
@@ -82,6 +98,7 @@ class A2UITerminalState:
 
     @property
     def ready(self) -> bool:
+        """Return whether a terminal domain outcome has been recorded."""
         return self.status is not None
 
     def record(self, status: str, result: dict[str, Any]) -> bool:
@@ -91,6 +108,25 @@ class A2UITerminalState:
         self.status = status
         self.result = result
         return True
+
+
+def build_a2ui_stream_request(
+    prepare_context: Callable[..., Any],
+    events: Callable[[Any, A2UITerminalState], AsyncIterator[AguiEvent]],
+    **options: Unpack[_A2UIStreamRequestOptions],
+) -> A2UIStreamRequest:
+    """Build the shared stream envelope from transport-specific hooks."""
+    return A2UIStreamRequest(
+        prepare_context=prepare_context,
+        inputs=A2UIStreamInputs(
+            arguments=options["arguments"],
+            payload=options["payload"],
+            user_query=options["user_query"],
+            dependencies=options["dependencies"],
+            runtime_run_id=options["runtime_run_id"],
+        ),
+        events=events,
+    )
 
 
 async def invoke_a2ui_graph(context: Any) -> Mapping[str, Any]:
@@ -215,9 +251,14 @@ async def stream_review_a2ui_pause(
     user_query: str,
     dependencies: Any,
     hooks: ReviewStreamHooks,
-    runtime_run_id: str,
+    **runtime_options: Unpack[_ReviewStreamRuntimeOptions],
 ) -> StreamingResponse:
     """Stream Review until interrupt and emit one ``phyto.a2ui`` frame."""
+    unknown = set(runtime_options).difference({"runtime_run_id"})
+    if unknown:
+        raise TypeError(f"unexpected keyword argument '{sorted(unknown)[0]}'")
+    if "runtime_run_id" not in runtime_options:
+        raise TypeError("missing required keyword argument 'runtime_run_id'")
 
     async def _agui_events(
         context: Any, terminal: A2UITerminalState
@@ -269,16 +310,13 @@ async def stream_review_a2ui_pause(
             terminal.record("succeeded", result)
         yield run_finished(context.run_id)
 
-    inputs = A2UIStreamInputs(
-        arguments,
-        payload,
-        user_query,
-        dependencies,
-        runtime_run_id,
-    )
-    request = A2UIStreamRequest(
-        prepare_context=hooks.prepare_review_stream,
-        inputs=inputs,
-        events=_agui_events,
+    request = build_a2ui_stream_request(
+        hooks.prepare_review_stream,
+        _agui_events,
+        arguments=arguments,
+        payload=payload,
+        runtime_run_id=runtime_options["runtime_run_id"],
+        user_query=user_query,
+        dependencies=dependencies,
     )
     return await run_a2ui_stream(request)

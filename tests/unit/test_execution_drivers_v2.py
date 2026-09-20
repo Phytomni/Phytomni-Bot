@@ -11,6 +11,9 @@ from datetime import UTC, datetime
 from typing import cast
 
 import pytest
+from tests.support.execution_dispatch_fixtures import (
+    execution_context_fixture,
+)
 
 from mcp_server_phytomni.public_agent_catalog import (
     PUBLIC_AGENT_CATALOG,
@@ -33,16 +36,12 @@ def _context(driver_kind):
     spec = next(
         spec for spec in PUBLIC_AGENT_CATALOG if spec.driver == driver_kind
     )
-    return ExecutionContext(
-        owner_ref="alice",
-        execution_id=f"turn-{driver_kind}",
-        fingerprint_version=1,
-        fingerprint="a" * 64,
-        agent=spec,
-        root_span_id="span-root",
-        current_span_id="span-root",
-        transport="test",
-        deadline_at=datetime(2026, 8, 20, tzinfo=UTC),
+    return execution_context_fixture(
+        spec,
+        "alice",
+        f"turn-{driver_kind}",
+        "test",
+        datetime(2026, 8, 20, tzinfo=UTC),
     )
 
 
@@ -53,6 +52,8 @@ def test_driver_delegates_every_normalized_operation_without_business_logic(
     driver_kind,
     driver_type,
 ) -> None:
+    """Verify driver delegates every normalized operation without business
+    logic."""
     calls = []
 
     async def handler(context, command, services):
@@ -80,6 +81,7 @@ def test_driver_delegates_every_normalized_operation_without_business_logic(
 def test_driver_fails_closed_for_missing_operation(
     driver_kind, driver_type
 ) -> None:
+    """Verify driver fails closed for missing operation."""
     driver = driver_type({})
     context = _context(driver_kind)
     command = ExecutionCommand(agent_slug=context.agent.slug, arguments={})
@@ -99,6 +101,8 @@ def test_driver_fails_closed_for_missing_operation(
 
 
 def test_driver_rejects_agent_bound_to_another_driver() -> None:
+    """Verify driver rejects agent bound to another driver."""
+
     async def handler(context, command, services):
         del context, command, services
         return DriverOutcome.running()
@@ -132,6 +136,8 @@ def test_driver_rejects_agent_bound_to_another_driver() -> None:
 def test_catalog_and_driver_registry_have_exactly_the_same_driver_kinds() -> (
     None
 ):
+    """Verify catalog and driver registry have exactly the same driver
+    kinds."""
     assert set(CANONICAL_DRIVER_TYPES) == {
         spec.driver for spec in PUBLIC_AGENT_CATALOG
     }

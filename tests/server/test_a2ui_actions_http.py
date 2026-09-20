@@ -14,7 +14,9 @@ from tests.support.a2ui_contract_fakes import (
     cancelled_response,
     confirm_surface,
     gene_id_form_props,
+    post_a2ui_action,
 )
+from tests.support.http_execution_fixtures import seed_waiting_execution
 
 from mcp_server_phytomni.agents.chat.a2ui_graph import _CANCEL_MESSAGE
 from mcp_server_phytomni.agents.shared.a2ui import A2UI_CATALOG_VERSION
@@ -22,20 +24,6 @@ from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.lifecycle_contract import (
     build_agent_run_response,
     empty_agent_result,
-)
-from mcp_server_phytomni.runtime.execution_journal_v2 import (
-    ExecutionStatus,
-    SpanStatus,
-)
-from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-    SQLiteExecutionReservationRepository,
-)
-from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-    ExecutionCommand,
-)
-from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-    SpanSpec,
-    SQLiteExecutionWorkRepository,
 )
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -111,47 +99,11 @@ def _seed_runtime_a2ui_run(
     result: dict[str, Any],
 ) -> str:
     """Seed a canonical V2 execution paused at an A2UI boundary."""
-    execution_id = f"turn-{run_id}"
-    reservations = SQLiteExecutionReservationRepository(
+    seed_waiting_execution(
         tasks_db_path,
-        run_id_factory=lambda: run_id,
-        root_span_id_factory=lambda: f"span-{run_id}",
-    )
-    reservation = reservations.reserve(
+        run_id=run_id,
         owner=user_id,
-        execution_id=execution_id,
-        fingerprint_version=2,
-        fingerprint=f"fixture:{run_id}",
-        command=ExecutionCommand(agent_slug=agent, arguments={}),
-    )
-    work = SQLiteExecutionWorkRepository(tasks_db_path)
-    root = work.create_span(
-        SpanSpec(
-            owner=user_id,
-            execution_id=execution_id,
-            span_id=reservation.root_span_id,
-            kind="agent",
-            label_key=f"agent.{agent}",
-        )
-    )
-    work.update_span_status(
-        execution_id,
-        reservation.root_span_id,
-        owner=user_id,
-        status=SpanStatus.WAITING_INPUT,
-        expected_revision=root.revision,
-    )
-    assert reservations.record_observation(
-        owner=user_id,
-        execution_id=execution_id,
-        status=ExecutionStatus.WAITING_INPUT,
-        tracking_health="healthy",
-        cancellation_state="none",
-        next_attempt_at=None,
-    )
-    assert RunRegistry(tasks_db_path).update_active_result(
-        run_id,
-        owner=user_id,
+        agent=agent,
         result=result,
     )
     return run_id
@@ -365,16 +317,14 @@ async def test_a2ui_action_wrong_widget_returns_400(
         surface_id="sfc-open-widget",
     )
 
-    response = await api_client.post(
-        f"/v1/runs/{run_id}/a2ui-actions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "run_id": run_id,
-            "surface_id": "sfc-open-widget",
-            "widget": "form",
-            "action_id": "act-form",
-            "payload": {"fields": {"name": "x"}},
-        },
+    response = await post_a2ui_action(
+        api_client,
+        issued_api_key,
+        run_id=run_id,
+        surface_id="sfc-open-widget",
+        widget="form",
+        action_id="act-form",
+        payload={"fields": {"name": "x"}},
     )
 
     assert response.status_code == 400
@@ -584,16 +534,14 @@ async def test_a2ui_action_invalid_confirm_payload_returns_400(
         surface_id="sfc-bad-payload",
     )
 
-    response = await api_client.post(
-        f"/v1/runs/{run_id}/a2ui-actions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "run_id": run_id,
-            "surface_id": "sfc-bad-payload",
-            "widget": "confirm",
-            "action_id": "act-confirm",
-            "payload": {},
-        },
+    response = await post_a2ui_action(
+        api_client,
+        issued_api_key,
+        run_id=run_id,
+        surface_id="sfc-bad-payload",
+        widget="confirm",
+        action_id="act-confirm",
+        payload={},
     )
 
     assert response.status_code == 400
@@ -730,16 +678,14 @@ async def test_a2ui_action_form_submit_succeeds(
 
     monkeypatch.setattr(api_app_module, "_resume_paused_run", _fake_resume)
 
-    response = await api_client.post(
-        f"/v1/runs/{run_id}/a2ui-actions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "run_id": run_id,
-            "surface_id": "sfc-open-form-submit",
-            "widget": "form",
-            "action_id": "act-form-submit",
-            "payload": {"fields": {"value": "AT1G01010"}},
-        },
+    response = await post_a2ui_action(
+        api_client,
+        issued_api_key,
+        run_id=run_id,
+        surface_id="sfc-open-form-submit",
+        widget="form",
+        action_id="act-form-submit",
+        payload={"fields": {"value": "AT1G01010"}},
     )
 
     assert response.status_code == 200
@@ -778,16 +724,14 @@ async def test_a2ui_action_form_cancel_succeeds(
 
     monkeypatch.setattr(api_app_module, "_resume_paused_run", _fake_resume)
 
-    response = await api_client.post(
-        f"/v1/runs/{run_id}/a2ui-actions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "run_id": run_id,
-            "surface_id": "sfc-open-form-cancel",
-            "widget": "form",
-            "action_id": "act-form-cancel",
-            "payload": {"cancelled": True},
-        },
+    response = await post_a2ui_action(
+        api_client,
+        issued_api_key,
+        run_id=run_id,
+        surface_id="sfc-open-form-cancel",
+        widget="form",
+        action_id="act-form-cancel",
+        payload={"cancelled": True},
     )
 
     assert response.status_code == 200
@@ -872,139 +816,3 @@ def _seed_review_a2ui_form_run(
         agent="review",
         result=result,
     )
-
-
-async def test_a2ui_action_review_form_submit_succeeds(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Review form submit resumes and echoes fields on result.a2ui."""
-    run_id = _seed_review_a2ui_form_run(
-        tasks_db_path,
-        run_id="run-a2ui-review-form-submit",
-        surface_id="sfc-open-review-form",
-    )
-    calls: list[tuple[Any, ...]] = []
-    fake_app = object()
-    monkeypatch.setattr(
-        api_app_module,
-        "_review_stream_app",
-        lambda: fake_app,
-    )
-
-    async def _fake_resume(
-        app: Any,
-        thread_id: str,
-        resume_payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        calls.append((app, thread_id, resume_payload))
-        return {
-            "choices": [
-                {
-                    "message": {
-                        "content": "Review form accepted.",
-                        "doc_list": [],
-                        "follow_up_questions": [],
-                    }
-                }
-            ]
-        }
-
-    monkeypatch.setattr(api_app_module, "_resume_paused_run", _fake_resume)
-
-    response = await api_client.post(
-        f"/v1/runs/{run_id}/a2ui-actions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "run_id": run_id,
-            "surface_id": "sfc-open-review-form",
-            "widget": "form",
-            "action_id": "act-review-form-submit",
-            "payload": {"fields": {"gene_id": "AT1G01010"}},
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "succeeded"
-    assert body["agent"] == "review"
-    assert body["result"]["a2ui"]["props"]["status"] == "submitted"
-    assert body["result"]["a2ui"]["props"]["fields"] == {
-        "gene_id": "AT1G01010"
-    }
-    assert "accepted" not in body["result"]["a2ui"]["props"]
-    assert len(calls) == 1
-    assert calls[0][0] is fake_app
-    assert calls[0][1] == run_id
-    assert calls[0][2]["fields"] == {"gene_id": "AT1G01010"}
-    assert calls[0][2]["approved"] is True
-    assert calls[0][2]["edits"] is None
-
-
-async def test_a2ui_action_review_form_cancel_succeeds(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Review form cancel resumes and echoes cancelled on result.a2ui."""
-    run_id = _seed_review_a2ui_form_run(
-        tasks_db_path,
-        run_id="run-a2ui-review-form-cancel",
-        surface_id="sfc-open-review-form-cancel",
-    )
-    calls: list[tuple[Any, ...]] = []
-    fake_app = object()
-    monkeypatch.setattr(
-        api_app_module,
-        "_review_stream_app",
-        lambda: fake_app,
-    )
-
-    async def _fake_resume(
-        app: Any,
-        thread_id: str,
-        resume_payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        calls.append((app, thread_id, resume_payload))
-        return {
-            "choices": [
-                {
-                    "message": {
-                        "content": "Review form cancelled.",
-                        "doc_list": [],
-                        "follow_up_questions": [],
-                    }
-                }
-            ]
-        }
-
-    monkeypatch.setattr(api_app_module, "_resume_paused_run", _fake_resume)
-
-    response = await api_client.post(
-        f"/v1/runs/{run_id}/a2ui-actions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "run_id": run_id,
-            "surface_id": "sfc-open-review-form-cancel",
-            "widget": "form",
-            "action_id": "act-review-form-cancel",
-            "payload": {"cancelled": True},
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "succeeded"
-    assert body["agent"] == "review"
-    assert body["result"]["a2ui"]["props"]["status"] == "submitted"
-    assert body["result"]["a2ui"]["props"]["cancelled"] is True
-    assert "accepted" not in body["result"]["a2ui"]["props"]
-    assert len(calls) == 1
-    assert calls[0][0] is fake_app
-    assert calls[0][1] == run_id
-    assert calls[0][2]["cancelled"] is True
-    assert calls[0][2]["approved"] is False
-    assert calls[0][2]["edits"] is None

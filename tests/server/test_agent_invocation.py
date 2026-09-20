@@ -10,7 +10,7 @@ dispatch wrapper formatting that raw payload on top of it.
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from json import dumps, loads
 from typing import Any
 
@@ -29,11 +29,14 @@ from mcp_server_phytomni.runtime.execution_event_sink import (
 pytestmark = pytest.mark.server
 
 
+@dataclass
 class _EventRecorder:
-    def __init__(self) -> None:
-        self.intents: list[Any] = []
+    """Collect events emitted through the shared invocation boundary."""
+
+    intents: list[Any] = field(default_factory=list)
 
     def emit(self, intent: Any) -> None:
+        """Capture the emitted event for later assertions."""
         self.intents.append(intent)
 
 
@@ -66,6 +69,8 @@ async def test_invoke_tool_raw_returns_unwrapped_payload(
 async def test_invoke_tool_raw_emits_safe_shared_boundary_events(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify invoke tool raw emits safe shared boundary events."""
+
     async def fake_handler(_args: Any) -> dict[str, bool]:
         return {"private": True}
 
@@ -98,6 +103,8 @@ async def test_invoke_tool_raw_emits_safe_shared_boundary_events(
 async def test_invoke_tool_raw_classifies_failure_without_exception_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify invoke tool raw classifies failure without exception text."""
+
     async def fake_handler(_args: Any) -> None:
         raise RuntimeError("credential=do-not-persist")
 

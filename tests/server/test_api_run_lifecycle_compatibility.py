@@ -163,13 +163,17 @@ async def test_run_lifecycle_owner_lookup_and_task_log_projection(
     assert missing.value.status_code == 404
 
     class PureReadRegistry:
+        """Read-only registry that rejects lifecycle reconciliation."""
+
         def __init__(self, _path: str) -> None:
             self.inner = RunRegistry(db_path)
 
         def get_run(self, target: str, *, owner: str):
+            """Return the configured run without side effects."""
             return self.inner.get_run(target, owner=owner)
 
         async def reconcile(self, *_args: Any, **_kwargs: Any) -> Any:
+            """Record any unexpected reconciliation attempt."""
             raise AssertionError("GET must not reconcile")
 
     first = await lifecycle_module.fetch_owner_run(

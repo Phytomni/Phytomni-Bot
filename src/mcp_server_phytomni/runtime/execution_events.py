@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Literal, NoReturn, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -22,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from .execution_event_limits import DEFAULT_EXECUTION_EVENT_LIMITS
 from .public_execution_safety import (
     PublicExecutionDataError,
+    is_utc_timestamp,
     validate_public_execution_value,
 )
 
@@ -416,14 +416,7 @@ def _fail(reason: str) -> NoReturn:
 
 
 def _validate_utc(value: object) -> None:
-    if not isinstance(value, str):
-        _fail("invalid_occurred_at")
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        _fail("invalid_occurred_at")
-    offset = parsed.utcoffset()
-    if offset is None or offset.total_seconds() != 0:
+    if not is_utc_timestamp(value):
         _fail("invalid_occurred_at")
 
 

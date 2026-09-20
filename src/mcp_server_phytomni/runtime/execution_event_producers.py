@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+import sqlite3
 from collections.abc import Mapping, Sequence
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, NotRequired, TypedDict, Unpack
 
 from .execution_event_flags import execution_event_production_enabled
 from .execution_event_observability import observe_execution_event
@@ -18,17 +19,36 @@ from .execution_event_sink import event_intent
 from .execution_event_store import SQLiteExecutionEventStore
 
 
+class _AppendFields(TypedDict):
+    kind: str
+    status: str
+    idempotency_key: str
+    payload: NotRequired[Mapping[str, Any] | None]
+    target: NotRequired[Mapping[str, str] | None]
+    task_id: NotRequired[str | None]
+
+
+class _InputRequiredFields(TypedDict):
+    run_id: str
+    owner: str
+    revision: int
+    surface_id: str
+    widget: str
+
+
+class _InputResolvedFields(TypedDict):
+    run_id: str
+    owner: str
+    revision: int
+    surface_id: str
+    outcome: str
+
+
 def _append(
     db_path: str,
     run_id: str,
     owner: str,
-    *,
-    kind: str,
-    status: str,
-    idempotency_key: str,
-    payload: Mapping[str, Any] | None = None,
-    target: Mapping[str, str] | None = None,
-    task_id: str | None = None,
+    **event: Unpack[_AppendFields],
 ) -> None:
     """Append a validated fact without letting observability break work."""
     if not execution_event_production_enabled():
@@ -39,16 +59,16 @@ def _append(
             run_id,
             owner=owner,
             intent=event_intent(
-                kind,
-                status=status,
-                payload=payload,
-                target=target,
-                task_id=task_id,
-                idempotency_key=idempotency_key,
+                event["kind"],
+                status=event["status"],
+                payload=event.get("payload"),
+                target=event.get("target"),
+                task_id=event.get("task_id"),
+                idempotency_key=event["idempotency_key"],
             ),
         )
         observe_execution_event("append_committed")
-    except Exception:
+    except (LookupError, OSError, RuntimeError, ValueError, sqlite3.Error):
         observe_execution_event("append_failed")
         return
 
@@ -103,59 +123,63 @@ def emit_run_started(
 
 def emit_input_required(
     db_path: str,
-    *,
-    run_id: str,
-    owner: str,
-    revision: int,
-    surface_id: str,
-    widget: str,
+    **event: Unpack[_InputRequiredFields],
 ) -> None:
     """Emit the paired waiting and typed input-required facts."""
     _append(
         db_path,
-        run_id,
-        owner,
+        event["run_id"],
+        event["owner"],
         kind="run.waiting_input",
         status="waiting",
-        idempotency_key=f"run:waiting-input:{revision}:{surface_id}",
+        idempotency_key=(
+            f"run:waiting-input:{event['revision']}:{event['surface_id']}"
+        ),
     )
     _append(
         db_path,
-        run_id,
-        owner,
+        event["run_id"],
+        event["owner"],
         kind="input.required",
         status="waiting",
-        payload={"surface_id": surface_id, "widget": widget},
-        idempotency_key=f"input:required:{revision}:{surface_id}",
+        payload={
+            "surface_id": event["surface_id"],
+            "widget": event["widget"],
+        },
+        idempotency_key=(
+            f"input:required:{event['revision']}:{event['surface_id']}"
+        ),
     )
 
 
 def emit_input_resolved(
     db_path: str,
-    *,
-    run_id: str,
-    owner: str,
-    revision: int,
-    surface_id: str,
-    outcome: str,
+    **event: Unpack[_InputResolvedFields],
 ) -> None:
     """Emit resume facts before re-entering an owner-authorized checkpoint."""
     _append(
         db_path,
-        run_id,
-        owner,
+        event["run_id"],
+        event["owner"],
         kind="input.resolved",
         status="running",
-        payload={"surface_id": surface_id, "outcome": outcome},
-        idempotency_key=f"input:resolved:{revision}:{surface_id}",
+        payload={
+            "surface_id": event["surface_id"],
+            "outcome": event["outcome"],
+        },
+        idempotency_key=(
+            f"input:resolved:{event['revision']}:{event['surface_id']}"
+        ),
     )
     _append(
         db_path,
-        run_id,
-        owner,
+        event["run_id"],
+        event["owner"],
         kind="run.resumed",
         status="running",
-        idempotency_key=f"run:resumed:{revision}:{surface_id}",
+        idempotency_key=(
+            f"run:resumed:{event['revision']}:{event['surface_id']}"
+        ),
     )
 
 

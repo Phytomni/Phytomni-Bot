@@ -11,6 +11,11 @@ from pathlib import Path
 
 import pytest
 
+from mcp_server_phytomni.runtime.execution_event_store import (
+    ExecutionEventRunNotFoundError,
+    ExecutionEventStore,
+    SQLiteExecutionEventStore,
+)
 from mcp_server_phytomni.runtime.execution_events import (
     ExecutionEventIntent,
     parse_execution_event_intent,
@@ -53,9 +58,6 @@ def _ids() -> Iterator[str]:
 
 
 def _store(tmp_path: Path):
-    from mcp_server_phytomni.runtime.execution_event_store import (
-        SQLiteExecutionEventStore,
-    )
 
     db_path = tmp_path / "runs.db"
     registry = RunRegistry(str(db_path))
@@ -73,9 +75,7 @@ def _store(tmp_path: Path):
 def test_store_implements_protocol_and_allocates_ordered_identity(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_event_store import (
-        ExecutionEventStore,
-    )
+    """Verify store implements protocol and allocates ordered identity."""
 
     store = _store(tmp_path)
     assert isinstance(store, ExecutionEventStore)
@@ -91,6 +91,7 @@ def test_store_implements_protocol_and_allocates_ordered_identity(
 
 
 def test_idempotent_append_returns_the_committed_event(tmp_path: Path) -> None:
+    """Verify idempotent append returns the committed event."""
     store = _store(tmp_path)
     intent = _intent(idempotency_key="run:start")
 
@@ -106,9 +107,7 @@ def test_idempotent_append_returns_the_committed_event(tmp_path: Path) -> None:
 def test_owner_scoped_reads_hide_foreign_and_unknown_runs(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_event_store import (
-        ExecutionEventRunNotFoundError,
-    )
+    """Verify owner scoped reads hide foreign and unknown runs."""
 
     store = _store(tmp_path)
     event = store.append("run-1", owner="alice", intent=_intent())
@@ -126,6 +125,7 @@ def test_owner_scoped_reads_hide_foreign_and_unknown_runs(
 def test_event_pages_are_bounded_and_resume_after_sequence(
     tmp_path: Path,
 ) -> None:
+    """Verify event pages are bounded and resume after sequence."""
     store = _store(tmp_path)
     events = tuple(
         store.append("run-1", owner="alice", intent=_intent(kind))
@@ -150,6 +150,7 @@ def test_event_pages_are_bounded_and_resume_after_sequence(
 def test_event_detail_is_owner_scoped_and_round_trips_typed_payload(
     tmp_path: Path,
 ) -> None:
+    """Verify event detail is owner scoped and round trips typed payload."""
     store = _store(tmp_path)
     appended = store.append(
         "run-1", owner="alice", intent=_intent("decision.note")

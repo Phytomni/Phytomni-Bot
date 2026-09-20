@@ -14,7 +14,7 @@ import json
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import Any, Unpack, cast
+from typing import Any, NotRequired, TypedDict, Unpack, cast
 
 from fastapi import (
     FastAPI,
@@ -24,19 +24,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS
 
-from ..agents.expert import (
-    ExpertProviderError,
-    ExpertProviderTimeoutError,
-    ExpertRoutingContractError,
-    ExpertRoutingDeclinedError,
-    ToolSelection,
-    select_agent_tool,
-)
-from ..agents.expert.routing_observability import (
-    ExpertRouteOutcome,
-    ExpertRoutePath,
-    record_expert_route_outcome,
-)
+from ..agents.expert import ToolSelection, select_agent_tool
 from ..common import logging_config as _logging_config
 from ..config.defaults import ApiConfig, ServerConfig
 from ..interop import a2a_discovery as _a2a_discovery
@@ -105,7 +93,6 @@ from .a2a import runtime as a2a_runtime
 from .a2a.executor import (
     A2ARegistration,
 )
-from .agent_run_support import running_agent_run_response, stream_run_id
 from .compat import (
     _a2ui_interrupt_body,
     _a2ui_runtime_dependencies,
@@ -117,12 +104,8 @@ from .compat import (
     _stream_chat_completion,
     _stream_review_a2ui_pause,
 )
-from .expert_routing_errors import (
-    expert_routing_contract_error,
-    expert_routing_provider_error,
-)
+from .expert_selection import select_expert_routing
 from .lifecycle_contract import (
-    SafeApiError,
     SafeErrorCode,
     empty_agent_result,
     expert_safe_error,
@@ -143,7 +126,6 @@ from .routes.attachment_inputs import (
 )
 from .schemas import (
     ChatCompletionRequest,
-    ChatMessage,
     ChatStreamCall,
     ExpertQueryRequest,
     ResumeRequest,
@@ -293,12 +275,6 @@ _TOOL_TO_AGENT_SLUG = {
 _REMOTE_AGENT_SLUGS = _catalog_remote_agent_slugs()
 
 
-_EXPERT_STREAM_MODELS = {
-    "chat": "phyto-chat",
-    "knowledge": "phyto-knowledge",
-    "brief_gene": "phyto-brief-gene",
-}
-
 # Historical Web ``tool_name`` aliases preserved on ``/v1/agents`` rows
 # as ``legacy_aliases`` metadata. The route itself never accepts these
 # as routing slugs; chat-ai and Phytomni-Web Go consume the list to
@@ -312,141 +288,32 @@ _LEGACY_ALIASES: dict[str, list[str]] = _catalog_legacy_aliases()
 _LOGGER = logging.getLogger(__name__)
 
 
-def _routing_contract_error() -> SafeApiError:
-    """Return one sanitized Expert routing contract failure."""
-    return expert_routing_contract_error()
-
-
-def _record_v0_route_outcome(
-    outcome: ExpertRouteOutcome,
-    *,
-    payload: ExpertQueryRequest,
-    http_status: int,
-    error: BaseException | None = None,
-) -> None:
-    """Log one V0 selection-stage outcome without the query body."""
-    record_expert_route_outcome(
-        outcome,
-        path=ExpertRoutePath.V0,
-        forced=payload.forced_tool is not None,
-        error_class=None if error is None else type(error).__name__,
-        http_status=http_status,
-    )
-
-
-async def _start_routed_expert_stream(
-    *,
-    slug: str,
-    tool_name: str,
-    arguments: dict[str, Any],
-    payload: ExpertQueryRequest,
-    debug: bool,
-) -> tuple[dict[str, Any], int]:
-    """Start one selected stream-family run and expose its durable id."""
-    response = await _stream_chat_completion(
-        tool_name=tool_name,
-        arguments=arguments,
-        payload=ChatCompletionRequest(
-            model=_EXPERT_STREAM_MODELS[slug],
-            messages=[ChatMessage(role="user", content=payload.user_query)],
-            stream=True,
-            dialogue_id=payload.dialogue_id,
-            debug=debug,
-            locale=current_effective_locale(),
-        ),
-        user_query=payload.user_query,
-    )
-    run_id = await stream_run_id(response)
-    if not run_id:
-        raise HTTPException(status_code=500, detail="stream run is missing")
-    return running_agent_run_response(
-        run_id=run_id,
-        agent=slug,
-    )
-
-
 async def _select_expert_routing(
     payload: ExpertQueryRequest,
 ) -> tuple[ToolSelection, str]:
     """Run the one canonical Expert selector and resolve its public slug."""
-    try:
-        selection = await select_agent_tool(
-            payload.user_query,
-            payload.history,
-            allowed_tools=payload.allowed_tools,
-            forced_tool=payload.forced_tool,
-        )
-    except ExpertRoutingDeclinedError as exc:
-        if payload.forced_tool is not None or "ChatAgent" not in (
-            payload.allowed_tools
-        ):
-            _record_v0_route_outcome(
-                ExpertRouteOutcome.DECLINED_NO_FALLBACK,
-                payload=payload,
-                http_status=502,
-                error=exc,
-            )
-            raise _routing_contract_error() from exc
-        _record_v0_route_outcome(
-            ExpertRouteOutcome.DECLINED_CHAT_FALLBACK,
-            payload=payload,
-            http_status=202,
-            error=exc,
-        )
-        selection = ToolSelection(
-            tool_name="ChatAgent",
-            arguments={"user_query": payload.user_query},
-        )
-    except ExpertRoutingContractError as exc:
-        _record_v0_route_outcome(
-            ExpertRouteOutcome.SELECTION_CONTRACT,
-            payload=payload,
-            http_status=502,
-            error=exc,
-        )
-        raise _routing_contract_error() from exc
-    except ExpertProviderError as exc:
-        _record_v0_route_outcome(
-            (
-                ExpertRouteOutcome.PROVIDER_TIMEOUT
-                if isinstance(exc, ExpertProviderTimeoutError)
-                else ExpertRouteOutcome.PROVIDER_ERROR
-            ),
-            payload=payload,
-            http_status=(
-                504 if isinstance(exc, ExpertProviderTimeoutError) else 502
-            ),
-            error=exc,
-        )
-        raise expert_routing_provider_error(exc) from exc
-    if selection is None:
-        _record_v0_route_outcome(
-            ExpertRouteOutcome.SELECTION_CONTRACT,
-            payload=payload,
-            http_status=502,
-        )
-        raise _routing_contract_error()
-    slug = _TOOL_TO_AGENT_SLUG.get(selection.tool_name)
-    if slug is None:
-        _record_v0_route_outcome(
-            ExpertRouteOutcome.SELECTION_CONTRACT,
-            payload=payload,
-            http_status=502,
-        )
-        raise _routing_contract_error()
-    return selection, slug
+    return await select_expert_routing(
+        payload,
+        select_agent_tool,
+        _TOOL_TO_AGENT_SLUG,
+    )
+
+
+class _ExpertRouteOptions(TypedDict):
+    """Compatible optional controls for one V0 Expert dispatch."""
+
+    debug: bool
+    attachment_input: NotRequired[ResolvedAttachmentInput | None]
+    idempotency_key: NotRequired[str | None]
+    execution_id: NotRequired[str | None]
+    research_runtime_options: NotRequired[
+        _agent_runs.ResearchHttpRuntimeOptions
+    ]
 
 
 async def _route_expert_query(
     payload: ExpertQueryRequest,
-    *,
-    debug: bool,
-    attachment_input: ResolvedAttachmentInput | None = None,
-    idempotency_key: str | None = None,
-    execution_id: str | None = None,
-    research_runtime_options: _agent_runs.ResearchHttpRuntimeOptions = (
-        _agent_runs.ResearchHttpRuntimeOptions()
-    ),
+    **options: Unpack[_ExpertRouteOptions],
 ) -> tuple[dict[str, Any], int]:
     """Route one constrained Expert request to a native agent run."""
     payload = restrict_expert_payload_for_research(
@@ -463,7 +330,7 @@ async def _route_expert_query(
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    resolved = attachment_input or ResolvedAttachmentInput(
+    resolved = options.get("attachment_input") or ResolvedAttachmentInput(
         attachment_owner=current_request_user() or "anonymous",
         bundle=ResolvedAttachmentBundle(assets=()),
     )
@@ -471,7 +338,7 @@ async def _route_expert_query(
         admission = build_expert_research_admission(
             payload,
             resolved,
-            idempotency_key=idempotency_key,
+            idempotency_key=options.get("idempotency_key"),
             route_source="expert",
         )
         return await _agent_runs.invoke_research_http_run_via_runtime(
@@ -480,9 +347,12 @@ async def _route_expert_query(
             arguments=selection.arguments,
             config=ApiConfig(),
             db_path=resolve_tasks_db_path(),
-            execution_id=execution_id,
+            execution_id=options.get("execution_id"),
             transport="expert_router",
-            runtime_options=research_runtime_options,
+            runtime_options=options.get(
+                "research_runtime_options",
+                _agent_runs.ResearchHttpRuntimeOptions(),
+            ),
         )
     arguments, attachment_context = prepare_selected_expert_arguments(
         agent=slug,
@@ -492,28 +362,14 @@ async def _route_expert_query(
         db_path=resolve_tasks_db_path(),
     )
     try:
-        if slug in _EXPERT_STREAM_MODELS:
-            # Stream schemas historically omit empty file lists. Fill that
-            # optional field only for the Expert dispatch gate so a missing
-            # user_query still maps to selected_agent_invalid_argument.
-            schema_arguments = dict(arguments)
-            schema_arguments.setdefault("obs_file_list", [])
-            validate_tool_arguments(selection.tool_name, schema_arguments)
-            return await _start_routed_expert_stream(
-                slug=slug,
-                tool_name=selection.tool_name,
-                arguments=arguments,
-                payload=payload,
-                debug=debug,
-            )
         return await _invoke_agent_run(
             agent=slug,
             arguments=arguments,
             dialogue_id=payload.dialogue_id,
             request_json=request_json,
-            debug=debug,
+            debug=options["debug"],
             attachment_evidence=attachment_context.evidence,
-            execution_id=execution_id,
+            execution_id=options.get("execution_id"),
         )
     except McpError as exc:
         if exc.error.code == INVALID_PARAMS:
@@ -701,12 +557,7 @@ async def _resume_review_run(
             status_code=404,
             detail=f"run not found: {thread_id}",
         )
-    execution_id = record.request_info.execution_id
-    if execution_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail="legacy A2UI execution is read-only",
-        )
+    execution_id = a2ui_runtime.require_a2ui_execution_id(record)
     reservations = SQLiteExecutionReservationRepository(path)
     try:
         reservation = reservations.get(owner=owner, execution_id=execution_id)

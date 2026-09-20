@@ -641,6 +641,7 @@ async def test_lifecycle_read_does_not_reconcile_or_retry_grant_cleanup(
 
         @staticmethod
         async def reconcile(_run_id: str, *, owner: str) -> Any:
+            """Record any unexpected reconciliation attempt."""
             raise AssertionError((owner, _run_id))
 
     cleaned: list[str] = []
@@ -661,4 +662,4 @@ async def test_lifecycle_read_does_not_reconcile_or_retry_grant_cleanup(
     )
 
     assert payload["status"] == "running"
-    assert cleaned == []
+    assert not cleaned

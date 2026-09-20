@@ -367,13 +367,19 @@ class _RequestIdentity:
 
 
 @dataclass(frozen=True, slots=True)
-class RunRequestInfo:
-    """Per-request metadata persisted alongside the run row."""
+class _RunRequestCore:
+    """Core request metadata shared by the public compatibility record."""
 
     _identity: _RequestIdentity = field(init=False, repr=False)
     query: str | None = None
     tool_name: str | None = None
     model: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RunRequestInfo(_RunRequestCore):
+    """Per-request metadata persisted alongside the run row."""
+
     request_json: str | None = None
     locale: SupportedLocale | None = None
     execution_id: str | None = None
@@ -414,10 +420,13 @@ class RunRequestInfo:
                 values.get("dialogue_id"),
                 values.get("request_id"),
             )
+        _RunRequestCore.__init__(
+            self,
+            query=values.get("query"),
+            tool_name=values.get("tool_name"),
+            model=values.get("model"),
+        )
         object.__setattr__(self, "_identity", identity)
-        object.__setattr__(self, "query", values.get("query"))
-        object.__setattr__(self, "tool_name", values.get("tool_name"))
-        object.__setattr__(self, "model", values.get("model"))
         object.__setattr__(self, "request_json", values.get("request_json"))
         object.__setattr__(self, "locale", values.get("locale"))
         object.__setattr__(self, "execution_id", values.get("execution_id"))

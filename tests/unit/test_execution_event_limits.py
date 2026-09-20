@@ -8,44 +8,35 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from pathlib import Path
 
 import pytest
-
-FIXTURES = (
-    Path(__file__).parents[2]
-    / "docs"
-    / "contracts"
-    / "execution-events"
-    / "v1"
-    / "fixtures.json"
+from tests.support.execution_event_fixtures import (
+    EXECUTION_EVENTS_V1_FIXTURES,
+    EXECUTION_TRACE_DETAIL_V1_FIXTURES,
+    expected_trace_detail_limits,
 )
-TRACE_DETAIL_FIXTURES = (
-    Path(__file__).parents[2]
-    / "docs"
-    / "contracts"
-    / "execution-trace-detail"
-    / "v1"
-    / "fixtures.json"
+
+from mcp_server_phytomni.runtime import execution_event_limits
+from mcp_server_phytomni.runtime.execution_event_limits import (
+    DEFAULT_EXECUTION_EVENT_LIMITS,
+    DEFAULT_EXECUTION_TRACE_DETAIL_LIMITS,
+    ExecutionEventLimitError,
 )
 
 
 def test_production_defaults_match_the_shared_contract() -> None:
-    from mcp_server_phytomni.runtime.execution_event_limits import (
-        DEFAULT_EXECUTION_EVENT_LIMITS,
-    )
+    """Verify production defaults match the shared contract."""
 
-    fixture = json.loads(FIXTURES.read_text(encoding="utf-8"))
+    fixture = json.loads(
+        EXECUTION_EVENTS_V1_FIXTURES.read_text(encoding="utf-8")
+    )
     assert (
         asdict(DEFAULT_EXECUTION_EVENT_LIMITS) == fixture["contract"]["limits"]
     )
 
 
 def test_summary_boundary_accepts_limit_and_rejects_limit_plus_one() -> None:
-    from mcp_server_phytomni.runtime.execution_event_limits import (
-        DEFAULT_EXECUTION_EVENT_LIMITS,
-        ExecutionEventLimitError,
-    )
+    """Verify summary boundary accepts limit and rejects limit plus one."""
 
     limits = DEFAULT_EXECUTION_EVENT_LIMITS
     limits.validate_summary("x" * limits.max_summary_chars)
@@ -56,10 +47,7 @@ def test_summary_boundary_accepts_limit_and_rejects_limit_plus_one() -> None:
 def test_event_byte_boundary_accepts_limit_and_rejects_limit_plus_one() -> (
     None
 ):
-    from mcp_server_phytomni.runtime.execution_event_limits import (
-        DEFAULT_EXECUTION_EVENT_LIMITS,
-        ExecutionEventLimitError,
-    )
+    """Verify event byte boundary accepts limit and rejects limit plus one."""
 
     limits = DEFAULT_EXECUTION_EVENT_LIMITS
     limits.validate_event_size(limits.max_event_bytes)
@@ -70,10 +58,7 @@ def test_event_byte_boundary_accepts_limit_and_rejects_limit_plus_one() -> (
 
 
 def test_page_and_todo_boundaries_fail_closed() -> None:
-    from mcp_server_phytomni.runtime.execution_event_limits import (
-        DEFAULT_EXECUTION_EVENT_LIMITS,
-        ExecutionEventLimitError,
-    )
+    """Verify page and todo boundaries fail closed."""
 
     limits = DEFAULT_EXECUTION_EVENT_LIMITS
     assert limits.resolve_page_size(None) == limits.default_page_size
@@ -88,9 +73,7 @@ def test_page_and_todo_boundaries_fail_closed() -> None:
 
 
 def test_progress_coalescing_boundary_is_deterministic() -> None:
-    from mcp_server_phytomni.runtime.execution_event_limits import (
-        DEFAULT_EXECUTION_EVENT_LIMITS,
-    )
+    """Verify progress coalescing boundary is deterministic."""
 
     limits = DEFAULT_EXECUTION_EVENT_LIMITS
     assert limits.should_coalesce_progress(1_000, 1_499) is True
@@ -98,7 +81,7 @@ def test_progress_coalescing_boundary_is_deterministic() -> None:
 
 
 def test_trace_detail_defaults_match_the_shared_contract() -> None:
-    from mcp_server_phytomni.runtime import execution_event_limits
+    """Verify trace detail defaults match the shared contract."""
 
     limits = getattr(
         execution_event_limits,
@@ -106,23 +89,16 @@ def test_trace_detail_defaults_match_the_shared_contract() -> None:
         None,
     )
     assert limits is not None, "central execution trace limits are missing"
-    fixture = json.loads(TRACE_DETAIL_FIXTURES.read_text(encoding="utf-8"))
+    fixture = json.loads(
+        EXECUTION_TRACE_DETAIL_V1_FIXTURES.read_text(encoding="utf-8")
+    )
 
     assert asdict(limits) == fixture["contract"]["limits"]
-    assert asdict(limits) == {
-        "max_operations_per_run": 256,
-        "max_attempt_history_per_operation": 8,
-        "max_detail_fields_per_operation": 16,
-        "liveness_coalesce_ms": 30_000,
-        "max_execution_log_bytes": 1_048_576,
-    }
+    assert asdict(limits) == expected_trace_detail_limits()
 
 
 def test_trace_detail_limit_boundaries_fail_closed() -> None:
-    from mcp_server_phytomni.runtime.execution_event_limits import (
-        DEFAULT_EXECUTION_TRACE_DETAIL_LIMITS,
-        ExecutionEventLimitError,
-    )
+    """Verify trace detail limit boundaries fail closed."""
 
     limits = DEFAULT_EXECUTION_TRACE_DETAIL_LIMITS
     limits.validate_operation_count(limits.max_operations_per_run)
@@ -163,9 +139,7 @@ def test_trace_detail_limit_boundaries_fail_closed() -> None:
 
 
 def test_trace_detail_liveness_coalescing_boundary_is_deterministic() -> None:
-    from mcp_server_phytomni.runtime.execution_event_limits import (
-        DEFAULT_EXECUTION_TRACE_DETAIL_LIMITS,
-    )
+    """Verify trace detail liveness coalescing boundary is deterministic."""
 
     limits = DEFAULT_EXECUTION_TRACE_DETAIL_LIMITS
     assert limits.should_coalesce_liveness(1_000, 30_999) is True

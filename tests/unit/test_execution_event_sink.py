@@ -6,10 +6,30 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from mcp_server_phytomni.runtime.execution_event_observability import (
+    execution_event_observations,
+    observe_execution_event,
+    reset_execution_event_observations,
+)
+from mcp_server_phytomni.runtime.execution_event_sink import (
+    DurableExecutionEventSink,
+    NoOpExecutionEventSink,
+    bind_execution_event_sink,
+    emit_decision_note,
+    emit_execution_event,
+    emit_reasoning_summary,
+    event_intent,
+    set_todos,
+)
+from mcp_server_phytomni.runtime.execution_event_store import (
+    SQLiteExecutionEventStore,
+)
 from mcp_server_phytomni.runtime.execution_events import (
     ExecutionEventIntent,
     PublicTextPayload,
@@ -21,26 +41,23 @@ from mcp_server_phytomni.runtime.run_registry_models import RunSpec
 
 
 def _intent(kind: str = "run.started") -> ExecutionEventIntent:
-    from mcp_server_phytomni.runtime.execution_event_sink import event_intent
 
     return event_intent(kind, status="running")
 
 
+@dataclass
 class _RecordingSink:
-    def __init__(self) -> None:
-        self.intents: list[ExecutionEventIntent] = []
+    """Collect execution-event intents emitted by a bound sink."""
 
-    def emit(self, intent: ExecutionEventIntent):
+    intents: list[ExecutionEventIntent] = field(default_factory=list)
+
+    def emit(self, intent: ExecutionEventIntent) -> None:
+        """Record an execution-event intent for later assertions."""
         self.intents.append(intent)
-        return None
 
 
 def test_unbound_and_explicit_noop_paths_never_touch_business_code() -> None:
-    from mcp_server_phytomni.runtime.execution_event_sink import (
-        NoOpExecutionEventSink,
-        bind_execution_event_sink,
-        emit_execution_event,
-    )
+    """Verify unbound and explicit noop paths never touch business code."""
 
     assert emit_execution_event(_intent()) is None
     with bind_execution_event_sink(NoOpExecutionEventSink()):
@@ -48,10 +65,7 @@ def test_unbound_and_explicit_noop_paths_never_touch_business_code() -> None:
 
 
 def test_context_binding_is_nested_and_restored() -> None:
-    from mcp_server_phytomni.runtime.execution_event_sink import (
-        bind_execution_event_sink,
-        emit_execution_event,
-    )
+    """Verify context binding is nested and restored."""
 
     outer = _RecordingSink()
     inner = _RecordingSink()
@@ -69,10 +83,7 @@ def test_context_binding_is_nested_and_restored() -> None:
 
 
 def test_set_todos_emits_one_whole_list_snapshot() -> None:
-    from mcp_server_phytomni.runtime.execution_event_sink import (
-        bind_execution_event_sink,
-        set_todos,
-    )
+    """Verify set todos emits one whole list snapshot."""
 
     recorder = _RecordingSink()
     with bind_execution_event_sink(recorder):
@@ -101,11 +112,7 @@ def test_set_todos_emits_one_whole_list_snapshot() -> None:
 
 
 def test_reasoning_projection_requires_explicit_public_visibility() -> None:
-    from mcp_server_phytomni.runtime.execution_event_sink import (
-        bind_execution_event_sink,
-        emit_decision_note,
-        emit_reasoning_summary,
-    )
+    """Verify reasoning projection requires explicit public visibility."""
 
     recorder = _RecordingSink()
     with bind_execution_event_sink(recorder):
@@ -136,12 +143,6 @@ def test_reasoning_projection_requires_explicit_public_visibility() -> None:
 
 
 def _durable_sink(tmp_path: Path, *, store=None, on_degraded=None):
-    from mcp_server_phytomni.runtime.execution_event_sink import (
-        DurableExecutionEventSink,
-    )
-    from mcp_server_phytomni.runtime.execution_event_store import (
-        SQLiteExecutionEventStore,
-    )
 
     db_path = tmp_path / "sink.db"
     if store is None:
@@ -157,6 +158,7 @@ def _durable_sink(tmp_path: Path, *, store=None, on_degraded=None):
 
 
 def test_durable_sink_appends_typed_intent(tmp_path: Path) -> None:
+    """Verify durable sink appends typed intent."""
     store, sink = _durable_sink(tmp_path)
 
     event = sink.emit(_intent())
@@ -171,10 +173,7 @@ def test_durable_sink_appends_typed_intent(tmp_path: Path) -> None:
 def test_production_flag_disables_append_without_affecting_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_event_observability import (
-        execution_event_observations,
-        reset_execution_event_observations,
-    )
+    """Verify production flag disables append without affecting run."""
 
     reset_execution_event_observations()
     monkeypatch.setenv("PHYTOMNI_EXECUTION_EVENTS_ENABLED", "false")
@@ -188,11 +187,7 @@ def test_production_flag_disables_append_without_affecting_run(
 
 
 def test_rollout_observations_have_fixed_labels(tmp_path: Path) -> None:
-    from mcp_server_phytomni.runtime.execution_event_observability import (
-        execution_event_observations,
-        observe_execution_event,
-        reset_execution_event_observations,
-    )
+    """Verify rollout observations have fixed labels."""
 
     reset_execution_event_observations()
     _store, sink = _durable_sink(tmp_path)
@@ -210,12 +205,15 @@ def test_rollout_observations_have_fixed_labels(tmp_path: Path) -> None:
         observe_execution_event("run-id-would-be-unbounded")
 
 
+@dataclass
 class _RecoveringStore:
-    def __init__(self, delegate) -> None:
-        self.delegate = delegate
-        self.failures = 1
+    """Fail one append before forwarding events to a durable store."""
+
+    delegate: Any
+    failures: int = 1
 
     def append(self, run_id, *, owner, intent):
+        """Append configured test state to the captured test state."""
         if self.failures:
             self.failures -= 1
             raise OSError("private filesystem detail")
@@ -225,6 +223,7 @@ class _RecoveringStore:
 def test_advertised_sink_reports_sanitized_degradation_and_recovers(
     tmp_path: Path,
 ) -> None:
+    """Verify advertised sink reports sanitized degradation and recovers."""
     notices: list[ExecutionEventIntent] = []
     delegate, _sink = _durable_sink(tmp_path)
     recovering = _RecoveringStore(delegate)

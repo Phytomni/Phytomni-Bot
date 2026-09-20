@@ -30,19 +30,15 @@ from tests.server.test_query_route import (
     server,
 )
 from tests.support.chat_fakes import install_chat_handler
+from tests.support.execution_contract_fixtures import install_successful_review
 from tests.support.expert_router_fakes import patch_expert_router
-from tests.support.handler_fakes import review_success_result
 
 import mcp_server_phytomni.api.a2a.messages as a2a_messages
 from mcp_server_phytomni.agents.expert import ToolSelectionError
 from mcp_server_phytomni.agents.expert import router as expert_router
-from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.config.defaults import ApiConfig, ServerConfig
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
-from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-    SQLiteExecutionJournal,
-)
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 from mcp_server_phytomni.runtime.upload_registry import (
     UploadMetadata,
@@ -378,15 +374,7 @@ async def test_expert_synchronous_selection_uses_canonical_runtime(
     """Synchronous Expert selections retain their business result contract."""
     tool_name, slug, arguments = case
     if slug == "review":
-
-        async def fake_review(**_kwargs: Any) -> Any:
-            return ReviewExecution(
-                run_id="expert-review-sync",
-                status="succeeded",
-                result=review_success_result(),
-            )
-
-        monkeypatch.setattr(api_app, "_run_review_with_interrupt", fake_review)
+        install_successful_review(monkeypatch, run_id="expert-review-sync")
     else:
         _stub_tool_handler(
             monkeypatch,
@@ -459,7 +447,7 @@ async def test_route_autonomous_dispatches_one_allowed_tool(
     assert response.status_code == 200
     assert len(invoked) == 1
     assert invoked[0]["agent"] == "chat"
-    assert captured["tool_choice"] == "required"
+    assert captured["tool_choice"] == "auto"
     assert [tool["function"]["name"] for tool in captured["tools"]] == [
         "ReviewAgent",
         "ChatAgent",
@@ -501,15 +489,31 @@ async def test_literal_agent_mention_stays_on_chat_surface(
 @pytest.mark.parametrize(
     "case",
     [
-        (_router_completion(empty_choices=True), ["DataAgent"], None),
-        (_router_completion(), ["DataAgent"], None),
+        (
+            _router_completion(empty_choices=True),
+            ["DataAgent", "KnowledgeAgent"],
+            None,
+        ),
+        (
+            _router_completion(),
+            ["DataAgent", "KnowledgeAgent"],
+            None,
+        ),
         (
             _router_completion(("ChatAgent", "{}"), ("DataAgent", "{}")),
             ["ChatAgent", "DataAgent"],
             None,
         ),
-        (_router_completion(("MissingAgent", "{}")), ["ChatAgent"], None),
-        (_router_completion(("DataAgent", "{}")), ["ChatAgent"], None),
+        (
+            _router_completion(("MissingAgent", "{}")),
+            ["ChatAgent", "KnowledgeAgent"],
+            None,
+        ),
+        (
+            _router_completion(("DataAgent", "{}")),
+            ["ChatAgent", "KnowledgeAgent"],
+            None,
+        ),
     ],
     ids=(
         "decline-no-chat",
@@ -628,8 +632,8 @@ async def test_route_forced_mismatch_coerces_and_dispatches(
         ("BriefGeneAgent", "brief_gene", False),
         ("AnalystAgent", "analyst", True),
         ("DeepGenomeAgent", "deep_genome", False),
-        ("DigitalDesignAgent", "design", True),
-        ("GeneNetworkAgent", "network", True),
+        ("DigitalDesignAgent", "design", False),
+        ("GeneNetworkAgent", "network", False),
     ],
 )
 async def test_route_attachment_forwarding_follows_capability_matrix(
@@ -858,13 +862,13 @@ async def test_legacy_a2a_no_selection_cannot_relax_strict_route(
     assert response.status_code == 502
     assert response.json()["error"]["code"] == ("routing_contract_violation")
     assert captured == {
-        "tool_choice": "required",
+        "tool_choice": "auto",
         "allowed_order": ("DataAgent", "KnowledgeAgent"),
     }
     assert legacy_calls == ["legacy question"]
     assert invoked == 0
     records = RunRegistry(tasks_db_path).list_runs(owner="u1")
-    assert records == []
+    assert not records
 
 
 async def test_route_unknown_tool_returns_502(
@@ -893,54 +897,3 @@ async def test_route_unknown_tool_returns_502(
     )
     assert response.status_code == 502
     assert invoked == 0
-
-
-async def test_route_invalid_arguments_returns_400_and_records_failure(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-) -> None:
-    """LLM-extracted arguments that fail the agent schema -> 400.
-
-    The KnowledgeAgent schema requires ``user_query``; an empty argument
-    object makes ``invoke_tool_enveloped`` raise ``McpError`` with
-    ``INVALID_PARAMS``, which the route maps to 400 rather than letting it
-    fall through to the generic 500 handler.
-    """
-    invoked = 0
-
-    async def forbidden_handler(_args: Any) -> dict[str, Any]:
-        nonlocal invoked
-        invoked += 1
-        raise AssertionError("agent invocation must not run")
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.KNOWLEDGE_AGENT.value,
-        forbidden_handler,
-    )
-    _patch_select(monkeypatch, ToolSelection("KnowledgeAgent", {}))
-    response = await _post_query_route(
-        api_client,
-        issued_api_key,
-        {"user_query": "rice", "allowed_tools": ["KnowledgeAgent"]},
-    )
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == (
-        "selected_agent_invalid_argument"
-    )
-    assert response.json()["error"]["stage"] == "dispatch_validation"
-    assert response.json()["error"]["retryable"] is False
-    assert invoked == 0
-    records = RunRegistry(tasks_db_path).list_runs(owner="u1")
-    assert len(records) == 1
-    record = records[0]
-    assert record.spec.agent == "knowledge"
-    assert record.status == "failed"
-    assert record.request_info.execution_id
-    projection = SQLiteExecutionJournal(tasks_db_path).get_projection(
-        record.request_info.execution_id, owner="u1"
-    )
-    assert projection.status.value == "failed"
-    assert projection.terminal is not None

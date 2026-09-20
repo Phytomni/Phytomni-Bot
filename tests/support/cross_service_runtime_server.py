@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,7 @@ from mcp_server_phytomni.runtime.execution_reservation_v2 import (
     SQLiteExecutionReservationRepository,
 )
 from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    TERMINAL_EXECUTION_STATUSES,
     ExecutionCommand,
 )
 from mcp_server_phytomni.runtime.operation_instrumentation_v2 import (
@@ -59,10 +61,21 @@ from mcp_server_phytomni.runtime.provider_instrumentation_v2 import (
 )
 from tests.support.all_agent_runtime_cases import REAL_HANDLER_FIXTURES
 
-_remaining_provider_failures = int(
-    os.environ.get("PHYTOMNI_CROSS_SERVICE_PROVIDER_FAILURES", "0")
+
+@dataclass
+class _RuntimeState:
+    """Mutable state isolated to one deterministic server process."""
+
+    remaining_provider_failures: int
+    successful_provider_calls: int = 0
+    waiting_execution_id: str | None = None
+
+
+_STATE = _RuntimeState(
+    remaining_provider_failures=int(
+        os.environ.get("PHYTOMNI_CROSS_SERVICE_PROVIDER_FAILURES", "0")
+    )
 )
-_successful_provider_calls = 0
 _lifecycle_scenario = os.environ.get(
     "PHYTOMNI_CROSS_SERVICE_SCENARIO", ""
 ).strip()
@@ -79,7 +92,6 @@ _legacy_stuck_fixture = os.environ.get(
     "PHYTOMNI_CROSS_SERVICE_LEGACY_STUCK", ""
 ).strip()
 _real_chat_handler = mcp_app.TOOL_HANDLERS["ChatAgent"]
-_waiting_execution_id: str | None = None
 
 
 async def _exercise_parallel_siblings() -> None:
@@ -103,21 +115,23 @@ async def _exercise_parallel_siblings() -> None:
 
 
 async def _deterministic_chat_provider(**_kwargs: object) -> dict[str, Any]:
-    global _remaining_provider_failures, _successful_provider_calls
-    if _remaining_provider_failures > 0:
-        _remaining_provider_failures -= 1
+    if _STATE.remaining_provider_failures > 0:
+        _STATE.remaining_provider_failures -= 1
         raise ConnectError("deterministic transient provider failure")
     delay_ms = int(
         os.environ.get("PHYTOMNI_CROSS_SERVICE_PROVIDER_DELAY_MS", "0")
     )
     if delay_ms > 0:
         await asyncio.sleep(delay_ms / 1000)
-    _successful_provider_calls += 1
-    if _topology_scenario == "parallel" and _successful_provider_calls == 1:
+    _STATE.successful_provider_calls += 1
+    if (
+        _topology_scenario == "parallel"
+        and _STATE.successful_provider_calls == 1
+    ):
         await _exercise_parallel_siblings()
     content = (
         os.environ.get("PHYTOMNI_CROSS_SERVICE_ANSWER", "cross-service")
-        if _successful_provider_calls == 1
+        if _STATE.successful_provider_calls == 1
         else "[]"
     )
     return {
@@ -133,7 +147,6 @@ async def _deterministic_chat_provider(**_kwargs: object) -> dict[str, Any]:
 
 async def _scenario_chat_handler(args: Any) -> Any:
     """Wrap the Chat handler with a deterministic lifecycle observation."""
-    global _waiting_execution_id
     value = await _real_chat_handler(args)
     if not _lifecycle_scenario:
         return value
@@ -153,7 +166,7 @@ async def _scenario_chat_handler(args: Any) -> Any:
             raise RuntimeError(
                 "waiting-input scenario requires Runtime boundary"
             )
-        _waiting_execution_id = boundary.context.execution_id
+        _STATE.waiting_execution_id = boundary.context.execution_id
         record_input_required(
             surface_id="cross-service-confirmation",
             widget="confirm",
@@ -168,13 +181,14 @@ async def _deterministic_resume_a2ui_run(
 ) -> Any:
     """Resume the test checkpoint through the production Runtime operation."""
     del run_id, debug
-    if _waiting_execution_id is None:
+    execution_id = _STATE.waiting_execution_id
+    if execution_id is None:
         raise RuntimeError("waiting execution identity is unavailable")
     owner = api_app.current_request_user() or "anonymous"
     db_path = api_app.resolve_tasks_db_path()
     reservation = api_app.SQLiteExecutionReservationRepository(db_path).get(
         owner=owner,
-        execution_id=_waiting_execution_id,
+        execution_id=execution_id,
     )
 
     async def resume_domain() -> Any:
@@ -190,7 +204,7 @@ async def _deterministic_resume_a2ui_run(
     await api_app.invoke_public_agent_operation(
         db_path=db_path,
         owner=owner,
-        execution_id=_waiting_execution_id,
+        execution_id=execution_id,
         agent_slug="chat",
         operation="resume",
         action_id=body.action_id,
@@ -232,13 +246,8 @@ async def _deterministic_agent_provider(**_kwargs: object) -> dict[str, Any]:
 
 
 async def _deterministic_task_reconcile(task_id: str) -> dict[str, Any]:
-    if _provider_terminal not in {
-        "succeeded",
-        "partial",
-        "failed",
-        "cancelled",
-        "timed_out",
-    }:
+    terminal_values = {status.value for status in TERMINAL_EXECUTION_STATUSES}
+    if _provider_terminal not in terminal_values:
         raise ValueError("unsupported deterministic provider terminal")
     return {
         "task_id": task_id,
@@ -294,6 +303,7 @@ def _seed_legacy_stuck_execution() -> None:
 
 
 def main() -> None:
+    """Run the cross-service runtime test server."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
@@ -309,7 +319,7 @@ def main() -> None:
     if _lifecycle_scenario:
         mcp_app.TOOL_HANDLERS["ChatAgent"] = _scenario_chat_handler
     if _lifecycle_scenario == "waiting_input":
-        api_app._resume_a2ui_run = _deterministic_resume_a2ui_run
+        setattr(api_app, "_resume_a2ui_run", _deterministic_resume_a2ui_run)
     scratch_root = Path(os.environ["TEMP_DIR"])
     setattr(
         handlers,

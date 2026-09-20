@@ -10,158 +10,59 @@ import json
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from importlib import import_module
+from typing import Unpack
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
+from .execution_journal_schema import EXECUTION_V2_WORK_UNIT_COLUMNS
 from .execution_journal_v2 import SpanStatus, WorkUnitStatus
+from .execution_provider_join_store_v2 import ProviderJoinLeaseRepositoryMixin
+from .execution_store_support_v2 import execution_is_live
+from .execution_work_models_v2 import (
+    CancellationState,
+    ExecutionWorkConflictError,
+    ExecutionWorkInvariantError,
+    ExecutionWorkNotFoundError,
+    Identifier,
+    JoinPolicy,
+    MissingOrConflictFields,
+    ProviderBindingFields,
+    ProviderTraceHealth,
+    ProviderTraceStateFields,
+    SpanRecord,
+    SpanSpec,
+    WorkLeaseClaimFields,
+    WorkRetryFields,
+    WorkUnitRecord,
+    WorkUnitSpec,
+    WorkUnitUpdateFields,
+)
+from .execution_work_status_v2 import TERMINAL_WORK_UNIT_VALUES
 from .sqlite import sqlite_transaction
 
-Identifier = str
-JoinPolicy = Literal["all", "fail_fast", "best_effort", "quorum"]
-CancellationState = Literal[
-    "none", "requested", "confirmed", "best_effort", "unsupported"
+_PROVIDER_TRACE_UPDATE_COLUMNS = frozenset(
+    column
+    for column, _column_type in EXECUTION_V2_WORK_UNIT_COLUMNS
+    if column.startswith("provider_trace_")
+)
+
+__all__ = [
+    "CancellationState",
+    "ExecutionWorkConflictError",
+    "ExecutionWorkInvariantError",
+    "ExecutionWorkNotFoundError",
+    "Identifier",
+    "JoinPolicy",
+    "ProviderBindingFields",
+    "ProviderTraceHealth",
+    "SQLiteExecutionWorkRepository",
+    "SpanRecord",
+    "SpanSpec",
+    "WorkUnitRecord",
+    "WorkUnitSpec",
 ]
-ProviderTraceHealth = Literal["healthy", "degraded", "unavailable"]
 
 
-class ExecutionWorkNotFoundError(LookupError):
-    """The execution, span, or work unit is unknown or foreign."""
-
-
-class ExecutionWorkConflictError(RuntimeError):
-    """An optimistic revision, lease, or stable identity conflicted."""
-
-
-class ExecutionWorkInvariantError(ValueError):
-    """A parent, attempt, or lifecycle invariant was violated."""
-
-
-class _FrozenModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class SpanSpec(_FrozenModel):
-    """Stable logical identity and public metadata for one span."""
-
-    owner: Identifier = Field(min_length=1, max_length=256)
-    execution_id: Identifier = Field(min_length=1, max_length=128)
-    span_id: Identifier = Field(min_length=1, max_length=128)
-    parent_span_id: Identifier | None = Field(default=None, max_length=128)
-    work_unit_id: Identifier | None = Field(default=None, max_length=128)
-    kind: str = Field(min_length=1, max_length=64)
-    label_key: str = Field(min_length=1, max_length=128)
-    attempt: int = Field(default=1, ge=1)
-    join_policy: JoinPolicy | None = None
-
-
-class SpanRecord(SpanSpec):
-    """Current inspectable span state."""
-
-    status: SpanStatus = SpanStatus.PENDING
-    started_at: str | None = None
-    last_activity_at: str | None = None
-    ended_at: str | None = None
-    revision: int = Field(default=0, ge=0)
-
-    def to_spec(self) -> SpanSpec:
-        return SpanSpec.model_validate(
-            self.model_dump(
-                include={
-                    "owner",
-                    "execution_id",
-                    "span_id",
-                    "parent_span_id",
-                    "work_unit_id",
-                    "kind",
-                    "label_key",
-                    "attempt",
-                    "join_policy",
-                }
-            )
-        )
-
-
-class WorkUnitSpec(_FrozenModel):
-    """Stable logical work across one or more attempts."""
-
-    owner: Identifier = Field(min_length=1, max_length=256)
-    execution_id: Identifier = Field(min_length=1, max_length=128)
-    work_unit_id: Identifier = Field(min_length=1, max_length=128)
-    parent_span_id: Identifier = Field(min_length=1, max_length=128)
-    operation_key: str = Field(min_length=1, max_length=128)
-    driver: str = Field(min_length=1, max_length=64)
-    join_policy: JoinPolicy | None = None
-    max_attempts: int = Field(default=1, ge=1)
-    deadline_at: str | None = Field(default=None, max_length=64)
-
-    @field_validator("deadline_at")
-    @classmethod
-    def validate_deadline(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise ValueError("deadline_at must be ISO-8601") from exc
-        if parsed.utcoffset() is None:
-            raise ValueError("deadline_at must include a timezone")
-        return value
-
-
-class WorkUnitRecord(WorkUnitSpec):
-    """Current operational state for one logical unit."""
-
-    status: WorkUnitStatus = WorkUnitStatus.PENDING
-    attempt: int = Field(default=1, ge=1)
-    next_attempt_at: str | None = None
-    lease_owner: str | None = None
-    lease_expires_at: str | None = None
-    provider_kind: str | None = None
-    provider_task_id: str | None = None
-    provider_revision: int = Field(default=0, ge=0)
-    provider_trace_cursor: str | None = Field(default=None, max_length=128)
-    provider_trace_revision: int = Field(default=0, ge=0)
-    provider_trace_adapter_version: str | None = Field(
-        default=None, max_length=32
-    )
-    provider_trace_overlap_identities: tuple[str, ...] = Field(
-        default_factory=tuple, max_length=64
-    )
-    provider_trace_contact_at: str | None = Field(default=None, max_length=64)
-    provider_trace_health: ProviderTraceHealth = "healthy"
-    cancellation_state: CancellationState = "none"
-    last_error_code: str | None = None
-    created_at: str
-    updated_at: str
-    revision: int = Field(default=0, ge=0)
-
-    @field_validator("provider_trace_overlap_identities")
-    @classmethod
-    def validate_trace_overlap(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if any(not identity or len(identity) > 128 for identity in value):
-            raise ValueError("invalid provider trace overlap identity")
-        return value
-
-    @field_validator("provider_trace_contact_at")
-    @classmethod
-    def validate_trace_contact(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise ValueError(
-                "provider_trace_contact_at must be ISO-8601"
-            ) from exc
-        if parsed.utcoffset() is None:
-            raise ValueError(
-                "provider_trace_contact_at must include a timezone"
-            )
-        return value
-
-
-class SQLiteExecutionWorkRepository:
+class SQLiteExecutionWorkRepository(ProviderJoinLeaseRepositoryMixin):
     """CAS-protected span/work-unit state over the shared registry DB."""
 
     def __init__(
@@ -170,11 +71,10 @@ class SQLiteExecutionWorkRepository:
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        from .run_registry import RunRegistry
-
         self.db_path = db_path
         self._clock = clock or (lambda: datetime.now(UTC))
-        RunRegistry(db_path)
+        registry_module = import_module(".run_registry", __package__)
+        registry_module.RunRegistry(db_path)
 
     def create_span(self, spec: SpanSpec) -> SpanRecord:
         """Create one stable span or return the identical existing row."""
@@ -231,6 +131,7 @@ class SQLiteExecutionWorkRepository:
         *,
         owner: str,
     ) -> SpanRecord:
+        """Read one owner-scoped span or raise a stable not-found error."""
         with sqlite_transaction(self.db_path) as connection:
             self._authorize(connection, owner, execution_id)
             record = self._read_span(connection, owner, execution_id, span_id)
@@ -267,6 +168,7 @@ class SQLiteExecutionWorkRepository:
         status: SpanStatus | str,
         expected_revision: int,
     ) -> SpanRecord:
+        """CAS-update span status and its lifecycle timestamps."""
         status = SpanStatus(status)
         now = self._clock().isoformat()
         terminal = status in {
@@ -304,11 +206,11 @@ class SQLiteExecutionWorkRepository:
             if result.rowcount != 1:
                 self._raise_missing_or_conflict(
                     connection,
-                    "execution_spans",
-                    "span_id",
-                    owner,
-                    execution_id,
-                    span_id,
+                    table="execution_spans",
+                    id_column="span_id",
+                    owner=owner,
+                    execution_id=execution_id,
+                    identity=span_id,
                 )
             connection.commit()
         return self.get_span(execution_id, span_id, owner=owner)
@@ -376,6 +278,7 @@ class SQLiteExecutionWorkRepository:
         *,
         owner: str,
     ) -> WorkUnitRecord:
+        """Read one owner-scoped work unit or raise a stable error."""
         with sqlite_transaction(self.db_path) as connection:
             self._authorize(connection, owner, execution_id)
             record = self._read_work_unit(
@@ -443,11 +346,7 @@ class SQLiteExecutionWorkRepository:
             raise ValueError("limit must be between 1 and 1000")
         timestamp = now.isoformat()
         terminal = (
-            WorkUnitStatus.SUCCEEDED.value,
-            WorkUnitStatus.PARTIAL.value,
-            WorkUnitStatus.FAILED.value,
-            WorkUnitStatus.CANCELLED.value,
-            WorkUnitStatus.TIMED_OUT.value,
+            *TERMINAL_WORK_UNIT_VALUES,
             WorkUnitStatus.WAITING_INPUT.value,
         )
         provider_filter = (
@@ -476,163 +375,6 @@ class SQLiteExecutionWorkRepository:
             self.get_work_unit(execution_id, work_unit_id, owner=owner)
             for owner, execution_id, work_unit_id in rows
         )
-
-    def list_ready_provider_joins(
-        self,
-        *,
-        limit: int = 100,
-    ) -> tuple[tuple[str, str], ...]:
-        """Return remote executions whose durable work is fully terminal.
-
-        A separate scan owns the join crash window: the last provider fact
-        may commit before the root execution is settled.  Keeping this query
-        independent of due work units makes that window retryable after a
-        process restart without reopening a terminal child.
-        """
-        if limit < 1 or limit > 1000:
-            raise ValueError("limit must be between 1 and 1000")
-        terminal = (
-            WorkUnitStatus.SUCCEEDED.value,
-            WorkUnitStatus.PARTIAL.value,
-            WorkUnitStatus.FAILED.value,
-            WorkUnitStatus.CANCELLED.value,
-            WorkUnitStatus.TIMED_OUT.value,
-        )
-        now = self._clock().isoformat()
-        with sqlite_transaction(self.db_path) as connection:
-            rows = connection.execute(
-                "SELECT r.user_id, r.execution_id FROM runs r "
-                "WHERE r.execution_id IS NOT NULL "
-                "AND r.execution_terminal_outcome IS NULL "
-                "AND r.execution_tombstoned_at IS NULL "
-                "AND (r.execution_provider_join_lease_expires_at IS NULL "
-                "OR r.execution_provider_join_lease_expires_at <= ?) "
-                "AND EXISTS (SELECT 1 FROM execution_work_units p "
-                "WHERE p.owner_ref = r.user_id "
-                "AND p.execution_id = r.execution_id "
-                "AND p.provider_kind IS NOT NULL) "
-                "AND NOT EXISTS (SELECT 1 FROM execution_work_units w "
-                "WHERE w.owner_ref = r.user_id "
-                "AND w.execution_id = r.execution_id "
-                "AND w.status NOT IN (?, ?, ?, ?, ?)) "
-                "ORDER BY r.updated_at, r.execution_id LIMIT ?",
-                (now, *terminal, limit),
-            ).fetchall()
-        return tuple(
-            (str(owner), str(execution_id)) for owner, execution_id in rows
-        )
-
-    def claim_provider_join_lease(
-        self,
-        execution_id: str,
-        *,
-        owner: str,
-        lease_token: str,
-        lease_seconds: int,
-    ) -> bool:
-        """Single-flight one provider terminal join across supervisors."""
-        if not lease_token or len(lease_token) > 128:
-            raise ValueError("bounded lease_token is required")
-        if lease_seconds < 1 or lease_seconds > 3600:
-            raise ValueError("lease_seconds must be between 1 and 3600")
-        now = self._clock()
-        expires = (now + timedelta(seconds=lease_seconds)).isoformat()
-        with sqlite_transaction(self.db_path) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            self._authorize(connection, owner, execution_id)
-            result = connection.execute(
-                "UPDATE runs SET execution_provider_join_lease_owner = ?, "
-                "execution_provider_join_lease_expires_at = ? "
-                "WHERE user_id = ? AND execution_id = ? "
-                "AND execution_terminal_outcome IS NULL "
-                "AND execution_tombstoned_at IS NULL "
-                "AND (execution_provider_join_lease_owner IS NULL "
-                "OR execution_provider_join_lease_expires_at IS NULL "
-                "OR execution_provider_join_lease_expires_at <= ?)",
-                (
-                    lease_token,
-                    expires,
-                    owner,
-                    execution_id,
-                    now.isoformat(),
-                ),
-            )
-            connection.commit()
-        return result.rowcount == 1
-
-    def renew_provider_join_lease(
-        self,
-        execution_id: str,
-        *,
-        owner: str,
-        lease_token: str,
-        lease_seconds: int,
-    ) -> bool:
-        """Extend only the exact claim token held by this join attempt."""
-        if not lease_token or len(lease_token) > 128:
-            raise ValueError("bounded lease_token is required")
-        if lease_seconds < 1 or lease_seconds > 3600:
-            raise ValueError("lease_seconds must be between 1 and 3600")
-        expires = (
-            self._clock() + timedelta(seconds=lease_seconds)
-        ).isoformat()
-        with sqlite_transaction(self.db_path) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            result = connection.execute(
-                "UPDATE runs SET execution_provider_join_lease_expires_at = ? "
-                "WHERE user_id = ? AND execution_id = ? "
-                "AND execution_provider_join_lease_owner = ? "
-                "AND execution_provider_join_lease_expires_at > ?",
-                (
-                    expires,
-                    owner,
-                    execution_id,
-                    lease_token,
-                    self._clock().isoformat(),
-                ),
-            )
-            connection.commit()
-        return result.rowcount == 1
-
-    def owns_provider_join_lease(
-        self,
-        execution_id: str,
-        *,
-        owner: str,
-        lease_token: str,
-    ) -> bool:
-        """Check the exact unexpired token before the Runtime commit."""
-        now = self._clock().isoformat()
-        with sqlite_transaction(self.db_path) as connection:
-            row = connection.execute(
-                "SELECT 1 FROM runs WHERE user_id = ? AND execution_id = ? "
-                "AND execution_provider_join_lease_owner = ? "
-                "AND execution_provider_join_lease_expires_at > ? "
-                "AND execution_terminal_outcome IS NULL "
-                "AND execution_tombstoned_at IS NULL",
-                (owner, execution_id, lease_token, now),
-            ).fetchone()
-        return row is not None
-
-    def release_provider_join_lease(
-        self,
-        execution_id: str,
-        *,
-        owner: str,
-        lease_token: str,
-    ) -> bool:
-        """Release only the provider join lease owned by this supervisor."""
-        with sqlite_transaction(self.db_path) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            result = connection.execute(
-                "UPDATE runs SET execution_provider_join_lease_owner = NULL, "
-                "execution_provider_join_lease_expires_at = NULL "
-                "WHERE user_id = ? AND execution_id = ? "
-                "AND execution_provider_join_lease_owner = ?",
-                (owner, execution_id, lease_token),
-            )
-            connection.commit()
-        return result.rowcount == 1
 
     def execution_deadline_at(
         self,
@@ -671,12 +413,12 @@ class SQLiteExecutionWorkRepository:
             self._authorize(connection, owner, execution_id)
             self._update_work_unit(
                 connection,
-                owner,
-                execution_id,
-                work_unit_id,
-                expected_revision,
-                {"status": status.value},
-                now,
+                owner=owner,
+                execution_id=execution_id,
+                work_unit_id=work_unit_id,
+                expected_revision=expected_revision,
+                updates={"status": status.value},
+                updated_at=now,
             )
             connection.commit()
         return self.get_work_unit(execution_id, work_unit_id, owner=owner)
@@ -685,39 +427,49 @@ class SQLiteExecutionWorkRepository:
         self,
         execution_id: str,
         work_unit_id: str,
-        *,
-        owner: str,
-        worker_id: str,
-        lease_seconds: int,
-        expected_revision: int,
+        **fields: Unpack[WorkLeaseClaimFields],
     ) -> WorkUnitRecord:
-        if lease_seconds < 1:
+        """CAS-acquire or renew a bounded worker lease."""
+        if fields["lease_seconds"] < 1:
             raise ValueError("lease_seconds must be positive")
         now = self._clock()
-        expires = (now + timedelta(seconds=lease_seconds)).isoformat()
+        expires = (
+            now + timedelta(seconds=fields["lease_seconds"])
+        ).isoformat()
         with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
-            self._authorize(connection, owner, execution_id)
+            self._authorize(connection, fields["owner"], execution_id)
             current = self._read_work_unit(
-                connection, owner, execution_id, work_unit_id
+                connection,
+                fields["owner"],
+                execution_id,
+                work_unit_id,
             )
             if current is None:
                 raise ExecutionWorkNotFoundError(work_unit_id)
-            if current.lease_owner not in {None, worker_id} and _is_future(
-                current.lease_expires_at, now
-            ):
+            if current.lease_owner not in {
+                None,
+                fields["worker_id"],
+            } and _is_future(current.lease_expires_at, now):
                 raise ExecutionWorkConflictError("lease_held")
             self._update_work_unit(
                 connection,
-                owner,
-                execution_id,
-                work_unit_id,
-                expected_revision,
-                {"lease_owner": worker_id, "lease_expires_at": expires},
-                now.isoformat(),
+                owner=fields["owner"],
+                execution_id=execution_id,
+                work_unit_id=work_unit_id,
+                expected_revision=fields["expected_revision"],
+                updates={
+                    "lease_owner": fields["worker_id"],
+                    "lease_expires_at": expires,
+                },
+                updated_at=now.isoformat(),
             )
             connection.commit()
-        return self.get_work_unit(execution_id, work_unit_id, owner=owner)
+        return self.get_work_unit(
+            execution_id,
+            work_unit_id,
+            owner=fields["owner"],
+        )
 
     def release_lease(
         self,
@@ -750,11 +502,11 @@ class SQLiteExecutionWorkRepository:
             if result.rowcount != 1:
                 self._raise_missing_or_conflict(
                     connection,
-                    "execution_work_units",
-                    "work_unit_id",
-                    owner,
-                    execution_id,
-                    work_unit_id,
+                    table="execution_work_units",
+                    id_column="work_unit_id",
+                    owner=owner,
+                    execution_id=execution_id,
+                    identity=work_unit_id,
                 )
             connection.commit()
         return self.get_work_unit(execution_id, work_unit_id, owner=owner)
@@ -763,15 +515,10 @@ class SQLiteExecutionWorkRepository:
         self,
         execution_id: str,
         work_unit_id: str,
-        *,
-        owner: str,
-        worker_id: str,
-        next_attempt_at: datetime,
-        error_code: str,
-        expected_revision: int,
+        **fields: Unpack[WorkRetryFields],
     ) -> WorkUnitRecord:
         """Release one owned lease into a bounded durable retry state."""
-        if not error_code or len(error_code) > 128:
+        if not fields["error_code"] or len(fields["error_code"]) > 128:
             raise ValueError("bounded error_code is required")
         now = self._clock().isoformat()
         with sqlite_transaction(self.db_path) as connection:
@@ -786,27 +533,31 @@ class SQLiteExecutionWorkRepository:
                 "AND lease_owner = ? AND revision = ?",
                 (
                     WorkUnitStatus.RETRY_SCHEDULED.value,
-                    next_attempt_at.isoformat(),
-                    error_code,
+                    fields["next_attempt_at"].isoformat(),
+                    fields["error_code"],
                     now,
-                    owner,
+                    fields["owner"],
                     execution_id,
                     work_unit_id,
-                    worker_id,
-                    expected_revision,
+                    fields["worker_id"],
+                    fields["expected_revision"],
                 ),
             )
             if result.rowcount != 1:
                 self._raise_missing_or_conflict(
                     connection,
-                    "execution_work_units",
-                    "work_unit_id",
-                    owner,
-                    execution_id,
-                    work_unit_id,
+                    table="execution_work_units",
+                    id_column="work_unit_id",
+                    owner=fields["owner"],
+                    execution_id=execution_id,
+                    identity=work_unit_id,
                 )
             connection.commit()
-        return self.get_work_unit(execution_id, work_unit_id, owner=owner)
+        return self.get_work_unit(
+            execution_id,
+            work_unit_id,
+            owner=fields["owner"],
+        )
 
     def start_attempt(
         self,
@@ -816,6 +567,7 @@ class SQLiteExecutionWorkRepository:
         owner: str,
         expected_revision: int,
     ) -> WorkUnitRecord:
+        """Advance a retryable work unit within its attempt budget."""
         now = self._clock().isoformat()
         with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -828,16 +580,16 @@ class SQLiteExecutionWorkRepository:
                 raise ExecutionWorkInvariantError("attempt_budget_exhausted")
             self._update_work_unit(
                 connection,
-                owner,
-                execution_id,
-                work_unit_id,
-                expected_revision,
-                {
+                owner=owner,
+                execution_id=execution_id,
+                work_unit_id=work_unit_id,
+                expected_revision=expected_revision,
+                updates={
                     "attempt": current.attempt + 1,
                     "status": WorkUnitStatus.PENDING.value,
                     "next_attempt_at": None,
                 },
-                now,
+                updated_at=now,
             )
             connection.commit()
         return self.get_work_unit(execution_id, work_unit_id, owner=owner)
@@ -846,13 +598,14 @@ class SQLiteExecutionWorkRepository:
         self,
         execution_id: str,
         work_unit_id: str,
-        *,
-        owner: str,
-        provider_kind: str,
-        provider_task_id: str,
-        provider_revision: int,
-        expected_revision: int,
+        **binding: Unpack[ProviderBindingFields],
     ) -> WorkUnitRecord:
+        """CAS-bind an immutable provider task and monotonic revision."""
+        owner = binding["owner"]
+        provider_kind = binding["provider_kind"]
+        provider_task_id = binding["provider_task_id"]
+        provider_revision = binding["provider_revision"]
+        expected_revision = binding["expected_revision"]
         if provider_revision < 0:
             raise ValueError("provider_revision must be non-negative")
         now = self._clock().isoformat()
@@ -872,16 +625,16 @@ class SQLiteExecutionWorkRepository:
                 raise ExecutionWorkConflictError("stale_provider_revision")
             self._update_work_unit(
                 connection,
-                owner,
-                execution_id,
-                work_unit_id,
-                expected_revision,
-                {
+                owner=owner,
+                execution_id=execution_id,
+                work_unit_id=work_unit_id,
+                expected_revision=expected_revision,
+                updates={
                     "provider_kind": provider_kind,
                     "provider_task_id": provider_task_id,
                     "provider_revision": provider_revision,
                 },
-                now,
+                updated_at=now,
             )
             connection.commit()
         return self.get_work_unit(execution_id, work_unit_id, owner=owner)
@@ -895,17 +648,18 @@ class SQLiteExecutionWorkRepository:
         state: CancellationState,
         expected_revision: int,
     ) -> WorkUnitRecord:
+        """CAS-update the finite cancellation outcome for a work unit."""
         now = self._clock().isoformat()
         with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._update_work_unit(
                 connection,
-                owner,
-                execution_id,
-                work_unit_id,
-                expected_revision,
-                {"cancellation_state": state},
-                now,
+                owner=owner,
+                execution_id=execution_id,
+                work_unit_id=work_unit_id,
+                expected_revision=expected_revision,
+                updates={"cancellation_state": state},
+                updated_at=now,
             )
             connection.commit()
         return self.get_work_unit(execution_id, work_unit_id, owner=owner)
@@ -914,41 +668,41 @@ class SQLiteExecutionWorkRepository:
         self,
         execution_id: str,
         work_unit_id: str,
-        *,
-        owner: str,
-        cursor: str | None,
-        source_revision: int,
-        adapter_version: str,
-        overlap_identities: tuple[str, ...],
-        contact_at: str | None,
-        health: ProviderTraceHealth,
-        expected_revision: int,
+        **fields: Unpack[ProviderTraceStateFields],
     ) -> WorkUnitRecord:
         """Commit bounded private provider-trace checkpoint state."""
         candidate = WorkUnitRecord.model_validate(
             {
                 **self.get_work_unit(
-                    execution_id, work_unit_id, owner=owner
+                    execution_id,
+                    work_unit_id,
+                    owner=fields["owner"],
                 ).model_dump(),
-                "provider_trace_cursor": cursor,
-                "provider_trace_revision": source_revision,
-                "provider_trace_adapter_version": adapter_version,
-                "provider_trace_overlap_identities": overlap_identities,
-                "provider_trace_contact_at": contact_at,
-                "provider_trace_health": health,
+                "provider_trace_cursor": fields["cursor"],
+                "provider_trace_revision": fields["source_revision"],
+                "provider_trace_adapter_version": fields["adapter_version"],
+                "provider_trace_overlap_identities": fields[
+                    "overlap_identities"
+                ],
+                "provider_trace_contact_at": fields["contact_at"],
+                "provider_trace_health": fields["health"],
             }
         )
         now = self._clock().isoformat()
         with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             current = self._read_work_unit(
-                connection, owner, execution_id, work_unit_id
+                connection,
+                fields["owner"],
+                execution_id,
+                work_unit_id,
             )
             if current is None:
                 raise ExecutionWorkNotFoundError(work_unit_id)
             if (
-                current.provider_trace_adapter_version == adapter_version
-                and source_revision < current.provider_trace_revision
+                current.provider_trace_adapter_version
+                == fields["adapter_version"]
+                and fields["source_revision"] < current.provider_trace_revision
             ):
                 raise ExecutionWorkConflictError(
                     "stale_provider_trace_revision"
@@ -962,11 +716,11 @@ class SQLiteExecutionWorkRepository:
                 provider_contact_at = current.provider_trace_contact_at
             self._update_work_unit(
                 connection,
-                owner,
-                execution_id,
-                work_unit_id,
-                expected_revision,
-                {
+                owner=fields["owner"],
+                execution_id=execution_id,
+                work_unit_id=work_unit_id,
+                expected_revision=fields["expected_revision"],
+                updates={
                     "provider_trace_cursor": candidate.provider_trace_cursor,
                     "provider_trace_revision": (
                         candidate.provider_trace_revision
@@ -981,10 +735,14 @@ class SQLiteExecutionWorkRepository:
                     "provider_trace_contact_at": provider_contact_at,
                     "provider_trace_health": candidate.provider_trace_health,
                 },
-                now,
+                updated_at=now,
             )
             connection.commit()
-        return self.get_work_unit(execution_id, work_unit_id, owner=owner)
+        return self.get_work_unit(
+            execution_id,
+            work_unit_id,
+            owner=fields["owner"],
+        )
 
     def observe_provider_contact(
         self,
@@ -1043,12 +801,7 @@ class SQLiteExecutionWorkRepository:
     def _authorize(
         connection: sqlite3.Connection, owner: str, execution_id: str
     ) -> None:
-        found = connection.execute(
-            "SELECT 1 FROM runs WHERE user_id = ? AND execution_id = ? "
-            "AND execution_tombstoned_at IS NULL LIMIT 1",
-            (owner, execution_id),
-        ).fetchone()
-        if found is None:
+        if not execution_is_live(connection, owner, execution_id):
             raise ExecutionWorkNotFoundError(execution_id)
 
     @staticmethod
@@ -1141,12 +894,7 @@ class SQLiteExecutionWorkRepository:
     def _update_work_unit(
         self,
         connection: sqlite3.Connection,
-        owner: str,
-        execution_id: str,
-        work_unit_id: str,
-        expected_revision: int,
-        updates: dict[str, object],
-        updated_at: str,
+        **fields: Unpack[WorkUnitUpdateFields],
     ) -> None:
         allowed = {
             "attempt",
@@ -1157,50 +905,47 @@ class SQLiteExecutionWorkRepository:
             "provider_kind",
             "provider_task_id",
             "provider_revision",
-            "provider_trace_cursor",
-            "provider_trace_revision",
-            "provider_trace_adapter_version",
-            "provider_trace_overlap_json",
-            "provider_trace_contact_at",
-            "provider_trace_health",
             "cancellation_state",
-        }
+        } | _PROVIDER_TRACE_UPDATE_COLUMNS
+        updates = fields["updates"]
         if not updates or not set(updates).issubset(allowed):
             raise ExecutionWorkInvariantError("invalid_work_unit_update")
         assignments = ", ".join(f"{column} = ?" for column in updates)
-        values = [*updates.values(), updated_at]
+        values = [*updates.values(), fields["updated_at"]]
         result = connection.execute(
             f"UPDATE execution_work_units SET {assignments}, updated_at = ?, "
             "revision = revision + 1 WHERE owner_ref = ? AND execution_id = ? "
             "AND work_unit_id = ? AND revision = ?",
-            (*values, owner, execution_id, work_unit_id, expected_revision),
+            (
+                *values,
+                fields["owner"],
+                fields["execution_id"],
+                fields["work_unit_id"],
+                fields["expected_revision"],
+            ),
         )
         if result.rowcount != 1:
             self._raise_missing_or_conflict(
                 connection,
-                "execution_work_units",
-                "work_unit_id",
-                owner,
-                execution_id,
-                work_unit_id,
+                table="execution_work_units",
+                id_column="work_unit_id",
+                owner=fields["owner"],
+                execution_id=fields["execution_id"],
+                identity=fields["work_unit_id"],
             )
 
     @staticmethod
     def _raise_missing_or_conflict(
         connection: sqlite3.Connection,
-        table: str,
-        id_column: str,
-        owner: str,
-        execution_id: str,
-        identity: str,
+        **fields: Unpack[MissingOrConflictFields],
     ) -> None:
         found = connection.execute(
-            f"SELECT 1 FROM {table} WHERE owner_ref = ? "
-            f"AND execution_id = ? AND {id_column} = ?",
-            (owner, execution_id, identity),
+            f"SELECT 1 FROM {fields['table']} WHERE owner_ref = ? "
+            f"AND execution_id = ? AND {fields['id_column']} = ?",
+            (fields["owner"], fields["execution_id"], fields["identity"]),
         ).fetchone()
         if found is None:
-            raise ExecutionWorkNotFoundError(identity)
+            raise ExecutionWorkNotFoundError(fields["identity"])
         raise ExecutionWorkConflictError("revision_conflict")
 
 

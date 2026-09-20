@@ -9,10 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
-from enum import StrEnum
-from typing import Any, Literal, NotRequired, TypedDict, Unpack
-
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, NotRequired, TypedDict, Unpack
 
 from ..agents.shared.a2ui import (
     A2uiSurfaceValidationError,
@@ -28,122 +25,34 @@ from ..runtime.deep_genome_store_projection import (
     snapshot_metadata_from_mapping,
 )
 from ..runtime.execution_defaults import empty_execution_projection
-from ..runtime.locale import SupportedLocale, message_for
 from ..runtime.run_registry_delivery import attach_public_delivery
 from ..runtime.run_registry_models import (
     RESEARCH_FAILURE_CODES,
     RESEARCH_FAILURE_MESSAGES,
-    ResearchFailureCode,
     research_failure_contract_values,
 )
+from . import lifecycle_errors as _lifecycle_errors
+from .lifecycle_errors import (
+    LifecycleInvariantError,
+    ResearchFailureDetail,
+    SafeErrorCode,
+)
+
+SafeApiError = _lifecycle_errors.SafeApiError
+conversation_context_unavailable_error = (
+    _lifecycle_errors.conversation_context_unavailable_error
+)
+expert_safe_error = _lifecycle_errors.expert_safe_error
+run_persistence_error = _lifecycle_errors.run_persistence_error
 
 __all__ = [
-    "LifecycleInvariantError",
-    "ResearchFailureDetail",
-    "SafeApiError",
-    "SafeErrorCode",
+    *_lifecycle_errors.__all__,
     "build_agent_run_response",
     "canonicalize_agent_run_body",
     "canonicalize_run_record",
-    "conversation_context_unavailable_error",
     "empty_agent_result",
-    "expert_safe_error",
     "project_research_lifecycle",
-    "run_persistence_error",
 ]
-
-
-class SafeErrorCode(StrEnum):
-    """Stable public-safe lifecycle and transport error codes."""
-
-    RUN_PERSISTENCE_FAILED = "run_persistence_failed"
-    RUNNING_WITHOUT_WORK = "running_without_work"
-    SUCCEEDED_WITHOUT_PERSISTENCE = "succeeded_without_persistence"
-    INPUT_REQUIRED_WITHOUT_SURFACE = "input_required_without_surface"
-    PROJECTION_FAILED = "projection_failed"
-    A2UI_ACTION_CONFLICT = "a2ui_action_conflict"
-    CHECKPOINT_NOT_AVAILABLE = "checkpoint_not_available"
-    ROUTING_CONTRACT_VIOLATION = "routing_contract_violation"
-    ROUTING_UPSTREAM_FAILED = "routing_upstream_failed"
-    SELECTED_AGENT_INVALID_ARGUMENT = "selected_agent_invalid_argument"
-    UPSTREAM_FAILED = "upstream_failed"
-    UPSTREAM_TIMEOUT = "upstream_timeout"
-    CONVERSATION_CONTEXT_UNAVAILABLE = "conversation_context_unavailable"
-
-
-class ResearchFailureDetail(BaseModel):
-    """Bounded, public-safe detail for one durable Research failure."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    code: ResearchFailureCode
-    message: str = Field(min_length=1, max_length=512)
-    stage: Literal[
-        "input_resolution", "planning", "execution", "report_assembly"
-    ]
-    retryable: bool
-    http_status_hint: int = Field(ge=400, le=599)
-
-
-class LifecycleInvariantError(RuntimeError):
-    """Raised before an invalid run response reaches a public boundary."""
-
-    def __init__(self, code: SafeErrorCode) -> None:
-        super().__init__(code.value)
-        self.code = code
-
-
-@dataclass(slots=True)
-class SafeApiError(RuntimeError):
-    """One public-safe API failure routed through the factory handlers."""
-
-    status_code: int
-    code: str
-    message: str
-    stage: str | None = None
-    retryable: bool = False
-
-    def __post_init__(self) -> None:
-        RuntimeError.__init__(self, self.code)
-
-
-def expert_safe_error(
-    code: SafeErrorCode,
-    *,
-    status_code: int,
-    locale: SupportedLocale,
-    stage: str,
-    retryable: bool,
-) -> SafeApiError:
-    """Build one localized, request-data-free Expert error."""
-    return SafeApiError(
-        status_code=status_code,
-        code=code.value,
-        message=message_for(code.value, locale),
-        stage=stage,
-        retryable=retryable,
-    )
-
-
-def run_persistence_error() -> SafeApiError:
-    """Return the stable public error for durable run persistence failures."""
-    return SafeApiError(
-        status_code=500,
-        code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
-        message="run persistence failed",
-        stage="persistence",
-    )
-
-
-def conversation_context_unavailable_error() -> SafeApiError:
-    """Return the retryable public error for pre-outcome context failure."""
-    return SafeApiError(
-        status_code=503,
-        code=SafeErrorCode.CONVERSATION_CONTEXT_UNAVAILABLE.value,
-        message="conversation context unavailable",
-        stage="context",
-        retryable=True,
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -486,6 +395,20 @@ def _safe_review_summary(draft: Any) -> str:
     return "Review approval required."
 
 
+def _project_research_history(
+    record: Mapping[str, Any], projected: dict[str, Any]
+) -> None:
+    """Attach the bounded Research stage and failure history when relevant."""
+    if record.get("agent") != "research":
+        return
+    stage, failure = project_research_lifecycle(
+        record.get("status"), record.get("stage"), record.get("failure")
+    )
+    projected["stage"] = stage
+    if failure is not None:
+        projected["failure"] = failure
+
+
 def canonicalize_run_record(
     record: Mapping[str, Any], *, debug: bool = False
 ) -> dict[str, Any]:
@@ -503,13 +426,7 @@ def canonicalize_run_record(
     canonical = canonicalize_agent_run_body(source)
     projected = _project_scalar_fields(record, _PUBLIC_RUN_HISTORY_FIELDS)
     projected["status"] = canonical["status"]
-    if record.get("agent") == "research":
-        stage, failure = project_research_lifecycle(
-            record.get("status"), record.get("stage"), record.get("failure")
-        )
-        projected["stage"] = stage
-        if failure is not None:
-            projected["failure"] = failure
+    _project_research_history(record, projected)
     projected["id"] = run_id
     projected["run_id"] = run_id
     if canonical["status"] == "input_required":

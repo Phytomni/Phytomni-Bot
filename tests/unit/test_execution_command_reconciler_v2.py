@@ -10,6 +10,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from tests.support.execution_dispatch_fixtures import (
+    canonical_test_identity,
+    invoke_dispatched_design,
+)
 
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
@@ -24,10 +28,8 @@ from mcp_server_phytomni.runtime.execution_command_reconciler_v2 import (
     reconcile_one_execution_command,
 )
 from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-    CanonicalReservationIdentity,
     bind_canonical_reservation_identity,
     bind_routed_reservation_identity,
-    invoke_public_agent,
 )
 from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
     SQLiteExecutionJournal,
@@ -178,6 +180,7 @@ def _command_row(db_path: str) -> tuple[object, ...]:
 def test_evidence_reader_covers_authoritative_unstarted_state(
     tmp_path: Path,
 ) -> None:
+    """Verify evidence reader covers authoritative unstarted state."""
     db_path = str(tmp_path / "reconcile-evidence.db")
     queue = _prepare_reconcile(db_path)
     claim = queue.claim_reconcile(worker_id="reconcile-evidence")
@@ -202,6 +205,7 @@ def test_evidence_reader_covers_authoritative_unstarted_state(
 def test_evidence_reader_recognizes_bound_routed_unstarted_state(
     tmp_path: Path,
 ) -> None:
+    """Verify evidence reader recognizes bound routed unstarted state."""
     db_path = str(tmp_path / "routed-reconcile-evidence.db")
     queue = _prepare_routed_reconcile(db_path)
     claim = queue.claim_reconcile(worker_id="routed-evidence")
@@ -220,6 +224,7 @@ def test_evidence_reader_recognizes_bound_routed_unstarted_state(
 async def test_safe_reconcile_releases_failed_turn_and_redispatches_once(
     tmp_path: Path,
 ) -> None:
+    """Verify safe reconcile releases failed turn and redispatches once."""
     db_path = str(tmp_path / "safe-reconcile.db")
     now = datetime(2026, 8, 24, 2, 15, tzinfo=UTC)
     queue = _prepare_reconcile(db_path, clock=now)
@@ -243,14 +248,10 @@ async def test_safe_reconcile_releases_failed_turn_and_redispatches_once(
     async def invoke(
         _tool: str, arguments: dict[str, object], **kwargs: object
     ) -> None:
-        fingerprint_version = kwargs["fingerprint_version"]
-        assert isinstance(fingerprint_version, int)
-        identity = CanonicalReservationIdentity(
-            owner="alice",
-            execution_id=_EXECUTION_ID,
-            fingerprint_version=2,
-            fingerprint=_FINGERPRINT,
-            command=ExecutionCommand(agent_slug="design", arguments=arguments),
+        identity = canonical_test_identity(
+            _EXECUTION_ID,
+            _FINGERPRINT,
+            ExecutionCommand(agent_slug="design", arguments=arguments),
         )
 
         async def business_call() -> dict[str, str]:
@@ -259,20 +260,8 @@ async def test_safe_reconcile_releases_failed_turn_and_redispatches_once(
             return {"status": "succeeded"}
 
         with bind_canonical_reservation_identity(identity):
-            await invoke_public_agent(
-                db_path=db_path,
-                owner="alice",
-                execution_id=str(kwargs["execution_id"]),
-                agent_slug="design",
-                arguments={
-                    key: value
-                    for key, value in arguments.items()
-                    if not key.startswith("__")
-                },
-                transport="service_dispatcher",
-                call=business_call,
-                fingerprint_version=fingerprint_version,
-                fingerprint=str(kwargs["fingerprint"]),
+            await invoke_dispatched_design(
+                db_path, arguments, kwargs, business_call
             )
 
     assert await dispatch_one_execution_command(
@@ -289,6 +278,7 @@ async def test_safe_reconcile_releases_failed_turn_and_redispatches_once(
 async def test_routed_reconcile_redispatches_once_through_existing_binding(
     tmp_path: Path,
 ) -> None:
+    """Verify routed reconcile redispatches once through existing binding."""
     db_path = str(tmp_path / "routed-safe-reconcile.db")
     now = datetime(2026, 8, 24, 2, 15, tzinfo=UTC)
     _prepare_routed_reconcile(db_path, clock=now)
@@ -313,14 +303,10 @@ async def test_routed_reconcile_redispatches_once_through_existing_binding(
     async def invoke(
         _tool: str, arguments: dict[str, object], **kwargs: object
     ) -> None:
-        fingerprint_version = kwargs["fingerprint_version"]
-        assert isinstance(fingerprint_version, int)
-        router_identity = CanonicalReservationIdentity(
-            owner="alice",
-            execution_id=_EXECUTION_ID,
-            fingerprint_version=2,
-            fingerprint=_FINGERPRINT,
-            command=ExecutionCommand(
+        router_identity = canonical_test_identity(
+            _EXECUTION_ID,
+            _FINGERPRINT,
+            ExecutionCommand(
                 agent_slug=EXPERT_ROUTER_AGENT_SLUG,
                 arguments=arguments,
             ),
@@ -348,16 +334,11 @@ async def test_routed_reconcile_redispatches_once_through_existing_binding(
                 command=selected,
             ),
         ):
-            await invoke_public_agent(
-                db_path=db_path,
-                owner="alice",
-                execution_id=str(kwargs["execution_id"]),
-                agent_slug="design",
-                arguments={"user_query": "Os01g0177400"},
-                transport="service_dispatcher",
-                call=provider_call,
-                fingerprint_version=fingerprint_version,
-                fingerprint=str(kwargs["fingerprint"]),
+            await invoke_dispatched_design(
+                db_path,
+                {"user_query": "Os01g0177400"},
+                kwargs,
+                provider_call,
             )
 
     assert await dispatch_one_execution_command(
@@ -374,6 +355,7 @@ async def test_routed_reconcile_redispatches_once_through_existing_binding(
 async def test_routed_reconcile_operation_evidence_suppresses_redispatch(
     tmp_path: Path,
 ) -> None:
+    """Verify routed reconcile operation evidence suppresses redispatch."""
     db_path = str(tmp_path / "routed-operation-evidence.db")
     queue = _prepare_routed_reconcile(db_path)
     now = datetime.now(UTC).isoformat()
@@ -410,6 +392,7 @@ async def test_routed_reconcile_operation_evidence_suppresses_redispatch(
 async def test_routed_operation_evidence_is_acknowledged_without_replay(
     tmp_path: Path,
 ) -> None:
+    """Verify routed operation evidence is acknowledged without replay."""
     db_path = str(tmp_path / "routed-operation-acknowledged.db")
     queue = _prepare_routed_reconcile(db_path)
     now = datetime.now(UTC).isoformat()
@@ -458,6 +441,7 @@ async def test_routed_operation_evidence_is_acknowledged_without_replay(
 async def test_reported_routed_ambiguous_row_recovers_once(
     tmp_path: Path,
 ) -> None:
+    """Verify reported routed ambiguous row recovers once."""
     db_path = str(tmp_path / "reported-routed-ambiguous.db")
     _prepare_routed_reconcile(db_path)
     with sqlite_transaction(db_path) as connection:
@@ -488,6 +472,7 @@ async def test_reported_routed_ambiguous_row_recovers_once(
 async def test_routed_reconcile_never_redispatches_twice(
     tmp_path: Path,
 ) -> None:
+    """Verify routed reconcile never redispatches twice."""
     db_path = str(tmp_path / "routed-single-redispatch.db")
     queue = _prepare_routed_reconcile(db_path)
     assert (
@@ -519,6 +504,7 @@ async def test_routed_reconcile_never_redispatches_twice(
 async def test_expired_routed_reconcile_terminalizes_without_replay(
     tmp_path: Path,
 ) -> None:
+    """Verify expired routed reconcile terminalizes without replay."""
     db_path = str(tmp_path / "expired-routed-reconcile.db")
     now = datetime(2026, 8, 24, 2, 15, tzinfo=UTC)
     queue = _prepare_routed_reconcile(db_path, clock=now)
@@ -551,6 +537,7 @@ async def test_expired_routed_reconcile_terminalizes_without_replay(
 async def test_routed_recovery_changed_selection_is_finite_conflict(
     tmp_path: Path,
 ) -> None:
+    """Verify routed recovery changed selection is finite conflict."""
     db_path = str(tmp_path / "routed-recovery-conflict.db")
     queue = _prepare_routed_reconcile(db_path)
     assert (
@@ -567,12 +554,10 @@ async def test_routed_recovery_changed_selection_is_finite_conflict(
         _tool: str, arguments: dict[str, object], **kwargs: object
     ) -> None:
         nonlocal provider_calls
-        router_identity = CanonicalReservationIdentity(
-            owner="alice",
-            execution_id=_EXECUTION_ID,
-            fingerprint_version=2,
-            fingerprint=_FINGERPRINT,
-            command=ExecutionCommand(
+        router_identity = canonical_test_identity(
+            _EXECUTION_ID,
+            _FINGERPRINT,
+            ExecutionCommand(
                 agent_slug=EXPERT_ROUTER_AGENT_SLUG,
                 arguments=arguments,
             ),
@@ -605,6 +590,7 @@ async def test_routed_recovery_changed_selection_is_finite_conflict(
 async def test_reconcile_acknowledges_existing_runtime_start_without_replay(
     tmp_path: Path,
 ) -> None:
+    """Verify reconcile acknowledges existing runtime start without replay."""
     db_path = str(tmp_path / "existing-start.db")
     queue = _prepare_reconcile(db_path)
     repository = SQLiteExecutionReservationRepository(db_path)
@@ -624,6 +610,7 @@ async def test_reconcile_acknowledges_existing_runtime_start_without_replay(
 async def test_ambiguous_reconcile_backs_off_without_normal_replay(
     tmp_path: Path,
 ) -> None:
+    """Verify ambiguous reconcile backs off without normal replay."""
     db_path = str(tmp_path / "ambiguous-reconcile.db")
     queue = _prepare_reconcile(db_path, failed_turn=False)
 
@@ -642,6 +629,7 @@ async def test_ambiguous_reconcile_backs_off_without_normal_replay(
 async def test_reconcile_deadline_settles_one_canonical_failure(
     tmp_path: Path,
 ) -> None:
+    """Verify reconcile deadline settles one canonical failure."""
     db_path = str(tmp_path / "deadline-reconcile.db")
     now = datetime(2026, 8, 24, 2, 15, tzinfo=UTC)
     queue = _prepare_reconcile(db_path, clock=now)
@@ -689,6 +677,7 @@ async def test_reconcile_deadline_settles_one_canonical_failure(
 async def test_terminal_race_is_acknowledged_without_second_terminal_fact(
     tmp_path: Path,
 ) -> None:
+    """Verify terminal race is acknowledged without second terminal fact."""
     db_path = str(tmp_path / "terminal-race.db")
     queue = _prepare_reconcile(db_path)
     repository = SQLiteExecutionReservationRepository(db_path)
@@ -726,6 +715,7 @@ def test_safe_redispatch_rejects_non_failed_context_turn(
     tmp_path: Path,
     turn_state: str,
 ) -> None:
+    """Verify safe redispatch rejects non failed context turn."""
     db_path = str(tmp_path / f"context-fence-{turn_state}.db")
     queue = _prepare_reconcile(db_path, failed_turn=False)
     context = ConversationContextStore(db_path)

@@ -11,10 +11,14 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from tests.support.execution_event_fixtures import todo_snapshot_intent
 
 from mcp_server_phytomni.runtime.execution_event_limits import (
     DEFAULT_EXECUTION_EVENT_LIMITS,
     ExecutionEventLimitError,
+)
+from mcp_server_phytomni.runtime.execution_event_store import (
+    SQLiteExecutionEventStore,
 )
 from mcp_server_phytomni.runtime.execution_events import (
     ExecutionEventIntent,
@@ -51,9 +55,6 @@ def _store(
     max_events: int = 10_000,
     timestamps: tuple[str, ...] = ("2026-08-18T00:00:00Z",) * 20,
 ):
-    from mcp_server_phytomni.runtime.execution_event_store import (
-        SQLiteExecutionEventStore,
-    )
 
     db_path = tmp_path / "retention.db"
     registry = RunRegistry(str(db_path))
@@ -75,6 +76,7 @@ def _store(
 def test_redundant_same_phase_progress_is_coalesced_before_persistence(
     tmp_path: Path,
 ) -> None:
+    """Verify redundant same phase progress is coalesced before persistence."""
     _db_path, _registry, store = _store(
         tmp_path,
         timestamps=(
@@ -106,6 +108,8 @@ def test_redundant_same_phase_progress_is_coalesced_before_persistence(
 def test_critical_fact_prunes_oldest_progress_and_keeps_sequence_monotonic(
     tmp_path: Path,
 ) -> None:
+    """Verify critical fact prunes oldest progress and keeps sequence
+    monotonic."""
     _db_path, _registry, store = _store(
         tmp_path,
         max_events=2,
@@ -129,17 +133,10 @@ def test_critical_fact_prunes_oldest_progress_and_keeps_sequence_monotonic(
     todo = store.append(
         "run-1",
         owner="alice",
-        intent=_intent(
-            "todo.snapshot",
-            payload={
-                "items": [
-                    {
-                        "id": "finish",
-                        "label_key": "todo.finish",
-                        "status": "pending",
-                    }
-                ]
-            },
+        intent=todo_snapshot_intent(
+            "finish",
+            "todo.finish",
+            "pending",
         ),
     )
 
@@ -156,6 +153,7 @@ def test_critical_fact_prunes_oldest_progress_and_keeps_sequence_monotonic(
 def test_volume_limit_never_discards_non_droppable_facts(
     tmp_path: Path,
 ) -> None:
+    """Verify volume limit never discards non droppable facts."""
     _db_path, _registry, store = _store(tmp_path, max_events=2)
     store.append("run-1", owner="alice", intent=_intent("run.started"))
     store.append(
@@ -184,6 +182,7 @@ def test_volume_limit_never_discards_non_droppable_facts(
 def test_parent_run_expiry_purges_event_ledger_and_projection(
     tmp_path: Path,
 ) -> None:
+    """Verify parent run expiry purges event ledger and projection."""
     db_path, registry, store = _store(tmp_path)
     store.append("run-1", owner="alice", intent=_intent("run.started"))
     with sqlite_transaction(db_path) as connection:

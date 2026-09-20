@@ -6,44 +6,23 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import cast
-
 import pytest
+from tests.support.provider_trace_v2 import (
+    provider_trace_observation,
+    provider_trace_presenter_arguments,
+    provider_trace_unit,
+)
 
 from mcp_server_phytomni.runtime.execution_journal_v2 import (
     WorkUnitPublicPayload,
 )
-from mcp_server_phytomni.runtime.execution_work_store_v2 import WorkUnitRecord
+from mcp_server_phytomni.runtime.gene_network_provider_trace_v2 import (
+    present_agent_provider_record,
+)
 from mcp_server_phytomni.runtime.provider_trace_v2 import (
-    ProviderTraceObservation,
     ProviderTraceRecord,
     ProviderTraceRecordClass,
 )
-
-
-def _unit() -> WorkUnitRecord:
-    return cast(
-        WorkUnitRecord,
-        SimpleNamespace(
-            execution_id="execution-public",
-            work_unit_id="private-analysis-work-unit",
-            parent_span_id="root-span",
-            attempt=1,
-        ),
-    )
-
-
-def _observation(record: ProviderTraceRecord) -> ProviderTraceObservation:
-    return ProviderTraceObservation(
-        schema_version=1,
-        adapter_version="analysis-delta-v1",
-        source_revision=7,
-        next_cursor="private-cursor",
-        snapshot_complete=False,
-        health="healthy",
-        records=(record,),
-    )
 
 
 @pytest.mark.parametrize(
@@ -61,9 +40,7 @@ def test_registered_provider_fact_becomes_agent_scoped_public_work(
     record_class: ProviderTraceRecordClass,
     semantic_code: str,
 ) -> None:
-    from mcp_server_phytomni.runtime.gene_network_provider_trace_v2 import (
-        present_agent_provider_record,
-    )
+    """Verify registered provider fact becomes agent scoped public work."""
 
     record = ProviderTraceRecord(
         source_identity="provider-record-secret",
@@ -73,9 +50,7 @@ def test_registered_provider_fact_becomes_agent_scoped_public_work(
     )
     intents = present_agent_provider_record(
         agent_slug,
-        _unit(),
-        _observation(record),
-        record,
+        *provider_trace_presenter_arguments(record),
         analysis_span_id="analysis-span-public",
     )
 
@@ -93,9 +68,7 @@ def test_registered_provider_fact_becomes_agent_scoped_public_work(
 
 
 def test_cross_agent_unknown_and_non_explicit_summaries_fail_closed() -> None:
-    from mcp_server_phytomni.runtime.gene_network_provider_trace_v2 import (
-        present_agent_provider_record,
-    )
+    """Verify cross agent unknown and non explicit summaries fail closed."""
 
     cross_agent = ProviderTraceRecord(
         source_identity="cross-agent",
@@ -103,15 +76,12 @@ def test_cross_agent_unknown_and_non_explicit_summaries_fail_closed() -> None:
         semantic_code="design.validate_target",
         status="running",
     )
-    assert (
-        present_agent_provider_record(
-            "analyst",
-            _unit(),
-            _observation(cross_agent),
-            cross_agent,
-            analysis_span_id="analysis-span-public",
-        )
-        == ()
+    assert not present_agent_provider_record(
+        "analyst",
+        provider_trace_unit(),
+        provider_trace_observation(cross_agent),
+        cross_agent,
+        analysis_span_id="analysis-span-public",
     )
 
     summary = ProviderTraceRecord(
@@ -123,13 +93,10 @@ def test_cross_agent_unknown_and_non_explicit_summaries_fail_closed() -> None:
         public_text="Selected a workflow.",
         explicit_public=True,
     )
-    assert (
-        present_agent_provider_record(
-            "analyst",
-            _unit(),
-            _observation(summary),
-            summary,
-            analysis_span_id="analysis-span-public",
-        )
-        == ()
+    assert not present_agent_provider_record(
+        "analyst",
+        provider_trace_unit(),
+        provider_trace_observation(summary),
+        summary,
+        analysis_span_id="analysis-span-public",
     )

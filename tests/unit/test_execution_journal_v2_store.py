@@ -10,36 +10,26 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from typing import NotRequired, TypedDict, Unpack
 
 import pytest
+from tests.support.execution_event_fixtures import seed_execution_run
 
+from mcp_server_phytomni.runtime.execution_event_limits import (
+    DEFAULT_EXECUTION_EVENT_LIMITS,
+    ExecutionEventLimitError,
+)
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    ExecutionJournalNotFoundError,
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    parse_execution_event_intent_v2,
+)
 from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
-def _seed_execution(db_path: Path, owner: str, execution_id: str) -> None:
-    from mcp_server_phytomni.runtime.run_registry import RunRegistry
-    from mcp_server_phytomni.runtime.run_registry_models import (
-        RunRequestInfo,
-        local_run_spec,
-    )
-
-    registry = RunRegistry(str(db_path))
-    registry.create_run(
-        local_run_spec(f"run-{execution_id}", owner, "chat"),
-        request_info=RunRequestInfo(execution_id=execution_id),
-    )
-    with sqlite_transaction(db_path) as connection:
-        connection.execute(
-            "UPDATE runs SET execution_id = ? WHERE run_id = ?",
-            (execution_id, f"run-{execution_id}"),
-        )
-        connection.commit()
-
-
 def _intent(index: int, *, idempotency_key: str | None = None):
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        parse_execution_event_intent_v2,
-    )
 
     return parse_execution_event_intent_v2(
         {
@@ -60,19 +50,21 @@ def _intent(index: int, *, idempotency_key: str | None = None):
     )
 
 
+class _TypedIntentOptions(TypedDict):
+    """Optional fields accepted by the typed intent test factory."""
+
+    idempotency_key: str
+    target: NotRequired[dict[str, str] | None]
+    work_unit_id: NotRequired[str | None]
+    attempt: NotRequired[int]
+
+
 def _typed_intent(
     event_type: str,
     status: str,
     payload: dict[str, object],
-    *,
-    idempotency_key: str,
-    target: dict[str, str] | None = None,
-    work_unit_id: str | None = None,
-    attempt: int = 1,
+    **options: Unpack[_TypedIntentOptions],
 ):
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        parse_execution_event_intent_v2,
-    )
 
     return parse_execution_event_intent_v2(
         {
@@ -80,12 +72,12 @@ def _typed_intent(
             "status": status,
             "source": "runtime",
             "span_id": "span-root",
-            "work_unit_id": work_unit_id,
-            "attempt": attempt,
+            "work_unit_id": options.get("work_unit_id"),
+            "attempt": options.get("attempt", 1),
             "summary": {"key": "activity.test", "text": event_type},
             "public_payload": payload,
-            "target": target,
-            "idempotency_key": idempotency_key,
+            "target": options.get("target"),
+            "idempotency_key": options["idempotency_key"],
         }
     )
 
@@ -93,12 +85,10 @@ def _typed_intent(
 def test_append_allocates_sequence_and_replays_idempotently(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
+    """Verify append allocates sequence and replays idempotently."""
 
     db_path = tmp_path / "journal.db"
-    _seed_execution(db_path, "alice", "turn-1")
+    seed_execution_run(db_path, "alice", "turn-1", include_request_info=True)
     ids = iter(("evt-1", "evt-should-not-be-used"))
     journal = SQLiteExecutionJournal(
         str(db_path),
@@ -131,12 +121,12 @@ def test_append_allocates_sequence_and_replays_idempotently(
 def test_concurrent_append_allocates_unique_commit_order(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
+    """Verify concurrent append allocates unique commit order."""
 
     db_path = tmp_path / "concurrent.db"
-    _seed_execution(db_path, "alice", "turn-concurrent")
+    seed_execution_run(
+        db_path, "alice", "turn-concurrent", include_request_info=True
+    )
     journal = SQLiteExecutionJournal(str(db_path))
 
     def append(index: int) -> int:
@@ -160,16 +150,12 @@ def test_concurrent_append_allocates_unique_commit_order(
 
 
 def test_pages_and_owner_checks_fail_closed(tmp_path: Path) -> None:
-    from mcp_server_phytomni.runtime.execution_event_limits import (
-        ExecutionEventLimitError,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        ExecutionJournalNotFoundError,
-        SQLiteExecutionJournal,
-    )
+    """Verify pages and owner checks fail closed."""
 
     db_path = tmp_path / "owners.db"
-    _seed_execution(db_path, "alice", "turn-owned")
+    seed_execution_run(
+        db_path, "alice", "turn-owned", include_request_info=True
+    )
     journal = SQLiteExecutionJournal(str(db_path))
     journal.append("turn-owned", owner="alice", intent=_intent(1))
 
@@ -184,15 +170,12 @@ def test_pages_and_owner_checks_fail_closed(tmp_path: Path) -> None:
 def test_progress_coalescing_retention_and_sequence_gaps(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_event_limits import (
-        DEFAULT_EXECUTION_EVENT_LIMITS,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
+    """Verify progress coalescing retention and sequence gaps."""
 
     db_path = tmp_path / "retention.db"
-    _seed_execution(db_path, "alice", "turn-retention")
+    seed_execution_run(
+        db_path, "alice", "turn-retention", include_request_info=True
+    )
     moments = iter(
         [
             "2026-08-19T00:00:00.000Z",
@@ -317,13 +300,12 @@ def test_progress_coalescing_retention_and_sequence_gaps(
 
 
 def test_tombstone_purges_only_v2_execution_children(tmp_path: Path) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        ExecutionJournalNotFoundError,
-        SQLiteExecutionJournal,
-    )
+    """Verify tombstone purges only V2 execution children."""
 
     db_path = tmp_path / "tombstone.db"
-    _seed_execution(db_path, "alice", "turn-delete")
+    seed_execution_run(
+        db_path, "alice", "turn-delete", include_request_info=True
+    )
     journal = SQLiteExecutionJournal(str(db_path))
     journal.append("turn-delete", owner="alice", intent=_intent(1))
     with sqlite_transaction(db_path) as connection:
@@ -355,12 +337,12 @@ def test_tombstone_purges_only_v2_execution_children(tmp_path: Path) -> None:
 def test_failed_append_rolls_back_and_corrupt_projection_rebuilds(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
+    """Verify failed append rolls back and corrupt projection rebuilds."""
 
     db_path = tmp_path / "crash.db"
-    _seed_execution(db_path, "alice", "turn-crash")
+    seed_execution_run(
+        db_path, "alice", "turn-crash", include_request_info=True
+    )
 
     def fail_event_id() -> str:
         raise RuntimeError("simulated crash before commit")
@@ -398,12 +380,12 @@ def test_failed_append_rolls_back_and_corrupt_projection_rebuilds(
 def test_retry_attempts_and_partial_join_remain_inspectable(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
+    """Verify retry attempts and partial join remain inspectable."""
 
     db_path = tmp_path / "partial.db"
-    _seed_execution(db_path, "alice", "turn-partial")
+    seed_execution_run(
+        db_path, "alice", "turn-partial", include_request_info=True
+    )
     journal = SQLiteExecutionJournal(str(db_path))
     first_attempt = journal.append(
         "turn-partial",

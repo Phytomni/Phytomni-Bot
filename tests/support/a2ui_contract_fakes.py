@@ -5,14 +5,27 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict, Unpack
+
+import httpx
 
 __all__ = [
     "cancelled_response",
     "chat_terminal_state",
     "confirm_surface",
     "gene_id_form_props",
+    "post_a2ui_action",
 ]
+
+
+class _A2UIActionFields(TypedDict):
+    """Keyword fields in one A2UI action request fixture."""
+
+    run_id: str
+    surface_id: str
+    widget: str
+    action_id: str
+    payload: dict[str, Any]
 
 
 def confirm_surface(
@@ -70,3 +83,16 @@ def gene_id_form_props() -> dict[str, Any]:
             }
         ],
     }
+
+
+async def post_a2ui_action(
+    client: httpx.AsyncClient,
+    api_key: str,
+    **action: Unpack[_A2UIActionFields],
+) -> httpx.Response:
+    """Post one authenticated A2UI action envelope."""
+    return await client.post(
+        f"/v1/runs/{action['run_id']}/a2ui-actions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json=dict(action),
+    )

@@ -22,12 +22,13 @@ from .execution_runtime_v2 import ExecutionRuntime
 from .execution_work_store_v2 import WorkUnitRecord
 
 
+@dataclass(init=False, repr=False, eq=False, match_args=False)
 class ProviderReconcilerProtocol(Protocol):
     """Minimal provider-recovery dependency used by the coordinator."""
 
-    async def reconcile(self, unit: WorkUnitRecord) -> bool:
+    async def reconcile(self, unit: WorkUnitRecord, /) -> bool:
         """Reconcile one durable provider work unit."""
-        ...
+        raise NotImplementedError
 
 
 @dataclass(frozen=True, slots=True)

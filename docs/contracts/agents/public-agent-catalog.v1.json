@@ -625,9 +625,7 @@
       "result_delivery": true,
       "subgraph_dependencies": [],
       "model": null,
-      "attachment_channels": [
-        "documents"
-      ],
+      "attachment_channels": [],
       "artifacts": true,
       "legacy_aliases": [],
       "graph_id": null,
@@ -695,9 +693,7 @@
       "result_delivery": true,
       "subgraph_dependencies": [],
       "model": null,
-      "attachment_channels": [
-        "documents"
-      ],
+      "attachment_channels": [],
       "artifacts": true,
       "legacy_aliases": [],
       "graph_id": null,

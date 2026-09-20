@@ -10,6 +10,14 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
+from tests.support.execution_event_fixtures import todo_snapshot_intent
+
+from mcp_server_phytomni.runtime.execution_event_projection import (
+    fold_execution_events,
+)
+from mcp_server_phytomni.runtime.execution_event_store import (
+    SQLiteExecutionEventStore,
+)
 from mcp_server_phytomni.runtime.execution_events import (
     ExecutionEventIntent,
     ExecutionEventV1,
@@ -95,9 +103,7 @@ def _events() -> tuple[ExecutionEventV1, ...]:
 
 
 def test_fold_reconstructs_lifecycle_todo_results_and_terminal_state() -> None:
-    from mcp_server_phytomni.runtime.execution_event_projection import (
-        fold_execution_events,
-    )
+    """Verify fold reconstructs lifecycle todo results and terminal state."""
 
     projection = fold_execution_events("run-1", _events())
 
@@ -114,9 +120,6 @@ def test_fold_reconstructs_lifecycle_todo_results_and_terminal_state() -> None:
 
 
 def _store(tmp_path: Path):
-    from mcp_server_phytomni.runtime.execution_event_store import (
-        SQLiteExecutionEventStore,
-    )
 
     db_path = tmp_path / "projection.db"
     registry = RunRegistry(str(db_path))
@@ -133,22 +136,16 @@ def _store(tmp_path: Path):
 def test_store_append_updates_the_replaceable_projection(
     tmp_path: Path,
 ) -> None:
+    """Verify store append updates the replaceable projection."""
     _db_path, store = _store(tmp_path)
     store.append("run-1", owner="alice", intent=_intent("run.started"))
     store.append(
         "run-1",
         owner="alice",
-        intent=_intent(
-            "todo.snapshot",
-            payload={
-                "items": [
-                    {
-                        "id": "one",
-                        "label_key": "todo.one",
-                        "status": "in_progress",
-                    }
-                ]
-            },
+        intent=todo_snapshot_intent(
+            "one",
+            "todo.one",
+            "in_progress",
         ),
     )
 
@@ -163,6 +160,7 @@ def test_store_append_updates_the_replaceable_projection(
 def test_missing_or_corrupt_projection_is_rebuilt_from_ledger(
     tmp_path: Path,
 ) -> None:
+    """Verify missing or corrupt projection is rebuilt from ledger."""
     db_path, store = _store(tmp_path)
     for event in _events()[:3]:
         intent = parse_execution_event_intent(
@@ -210,6 +208,7 @@ def test_missing_or_corrupt_projection_is_rebuilt_from_ledger(
 def test_later_todo_snapshot_replaces_earlier_items_atomically(
     tmp_path: Path,
 ) -> None:
+    """Verify later todo snapshot replaces earlier items atomically."""
     _db_path, store = _store(tmp_path)
     for item_id in ("old", "new"):
         store.append(

@@ -22,15 +22,7 @@ def record_input_required(
     revision = _action_revision(action_revision)
     if revision is None:
         return
-    _append_input_fact(
-        event_type="input.required",
-        status="waiting_input",
-        surface_id=surface_id,
-        outcome=None,
-        widget=widget,
-        action_revision=revision,
-        idempotency_key=f"input:{surface_id}:required:{revision}",
-    )
+    _append_input_required(surface_id, widget, revision)
 
 
 def record_projected_input_required(value: Mapping[str, object]) -> None:
@@ -58,51 +50,37 @@ def record_projected_input_required(value: Mapping[str, object]) -> None:
         record_input_required(surface_id=surface_id, widget=widget)
 
 
-def _append_input_fact(
-    *,
-    event_type: str,
-    status: str,
+def _append_input_required(
     surface_id: str,
-    outcome: str | None,
-    widget: str | None,
+    widget: str,
     action_revision: int,
-    idempotency_key: str,
 ) -> None:
     boundary = current_execution_boundary()
     if boundary is None:
         return
-    payload = (
-        {
-            "surface_id": surface_id,
-            "widget": widget,
-            "action_revision": action_revision,
-        }
-        if event_type == "input.required"
-        else {
-            "surface_id": surface_id,
-            "outcome": outcome,
-            "action_revision": action_revision,
-        }
-    )
     boundary.services.journal.append(
         boundary.context.execution_id,
         owner=boundary.context.owner_ref,
         intent=parse_execution_event_intent_v2(
             {
-                "type": event_type,
-                "status": status,
+                "type": "input.required",
+                "status": "waiting_input",
                 "source": "checkpoint",
                 "span_id": boundary.context.current_span_id,
                 "parent_span_id": boundary.context.parent_span_id,
                 "attempt": 1,
                 "summary": {
-                    "key": event_type,
-                    "text": event_type.replace(".", " ")
-                    .replace("_", " ")
-                    .title(),
+                    "key": "input.required",
+                    "text": "Input Required",
                 },
-                "public_payload": payload,
-                "idempotency_key": idempotency_key,
+                "public_payload": {
+                    "surface_id": surface_id,
+                    "widget": widget,
+                    "action_revision": action_revision,
+                },
+                "idempotency_key": (
+                    f"input:{surface_id}:required:{action_revision}"
+                ),
             }
         ),
     )

@@ -12,8 +12,16 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS, ErrorData
+from tests.support.execution_dispatch_fixtures import (
+    invoke_dispatched_design,
+    reserve_test_execution,
+)
 
+from mcp_server_phytomni.api import agent_runs
 from mcp_server_phytomni.api.lifecycle_contract import SafeApiError
+from mcp_server_phytomni.runtime.conversation_context.store import (
+    ConversationContextStore,
+)
 from mcp_server_phytomni.runtime.execution_command_dispatcher_v2 import (
     SQLiteExecutionCommandQueueV2,
     dispatch_one_execution_command,
@@ -38,19 +46,23 @@ from mcp_server_phytomni.runtime.execution_runtime_contracts import (
 )
 from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
+_REPORTED_QUERY = (
+    "Please help me design the protein structure based on evolution "
+    "information for gene Os01g0177400."
+)
+_REPORTED_FINGERPRINT = "f" * 64
+
 
 def test_selected_agent_reuses_outer_admission_fingerprint(tmp_path) -> None:
-    from mcp_server_phytomni.api import agent_runs
+    """Verify selected agent reuses outer admission fingerprint."""
 
     db_path = str(tmp_path / "routed-identity.db")
     fingerprint = "f" * 64
-    repository = SQLiteExecutionReservationRepository(db_path)
-    repository.reserve(
-        owner="alice",
-        execution_id="turn-routed-identity",
-        fingerprint_version=2,
-        fingerprint=fingerprint,
-        command=ExecutionCommand(
+    repository, _record = reserve_test_execution(
+        db_path,
+        "turn-routed-identity",
+        fingerprint,
+        ExecutionCommand(
             agent_slug=EXPERT_ROUTER_AGENT_SLUG,
             arguments={"__query": "route me"},
         ),
@@ -64,7 +76,7 @@ def test_selected_agent_reuses_outer_admission_fingerprint(tmp_path) -> None:
         ),
     )
 
-    assert agent_runs._existing_execution_identity(
+    assert getattr(agent_runs, "_existing_execution_identity")(
         db_path=db_path,
         owner="alice",
         execution_id="turn-routed-identity",
@@ -73,23 +85,15 @@ def test_selected_agent_reuses_outer_admission_fingerprint(tmp_path) -> None:
 
 def _reserve(db_path: str, execution_id: str = "turn-dispatcher") -> None:
     fingerprint = "a" * 64
-    SQLiteExecutionReservationRepository(db_path).reserve(
-        owner="alice",
-        execution_id=execution_id,
-        fingerprint_version=2,
-        fingerprint=fingerprint,
-        command=ExecutionCommand(
+    reserve_test_execution(
+        db_path,
+        execution_id,
+        fingerprint,
+        ExecutionCommand(
             agent_slug="chat",
             arguments={"user_query": "hello", "obs_file_list": []},
         ),
-        durable_command={
-            "agent": "chat",
-            "arguments": {"user_query": "hello", "obs_file_list": []},
-            "execution_id": execution_id,
-            "owner_ref": "alice",
-            "fingerprint_version": 2,
-            "fingerprint": fingerprint,
-        },
+        persist_command=True,
     )
 
 
@@ -139,6 +143,7 @@ async def test_background_dispatcher_bootstraps_a_fresh_database(
 
 @pytest.mark.asyncio
 async def test_dispatcher_invokes_once_and_acknowledges(tmp_path) -> None:
+    """Verify dispatcher invokes once and acknowledges."""
     db_path = str(tmp_path / "tasks.db")
     _reserve(db_path)
     calls: list[tuple[str, dict[str, object], dict[str, object]]] = []
@@ -167,29 +172,22 @@ async def test_dispatcher_invokes_once_and_acknowledges(tmp_path) -> None:
 async def test_dispatcher_accepts_private_expert_router_command(
     tmp_path,
 ) -> None:
+    """Verify dispatcher accepts private expert router command."""
     db_path = str(tmp_path / "expert.db")
     fingerprint = "e" * 64
     arguments = {
         "__query": "route me",
         "__allowed_tools": ["ChatAgent", "KnowledgeAgent"],
     }
-    SQLiteExecutionReservationRepository(db_path).reserve(
-        owner="alice",
-        execution_id="turn-expert",
-        fingerprint_version=2,
-        fingerprint=fingerprint,
-        command=ExecutionCommand(
+    reserve_test_execution(
+        db_path,
+        "turn-expert",
+        fingerprint,
+        ExecutionCommand(
             agent_slug=EXPERT_ROUTER_AGENT_SLUG,
             arguments=arguments,
         ),
-        durable_command={
-            "agent": EXPERT_ROUTER_AGENT_SLUG,
-            "arguments": arguments,
-            "execution_id": "turn-expert",
-            "owner_ref": "alice",
-            "fingerprint_version": 2,
-            "fingerprint": fingerprint,
-        },
+        persist_command=True,
     )
     calls: list[str] = []
 
@@ -212,6 +210,7 @@ async def test_dispatcher_accepts_private_expert_router_command(
 async def test_dispatcher_lease_allows_only_one_concurrent_claim(
     tmp_path,
 ) -> None:
+    """Verify dispatcher lease allows only one concurrent claim."""
     db_path = str(tmp_path / "tasks.db")
     _reserve(db_path)
     queue = SQLiteExecutionCommandQueueV2(db_path)
@@ -226,6 +225,7 @@ async def test_dispatcher_lease_allows_only_one_concurrent_claim(
 async def test_poison_command_rejects_without_invocation(
     tmp_path,
 ) -> None:
+    """Verify poison command rejects without invocation."""
     db_path = str(tmp_path / "tasks.db")
     _reserve(db_path)
     with sqlite_transaction(db_path) as connection:
@@ -339,6 +339,7 @@ async def test_dispatcher_terminal_cas_loser_publishes_no_failed_fact(
 async def test_transient_failure_retries_without_leaking_exception_text(
     tmp_path,
 ) -> None:
+    """Verify transient failure retries without leaking exception text."""
     db_path = str(tmp_path / "tasks.db")
     _reserve(db_path)
 
@@ -410,6 +411,7 @@ async def test_dispatch_failure_uses_finite_three_way_taxonomy(
     expected_state: str,
     expected_code: str,
 ) -> None:
+    """Verify dispatch failure uses finite three way taxonomy."""
     db_path = str(tmp_path / "failure-taxonomy.db")
     _reserve(db_path)
 
@@ -470,6 +472,7 @@ async def test_nonretryable_safe_failure_terminalizes_without_retries(
 async def test_started_execution_acknowledged_if_projection_fails(
     tmp_path,
 ) -> None:
+    """Verify started execution acknowledged if projection fails."""
     db_path = str(tmp_path / "started.db")
     _reserve(db_path)
     repository = SQLiteExecutionReservationRepository(db_path)
@@ -527,7 +530,7 @@ async def test_retry_exhaustion_reconciles_without_terminalizing_execution(
         "turn-dispatcher", owner="alice"
     )
     assert page is not None
-    assert page.items == ()
+    assert not page.items
 
 
 @pytest.mark.asyncio
@@ -542,23 +545,15 @@ async def test_design_context_replay_enters_reconcile_without_reinvocation(
         "Please help me design the protein structure based on evolution "
         "information for gene Os01g0177400."
     )
-    SQLiteExecutionReservationRepository(db_path).reserve(
-        owner="alice",
-        execution_id=execution_id,
-        fingerprint_version=2,
-        fingerprint=fingerprint,
-        command=ExecutionCommand(
+    reserve_test_execution(
+        db_path,
+        execution_id,
+        fingerprint,
+        ExecutionCommand(
             agent_slug="design",
             arguments={"user_query": query, "obs_file_list": []},
         ),
-        durable_command={
-            "agent": "design",
-            "arguments": {"user_query": query, "obs_file_list": []},
-            "execution_id": execution_id,
-            "owner_ref": "alice",
-            "fingerprint_version": 2,
-            "fingerprint": fingerprint,
-        },
+        persist_command=True,
     )
     calls = 0
 
@@ -612,28 +607,18 @@ async def test_reported_preclaim_conflict_persists_complete_stall_signature(
     tmp_path,
 ) -> None:
     """Capture the exact admitted/reconcile/zero-fact failure signature."""
-    from mcp_server_phytomni.runtime.conversation_context.store import (
-        ConversationContextStore,
-    )
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
 
     db_path = str(tmp_path / "reported-preclaim-stall.db")
     execution_id = "turn-fd0d579b-c9f4-4fe7-a22c-a9e9d8f48884"
     conversation_key = "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad6"
-    query = (
-        "Please help me design the protein structure based on evolution "
-        "information for gene Os01g0177400."
-    )
     prepared_arguments = {
-        "user_query": query,
+        "user_query": _REPORTED_QUERY,
         "obs_file_list": [],
         "resolve_gene_id": True,
     }
     durable_arguments = {
         **prepared_arguments,
-        "__query": query,
+        "__query": _REPORTED_QUERY,
         "__agent_slug": "design",
         "__allowed_tools": ["DigitalDesignAgent"],
         "__forced_tool": "DigitalDesignAgent",
@@ -646,25 +631,13 @@ async def test_reported_preclaim_conflict_persists_complete_stall_signature(
             "allowed_agent_ids": ["DigitalDesignAgent"],
         },
     }
-    fingerprint = "f" * 64
-    repository = SQLiteExecutionReservationRepository(db_path)
-    repository.reserve(
-        owner="alice",
-        execution_id=execution_id,
-        fingerprint_version=2,
-        fingerprint=fingerprint,
-        command=ExecutionCommand(
-            agent_slug="design", arguments=durable_arguments
-        ),
-        durable_command={
-            "agent": "design",
-            "arguments": durable_arguments,
-            "execution_id": execution_id,
-            "owner_ref": "alice",
-            "fingerprint_version": 2,
-            "fingerprint": fingerprint,
-        },
-    )
+    repository = reserve_test_execution(
+        db_path,
+        execution_id,
+        _REPORTED_FINGERPRINT,
+        ExecutionCommand(agent_slug="design", arguments=durable_arguments),
+        persist_command=True,
+    )[0]
     context = ConversationContextStore(db_path)
     context.begin_turn(conversation_key, "60", "append", 0)
     context.mark_turn_failed(conversation_key, "60")
@@ -673,28 +646,13 @@ async def test_reported_preclaim_conflict_persists_complete_stall_signature(
     async def invoke(
         _tool: str, arguments: dict[str, object], **kwargs: object
     ) -> None:
-        fingerprint_version = kwargs["fingerprint_version"]
-        assert isinstance(fingerprint_version, int)
-
         async def business_call() -> dict[str, str]:
             nonlocal business_calls
             business_calls += 1
             return {"status": "running"}
 
-        await invoke_public_agent(
-            db_path=db_path,
-            owner="alice",
-            execution_id=str(kwargs["execution_id"]),
-            agent_slug="design",
-            arguments={
-                key: value
-                for key, value in arguments.items()
-                if not key.startswith("__")
-            },
-            transport="service_dispatcher",
-            call=business_call,
-            fingerprint_version=fingerprint_version,
-            fingerprint=str(kwargs["fingerprint"]),
+        await invoke_dispatched_design(
+            db_path, arguments, kwargs, business_call
         )
 
     assert await dispatch_one_execution_command(
@@ -749,6 +707,7 @@ async def test_reported_preclaim_conflict_persists_complete_stall_signature(
 
 
 def test_reconcile_rows_use_a_dedicated_expiring_lease(tmp_path) -> None:
+    """Verify reconcile rows use a dedicated expiring lease."""
     db_path = str(tmp_path / "reconcile-lease.db")
     now = datetime(2026, 8, 24, 2, 15, tzinfo=UTC)
     current = now
@@ -778,6 +737,7 @@ def test_reconcile_rows_use_a_dedicated_expiring_lease(tmp_path) -> None:
 def test_reconcile_claim_can_reschedule_resolve_or_redispatch_once(
     tmp_path,
 ) -> None:
+    """Verify reconcile claim can reschedule resolve or redispatch once."""
     db_path = str(tmp_path / "reconcile-transitions.db")
     now = datetime(2026, 8, 24, 2, 15, tzinfo=UTC)
     queue = SQLiteExecutionCommandQueueV2(db_path, clock=lambda: now)

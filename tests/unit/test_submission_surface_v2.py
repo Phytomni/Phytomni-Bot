@@ -9,15 +9,22 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
+    invoke_public_agent,
+)
+from mcp_server_phytomni.runtime.execution_instrumentation_v2 import (
+    _tool_presentation,
+)
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
 from mcp_server_phytomni.runtime.execution_journal_v2 import (
     MessagePublicPayload,
 )
 
 
 def test_async_tool_completion_uses_a_bounded_submission_label() -> None:
-    from mcp_server_phytomni.runtime.execution_instrumentation_v2 import (
-        _tool_presentation,
-    )
+    """Verify async tool completion uses a bounded submission label."""
 
     presentation = _tool_presentation("GeneNetworkAgent")
 
@@ -29,12 +36,7 @@ def test_async_tool_completion_uses_a_bounded_submission_label() -> None:
 def test_nested_async_ack_is_not_published_as_assistant_content(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
+    """Verify nested async ack is not published as assistant content."""
 
     db_path = str(tmp_path / "nested-submission.db")
     provider_task_id = "provider-secret-task-123"
@@ -112,12 +114,7 @@ def test_nested_async_ack_is_not_published_as_assistant_content(
 def test_task_identifier_is_redacted_without_dropping_a_real_report(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
+    """Verify task identifier is redacted without dropping a real report."""
 
     db_path = str(tmp_path / "report-redaction.db")
     provider_task_id = "provider-secret-task-456"

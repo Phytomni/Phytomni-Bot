@@ -25,6 +25,8 @@ import os
 from importlib import import_module
 from typing import Any
 
+from mcp_server_phytomni.config.required_env import REQUIRED_OUTBOUND_FIELDS
+
 FAKE_ENV: dict[str, str] = {
     "PHYTOMNI_TESTING": "1",
     "DOMAIN_NAME": "viz-domain",
@@ -61,18 +63,11 @@ FAKE_ENV: dict[str, str] = {
     "BI_URL": "https://example.invalid/bi",
     "TOKEN_URL": "https://example.invalid/token",
     "OBS_SERVER": "obs.example.invalid",
-    "OUTBOUND_LLM_CONCURRENCY": "0",
-    "OUTBOUND_RETRIEVAL_CONCURRENCY": "0",
-    "OUTBOUND_RERANK_CONCURRENCY": "0",
-    "OUTBOUND_NL2SQL_CONCURRENCY": "0",
-    "OUTBOUND_ANALYSIS_CONTROL_CONCURRENCY": "0",
-    "OUTBOUND_ANALYSIS_STATUS_CONCURRENCY": "0",
-    "OUTBOUND_IAM_CONCURRENCY": "0",
-    "OUTBOUND_SPA_FAQ_CONCURRENCY": "0",
-    "OUTBOUND_BI_CONCURRENCY": "0",
-    "OUTBOUND_OBS_CONCURRENCY": "0",
-    "OUTBOUND_RELAY_CONTROL_CONCURRENCY": "0",
-    "OUTBOUND_INTEROP_CONCURRENCY": "0",
+    **{
+        field: "0"
+        for field in REQUIRED_OUTBOUND_FIELDS
+        if field.endswith("_CONCURRENCY")
+    },
     "OUTBOUND_POOL_WAIT_WARN_SECONDS": "1",
     "APP_ID": (
         '{"small": "viz-small-app",'

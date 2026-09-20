@@ -9,57 +9,90 @@ from __future__ import annotations
 import ast
 import asyncio
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
+
+import pytest
+from tests.support.execution_runtime_v2 import (
+    ExecutionStartRequest,
+    build_local_graph_runtime,
+    run_execution_start,
+    todo_snapshots,
+)
+
+from mcp_server_phytomni.mcp.formatting.agui import custom
+from mcp_server_phytomni.mcp.progress_events import emit_progress
+from mcp_server_phytomni.public_agent_catalog import public_agent_spec
+from mcp_server_phytomni.runtime.checkpoint_instrumentation_v2 import (
+    record_projected_input_required,
+)
+from mcp_server_phytomni.runtime.execution_drivers_v2 import (
+    ResumableGraphDriver,
+)
+from mcp_server_phytomni.runtime.execution_event_sink import (
+    emit_decision_note,
+    emit_reasoning_summary,
+)
+from mcp_server_phytomni.runtime.execution_instrumentation_v2 import (
+    current_execution_boundary,
+    instrument_model_invocation,
+    instrument_tool_invocation,
+    record_model_attempt_started,
+    record_model_retry,
+    schedule_durable_child_work,
+)
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    EventStatus,
+    ExecutionStatus,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    DriverOperation,
+    DriverOutcome,
+    TransportNeutralResult,
+)
+from mcp_server_phytomni.runtime.execution_runtime_v2 import ExecutionRuntime
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SQLiteExecutionWorkRepository,
+)
+from mcp_server_phytomni.runtime.langgraph_runner import invoke_graph
 
 
 def test_runtime_context_propagates_and_child_intent_precedes_scheduling(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.public_agent_catalog import public_agent_spec
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_instrumentation_v2 import (
-        current_execution_boundary,
-        schedule_durable_child_work,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
-    from mcp_server_phytomni.runtime.langgraph_runner import invoke_graph
+    """Verify runtime context propagates and child intent precedes
+    scheduling."""
 
     db_path = str(tmp_path / "instrumentation.db")
-    reservations = SQLiteExecutionReservationRepository(db_path)
     journal = SQLiteExecutionJournal(db_path)
     work = SQLiteExecutionWorkRepository(db_path)
     observed: list[tuple[str, bool]] = []
 
+    @dataclass(eq=False)
     class InnerGraph:
+        """Nested graph used to verify execution-context propagation."""
+
         async def ainvoke(self, value, **kwargs):
-            assert kwargs == {}
+            """Ainvoke helper: runtime context propagates and child intent."""
+            assert not kwargs
             return {"inner": value}
 
+    @dataclass(eq=False)
     class Graph:
+        """Outer graph that schedules a context-bound child invocation."""
+
         async def ainvoke(self, value, **kwargs):
+            """Ainvoke helper: runtime context propagates and child intent."""
             boundary = current_execution_boundary(required=True)
             assert boundary is not None
             assert boundary.context.parent_span_id is not None
-            assert kwargs == {}
+            assert not kwargs
             return {"value": await invoke_graph(InnerGraph(), value)}
 
     async def child() -> str:
@@ -93,33 +126,18 @@ def test_runtime_context_propagates_and_child_intent_precedes_scheduling(
         assert await task == "done"
         return DriverOutcome.succeeded(TransportNeutralResult(answer="ok"))
 
-    runtime = ExecutionRuntime(
-        reservations=reservations,
-        journal=journal,
-        work=work,
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
-    )
+    runtime = build_local_graph_runtime(db_path, start_handler, journal, work)
     spec = public_agent_spec("knowledge")
     assert spec is not None
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-context",
-            fingerprint_version=1,
-            fingerprint="a" * 64,
-            command=ExecutionCommand(
-                agent_slug=spec.slug,
-                arguments={"query": "rice"},
+    assert (
+        run_execution_start(
+            runtime,
+            ExecutionStartRequest(
+                "turn-context", "a" * 64, agent_slug=spec.slug
             ),
-            transport="test",
-        )
+        ).status.value
+        == "succeeded"
     )
-
-    assert outcome.status.value == "succeeded"
     assert observed == [("turn-context", True)]
     page = journal.list_events("turn-context", owner="alice", limit=20)
     assert page is not None
@@ -143,9 +161,7 @@ def test_runtime_context_propagates_and_child_intent_precedes_scheduling(
 
 
 def test_execution_boundary_is_absent_outside_runtime() -> None:
-    from mcp_server_phytomni.runtime.execution_instrumentation_v2 import (
-        current_execution_boundary,
-    )
+    """Verify execution boundary is absent outside runtime."""
 
     assert current_execution_boundary() is None
 
@@ -153,30 +169,7 @@ def test_execution_boundary_is_absent_outside_runtime() -> None:
 def test_checkpoint_surface_is_recorded_once_after_durable_projection(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.checkpoint_instrumentation_v2 import (
-        record_projected_input_required,
-    )
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        ResumableGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        ExecutionStatus,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
+    """Verify checkpoint surface is recorded once after durable projection."""
 
     db_path = str(tmp_path / "checkpoint-facts.db")
     journal = SQLiteExecutionJournal(db_path)
@@ -208,18 +201,11 @@ def test_checkpoint_surface_is_recorded_once_after_durable_projection(
             )
         },
     )
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-checkpoint",
-            fingerprint_version=1,
-            fingerprint="f" * 64,
-            command=ExecutionCommand(
-                agent_slug="review",
-                arguments={"query": "rice"},
-            ),
-            transport="test",
-        )
+    outcome = run_execution_start(
+        runtime,
+        ExecutionStartRequest(
+            "turn-checkpoint", "f" * 64, agent_slug="review"
+        ),
     )
 
     assert outcome.status.value == "waiting_input"
@@ -240,35 +226,7 @@ def test_checkpoint_surface_is_recorded_once_after_durable_projection(
 def test_legacy_progress_and_explicit_public_notes_adapt_to_v2_once(
     tmp_path: Path,
 ) -> None:
-    import pytest
-
-    from mcp_server_phytomni.mcp.formatting.agui import custom
-    from mcp_server_phytomni.mcp.progress_events import emit_progress
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_event_sink import (
-        emit_decision_note,
-        emit_reasoning_summary,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
+    """Verify legacy progress and explicit public notes adapt to V2 once."""
 
     db_path = str(tmp_path / "legacy-adapter.db")
     journal = SQLiteExecutionJournal(db_path)
@@ -297,27 +255,10 @@ def test_legacy_progress_and_explicit_public_notes_adapt_to_v2_once(
         )
         return DriverOutcome.succeeded(TransportNeutralResult(answer="ok"))
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(db_path),
-        journal=journal,
-        work=SQLiteExecutionWorkRepository(db_path),
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
-    )
-    asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-adapted-events",
-            fingerprint_version=1,
-            fingerprint="3" * 64,
-            command=ExecutionCommand(
-                agent_slug="knowledge", arguments={"query": "rice"}
-            ),
-            transport="test",
-        )
+    runtime = build_local_graph_runtime(db_path, start_handler, journal)
+    run_execution_start(
+        runtime,
+        ExecutionStartRequest("turn-adapted-events", "3" * 64),
     )
 
     page = journal.list_events("turn-adapted-events", owner="alice", limit=30)
@@ -335,28 +276,7 @@ def test_legacy_progress_and_explicit_public_notes_adapt_to_v2_once(
 def test_review_progress_advances_the_catalog_todo_plan(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.mcp.progress_events import emit_progress
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        ResumableGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
+    """Verify review progress advances the catalog todo plan."""
 
     db_path = str(tmp_path / "review-progress-todo.db")
     journal = SQLiteExecutionJournal(db_path)
@@ -379,28 +299,17 @@ def test_review_progress_advances_the_catalog_todo_plan(
             )
         },
     )
-    asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-review-progress",
-            fingerprint_version=1,
-            fingerprint="7" * 64,
-            command=ExecutionCommand(
-                agent_slug="review", arguments={"query": "rice"}
-            ),
-            transport="test",
-        )
+    run_execution_start(
+        runtime,
+        ExecutionStartRequest(
+            "turn-review-progress", "7" * 64, agent_slug="review"
+        ),
     )
 
     page = journal.list_events("turn-review-progress", owner="alice", limit=30)
     assert page is not None
-    snapshots = [
-        event.public_payload.model_dump(mode="json")["items"]
-        for event in page.items
-        if event.type.value == "todo.snapshot"
-        and event.status.value == "running"
-    ]
-    assert [item["status"] for item in snapshots[-1]] == [
+    snapshots = todo_snapshots(page.items, status=EventStatus.RUNNING)
+    assert [item.status for item in snapshots[-1]] == [
         "completed",
         "completed",
         "completed",
@@ -410,12 +319,16 @@ def test_review_progress_advances_the_catalog_todo_plan(
 
 
 def test_graph_runner_preserves_exact_optional_invocation_arguments() -> None:
-    from mcp_server_phytomni.runtime.langgraph_runner import invoke_graph
+    """Verify graph runner preserves exact optional invocation arguments."""
 
     calls = []
 
+    @dataclass(eq=False)
     class Graph:
+        """Graph that preserves optional invocation arguments unchanged."""
+
         async def ainvoke(self, value, **kwargs):
+            """Invoke the graph with its test arguments."""
             calls.append((value, kwargs))
             return "unchanged"
 
@@ -434,6 +347,7 @@ def test_graph_runner_preserves_exact_optional_invocation_arguments() -> None:
 
 
 def test_langgraph_business_calls_use_the_shared_runner() -> None:
+    """Verify langgraph business calls use the shared runner."""
     source_root = Path(__file__).parents[2] / "src" / "mcp_server_phytomni"
     allowed = {
         source_root / "runtime" / "langgraph_runner.py",
@@ -453,37 +367,13 @@ def test_langgraph_business_calls_use_the_shared_runner() -> None:
                 bypasses.append(
                     f"{path.relative_to(source_root)}:{node.lineno}"
                 )
-    assert bypasses == []
+    assert not bypasses
 
 
 def test_tool_boundary_records_safe_logical_work_attempts_and_duration(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.public_agent_catalog import public_agent_spec
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_instrumentation_v2 import (
-        instrument_tool_invocation,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
+    """Verify tool boundary records safe logical work attempts and duration."""
 
     db_path = str(tmp_path / "tool-boundary.db")
     journal = SQLiteExecutionJournal(db_path)
@@ -508,32 +398,14 @@ def test_tool_boundary_records_safe_logical_work_attempts_and_duration(
             )
         return DriverOutcome.succeeded(TransportNeutralResult(answer="ok"))
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(db_path),
-        journal=journal,
-        work=work,
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
+    runtime = build_local_graph_runtime(db_path, start_handler, journal, work)
+    assert (
+        run_execution_start(
+            runtime,
+            ExecutionStartRequest("turn-tools", "b" * 64),
+        ).status.value
+        == "succeeded"
     )
-    spec = public_agent_spec("knowledge")
-    assert spec is not None
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-tools",
-            fingerprint_version=1,
-            fingerprint="b" * 64,
-            command=ExecutionCommand(
-                agent_slug=spec.slug,
-                arguments={"query": "rice"},
-            ),
-            transport="test",
-        )
-    )
-    assert outcome.status.value == "succeeded"
 
     page = journal.list_events("turn-tools", owner="alice", limit=100)
     assert page is not None
@@ -551,6 +423,16 @@ def test_tool_boundary_records_safe_logical_work_attempts_and_duration(
     assert types.count("span.succeeded") == 1
     assert types.count("work_unit.failed") == 1
     assert types.count("span.failed") == 1
+    start_span_events = [
+        event
+        for event in tool_events
+        if event.type.value in {"span.created", "span.started"}
+    ]
+    assert all(
+        event.idempotency_key
+        == f"span:{event.span_id}:{event.type.value.rsplit('.', 1)[-1]}"
+        for event in start_span_events
+    )
 
     terminal = [
         event
@@ -589,32 +471,8 @@ def test_tool_boundary_records_safe_logical_work_attempts_and_duration(
 def test_model_boundary_records_retries_duration_cancellation_and_safe_failure(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_instrumentation_v2 import (
-        instrument_model_invocation,
-        record_model_attempt_started,
-        record_model_retry,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
+    """Verify model boundary records retries duration cancellation and safe
+    failure."""
 
     db_path = str(tmp_path / "model-boundary.db")
     journal = SQLiteExecutionJournal(db_path)
@@ -646,27 +504,10 @@ def test_model_boundary_records_retries_duration_cancellation_and_safe_failure(
             await instrument_model_invocation(cancelled_call)
         return DriverOutcome.succeeded(TransportNeutralResult(answer="ok"))
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(db_path),
-        journal=journal,
-        work=work,
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
-    )
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-models",
-            fingerprint_version=1,
-            fingerprint="8" * 64,
-            command=ExecutionCommand(
-                agent_slug="knowledge", arguments={"query": "rice"}
-            ),
-            transport="test",
-        )
+    runtime = build_local_graph_runtime(db_path, start_handler, journal, work)
+    outcome = run_execution_start(
+        runtime,
+        ExecutionStartRequest("turn-models", "8" * 64),
     )
     assert outcome.status.value == "succeeded"
 
@@ -711,6 +552,7 @@ def test_model_boundary_records_retries_duration_cancellation_and_safe_failure(
 
 
 def test_shared_chat_retry_loop_uses_the_model_boundary() -> None:
+    """Verify shared chat retry loop uses the model boundary."""
     source = (
         Path(__file__).parents[2]
         / "src"

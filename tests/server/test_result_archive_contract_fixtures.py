@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.support.execution_supervisor_v2 import ready_result_delivery
 
 from mcp_server_phytomni.api.run_lifecycle import project_public_run_record
 from mcp_server_phytomni.mcp.formatting.execution import (
@@ -202,16 +203,7 @@ def test_result_archive_fixture_is_ready_and_public(slug: str) -> None:
     archive = delivery["archive"]
     digest = f"sha256:{_DIGESTS[slug]}"
 
-    assert delivery == {
-        "schema_version": 1,
-        "required": True,
-        "status": "ready",
-        "revision": 1,
-        "inventory_digest": digest,
-        "archive": archive,
-        "error_code": None,
-        "retryable": False,
-    }
+    assert delivery == ready_result_delivery(digest, archive)
     assert archive == {
         "role": "result_archive",
         "name": f"{slug}-results.zip",

@@ -19,31 +19,15 @@ from tests.support.chat_fakes import (
     ChatCompletionOptions,
     chat_completion_payload,
 )
+from tests.support.http_execution_fixtures import seed_waiting_execution
 from tests.support.http_fakes import install_tool_handler
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.expert import ToolSelection
 from mcp_server_phytomni.api import app as api_app
-from mcp_server_phytomni.api.agent_run_support import (
-    running_agent_run_response,
-)
 from mcp_server_phytomni.api.app_support import (
     _ErrorResponseOptions,
     error_response,
-)
-from mcp_server_phytomni.runtime.execution_journal_v2 import (
-    ExecutionStatus,
-    SpanStatus,
-)
-from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-    SQLiteExecutionReservationRepository,
-)
-from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-    ExecutionCommand,
-)
-from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-    SpanSpec,
-    SQLiteExecutionWorkRepository,
 )
 from mcp_server_phytomni.runtime.locale import (
     SupportedLocale,
@@ -201,15 +185,22 @@ async def test_expert_body_locale_reaches_selected_agent(
 
     monkeypatch.setattr(api_app, "select_agent_tool", fake_select)
 
-    async def fake_stream(**kwargs: Any) -> tuple[dict[str, Any], int]:
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
         captured["locale"] = kwargs["arguments"].get("locale")
-        captured["payload_locale"] = kwargs["payload"].locale
-        return running_agent_run_response(
-            run_id="locale-chat-stream",
-            agent="chat",
+        return (
+            {
+                "id": "locale-chat-run",
+                "run_id": "locale-chat-run",
+                "object": "agent.run",
+                "agent": "chat",
+                "status": "succeeded",
+                "task_ids": [],
+                "result": {},
+            },
+            200,
         )
 
-    monkeypatch.setattr(api_app, "_start_routed_expert_stream", fake_stream)
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
     response = await api_client.post(
         "/v1/query/route",
         headers={
@@ -223,9 +214,8 @@ async def test_expert_body_locale_reaches_selected_agent(
         },
     )
 
-    assert response.status_code == 202
+    assert response.status_code == 200
     assert captured["locale"] == "zh-CN"
-    assert captured["payload_locale"] == "zh-CN"
 
 
 async def test_unsupported_body_locale_is_422(
@@ -286,43 +276,12 @@ def _seed_a2ui_run(
         },
         "status": "input_required",
     }
-    execution_id = f"turn-{run_id}"
-    reservations = SQLiteExecutionReservationRepository(
+    execution_id = seed_waiting_execution(
         tasks_db_path,
-        run_id_factory=lambda: run_id,
-        root_span_id_factory=lambda: f"span-{run_id}",
-    )
-    reservation = reservations.reserve(
+        run_id=run_id,
         owner="u1",
-        execution_id=execution_id,
-        fingerprint_version=2,
-        fingerprint=f"fixture:{run_id}",
-        command=ExecutionCommand(agent_slug="chat", arguments={}),
-    )
-    work = SQLiteExecutionWorkRepository(tasks_db_path)
-    root = work.create_span(
-        SpanSpec(
-            owner="u1",
-            execution_id=execution_id,
-            span_id=reservation.root_span_id,
-            kind="agent",
-            label_key="agent.chat",
-        )
-    )
-    work.update_span_status(
-        execution_id,
-        reservation.root_span_id,
-        owner="u1",
-        status=SpanStatus.WAITING_INPUT,
-        expected_revision=root.revision,
-    )
-    assert reservations.record_observation(
-        owner="u1",
-        execution_id=execution_id,
-        status=ExecutionStatus.WAITING_INPUT,
-        tracking_health="healthy",
-        cancellation_state="none",
-        next_attempt_at=None,
+        agent="chat",
+        result=result,
     )
     registry = RunRegistry(tasks_db_path)
     assert registry.update_request_info(
@@ -333,11 +292,6 @@ def _seed_a2ui_run(
             locale=locale,
             execution_id=execution_id,
         ),
-    )
-    assert registry.update_active_result(
-        run_id,
-        owner="u1",
-        result=result,
     )
 
 

@@ -9,6 +9,11 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from tests.support.execution_contract_fixtures import create_legacy_runs_table
+
+from mcp_server_phytomni.runtime.execution_event_store import (
+    SQLiteExecutionEventStore,
+)
 from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
@@ -32,9 +37,7 @@ def _columns(db_path: Path, table: str) -> tuple[str, ...]:
 def test_fresh_store_creates_event_and_projection_schema(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_event_store import (
-        SQLiteExecutionEventStore,
-    )
+    """Verify fresh store creates event and projection schema."""
 
     db_path = tmp_path / "runs.db"
     SQLiteExecutionEventStore(str(db_path))
@@ -70,17 +73,11 @@ def test_fresh_store_creates_event_and_projection_schema(
 def test_store_migrates_legacy_run_database_without_rewriting_rows(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_event_store import (
-        SQLiteExecutionEventStore,
-    )
+    """Verify store migrates legacy run database without rewriting rows."""
 
     db_path = tmp_path / "legacy.db"
     with sqlite_transaction(db_path) as connection:
-        connection.execute(
-            "CREATE TABLE runs ("
-            "run_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, "
-            "agent TEXT NOT NULL, origin TEXT NOT NULL, status TEXT NOT NULL)"
-        )
+        create_legacy_runs_table(connection)
         connection.execute(
             "INSERT INTO runs VALUES (?, ?, ?, ?, ?)",
             ("run-legacy", "alice", "chat", "local", "succeeded"),
@@ -103,9 +100,7 @@ def test_store_migrates_legacy_run_database_without_rewriting_rows(
 
 
 def test_store_initialization_is_idempotent(tmp_path: Path) -> None:
-    from mcp_server_phytomni.runtime.execution_event_store import (
-        SQLiteExecutionEventStore,
-    )
+    """Verify store initialization is idempotent."""
 
     db_path = tmp_path / "idempotent.db"
     SQLiteExecutionEventStore(str(db_path))
@@ -119,9 +114,7 @@ def test_store_initialization_is_idempotent(tmp_path: Path) -> None:
 def test_schema_enforces_sequence_event_and_idempotency_identity(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_event_store import (
-        SQLiteExecutionEventStore,
-    )
+    """Verify schema enforces sequence event and idempotency identity."""
 
     db_path = tmp_path / "constraints.db"
     SQLiteExecutionEventStore(str(db_path))

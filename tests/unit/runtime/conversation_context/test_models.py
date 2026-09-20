@@ -10,6 +10,7 @@ from copy import deepcopy
 
 import pytest
 from pydantic import ValidationError
+from tests.support.http_fakes import build_conversation_context_envelope
 
 from mcp_server_phytomni.api.schemas import (
     ChatCompletionRequest,
@@ -33,24 +34,13 @@ pytestmark = pytest.mark.unit
 
 def _valid_envelope() -> dict[str, object]:
     """Return a minimally valid owner-scoped V1 envelope payload."""
-    return {
-        "schema_version": 1,
-        "conversation_key": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad6",
-        "dialogue_id": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7",
-        "turn_id": "1",
-        "request_id": "request-1",
-        "operation": "append",
-        "mode": "expert",
-        "current_message": {
-            "content": "Summarize rice samples.",
-            "locale": "en-US",
-        },
-        "requested_agent_id": "KnowledgeAgent",
-        "allowed_agent_ids": ["KnowledgeAgent", "ChatAgent"],
-        "ledger_cursor": 0,
-        "ledger_version": "a" * 64,
-        "base_business_context_version": 0,
-    }
+    return build_conversation_context_envelope(
+        "1",
+        mode="expert",
+        content="Summarize rice samples.",
+        requested_agent_id="KnowledgeAgent",
+        allowed_agent_ids=("KnowledgeAgent", "ChatAgent"),
+    )
 
 
 def test_envelope_accepts_valid_ordered_allowlist() -> None:

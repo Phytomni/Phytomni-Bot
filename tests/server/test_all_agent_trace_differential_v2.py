@@ -7,11 +7,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 from tests.support.all_agent_runtime_cases import REAL_HANDLER_FIXTURES
+from tests.support.provider_trace_v2 import build_execution_trace_boundary
 
 from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp import handlers
@@ -21,31 +22,32 @@ from mcp_server_phytomni.runtime.execution_instrumentation_v2 import (
     bind_execution_boundary,
     instrument_tool_invocation,
 )
-from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-    SQLiteExecutionJournal,
-)
-from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-    SQLiteExecutionReservationRepository,
-)
-from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-    ExecutionCommand,
-    ExecutionContext,
-    ExecutionServices,
-)
-from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-    SpanSpec,
-    SQLiteExecutionWorkRepository,
-)
 from mcp_server_phytomni.runtime.request_context import request_context
 
 pytestmark = pytest.mark.server
 
 
+@dataclass
+class _TraceObservations:
+    """Observations split between trace-disabled and trace-enabled runs."""
+
+    variant: str = "off"
+    provider_calls: dict[str, list[dict[str, object]]] = field(
+        default_factory=lambda: {"off": [], "on": []}
+    )
+    provider_side_effects: dict[str, int] = field(
+        default_factory=lambda: {"off": 0, "on": 0}
+    )
+    submission_records: dict[str, list[tuple[str, object]]] = field(
+        default_factory=lambda: {"off": [], "on": []}
+    )
+
+
 def _collect_values(value: object, key: str) -> tuple[object, ...]:
     values: list[object] = []
     if isinstance(value, dict):
-        for field, nested in value.items():
-            if field == key:
+        for field_name, nested in value.items():
+            if field_name == key:
                 values.append(deepcopy(nested))
             values.extend(_collect_values(nested, key))
     elif isinstance(value, list):
@@ -71,7 +73,8 @@ def _business_observation(spec, result: object) -> dict[str, object]:
         "assistant_content": _collect_values(result, "content"),
         "references": _collect_values(result, "doc_list"),
         "resource_facts": {
-            field: _collect_values(result, field) for field in resource_fields
+            resource_field: _collect_values(result, resource_field)
+            for resource_field in resource_fields
         },
         "terminal_settlement": (
             "running" if spec.lifecycle == "asynchronous" else "succeeded"
@@ -89,28 +92,21 @@ async def test_trace_boundary_preserves_real_handler_business_contract(
 ) -> None:
     """Trace-on/off calls have identical results and domain side effects."""
     dependency, arguments, expected = REAL_HANDLER_FIXTURES[spec.slug]
-    variant = "off"
-    provider_calls: dict[str, list[dict[str, object]]] = {
-        "off": [],
-        "on": [],
-    }
-    provider_side_effects = {"off": 0, "on": 0}
-    submission_records: dict[str, list[tuple[str, object]]] = {
-        "off": [],
-        "on": [],
-    }
+    observations = _TraceObservations()
 
     async def deterministic_provider(**kwargs: object) -> dict[str, object]:
-        provider_calls[variant].append(kwargs)
+        observations.provider_calls[observations.variant].append(kwargs)
 
         async def side_effect() -> dict[str, object]:
-            provider_side_effects[variant] += 1
+            observations.provider_side_effects[observations.variant] += 1
             return deepcopy(expected)
 
         return await instrument_tool_invocation(spec.tool, side_effect)
 
     def record_submission(result: object, *, agent: str) -> None:
-        submission_records[variant].append((agent, deepcopy(result)))
+        observations.submission_records[observations.variant].append(
+            (agent, deepcopy(result))
+        )
 
     monkeypatch.setattr(handlers, dependency, deterministic_provider)
     monkeypatch.setattr(
@@ -130,56 +126,22 @@ async def test_trace_boundary_preserves_real_handler_business_contract(
     with request_context("alice", "request-business-parity", "business-run"):
         result_without_trace = await handler(argument_model(**arguments))
 
-    db_path = str(tmp_path / f"trace-{spec.slug}.db")
-    reservations = SQLiteExecutionReservationRepository(db_path)
-    journal = SQLiteExecutionJournal(db_path)
-    work = SQLiteExecutionWorkRepository(db_path)
-    reservation = reservations.reserve(
-        owner="alice",
+    boundary = build_execution_trace_boundary(
+        str(tmp_path / f"trace-{spec.slug}.db"),
+        spec=spec,
         execution_id=f"execution-trace-parity-{spec.slug}",
-        fingerprint_version=1,
-        fingerprint=(spec.slug[0] * 64),
-        command=ExecutionCommand(
-            agent_slug=spec.slug,
-            arguments=dict(arguments),
-        ),
-    )
-    work.create_span(
-        SpanSpec(
-            owner=reservation.owner,
-            execution_id=reservation.execution_id,
-            span_id=reservation.root_span_id,
-            kind="agent",
-            label_key=f"agent.{spec.slug}",
-        )
-    )
-    context = ExecutionContext(
-        owner_ref=reservation.owner,
-        execution_id=reservation.execution_id,
-        fingerprint_version=reservation.fingerprint_version,
-        fingerprint=reservation.fingerprint,
-        agent=spec,
-        root_span_id=reservation.root_span_id,
-        current_span_id=reservation.root_span_id,
-        transport="test",
-        run_id=reservation.run_id,
-        deadline_at=datetime.fromisoformat(reservation.deadline_at),
-    )
-    services = ExecutionServices(
-        journal=journal,
-        reservations=reservations,
-        work=work,
-        clock=lambda: datetime.now(UTC),
+        fingerprint=spec.slug[0] * 64,
+        arguments=dict(arguments),
     )
 
-    variant = "on"
+    observations.variant = "on"
     with (
         request_context(
             "alice",
             "request-business-parity",
             "business-run",
         ),
-        bind_execution_boundary(context, services),
+        bind_execution_boundary(boundary.context, boundary.services),
     ):
         result_with_trace = await handler(argument_model(**arguments))
 
@@ -187,13 +149,18 @@ async def test_trace_boundary_preserves_real_handler_business_contract(
     assert _business_observation(spec, result_with_trace) == (
         _business_observation(spec, result_without_trace)
     )
-    assert provider_side_effects == {"off": 1, "on": 1}
-    assert provider_calls["on"] == provider_calls["off"]
-    assert submission_records["on"] == submission_records["off"]
+    assert observations.provider_side_effects == {"off": 1, "on": 1}
+    assert (
+        observations.provider_calls["on"] == observations.provider_calls["off"]
+    )
+    assert (
+        observations.submission_records["on"]
+        == observations.submission_records["off"]
+    )
 
-    projection = journal.get_projection(
-        reservation.execution_id,
-        owner=reservation.owner,
+    projection = boundary.journal.get_projection(
+        boundary.reservation.execution_id,
+        owner=boundary.reservation.owner,
     )
     assert [
         operation.operation_key for operation in projection.operations

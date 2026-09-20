@@ -34,6 +34,7 @@ def _db(tmp_path: Path) -> str:
 def test_lifecycle_producers_are_idempotent_and_ordered(
     tmp_path: Path,
 ) -> None:
+    """Verify lifecycle producers are idempotent and ordered."""
     path = _db(tmp_path)
     emit_input_required(
         path,
@@ -78,6 +79,7 @@ def test_lifecycle_producers_are_idempotent_and_ordered(
 
 
 def test_remote_revision_translation_exposes_no_paths(tmp_path: Path) -> None:
+    """Verify remote revision translation exposes no paths."""
     path = _db(tmp_path)
     rows = [
         {"task_id": "task-1", "status": "succeeded"},

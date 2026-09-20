@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from scripts.static_analysis.collectors.errors import CollectionError
 from scripts.static_analysis.collectors.pylint import (
+    _pylint_targets,
     parse_pylint_json,
     validate_pylint_result,
 )
@@ -25,6 +26,37 @@ _FIXTURES = _ROOT / "tests" / "fixtures" / "static_analysis"
 
 def _fixture(name: str) -> str:
     return (_FIXTURES / name).read_text(encoding="utf-8")
+
+
+def test_pylint_targets_qualify_same_named_namespace_modules(
+    tmp_path: Path,
+) -> None:
+    """Tracked paths retain their full identity at the Pylint boundary."""
+    targets = _pylint_targets(
+        tmp_path,
+        (
+            "tests/unit/interop/test_models.py",
+            "tests/unit/runtime/conversation_context/test_models.py",
+            "tests/unit/api/__init__.py",
+            "typings/reportlab/pdfgen/canvas.pyi",
+        ),
+    )
+
+    assert targets == (
+        "tests.unit.interop.test_models",
+        "tests.unit.runtime.conversation_context.test_models",
+        "tests.unit.api.__init__",
+        "typings/reportlab/pdfgen/canvas.pyi",
+    )
+
+
+def test_pylint_targets_reject_module_name_collisions(tmp_path: Path) -> None:
+    """Distinct tracked paths may never collapse to one Pylint target."""
+    with pytest.raises(CollectionError, match="pkg.models"):
+        _pylint_targets(
+            tmp_path,
+            ("src/pkg/models.py", "pkg/models.py"),
+        )
 
 
 def test_r0801_uses_message_endpoints_not_json_path() -> None:
@@ -148,18 +180,24 @@ def test_r0801_resolves_real_partial_source_hint(
         "scripts.static_analysis.collectors.pylint.tracked_git_files",
         lambda _root, _patterns: (interop, runtime, review),
     )
+    runtime_lines = runtime.read_text(encoding="utf-8").splitlines()
+    start = next(
+        index
+        for index, line in enumerate(runtime_lines, start=1)
+        if "return build_conversation_context_envelope(" in line
+    )
+    end = start + 2
+    source_hint = "\n".join(runtime_lines[slice(start - 1, end)])
     document = [
         {
             "message-id": "R0801",
             "path": "tests/unit/runtime/conversation_context/test_models.py",
-            "line": 42,
+            "line": start,
             "message": (
                 "Similar lines in 2 files\n"
-                "==test_models:[42:44]\n"
+                f"==test_models:[{start}:{end}]\n"
                 "==tests.agents.test_review_conversation_wrapper:[308:310]\n"
-                '        "operation": "append",\n'
-                '        "mode": "expert",\n'
-                '        "current_message": {\n'
+                f"{source_hint}\n"
             ),
         }
     ]

@@ -14,7 +14,7 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import Any, BinaryIO, NamedTuple, Protocol, TypeVar
+from typing import Any, BinaryIO, NamedTuple, Never, Protocol, TypeVar
 
 from ..runtime.outbound import ObsClientRuntime, ObsProfileName
 from .obs_storage import normalize_obs_object_key
@@ -77,6 +77,11 @@ class CompletedObject(NamedTuple):
     byte_size: int
 
 
+def _multipart_protocol_member() -> Never:
+    """Mark an unimplemented structural storage member as unreachable."""
+    raise NotImplementedError
+
+
 class MultipartStorage(Protocol):
     """Port consumed by the resumable upload application service."""
 
@@ -87,7 +92,7 @@ class MultipartStorage(Protocol):
         object_key: str,
     ) -> MultipartSession:
         """Start one provider multipart session."""
-        raise NotImplementedError
+        _multipart_protocol_member()
 
     def put_part(
         self,
@@ -95,7 +100,7 @@ class MultipartStorage(Protocol):
         upload: PartInput,
     ) -> StoredPart:
         """Stream one bounded part and return its internal ETag."""
-        raise NotImplementedError
+        _multipart_protocol_member()
 
     def complete(
         self,
@@ -103,11 +108,11 @@ class MultipartStorage(Protocol):
         parts: Sequence[StoredPart],
     ) -> CompletedObject:
         """Complete the provider upload from authoritative parts."""
-        raise NotImplementedError
+        _multipart_protocol_member()
 
     def abort(self, session: MultipartSession) -> None:
         """Abort one unfinished provider session."""
-        raise NotImplementedError
+        _multipart_protocol_member()
 
     def reconcile_complete(
         self,
@@ -115,7 +120,7 @@ class MultipartStorage(Protocol):
         parts: Sequence[StoredPart],
     ) -> CompletedObject | None:
         """Find a successful completion after an unknown provider outcome."""
-        raise NotImplementedError
+        _multipart_protocol_member()
 
     def download_to_path(
         self,
@@ -126,7 +131,7 @@ class MultipartStorage(Protocol):
         expected_size: int,
     ) -> int:
         """Stream one completed object into a caller-owned file."""
-        raise NotImplementedError
+        _multipart_protocol_member()
 
 
 CompletedObjectReader = Callable[..., int]

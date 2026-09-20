@@ -91,6 +91,42 @@ class ResearchCancellationConflictError(ValueError):
 ResearchCancellationConflict = ResearchCancellationConflictError
 
 
+def ensure_admission_run(
+    connection: sqlite3.Connection,
+    request: Mapping[str, Any],
+    now: str,
+    *,
+    insert_sql: str,
+) -> None:
+    """Create or validate the Runtime-owned Research admission row."""
+    existing_run = connection.execute(
+        "SELECT user_id, agent FROM runs WHERE run_id = ?",
+        (request["run_id"],),
+    ).fetchone()
+    if existing_run is None:
+        connection.execute(
+            insert_sql,
+            (
+                request["run_id"],
+                request["owner"],
+                now,
+                now,
+                request["locale"],
+            ),
+        )
+        return
+    if (
+        existing_run["user_id"] != request["owner"]
+        or existing_run["agent"] != "research"
+    ):
+        raise sqlite3.IntegrityError("research runtime run mismatch")
+    connection.execute(
+        "UPDATE runs SET locale = COALESCE(locale, ?), "
+        "stage = 'input_resolution', updated_at = ? WHERE run_id = ?",
+        (request["locale"], now, request["run_id"]),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ResearchCancellationOutcome:
     """Durable, owner-scoped cancellation result."""

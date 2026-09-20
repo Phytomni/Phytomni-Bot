@@ -11,38 +11,36 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
 
+from tests.support.execution_runtime_v2 import (
+    ExecutionStartRequest,
+    build_local_graph_runtime,
+    run_execution_start,
+)
+
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import ExecutionStatus
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    DriverOutcome,
+    TransportNeutralResult,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SQLiteExecutionWorkRepository,
+)
+from mcp_server_phytomni.runtime.provider_instrumentation_v2 import (
+    instrument_provider_cancellation,
+    instrument_provider_observation,
+    instrument_provider_submission,
+    record_provider_retry,
+)
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
+
 
 def test_provider_submit_poll_retry_cancel_and_terminal_are_observed(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.public_agent_catalog import public_agent_spec
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
-    from mcp_server_phytomni.runtime.provider_instrumentation_v2 import (
-        instrument_provider_cancellation,
-        instrument_provider_observation,
-        instrument_provider_submission,
-        record_provider_retry,
-    )
+    """Verify provider submit poll retry cancel and terminal are observed."""
 
     db_path = str(tmp_path / "provider.db")
     journal = SQLiteExecutionJournal(db_path)
@@ -113,32 +111,13 @@ def test_provider_submit_poll_retry_cancel_and_terminal_are_observed(
         )
         return DriverOutcome.succeeded(TransportNeutralResult(answer="ok"))
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(db_path),
-        journal=journal,
-        work=work,
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
+    runtime = build_local_graph_runtime(db_path, start_handler, journal, work)
+    assert (
+        run_execution_start(
+            runtime, ExecutionStartRequest("turn-provider", "c" * 64)
+        ).status
+        is ExecutionStatus.SUCCEEDED
     )
-    spec = public_agent_spec("knowledge")
-    assert spec is not None
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-provider",
-            fingerprint_version=1,
-            fingerprint="c" * 64,
-            command=ExecutionCommand(
-                agent_slug=spec.slug,
-                arguments={"query": "rice"},
-            ),
-            transport="test",
-        )
-    )
-    assert outcome.status.value == "succeeded"
     assert len(provider_idempotency_keys) == 1
     assert provider_idempotency_keys[0].startswith("phyto:turn-provider:")
     assert provider_idempotency_keys[0].endswith(":1")
@@ -193,35 +172,10 @@ def test_provider_submit_poll_retry_cancel_and_terminal_are_observed(
 def test_analysis_submission_ack_does_not_complete_remote_analysis(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
-    from mcp_server_phytomni.runtime.provider_instrumentation_v2 import (
-        instrument_provider_submission,
-    )
-    from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
+    """Verify analysis submission ack does not complete remote analysis."""
 
     db_path = str(tmp_path / "analysis-submission-boundary.db")
     journal = SQLiteExecutionJournal(db_path)
-    work = SQLiteExecutionWorkRepository(db_path)
 
     async def start_handler(context, command, services):
         del context, command, services
@@ -235,29 +189,16 @@ def test_analysis_submission_ack_does_not_complete_remote_analysis(
         )
         return DriverOutcome.succeeded(TransportNeutralResult(answer="queued"))
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(db_path),
-        journal=journal,
-        work=work,
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
-    )
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-analysis-submission-boundary",
-            fingerprint_version=1,
-            fingerprint="a" * 64,
-            command=ExecutionCommand(
-                agent_slug="knowledge", arguments={"query": "rice"}
+    runtime = build_local_graph_runtime(db_path, start_handler, journal)
+    assert (
+        run_execution_start(
+            runtime,
+            ExecutionStartRequest(
+                "turn-analysis-submission-boundary", "a" * 64
             ),
-            transport="test",
-        )
+        ).status.value
+        == "succeeded"
     )
-    assert outcome.status.value == "succeeded"
 
     with sqlite_transaction(db_path) as connection:
         rows = connection.execute(
@@ -273,20 +214,20 @@ def test_analysis_submission_ack_does_not_complete_remote_analysis(
         ).fetchall()
 
     by_operation = {
-        operation_key: (work_unit_id, status, provider_task_id)
+        operation_key: {
+            "work_unit_id": work_unit_id,
+            "status": status,
+            "provider_task_id": provider_task_id,
+        }
         for work_unit_id, operation_key, status, provider_task_id in rows
     }
     assert set(by_operation) == {"remote.analysis", "remote.submit"}
-    analysis_id, analysis_status, analysis_provider_id = by_operation[
-        "remote.analysis"
-    ]
-    submit_id, submit_status, submit_provider_id = by_operation[
-        "remote.submit"
-    ]
-    assert analysis_status == "acknowledged"
-    assert analysis_provider_id == "still-running-provider-task"
-    assert submit_status == "succeeded"
-    assert submit_provider_id is None
+    analysis = by_operation["remote.analysis"]
+    submission = by_operation["remote.submit"]
+    assert analysis["status"] == "acknowledged"
+    assert analysis["provider_task_id"] == "still-running-provider-task"
+    assert submission["status"] == "succeeded"
+    assert submission["provider_task_id"] is None
     assert dict(span_rows) == {
         "remote.analysis": "running",
         "remote.submit": "succeeded",
@@ -303,9 +244,9 @@ def test_analysis_submission_ack_does_not_complete_remote_analysis(
         and event.summary.text == "Provider submission acknowledged"
     ]
     assert len(submission_success) == 1
-    assert submission_success[0].work_unit_id == submit_id
+    assert submission_success[0].work_unit_id == submission["work_unit_id"]
     assert all(
-        event.work_unit_id != analysis_id
+        event.work_unit_id != analysis["work_unit_id"]
         for event in page.items
         if event.type.value in {"span.succeeded", "work_unit.succeeded"}
     )
@@ -314,30 +255,7 @@ def test_analysis_submission_ack_does_not_complete_remote_analysis(
 def test_provider_is_not_called_when_submission_intent_cannot_persist(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
-    from mcp_server_phytomni.runtime.provider_instrumentation_v2 import (
-        instrument_provider_submission,
-    )
+    """Verify provider is not called when submission intent cannot persist."""
 
     db_path = str(tmp_path / "provider-fail-closed.db")
     work = SQLiteExecutionWorkRepository(db_path)
@@ -358,33 +276,16 @@ def test_provider_is_not_called_when_submission_intent_cannot_persist(
         )
         return DriverOutcome.succeeded(TransportNeutralResult(answer="bad"))
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(db_path),
-        journal=SQLiteExecutionJournal(db_path),
-        work=work,
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
-    )
+    runtime = build_local_graph_runtime(db_path, start_handler, work=work)
 
     def fail_create_work_unit(spec):
         del spec
         raise OSError("disk unavailable")
 
     monkeypatch.setattr(work, "create_work_unit", fail_create_work_unit)
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-provider-fail-closed",
-            fingerprint_version=1,
-            fingerprint="d" * 64,
-            command=ExecutionCommand(
-                agent_slug="knowledge", arguments={"query": "rice"}
-            ),
-            transport="test",
-        )
+    outcome = run_execution_start(
+        runtime,
+        ExecutionStartRequest("turn-provider-fail-closed", "d" * 64),
     )
 
     assert called is False
@@ -392,6 +293,7 @@ def test_provider_is_not_called_when_submission_intent_cannot_persist(
 
 
 def test_analysis_submission_has_one_canonical_provider_boundary() -> None:
+    """Verify analysis submission has one canonical provider boundary."""
     root = Path(__file__).parents[2] / "src" / "mcp_server_phytomni"
     analyst_graph = (root / "agents" / "analyst" / "graph.py").read_text(
         encoding="utf-8"
@@ -411,31 +313,8 @@ def test_analysis_submission_has_one_canonical_provider_boundary() -> None:
 def test_provider_cancellation_preserves_best_effort_and_unsupported_work(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
-    from mcp_server_phytomni.runtime.provider_instrumentation_v2 import (
-        instrument_provider_cancellation,
-        instrument_provider_submission,
-    )
+    """Verify provider cancellation preserves best effort and unsupported
+    work."""
 
     db_path = str(tmp_path / "provider-cancel-outcomes.db")
     work = SQLiteExecutionWorkRepository(db_path)
@@ -462,32 +341,15 @@ def test_provider_cancellation_preserves_best_effort_and_unsupported_work(
             await instrument_provider_cancellation(
                 provider_kind="provider",
                 provider_task_id=result["task_id"],
-                call=lambda: asyncio.sleep(0, result=outcome),
+                call=lambda outcome=outcome: asyncio.sleep(0, result=outcome),
                 outcome_from_result=cancellation_outcome,
             )
         return DriverOutcome.succeeded(TransportNeutralResult(answer="ok"))
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(db_path),
-        journal=SQLiteExecutionJournal(db_path),
-        work=work,
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
-    )
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-provider-cancel-outcomes",
-            fingerprint_version=1,
-            fingerprint="e" * 64,
-            command=ExecutionCommand(
-                agent_slug="knowledge", arguments={"query": "rice"}
-            ),
-            transport="test",
-        )
+    runtime = build_local_graph_runtime(db_path, start_handler, work=work)
+    outcome = run_execution_start(
+        runtime,
+        ExecutionStartRequest("turn-provider-cancel-outcomes", "e" * 64),
     )
     assert outcome.status.value == "succeeded"
     for index, expected in enumerate(("best_effort", "unsupported")):
@@ -505,31 +367,7 @@ def test_provider_cancellation_preserves_best_effort_and_unsupported_work(
 def test_lost_provider_ack_binding_keeps_durable_submitted_intent(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
-    from mcp_server_phytomni.runtime.provider_instrumentation_v2 import (
-        instrument_provider_submission,
-    )
-    from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
+    """Verify lost provider ack binding keeps durable submitted intent."""
 
     db_path = str(tmp_path / "lost-ack.db")
     work = SQLiteExecutionWorkRepository(db_path)
@@ -551,33 +389,16 @@ def test_lost_provider_ack_binding_keeps_durable_submitted_intent(
         )
         return DriverOutcome.succeeded(TransportNeutralResult(answer="bad"))
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(db_path),
-        journal=SQLiteExecutionJournal(db_path),
-        work=work,
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
-    )
+    runtime = build_local_graph_runtime(db_path, start_handler, work=work)
 
     def lose_ack(*args, **kwargs):
         del args, kwargs
         raise OSError("database acknowledgement unavailable")
 
     monkeypatch.setattr(work, "bind_provider", lose_ack)
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-lost-ack",
-            fingerprint_version=1,
-            fingerprint="f" * 64,
-            command=ExecutionCommand(
-                agent_slug="knowledge", arguments={"query": "rice"}
-            ),
-            transport="test",
-        )
+    outcome = run_execution_start(
+        runtime,
+        ExecutionStartRequest("turn-lost-ack", "f" * 64),
     )
     assert outcome.status.value == "failed"
     assert len(calls) == 1

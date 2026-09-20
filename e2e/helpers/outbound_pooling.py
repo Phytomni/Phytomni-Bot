@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
 
+from mcp_server_phytomni.config.required_env import REQUIRED_OUTBOUND_FIELDS
+
 LIVE_GATE_NAMES: tuple[str, ...] = (
     "PHYTOMNI_RUN_INTEGRATION",
     "PHYTOMNI_ALLOW_NETWORK",
@@ -50,20 +52,6 @@ MISSING_LIVE_GATE_REASON = (
     "outbound pooling live acceptance requires all four non-production "
     "gates: " + ", ".join(LIVE_GATE_NAMES)
 )
-_LIVE_POOL_SUFFIXES = (
-    "LLM",
-    "RETRIEVAL",
-    "RERANK",
-    "NL2SQL",
-    "ANALYSIS_CONTROL",
-    "ANALYSIS_STATUS",
-    "IAM",
-    "SPA_FAQ",
-    "BI",
-    "OBS",
-    "RELAY_CONTROL",
-    "INTEROP",
-)
 
 
 class MissingOutboundLiveGateError(Exception):
@@ -99,8 +87,9 @@ def live_server_environment() -> dict[str, str]:
     this mapping intentionally never enables ``PHYTOMNI_TESTING``.
     """
     environment = {
-        f"PHYTOMNI_OUTBOUND_{suffix}_CONCURRENCY": "1"
-        for suffix in _LIVE_POOL_SUFFIXES
+        f"PHYTOMNI_{field}": "1"
+        for field in REQUIRED_OUTBOUND_FIELDS
+        if field.endswith("_CONCURRENCY")
     }
     environment["PHYTOMNI_OUTBOUND_POOL_WAIT_WARN_SECONDS"] = "0.5"
     return environment

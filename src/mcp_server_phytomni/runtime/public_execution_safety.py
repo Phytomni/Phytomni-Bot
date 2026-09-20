@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 
 FORBIDDEN_PUBLIC_KEYS = frozenset(
     {
@@ -69,6 +70,18 @@ FORBIDDEN_PUBLIC_VALUE_PATTERNS = (
 
 class PublicExecutionDataError(ValueError):
     """A value cannot cross the public execution-data boundary."""
+
+
+def is_utc_timestamp(value: object) -> bool:
+    """Return whether a value is an ISO-8601 timestamp at UTC offset zero."""
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    offset = parsed.utcoffset()
+    return offset is not None and offset.total_seconds() == 0
 
 
 def validate_public_execution_value(

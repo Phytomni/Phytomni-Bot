@@ -10,22 +10,30 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from tests.support.execution_supervisor_v2 import mark_work_unit_succeeded
+
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import WorkUnitStatus
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
+from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
+    ExecutionSupervisor,
+    run_auxiliary_recovery,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SpanSpec,
+    SQLiteExecutionWorkRepository,
+    WorkUnitSpec,
+)
+
 
 def _seed(db_path: Path, *, count: int, clock=None):
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-    )
 
     path = str(db_path)
     reservations = SQLiteExecutionReservationRepository(path, clock=clock)
@@ -69,28 +77,14 @@ def _seed(db_path: Path, *, count: int, clock=None):
 def test_supervisors_contend_for_one_lease_and_process_once(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
-        ExecutionSupervisor,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        WorkUnitStatus,
-    )
+    """Verify supervisors contend for one lease and process once."""
 
     work = _seed(tmp_path / "contention.db", count=1)
     calls: list[str] = []
 
     async def handler(unit):
         calls.append(unit.work_unit_id)
-        current = work.get_work_unit(
-            unit.execution_id, unit.work_unit_id, owner=unit.owner
-        )
-        work.update_work_unit_status(
-            unit.execution_id,
-            unit.work_unit_id,
-            owner=unit.owner,
-            status=WorkUnitStatus.SUCCEEDED,
-            expected_revision=current.revision,
-        )
+        mark_work_unit_succeeded(work, unit)
 
     async def exercise():
         first = ExecutionSupervisor(
@@ -115,9 +109,7 @@ def test_supervisors_contend_for_one_lease_and_process_once(
 def test_supervisor_steals_expired_lease_and_bounds_concurrency(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
-        ExecutionSupervisor,
-    )
+    """Verify supervisor steals expired lease and bounds concurrency."""
 
     now = [datetime(2026, 1, 1, tzinfo=UTC)]
 
@@ -138,7 +130,7 @@ def test_supervisor_steals_expired_lease_and_bounds_concurrency(
     active = 0
     peak = 0
 
-    async def handler(unit):
+    async def handler(_unit):
         nonlocal active, peak
         active += 1
         peak = max(peak, active)
@@ -165,9 +157,8 @@ def test_supervisor_steals_expired_lease_and_bounds_concurrency(
 def test_supervisor_failure_schedules_bounded_retry_without_exception_text(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
-        ExecutionSupervisor,
-    )
+    """Verify supervisor failure schedules bounded retry without exception
+    text."""
 
     now = [datetime(2026, 1, 1, tzinfo=UTC)]
 
@@ -201,9 +192,7 @@ def test_supervisor_failure_schedules_bounded_retry_without_exception_text(
 def test_supervisor_renews_lease_while_handler_is_running(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
-        ExecutionSupervisor,
-    )
+    """Verify supervisor renews lease while handler is running."""
 
     work = _seed(tmp_path / "heartbeat.db", count=1)
     renewed: list[bool] = []
@@ -235,9 +224,7 @@ def test_supervisor_renews_lease_while_handler_is_running(
 def test_supervisor_advances_attempts_and_exhausts_retry_budget(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
-        ExecutionSupervisor,
-    )
+    """Verify supervisor advances attempts and exhausts retry budget."""
 
     now = [datetime(2026, 1, 1, tzinfo=UTC)]
 
@@ -278,9 +265,7 @@ def test_supervisor_advances_attempts_and_exhausts_retry_budget(
 def test_supervisor_times_out_expired_work_before_calling_driver(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
-        ExecutionSupervisor,
-    )
+    """Verify supervisor times out expired work before calling driver."""
 
     now = [datetime(2026, 1, 1, tzinfo=UTC)]
 
@@ -314,7 +299,7 @@ def test_supervisor_times_out_expired_work_before_calling_driver(
     )
     current = work.get_work_unit("turn-supervisor", "work-0", owner="alice")
     assert result.timed_out == 1
-    assert called == []
+    assert not called
     assert settled == ["work-0"]
     assert current.status.value == "timed_out"
 
@@ -322,12 +307,7 @@ def test_supervisor_times_out_expired_work_before_calling_driver(
 def test_new_worker_recovers_retry_after_process_restart(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
-        ExecutionSupervisor,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        WorkUnitStatus,
-    )
+    """Verify new worker recovers retry after process restart."""
 
     now = [datetime(2026, 1, 1, tzinfo=UTC)]
 
@@ -377,12 +357,7 @@ def test_new_worker_recovers_retry_after_process_restart(
 def test_terminal_handler_race_never_reopens_work_as_retry(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
-        ExecutionSupervisor,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        WorkUnitStatus,
-    )
+    """Verify terminal handler race never reopens work as retry."""
 
     work = _seed(tmp_path / "terminal-race.db", count=1)
 
@@ -416,9 +391,8 @@ def test_terminal_handler_race_never_reopens_work_as_retry(
 def test_research_legacy_store_recovery_is_a_bounded_supervisor_adapter() -> (
     None
 ):
-    from mcp_server_phytomni.runtime.execution_supervisor_v2 import (
-        run_auxiliary_recovery,
-    )
+    """Verify research legacy store recovery is a bounded supervisor
+    adapter."""
 
     calls: list[str] = []
 

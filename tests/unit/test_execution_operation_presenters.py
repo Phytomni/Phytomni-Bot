@@ -8,11 +8,18 @@ from __future__ import annotations
 
 from typing import cast
 
+from tests.support.execution_event_fixtures import (
+    expected_unknown_operation_presenter,
+)
+
+from mcp_server_phytomni.runtime.execution_trace_detail import (
+    OPERATION_PRESENTER_REGISTRY,
+    serialize_operation_record_capability,
+)
+
 
 def test_registry_resolves_known_and_unknown_presenters() -> None:
-    from mcp_server_phytomni.runtime.execution_trace_detail import (
-        OPERATION_PRESENTER_REGISTRY,
-    )
+    """Verify registry resolves known and unknown presenters."""
 
     known = OPERATION_PRESENTER_REGISTRY.resolve("knowledge.search")
     assert known.operation_key == "knowledge.search"
@@ -32,9 +39,7 @@ def test_registry_resolves_known_and_unknown_presenters() -> None:
 
 
 def test_registry_sanitizes_metadata_counters_and_targets() -> None:
-    from mcp_server_phytomni.runtime.execution_trace_detail import (
-        OPERATION_PRESENTER_REGISTRY,
-    )
+    """Verify registry sanitizes metadata counters and targets."""
 
     knowledge = OPERATION_PRESENTER_REGISTRY.present(
         "knowledge.search",
@@ -67,9 +72,7 @@ def test_registry_sanitizes_metadata_counters_and_targets() -> None:
 
 
 def test_registry_drops_invalid_and_unknown_operation_payloads() -> None:
-    from mcp_server_phytomni.runtime.execution_trace_detail import (
-        OPERATION_PRESENTER_REGISTRY,
-    )
+    """Verify registry drops invalid and unknown operation payloads."""
 
     review = OPERATION_PRESENTER_REGISTRY.present(
         "review.retrieve_dimension",
@@ -77,7 +80,7 @@ def test_registry_drops_invalid_and_unknown_operation_payloads() -> None:
         progress={"completed": 2, "total": 1, "unit": "dimensions"},
         target={"kind": "download", "id": "private-target"},
     )
-    assert review.detail == {}
+    assert not review.detail
     assert review.progress is None
     assert review.target is None
 
@@ -88,15 +91,13 @@ def test_registry_drops_invalid_and_unknown_operation_payloads() -> None:
         target={"kind": "artifact", "id": "private-target"},
     )
     assert unknown.operation_key == "operation.unknown"
-    assert unknown.detail == {}
+    assert not unknown.detail
     assert unknown.progress is None
     assert unknown.target is None
 
 
 def test_capability_serializes_finite_presenter_schemas() -> None:
-    from mcp_server_phytomni.runtime.execution_trace_detail import (
-        serialize_operation_record_capability,
-    )
+    """Verify capability serializes finite presenter schemas."""
 
     capability = serialize_operation_record_capability()
     presenter_rows = cast(list[dict[str, object]], capability["presenters"])
@@ -113,12 +114,7 @@ def test_capability_serializes_finite_presenter_schemas() -> None:
         "counter_units": ["dimensions"],
         "target_kinds": [],
     }
-    assert capability["unknown_presenter"] == {
-        "operation_key": "operation.unknown",
-        "label_key": "execution.operation.generic",
-        "fallback_label": "Internal operation",
-        "semantic_kind": "operation",
-        "allowed_detail_fields": {},
-        "counter_units": [],
-        "target_kinds": [],
-    }
+    assert (
+        capability["unknown_presenter"]
+        == expected_unknown_operation_presenter()
+    )

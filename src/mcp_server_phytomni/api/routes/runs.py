@@ -205,49 +205,88 @@ async def _build_run_paging_query(
     )
 
 
-def _register_status_routes(
-    app: FastAPI,
-    dependencies: RunRouteDependencies,
-) -> None:
-    """Register logs and single-run status routes in public order."""
+def _owned_execution_run_id(execution_id: str, owner: str) -> str:
+    """Resolve one owner-visible execution identity to its run id."""
+    record = RunRegistry(_tasks_db_path()).get_run_by_execution_id(
+        execution_id,
+        owner=owner,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="resource not found")
+    return record.spec.run_id
 
-    def owned_execution_run_id(execution_id: str, owner: str) -> str:
+
+async def _await_owned_execution_run_id(
+    execution_id: str,
+    owner: str,
+    request: Request,
+) -> str:
+    """Wait briefly for detached execution registration to become visible."""
+    deadline = (
+        asyncio.get_running_loop().time() + EXECUTION_REGISTRATION_WAIT_SECONDS
+    )
+    while True:
         record = RunRegistry(_tasks_db_path()).get_run_by_execution_id(
             execution_id,
             owner=owner,
         )
-        if record is None:
+        if record is not None:
+            return record.spec.run_id
+        if await request.is_disconnected():
             raise HTTPException(status_code=404, detail="resource not found")
-        return record.spec.run_id
-
-    async def await_owned_execution_run_id(
-        execution_id: str,
-        owner: str,
-        request: Request,
-    ) -> str:
-        deadline = (
-            asyncio.get_running_loop().time()
-            + EXECUTION_REGISTRATION_WAIT_SECONDS
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            raise HTTPException(status_code=404, detail="resource not found")
+        await asyncio.sleep(
+            min(EXECUTION_REGISTRATION_POLL_SECONDS, remaining)
         )
-        while True:
-            record = RunRegistry(_tasks_db_path()).get_run_by_execution_id(
-                execution_id,
-                owner=owner,
-            )
-            if record is not None:
-                return record.spec.run_id
-            if await request.is_disconnected():
-                raise HTTPException(
-                    status_code=404, detail="resource not found"
-                )
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                raise HTTPException(
-                    status_code=404, detail="resource not found"
-                )
-            await asyncio.sleep(
-                min(EXECUTION_REGISTRATION_POLL_SECONDS, remaining)
-            )
+
+
+def _resolve_event_cursor(
+    after_seq: int | None,
+    last_event_id: str | None,
+) -> int:
+    """Resolve one bounded SSE cursor from query or resume headers."""
+    if after_seq is not None:
+        return after_seq
+    if last_event_id is None or not last_event_id.strip():
+        return 0
+    try:
+        cursor = int(last_event_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="invalid event cursor"
+        ) from exc
+    if cursor < 0:
+        raise HTTPException(status_code=400, detail="invalid event cursor")
+    return cursor
+
+
+def _sse_frame(
+    *,
+    event: str,
+    data: dict[str, Any],
+    event_id: int | None = None,
+) -> str:
+    """Serialize one public event as an SSE frame."""
+    lines = [] if event_id is None else [f"id: {event_id}"]
+    lines.extend(
+        (
+            f"event: {event}",
+            "data: "
+            + json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+            "",
+            "",
+        )
+    )
+    return "\n".join(lines)
+
+
+def _register_event_read_routes(
+    app: FastAPI,
+    dependencies: RunRouteDependencies,
+) -> None:
+    """Register the initial logs and bounded event read routes."""
 
     @app.get(
         "/v1/executions/{execution_id}/events",
@@ -269,7 +308,7 @@ def _register_status_routes(
             or dependencies.context.current_user()
             or "anonymous"
         )
-        run_id = owned_execution_run_id(execution_id, owner)
+        run_id = _owned_execution_run_id(execution_id, owner)
         page = V1ExecutionCompatibilityReader(_tasks_db_path()).list_events(
             run_id,
             owner=owner,
@@ -366,6 +405,13 @@ def _register_status_routes(
         if projection is None:
             raise HTTPException(status_code=404, detail="run not found")
         return JSONResponse(projection.to_public_dict())
+
+
+def _register_run_event_stream_route(
+    app: FastAPI,
+    dependencies: RunRouteDependencies,
+) -> None:
+    """Register the resumable run-event stream route."""
 
     @app.get("/v1/runs/{run_id}/events/stream")
     async def stream_run_events(
@@ -496,41 +542,12 @@ def _register_status_routes(
             raise HTTPException(status_code=404, detail="run not found")
         return JSONResponse(event.to_public_dict())
 
-    def _resolve_event_cursor(
-        after_seq: int | None,
-        last_event_id: str | None,
-    ) -> int:
-        if after_seq is not None:
-            return after_seq
-        if last_event_id is None or not last_event_id.strip():
-            return 0
-        try:
-            cursor = int(last_event_id)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=400, detail="invalid event cursor"
-            ) from exc
-        if cursor < 0:
-            raise HTTPException(status_code=400, detail="invalid event cursor")
-        return cursor
 
-    def _sse_frame(
-        *,
-        event: str,
-        data: dict[str, Any],
-        event_id: int | None = None,
-    ) -> str:
-        lines = [] if event_id is None else [f"id: {event_id}"]
-        lines.extend(
-            (
-                f"event: {event}",
-                "data: "
-                + json.dumps(data, ensure_ascii=False, separators=(",", ":")),
-                "",
-                "",
-            )
-        )
-        return "\n".join(lines)
+def _register_execution_projection_route(
+    app: FastAPI,
+    dependencies: RunRouteDependencies,
+) -> None:
+    """Register execution-addressed projection lookup."""
 
     @app.get(
         "/v1/executions/{execution_id}/event-projection",
@@ -546,7 +563,7 @@ def _register_status_routes(
             or dependencies.context.current_user()
             or "anonymous"
         )
-        run_id = owned_execution_run_id(execution_id, owner)
+        run_id = _owned_execution_run_id(execution_id, owner)
         projection = V1ExecutionCompatibilityReader(
             _tasks_db_path()
         ).get_projection(run_id, owner=owner)
@@ -558,6 +575,13 @@ def _register_status_routes(
                 "execution_id": execution_id,
             }
         )
+
+
+def _register_execution_event_stream_route(
+    app: FastAPI,
+    dependencies: RunRouteDependencies,
+) -> None:
+    """Register the resumable execution-addressed event stream route."""
 
     @app.get("/v1/executions/{execution_id}/events/stream")
     async def stream_execution_events(
@@ -576,7 +600,7 @@ def _register_status_routes(
             or dependencies.context.current_user()
             or "anonymous"
         )
-        run_id = await await_owned_execution_run_id(
+        run_id = await _await_owned_execution_run_id(
             execution_id,
             owner,
             request,
@@ -668,6 +692,13 @@ def _register_status_routes(
             },
         )
 
+
+def _register_run_detail_routes(
+    app: FastAPI,
+    dependencies: RunRouteDependencies,
+) -> None:
+    """Register event detail and owner-scoped run lifecycle routes."""
+
     @app.get(
         "/v1/executions/{execution_id}/events/{event_id}",
         response_model=ExecutionEventV1,
@@ -683,7 +714,7 @@ def _register_status_routes(
             or dependencies.context.current_user()
             or "anonymous"
         )
-        run_id = owned_execution_run_id(execution_id, owner)
+        run_id = _owned_execution_run_id(execution_id, owner)
         event = V1ExecutionCompatibilityReader(_tasks_db_path()).get_event(
             run_id,
             event_id,
@@ -753,6 +784,18 @@ def _register_status_routes(
                 expected_revision=expected_revision,
             )
         return JSONResponse(body)
+
+
+def _register_status_routes(
+    app: FastAPI,
+    dependencies: RunRouteDependencies,
+) -> None:
+    """Register logs and single-run status routes in public order."""
+    _register_event_read_routes(app, dependencies)
+    _register_run_event_stream_route(app, dependencies)
+    _register_execution_projection_route(app, dependencies)
+    _register_execution_event_stream_route(app, dependencies)
+    _register_run_detail_routes(app, dependencies)
 
 
 def _register_pause_routes(

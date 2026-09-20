@@ -52,6 +52,7 @@ from ..runtime.langgraph_runner import (
 from ..runtime.locale import current_effective_locale
 from ..runtime.resume import aresume_graph, detect_interrupt
 from ..runtime.run_registry import (
+    RunRecord,
     RunRegistry,
     RunRequestInfo,
 )
@@ -75,9 +76,8 @@ from .a2ui_resume import (
     review_run_body,
 )
 from .a2ui_review_stream import (
-    A2UIStreamInputs,
-    A2UIStreamRequest,
     ReviewStreamHooks,
+    build_a2ui_stream_request,
     invoke_a2ui_graph,
     run_a2ui_stream,
     settle_a2ui_input_required,
@@ -203,6 +203,17 @@ def build_review_request_info(
         ),
         execution_id=execution_id,
     )
+
+
+def require_a2ui_execution_id(record: RunRecord) -> str:
+    """Return the canonical execution identity for a resumable A2UI run."""
+    execution_id = record.request_info.execution_id
+    if execution_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="legacy A2UI execution is read-only",
+        )
+    return execution_id
 
 
 def validate_review_arguments(arguments: dict[str, Any]) -> ReviewAgentArgs:
@@ -505,17 +516,14 @@ async def stream_chat_a2ui_confirm(
         yield custom(A2UI_CUSTOM_NAME, a2ui_value)
         yield run_finished(context.run_id)
 
-    inputs = A2UIStreamInputs(
-        arguments,
-        payload,
-        user_query,
-        dependencies,
-        runtime_run_id,
-    )
-    request = A2UIStreamRequest(
-        prepare_context=_prepare_chat_stream,
-        inputs=inputs,
-        events=_agui_events,
+    request = build_a2ui_stream_request(
+        _prepare_chat_stream,
+        _agui_events,
+        arguments=arguments,
+        payload=payload,
+        runtime_run_id=runtime_run_id,
+        user_query=user_query,
+        dependencies=dependencies,
     )
     return await run_a2ui_stream(request)
 

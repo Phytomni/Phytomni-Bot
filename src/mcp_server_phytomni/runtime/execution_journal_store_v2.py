@@ -10,15 +10,14 @@ import json
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Protocol, runtime_checkable
+from datetime import datetime
+from inspect import Parameter, Signature
+from typing import Protocol, TypedDict, Unpack, runtime_checkable
 
-from ..storage.path_policy import IdFactory
 from .execution_event_limits import (
     DEFAULT_EXECUTION_EVENT_LIMITS,
     ExecutionEventLimits,
 )
-from .execution_journal_schema import migrate_execution_journal_v2
 from .execution_journal_v2 import (
     ExecutionEventIntentV2,
     ExecutionEventType,
@@ -30,6 +29,12 @@ from .execution_projection_v2 import (
     apply_execution_event_v2,
     empty_execution_projection_v2,
     fold_execution_events_v2,
+)
+from .execution_store_support_v2 import (
+    event_store_settings,
+    execution_is_live,
+    initialize_execution_v2_store,
+    validate_provider_join_lease_token,
 )
 from .sqlite import sqlite_transaction
 
@@ -66,6 +71,95 @@ class ExecutionSequenceGap:
     last_missing_seq: int
 
 
+class ProviderTraceBatchKwargs(TypedDict):
+    """Keyword contract for one atomic provider trace checkpoint."""
+
+    owner: str
+    work_unit_id: str
+    expected_work_revision: int
+    cursor: str | None
+    source_revision: int
+    adapter_version: str
+    overlap_identities: tuple[str, ...]
+    contact_at: str
+    health: str
+    intents: tuple[ExecutionEventIntentV2, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ProviderTraceCheckpoint:
+    """Private provider cursor state committed beside public facts."""
+
+    cursor: str | None
+    source_revision: int
+    adapter_version: str
+    overlap_identities: tuple[str, ...]
+    contact_at: str
+    health: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ProviderTraceBatch:
+    """One validated provider trace transaction request."""
+
+    execution_id: str
+    owner: str
+    work_unit_id: str
+    expected_work_revision: int
+    checkpoint: _ProviderTraceCheckpoint
+    intents: tuple[ExecutionEventIntentV2, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _IdempotencyAlias:
+    """One source key redirected to its canonical retained event."""
+
+    owner: str
+    execution_id: str
+    source_key: str | None
+    event_id: str
+    created_at: str
+
+
+_PROVIDER_TRACE_BATCH_SIGNATURE = Signature(
+    parameters=(
+        Parameter("self", Parameter.POSITIONAL_OR_KEYWORD),
+        Parameter(
+            "execution_id",
+            Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=str,
+        ),
+        Parameter("owner", Parameter.KEYWORD_ONLY, annotation=str),
+        Parameter("work_unit_id", Parameter.KEYWORD_ONLY, annotation=str),
+        Parameter(
+            "expected_work_revision",
+            Parameter.KEYWORD_ONLY,
+            annotation=int,
+        ),
+        Parameter(
+            "cursor",
+            Parameter.KEYWORD_ONLY,
+            annotation=str | None,
+        ),
+        Parameter("source_revision", Parameter.KEYWORD_ONLY, annotation=int),
+        Parameter("adapter_version", Parameter.KEYWORD_ONLY, annotation=str),
+        Parameter(
+            "overlap_identities",
+            Parameter.KEYWORD_ONLY,
+            annotation=tuple[str, ...],
+        ),
+        Parameter("contact_at", Parameter.KEYWORD_ONLY, annotation=str),
+        Parameter("health", Parameter.KEYWORD_ONLY, annotation=str),
+        Parameter(
+            "intents",
+            Parameter.KEYWORD_ONLY,
+            annotation=tuple[ExecutionEventIntentV2, ...],
+        ),
+    ),
+    return_annotation=tuple[ExecutionEventV2, ...],
+)
+
+
 @runtime_checkable
 class ExecutionJournal(Protocol):
     """Storage-neutral append and replay boundary."""
@@ -76,7 +170,9 @@ class ExecutionJournal(Protocol):
         *,
         owner: str,
         intent: ExecutionEventIntentV2,
-    ) -> ExecutionEventV2: ...
+    ) -> ExecutionEventV2:
+        """Append one validated event under its owner-scoped execution."""
+        raise NotImplementedError
 
     def list_events(
         self,
@@ -85,7 +181,8 @@ class ExecutionJournal(Protocol):
         owner: str,
         after_seq: int = 0,
         limit: int | None = None,
-    ) -> ExecutionJournalPage | None: ...
+    ) -> ExecutionJournalPage | None:
+        """Return a bounded ordered replay page for an execution."""
 
     def get_event(
         self,
@@ -93,14 +190,17 @@ class ExecutionJournal(Protocol):
         event_id: str,
         *,
         owner: str,
-    ) -> ExecutionEventV2 | None: ...
+    ) -> ExecutionEventV2 | None:
+        """Read one owner-scoped V2 event by stable identity."""
 
     def get_projection(
         self,
         execution_id: str,
         *,
         owner: str,
-    ) -> ExecutionProjectionV2: ...
+    ) -> ExecutionProjectionV2:
+        """Fold the execution journal into its current projection."""
+        raise NotImplementedError
 
 
 class SQLiteExecutionJournal:
@@ -115,32 +215,14 @@ class SQLiteExecutionJournal:
         limits: ExecutionEventLimits = DEFAULT_EXECUTION_EVENT_LIMITS,
         expected_provider_join_lease_token: str | None = None,
     ) -> None:
-        if expected_provider_join_lease_token is not None and (
-            not expected_provider_join_lease_token
-            or len(expected_provider_join_lease_token) > 128
-        ):
-            raise ValueError("invalid provider join lease token")
         self.db_path = db_path
-        self._event_id_factory = event_id_factory or (
-            lambda: IdFactory().new_id("evt")
-        )
-        self._clock = clock or _now_iso
-        self._limits = limits
+        self._settings = event_store_settings(event_id_factory, clock, limits)
         self._expected_provider_join_lease_token = (
-            expected_provider_join_lease_token
+            validate_provider_join_lease_token(
+                expected_provider_join_lease_token
+            )
         )
-        self._init_db()
-
-    def _init_db(self) -> None:
-        from .run_registry import RunRegistry
-
-        RunRegistry(self.db_path)
-        with sqlite_transaction(self.db_path) as connection:
-            connection.execute("PRAGMA journal_mode=WAL")
-            connection.execute("PRAGMA busy_timeout=5000")
-            connection.execute("BEGIN IMMEDIATE")
-            migrate_execution_journal_v2(connection)
-            connection.commit()
+        initialize_execution_v2_store(self.db_path, configure_journal=True)
 
     def append(
         self,
@@ -167,47 +249,43 @@ class SQLiteExecutionJournal:
     def append_provider_trace_batch(
         self,
         execution_id: str,
-        *,
-        owner: str,
-        work_unit_id: str,
-        expected_work_revision: int,
-        cursor: str | None,
-        source_revision: int,
-        adapter_version: str,
-        overlap_identities: tuple[str, ...],
-        contact_at: str,
-        health: str,
-        intents: tuple[ExecutionEventIntentV2, ...],
+        **kwargs: Unpack[ProviderTraceBatchKwargs],
     ) -> tuple[ExecutionEventV2, ...]:
         """Commit public trace facts and their private cursor in one TX."""
-        _validate_provider_trace_batch(
-            expected_work_revision=expected_work_revision,
-            cursor=cursor,
-            source_revision=source_revision,
-            adapter_version=adapter_version,
-            overlap_identities=overlap_identities,
-            contact_at=contact_at,
-            health=health,
-            intents=intents,
-        )
+        _PROVIDER_TRACE_BATCH_SIGNATURE.bind(self, execution_id, **kwargs)
+        batch = _provider_trace_batch(execution_id, kwargs)
+        _validate_provider_trace_batch(batch)
+        return self._append_provider_trace_batch(batch)
+
+    def _append_provider_trace_batch(
+        self,
+        batch: _ProviderTraceBatch,
+    ) -> tuple[ExecutionEventV2, ...]:
+        checkpoint = batch.checkpoint
         overlap_json = json.dumps(
-            overlap_identities, ensure_ascii=True, separators=(",", ":")
+            checkpoint.overlap_identities,
+            ensure_ascii=True,
+            separators=(",", ":"),
         )
         with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
-            self._authorize(connection, owner, execution_id)
-            self._authorize_publication(connection, owner, execution_id)
+            self._authorize(connection, batch.owner, batch.execution_id)
+            self._authorize_publication(
+                connection,
+                batch.owner,
+                batch.execution_id,
+            )
             events = tuple(
                 self._append_locked(
                     connection,
-                    execution_id=execution_id,
-                    owner=owner,
+                    execution_id=batch.execution_id,
+                    owner=batch.owner,
                     intent=intent,
                 )
-                for intent in intents
+                for intent in batch.intents
             )
-            updated_at = self._clock()
+            updated_at = self._settings.clock()
             updated = connection.execute(
                 "UPDATE execution_work_units SET provider_trace_cursor = ?, "
                 "provider_trace_revision = ?, "
@@ -218,17 +296,17 @@ class SQLiteExecutionJournal:
                 "WHERE owner_ref = ? AND execution_id = ? "
                 "AND work_unit_id = ? AND revision = ?",
                 (
-                    cursor,
-                    source_revision,
-                    adapter_version,
+                    checkpoint.cursor,
+                    checkpoint.source_revision,
+                    checkpoint.adapter_version,
                     overlap_json,
-                    contact_at,
-                    health,
+                    checkpoint.contact_at,
+                    checkpoint.health,
                     updated_at,
-                    owner,
-                    execution_id,
-                    work_unit_id,
-                    expected_work_revision,
+                    batch.owner,
+                    batch.execution_id,
+                    batch.work_unit_id,
+                    batch.expected_work_revision,
                 ),
             )
             if updated.rowcount != 1:
@@ -270,7 +348,7 @@ class SQLiteExecutionJournal:
                     ).fetchone()
             if existing is not None:
                 return _event_from_row(existing)
-        occurred_at = self._clock()
+        occurred_at = self._settings.clock()
         coalesced = self._coalesced_progress(
             connection,
             owner,
@@ -281,11 +359,13 @@ class SQLiteExecutionJournal:
         if coalesced is not None:
             self._save_idempotency_alias(
                 connection,
-                owner,
-                execution_id,
-                intent.idempotency_key,
-                coalesced.event_id,
-                occurred_at,
+                _IdempotencyAlias(
+                    owner=owner,
+                    execution_id=execution_id,
+                    source_key=intent.idempotency_key,
+                    event_id=coalesced.event_id,
+                    created_at=occurred_at,
+                ),
             )
             return coalesced
         projection = self._load_or_rebuild_projection(
@@ -295,7 +375,7 @@ class SQLiteExecutionJournal:
         event = intent.materialize(
             execution_id=execution_id,
             seq=seq,
-            event_id=self._event_id_factory(),
+            event_id=self._settings.event_id_factory(),
             occurred_at=occurred_at,
         )
         connection.execute(
@@ -310,11 +390,13 @@ class SQLiteExecutionJournal:
         )
         self._save_idempotency_alias(
             connection,
-            owner,
-            execution_id,
-            intent.idempotency_key,
-            event.event_id,
-            occurred_at,
+            _IdempotencyAlias(
+                owner=owner,
+                execution_id=execution_id,
+                source_key=intent.idempotency_key,
+                event_id=event.event_id,
+                created_at=occurred_at,
+            ),
         )
         projection = apply_execution_event_v2(projection, event)
         self._save_projection(connection, owner, projection, occurred_at)
@@ -332,7 +414,7 @@ class SQLiteExecutionJournal:
         """Return a bounded page strictly after the accepted cursor."""
         if after_seq < 0:
             raise ValueError("after_seq must be non-negative")
-        page_size = self._limits.resolve_page_size(limit)
+        page_size = self._settings.limits.resolve_page_size(limit)
         with sqlite_transaction(self.db_path) as connection:
             self._authorize(connection, owner, execution_id)
             rows = connection.execute(
@@ -397,7 +479,7 @@ class SQLiteExecutionJournal:
         with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._authorize(connection, owner, execution_id)
-            now = self._clock()
+            now = self._settings.clock()
             connection.execute(
                 "UPDATE runs SET execution_tombstoned_at = ? "
                 "WHERE user_id = ? AND execution_id = ?",
@@ -420,19 +502,21 @@ class SQLiteExecutionJournal:
     @staticmethod
     def _save_idempotency_alias(
         connection: sqlite3.Connection,
-        owner: str,
-        execution_id: str,
-        source_key: str | None,
-        event_id: str,
-        created_at: str,
+        alias: _IdempotencyAlias,
     ) -> None:
-        if source_key is None:
+        if alias.source_key is None:
             return
         connection.execute(
             "INSERT OR IGNORE INTO execution_event_idempotency_v2 ("
             "owner_ref, execution_id, source_idempotency_key, event_id, "
             "created_at) VALUES (?, ?, ?, ?, ?)",
-            (owner, execution_id, source_key, event_id, created_at),
+            (
+                alias.owner,
+                alias.execution_id,
+                alias.source_key,
+                alias.event_id,
+                alias.created_at,
+            ),
         )
 
     def _coalesced_progress(
@@ -466,7 +550,10 @@ class SQLiteExecutionJournal:
         previous = _event_from_row(row)
         previous_ms = _utc_millis(previous.occurred_at)
         current_ms = _utc_millis(occurred_at)
-        if self._limits.should_coalesce_progress(previous_ms, current_ms):
+        if self._settings.limits.should_coalesce_progress(
+            previous_ms,
+            current_ms,
+        ):
             return previous
         return None
 
@@ -539,7 +626,7 @@ class SQLiteExecutionJournal:
             "WHERE owner_ref = ? AND execution_id = ?",
             (owner, execution_id),
         ).fetchone()
-        excess = int(count_row[0]) - self._limits.max_events_per_run
+        excess = int(count_row[0]) - self._settings.limits.max_events_per_run
         if excess <= 0:
             return
         candidates = connection.execute(
@@ -596,12 +683,7 @@ class SQLiteExecutionJournal:
     ) -> None:
         if not owner or not execution_id:
             raise ExecutionJournalNotFoundError(execution_id)
-        found = connection.execute(
-            "SELECT 1 FROM runs WHERE user_id = ? AND execution_id = ? "
-            "AND execution_tombstoned_at IS NULL LIMIT 1",
-            (owner, execution_id),
-        ).fetchone()
-        if found is None:
+        if not execution_is_live(connection, owner, execution_id):
             raise ExecutionJournalNotFoundError(execution_id)
 
     def _authorize_publication(
@@ -619,7 +701,7 @@ class SQLiteExecutionJournal:
             "AND execution_tombstoned_at IS NULL "
             "AND execution_provider_join_lease_owner = ? "
             "AND execution_provider_join_lease_expires_at > ? LIMIT 1",
-            (owner, execution_id, token, self._clock()),
+            (owner, execution_id, token, self._settings.clock()),
         ).fetchone()
         if found is None:
             raise ExecutionJournalPublicationFenceError(
@@ -664,34 +746,48 @@ def _event_row(
     )
 
 
-def _validate_provider_trace_batch(
-    *,
-    expected_work_revision: int,
-    cursor: str | None,
-    source_revision: int,
-    adapter_version: str,
-    overlap_identities: tuple[str, ...],
-    contact_at: str,
-    health: str,
-    intents: tuple[ExecutionEventIntentV2, ...],
-) -> None:
-    if expected_work_revision < 0 or source_revision < 0:
+def _provider_trace_batch(
+    execution_id: str,
+    kwargs: ProviderTraceBatchKwargs,
+) -> _ProviderTraceBatch:
+    checkpoint = _ProviderTraceCheckpoint(
+        cursor=kwargs["cursor"],
+        source_revision=kwargs["source_revision"],
+        adapter_version=kwargs["adapter_version"],
+        overlap_identities=kwargs["overlap_identities"],
+        contact_at=kwargs["contact_at"],
+        health=kwargs["health"],
+    )
+    return _ProviderTraceBatch(
+        execution_id=execution_id,
+        owner=kwargs["owner"],
+        work_unit_id=kwargs["work_unit_id"],
+        expected_work_revision=kwargs["expected_work_revision"],
+        checkpoint=checkpoint,
+        intents=kwargs["intents"],
+    )
+
+
+def _validate_provider_trace_batch(batch: _ProviderTraceBatch) -> None:
+    checkpoint = batch.checkpoint
+    if batch.expected_work_revision < 0 or checkpoint.source_revision < 0:
         raise ValueError("provider trace revision must be non-negative")
-    if cursor is not None and len(cursor) > 128:
+    if checkpoint.cursor is not None and len(checkpoint.cursor) > 128:
         raise ValueError("provider trace cursor is too long")
-    if not adapter_version or len(adapter_version) > 32:
+    if not checkpoint.adapter_version or len(checkpoint.adapter_version) > 32:
         raise ValueError("invalid provider trace adapter version")
-    if len(overlap_identities) > 64 or any(
-        not identity or len(identity) > 128 for identity in overlap_identities
+    if len(checkpoint.overlap_identities) > 64 or any(
+        not identity or len(identity) > 128
+        for identity in checkpoint.overlap_identities
     ):
         raise ValueError("invalid provider trace overlap")
-    if health not in {"healthy", "degraded", "unavailable"}:
+    if checkpoint.health not in {"healthy", "degraded", "unavailable"}:
         raise ValueError("invalid provider trace health")
-    if len(intents) > 256:
+    if len(batch.intents) > 256:
         raise ValueError("provider trace event batch is too large")
     try:
         parsed_contact = datetime.fromisoformat(
-            contact_at.replace("Z", "+00:00")
+            checkpoint.contact_at.replace("Z", "+00:00")
         )
     except ValueError as exc:
         raise ValueError("invalid provider trace contact time") from exc
@@ -758,5 +854,12 @@ def _utc_millis(value: str) -> int:
     return int(parsed.timestamp() * 1000)
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+def _install_public_signature() -> None:
+    setattr(
+        SQLiteExecutionJournal.append_provider_trace_batch,
+        "__signature__",
+        _PROVIDER_TRACE_BATCH_SIGNATURE,
+    )
+
+
+_install_public_signature()

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping, MutableSet, Sequence
+from dataclasses import dataclass
 from math import isfinite
 from typing import Any
 
@@ -24,6 +25,28 @@ NO_RELEVANT_EVIDENCE_MESSAGE = "No sufficiently relevant evidence found"
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 _DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-._;()/:a-z0-9]+", re.IGNORECASE)
 _SPACE_PATTERN = re.compile(r"\s+")
+
+
+@dataclass(frozen=True, slots=True)
+class _ReviewScope:
+    """Precomputed query signals used to rank Review evidence."""
+
+    query_tokens: set[str]
+    query_concepts: set[str]
+    plant_scoped: bool
+    scoped: bool
+
+
+def _review_scope(original_query: str, dimension: str) -> _ReviewScope:
+    """Precompute bounded query signals for evidence ranking."""
+    query_tokens = _tokens(f"{original_query} {dimension}".strip())
+    return _ReviewScope(
+        query_tokens=query_tokens,
+        query_concepts=_concepts(query_tokens),
+        plant_scoped=bool(query_tokens & _PLANT_SCOPE_TOKENS),
+        scoped=bool(original_query.strip()),
+    )
+
 
 _STOP_WORDS = frozenset(
     {
@@ -311,6 +334,37 @@ def _relevance_score(
     return (score, relevant)
 
 
+def _rank_review_evidence(
+    *,
+    original_query: str,
+    dimension: str,
+    documents: Iterable[Mapping[str, Any]],
+    seen: MutableSet[str],
+) -> list[tuple[float, int, str, dict[str, Any]]]:
+    """Return relevant unseen documents in deterministic score order."""
+    scope = _review_scope(original_query, dimension)
+    ranked: list[tuple[float, int, str, dict[str, Any]]] = []
+    for index, document in enumerate(documents):
+        detached = dict(document)
+        identity = review_evidence_identity(detached)
+        if not identity or identity in seen:
+            continue
+        if scope.scoped:
+            score, relevant = _relevance_score(
+                detached,
+                scope.query_tokens,
+                scope.query_concepts,
+                plant_scoped=scope.plant_scoped,
+            )
+            if not relevant:
+                continue
+        else:
+            score = -float(index)
+        ranked.append((score, index, identity, detached))
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    return ranked
+
+
 def select_review_evidence(
     *,
     original_query: str,
@@ -320,33 +374,12 @@ def select_review_evidence(
 ) -> list[dict[str, Any]]:
     """Rank, filter, and publication-deduplicate Review evidence."""
     seen = seen_identities if seen_identities is not None else set()
-    scope_text = f"{original_query} {dimension}".strip()
-    query_tokens = _tokens(scope_text)
-    query_concepts = _concepts(query_tokens)
-    plant_scoped = bool(query_tokens & _PLANT_SCOPE_TOKENS)
-
-    # Legacy and isolated helper callers without scope retain provider order.
-    scoped = bool(original_query.strip())
-    ranked: list[tuple[float, int, str, dict[str, Any]]] = []
-    for index, document in enumerate(documents):
-        detached = dict(document)
-        identity = review_evidence_identity(detached)
-        if not identity or identity in seen:
-            continue
-        if scoped:
-            score, relevant = _relevance_score(
-                detached,
-                query_tokens,
-                query_concepts,
-                plant_scoped=plant_scoped,
-            )
-            if not relevant:
-                continue
-        else:
-            score = -float(index)
-        ranked.append((score, index, identity, detached))
-
-    ranked.sort(key=lambda item: (-item[0], item[1]))
+    ranked = _rank_review_evidence(
+        original_query=original_query,
+        dimension=dimension,
+        documents=documents,
+        seen=seen,
+    )
     selected: list[dict[str, Any]] = []
     selected_in_call: set[str] = set()
     for _, _, identity, document in ranked:

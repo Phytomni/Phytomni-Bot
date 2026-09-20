@@ -9,20 +9,40 @@ from __future__ import annotations
 import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
 from typing import Literal
 
 import pytest
+from tests.support.execution_supervisor_v2 import create_root_span
 
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    ExecutionEventType,
+    ExecutionStatus,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    EXPERT_ROUTER_AGENT_SLUG,
+    ExecutionReservationConflictError,
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    DriverOutcome,
+    ExecutionCommand,
+    TerminalSettlementAuthority,
+    TransportNeutralResult,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SQLiteExecutionWorkRepository,
+)
 from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
 def _command(slug: str = "chat", **arguments: object):
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
 
     return ExecutionCommand(
         agent_slug=slug, arguments=arguments or {"query": "safe"}
@@ -32,10 +52,7 @@ def _command(slug: str = "chat", **arguments: object):
 def test_reservation_is_owner_scoped_idempotent_and_fingerprint_bound(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        ExecutionReservationConflictError,
-        SQLiteExecutionReservationRepository,
-    )
+    """Verify reservation is owner scoped idempotent and fingerprint bound."""
 
     db_path = tmp_path / "reservations.db"
     ids = iter(("run-1", "run-bob"))
@@ -106,9 +123,7 @@ def test_reservation_is_owner_scoped_idempotent_and_fingerprint_bound(
 def test_concurrent_retry_creates_one_binding_and_one_run(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
+    """Verify concurrent retry creates one binding and one run."""
 
     db_path = tmp_path / "concurrent.db"
     repository = SQLiteExecutionReservationRepository(str(db_path))
@@ -140,11 +155,8 @@ def test_concurrent_retry_creates_one_binding_and_one_run(
 def test_private_expert_router_rebinds_once_without_new_public_execution(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        EXPERT_ROUTER_AGENT_SLUG,
-        ExecutionReservationConflictError,
-        SQLiteExecutionReservationRepository,
-    )
+    """Verify private expert router rebinds once without new public
+    execution."""
 
     db_path = tmp_path / "expert-router.db"
     repository = SQLiteExecutionReservationRepository(str(db_path))
@@ -186,9 +198,7 @@ def test_private_expert_router_rebinds_once_without_new_public_execution(
 def test_reservation_stores_only_command_hash_not_raw_arguments(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
+    """Verify reservation stores only command hash not raw arguments."""
 
     db_path = tmp_path / "private-command.db"
     repository = SQLiteExecutionReservationRepository(str(db_path))
@@ -212,9 +222,7 @@ def test_reservation_stores_only_command_hash_not_raw_arguments(
 def test_context_stage_projects_v1_metadata_to_the_v2_subset(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
+    """Verify context stage projects V1 metadata to the V2 subset."""
 
     repository = SQLiteExecutionReservationRepository(
         str(tmp_path / "context-stage.db")
@@ -264,16 +272,6 @@ def test_resume_claim_atomically_excludes_other_active_actions(
     tmp_path: Path,
 ) -> None:
     """Only one resume action may leave a waiting-input boundary."""
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionStatus,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        ExecutionReservationConflictError,
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
 
     repository = SQLiteExecutionReservationRepository(
         str(tmp_path / "resume-claim.db")
@@ -336,25 +334,7 @@ def test_resume_claim_atomically_excludes_other_active_actions(
 def test_terminal_settlement_commits_span_event_projection_and_replay(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionEventType,
-        ExecutionStatus,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOutcome,
-        TerminalSettlementAuthority,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-    )
+    """Verify terminal settlement commits span event projection and replay."""
 
     db_path = tmp_path / "terminal-atomic.db"
     repository = SQLiteExecutionReservationRepository(str(db_path))
@@ -366,14 +346,10 @@ def test_terminal_settlement_commits_span_event_projection_and_replay(
         command=_command(query="rice"),
     )
     work = SQLiteExecutionWorkRepository(str(db_path))
-    root = work.create_span(
-        SpanSpec(
-            owner="alice",
-            execution_id=reservation.execution_id,
-            span_id=reservation.root_span_id,
-            kind="agent",
-            label_key="activity.agent.chat",
-        )
+    root = create_root_span(
+        work,
+        reservation,
+        label_key="activity.agent.chat",
     )
     work.update_span_status(
         reservation.execution_id,
@@ -430,24 +406,7 @@ def test_terminal_settlement_rolls_back_every_write_on_append_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionStatus,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOutcome,
-        TerminalSettlementAuthority,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-    )
+    """Verify terminal settlement rolls back every write on append failure."""
 
     db_path = tmp_path / "terminal-rollback.db"
     repository = SQLiteExecutionReservationRepository(str(db_path))
@@ -459,14 +418,10 @@ def test_terminal_settlement_rolls_back_every_write_on_append_failure(
         command=_command(query="rice"),
     )
     work = SQLiteExecutionWorkRepository(str(db_path))
-    root = work.create_span(
-        SpanSpec(
-            owner="alice",
-            execution_id=reservation.execution_id,
-            span_id=reservation.root_span_id,
-            kind="agent",
-            label_key="activity.agent.chat",
-        )
+    root = create_root_span(
+        work,
+        reservation,
+        label_key="activity.agent.chat",
     )
     work.update_span_status(
         reservation.execution_id,
@@ -510,26 +465,13 @@ def test_terminal_settlement_rolls_back_every_write_on_append_failure(
         reservation.execution_id, owner="alice"
     )
     assert page is not None
-    assert page.items == ()
+    assert not page.items
 
 
 def test_terminal_settlement_provider_lease_expiry_publishes_nothing(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionStatus,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOutcome,
-        TerminalSettlementAuthority,
-        TransportNeutralResult,
-    )
+    """Verify terminal settlement provider lease expiry publishes nothing."""
 
     now = datetime.now(UTC)
     db_path = tmp_path / "terminal-expired-lease.db"
@@ -578,26 +520,13 @@ def test_terminal_settlement_provider_lease_expiry_publishes_nothing(
         reservation.execution_id, owner="alice"
     )
     assert page is not None
-    assert page.items == ()
+    assert not page.items
 
 
 def test_concurrent_opposite_terminal_outcomes_publish_one_decision(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionEventType,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOutcome,
-        TerminalSettlementAuthority,
-        TransportNeutralResult,
-    )
+    """Verify concurrent opposite terminal outcomes publish one decision."""
 
     db_path = tmp_path / "terminal-opposite-race.db"
     repository = SQLiteExecutionReservationRepository(str(db_path))
@@ -643,67 +572,40 @@ def test_concurrent_opposite_terminal_outcomes_publish_one_decision(
     )
 
 
+@dataclass(frozen=True)
+class _TerminalAttempt:
+    """One actor's proposed terminal outcome in a settlement race."""
+
+    source: str
+    status: str
+    actor: Literal["runtime", "supervisor"]
+
+
 @pytest.mark.parametrize(
-    (
-        "left_source",
-        "left_status",
-        "left_actor",
-        "right_source",
-        "right_status",
-        "right_actor",
-    ),
+    ("left", "right"),
     (
         (
-            "dispatcher_rejection",
-            "failed",
-            "supervisor",
-            "runtime_success",
-            "succeeded",
-            "runtime",
+            _TerminalAttempt("dispatcher_rejection", "failed", "supervisor"),
+            _TerminalAttempt("runtime_success", "succeeded", "runtime"),
         ),
         (
-            "runtime_failure",
-            "failed",
-            "runtime",
-            "supervisor_timeout",
-            "timed_out",
-            "supervisor",
+            _TerminalAttempt("runtime_failure", "failed", "runtime"),
+            _TerminalAttempt("supervisor_timeout", "timed_out", "supervisor"),
         ),
         (
-            "cancellation",
-            "cancelled",
-            "runtime",
-            "provider_reconciliation",
-            "succeeded",
-            "supervisor",
+            _TerminalAttempt("cancellation", "cancelled", "runtime"),
+            _TerminalAttempt(
+                "provider_reconciliation", "succeeded", "supervisor"
+            ),
         ),
     ),
 )
 def test_terminal_source_races_publish_only_the_winner_fact(
     tmp_path: Path,
-    left_source: str,
-    left_status: str,
-    left_actor: Literal["runtime", "supervisor"],
-    right_source: str,
-    right_status: str,
-    right_actor: Literal["runtime", "supervisor"],
+    left: _TerminalAttempt,
+    right: _TerminalAttempt,
 ) -> None:
     """Every terminal source loses cleanly at the canonical transaction."""
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionEventType,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOutcome,
-        ExecutionStatus,
-        TerminalSettlementAuthority,
-        TransportNeutralResult,
-    )
 
     def outcome(status: str, source: str) -> DriverOutcome:
         if status == "succeeded":
@@ -714,11 +616,11 @@ def test_terminal_source_races_publish_only_the_winner_fact(
             return DriverOutcome.failed(code=f"{source}_failed")
         return DriverOutcome(status=ExecutionStatus(status))
 
-    db_path = tmp_path / f"terminal-source-race-{left_source}.db"
+    db_path = tmp_path / f"terminal-source-race-{left.source}.db"
     repository = SQLiteExecutionReservationRepository(str(db_path))
     reservation = repository.reserve(
         owner="alice",
-        execution_id=f"turn-{left_source}-{right_source}",
+        execution_id=f"turn-{left.source}-{right.source}",
         fingerprint_version=2,
         fingerprint="r" * 64,
         command=_command(query="rice"),
@@ -743,18 +645,16 @@ def test_terminal_source_races_publish_only_the_winner_fact(
         )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        left = executor.submit(settle, left_source, left_status, left_actor)
-        right = executor.submit(
-            settle, right_source, right_status, right_actor
+        left_result = executor.submit(
+            settle, left.source, left.status, left.actor
         )
-        assert sorted((left.result(timeout=5), right.result(timeout=5))) == [
-            False,
-            True,
-        ]
+        right_result = executor.submit(
+            settle, right.source, right.status, right.actor
+        )
+        assert sorted(
+            (left_result.result(timeout=5), right_result.result(timeout=5))
+        ) == [False, True]
 
-    record = repository.get(
-        owner="alice", execution_id=reservation.execution_id
-    )
     page = SQLiteExecutionJournal(str(db_path)).list_events(
         reservation.execution_id, owner="alice"
     )
@@ -770,23 +670,18 @@ def test_terminal_source_races_publish_only_the_winner_fact(
         event for event in page.items if event.type in terminal_types
     ]
     assert len(terminal_events) == 1
-    assert terminal_events[0].status == record.status.value
+    assert (
+        terminal_events[0].status
+        == repository.get(
+            owner="alice", execution_id=reservation.execution_id
+        ).status.value
+    )
 
 
 def test_terminal_settlement_waits_for_sqlite_writer_then_commits_once(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOutcome,
-        TerminalSettlementAuthority,
-        TransportNeutralResult,
-    )
+    """Verify terminal settlement waits for SQLite writer then commits once."""
 
     db_path = tmp_path / "terminal-contention.db"
     repository = SQLiteExecutionReservationRepository(str(db_path))

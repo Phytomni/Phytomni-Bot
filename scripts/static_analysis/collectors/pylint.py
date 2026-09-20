@@ -132,6 +132,39 @@ def _module_name(root: Path, path: Path) -> str:
     return value
 
 
+def _pylint_targets(root: Path, files: Sequence[str]) -> tuple[str, ...]:
+    """Return unambiguous module targets for tracked repository paths.
+
+    Pylint reduces file paths below implicit namespace packages to their
+    basename.  Passing the fully qualified module names keeps diagnostics for
+    same-named files, such as two ``test_models.py`` modules, distinguishable.
+    """
+    targets: list[str] = []
+    for raw_path in files:
+        path = Path(raw_path)
+        if path.suffix == ".pyi":
+            # Stub-only roots are not necessarily importable packages.  Keep
+            # their exact paths so Pylint can load them without F0001.
+            targets.append(raw_path)
+            continue
+        module = _module_name(root, root / path)
+        if path.stem == "__init__":
+            # Naming the package itself makes Pylint recurse through it.  The
+            # explicit ``.__init__`` target keeps this an exact one-file run.
+            module = f"{module}.__init__"
+        targets.append(module)
+    target_tuple = tuple(targets)
+    duplicates = sorted(
+        target
+        for target in set(target_tuple)
+        if target_tuple.count(target) > 1
+    )
+    if duplicates:
+        detail = ", ".join(duplicates)
+        raise CollectionError(f"Pylint targets are not unique: {detail}")
+    return target_tuple
+
+
 def _candidate_paths(root: Path, paths: Sequence[Path]) -> str:
     """Render sorted candidate paths relative to the analysis root."""
     return ", ".join(sorted(_relative_path(root, path) for path in paths))
@@ -451,7 +484,7 @@ def run_cross_file_pylint(
     ]
     if python_version is not None:
         command.extend(("--py-version", python_version))
-    command.extend(files)
+    command.extend(_pylint_targets(root, files))
     result = _run(root, command)
     text = validate_pylint_result(
         result.returncode, result.stdout, result.stderr
@@ -481,7 +514,7 @@ def run_full_pylint(
         "--output-format=json",
         "--py-version",
         python_version,
-        *files,
+        *_pylint_targets(root, files),
     ]
     result = _run(root, command)
     text = validate_full_pylint_result(
@@ -509,7 +542,7 @@ def audit_pylint_suppressions(
         "--enable=useless-suppression",
         "--disable=all",
         "--enable=useless-suppression",
-        *files,
+        *_pylint_targets(root, files),
     ]
     result = _run(root, command)
     text = validate_pylint_result(

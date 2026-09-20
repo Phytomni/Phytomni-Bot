@@ -936,11 +936,15 @@ exactly one `RunError`, does not emit `RunFinished`, and ends with one
 
 Check service logs using the request id. They may contain the exception class
 and source location, but must not contain bearer tokens, credential-bearing
-URLs/DSNs, SQL statements, or raw exception text. A client cancellation before
-`RunFinished` must settle `failed` without writing a synthetic frame; a
-cancellation after `RunFinished` keeps the terminal success. Treat any
-duplicate `RunError`, `RunFinished` after an error, missing `[DONE]`, or
-unredacted secret as a rollout blocker.
+URLs/DSNs, SQL statements, or raw exception text. A client transport close
+before `RunFinished` must close the upstream iterator without writing a
+synthetic terminal frame; the durable execution remains `running` for
+supervisor recovery. A close after `RunFinished` keeps the terminal success.
+Exercise explicit cancellation separately and verify its advertised outcome
+(`confirmed`, `best_effort`, or `unsupported`) instead of treating a
+presentation disconnect as cancellation. Treat any duplicate `RunError`,
+`RunFinished` after an error, missing `[DONE]`, or unredacted secret as a
+rollout blocker.
 
 ### Streaming cutover checklist (ChatAgent / Instant)
 
@@ -2297,10 +2301,15 @@ On `/v1/chat/completions` the flag is BriefGene-only — sending it with
 any other `model` returns `400`. On the native `/v1/agents/{slug}/runs`
 path `resolve_gene_id` also serves the `deep_genome` and `design` slugs
 (where it injects `species_code` alongside `gene_id`); an ineligible
-slug still returns `400` naming the resolver reason. Resolver failures
-(blank input, empty candidates, non-JSON LLM output) also return `400`
-and the response body's `error.message` carries the resolver reason for
-ticket triage. On success the response `metadata` includes
+slug still returns `400` naming the contract error. Resolver failures (blank
+input, empty candidates, non-JSON LLM output) on synchronous BriefGene native
+or OpenAI-compatible requests also return `400`, and the response body's
+`error.message` carries the resolver reason for ticket triage. After an
+asynchronous `deep_genome`, `design`, or `network` Agent is selected, the same
+failure instead returns `202` with `status: "failed"` and `task_ids: []`. Use
+its `run_id` to correlate the single terminal Runtime execution; it has no
+child task and does not expose the resolver exception. On success the response
+`metadata` includes
 `original_query`, `resolved_gene_id`, `resolved_species_code`, and
 `resolve_gene_id: true` so support can confirm which canonical id and
 species BriefGene actually saw.

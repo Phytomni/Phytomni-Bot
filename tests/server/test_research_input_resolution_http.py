@@ -393,7 +393,6 @@ def test_research_http_admission_input_is_opaque_and_typed() -> None:
 async def test_native_research_replays_the_canonical_admission(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Research admission owns and replays its canonical root row."""
     headers = {

@@ -6,12 +6,11 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-import re
 import sqlite3
 from collections.abc import Callable, Mapping
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
+from typing import NotRequired, TypedDict, Unpack
 
 from ..public_agent_catalog import Driver, PublicAgentSpec, public_agent_spec
 from .execution_instrumentation_v2 import bind_execution_boundary
@@ -32,6 +31,7 @@ from .execution_log_artifact_v2 import (
     ExecutionLogArtifactStore,
     build_execution_log_document,
 )
+from .execution_reservation_support_v2 import CanonicalReservationKwargs
 from .execution_reservation_v2 import (
     ExecutionReservationConflictError,
     ExecutionReservationRecord,
@@ -46,122 +46,130 @@ from .execution_runtime_contracts import (
     ExecutionRuntimeError,
     ExecutionServices,
 )
+from .execution_runtime_support_v2 import (
+    RuntimeAppendFields,
+    RuntimeEventPublication,
+    artifact_public_payload,
+    build_artifact_publication,
+    build_artifact_target_binding,
+    build_execution_log_target_binding,
+    build_message_publications,
+    deserialize_driver_outcome,
+    input_resolution_outcome,
+    public_action_surface_id,
+    reservation_deadline_exceeded,
+    reservation_outcome,
+    serialize_driver_outcome,
+)
 from .execution_target_store_v2 import (
     ExecutionTargetBindingFenceError,
-    ExecutionTargetBindingV2,
     ExecutionTargetStore,
 )
 from .execution_work_store_v2 import SpanSpec, SQLiteExecutionWorkRepository
 
 
-def _assistant_message_id(
-    context: ExecutionContext,
-    command: ExecutionCommand,
+class _ExecutionRuntimeFields(TypedDict):
+    reservations: SQLiteExecutionReservationRepository
+    journal: ExecutionJournal
+    work: SQLiteExecutionWorkRepository
+    drivers: Mapping[Driver, ExecutionDriver]
+    target_store: NotRequired[ExecutionTargetStore | None]
+    execution_log_store: NotRequired[ExecutionLogArtifactStore | None]
+    clock: NotRequired[Callable[[], datetime] | None]
+
+
+class _ExecutionStartFields(CanonicalReservationKwargs):
+    reservation_command: NotRequired[ExecutionCommand | None]
+    transport: str
+
+
+def build_execution_context(
+    record: ExecutionReservationRecord,
+    spec: PublicAgentSpec,
+    transport: str,
     *,
-    admitted_message_id: str | None = None,
-) -> str:
-    """Resolve the Web-admitted assistant identity or a stable fallback."""
-    for candidate in (
-        command.arguments.get("__assistant_message_id"),
-        admitted_message_id,
-    ):
-        if isinstance(candidate, str) and re.fullmatch(
-            r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", candidate
-        ):
-            return candidate
-    digest = hashlib.sha256(
-        context.execution_id.encode("utf-8", errors="strict")
-    ).hexdigest()[:32]
-    return f"msg:assistant:{digest}"
+    current_span_id: str | None = None,
+) -> ExecutionContext:
+    """Build one execution context from its durable reservation identity."""
+    deadline = datetime.fromisoformat(
+        record.deadline_at.replace("Z", "+00:00")
+    )
+    return ExecutionContext(
+        owner_ref=record.owner,
+        execution_id=record.execution_id,
+        fingerprint_version=record.fingerprint_version,
+        fingerprint=record.fingerprint,
+        agent=spec,
+        root_span_id=record.root_span_id,
+        current_span_id=(
+            record.root_span_id if current_span_id is None else current_span_id
+        ),
+        transport=transport,
+        run_id=record.run_id,
+        deadline_at=deadline,
+    )
 
 
-def _utf8_bounded_chunks(value: str, *, max_bytes: int) -> tuple[str, ...]:
-    """Split at Unicode boundaries while keeping each encoded chunk finite."""
-    if max_bytes < 4:
-        raise ValueError("message chunk byte limit is too small")
-    chunks: list[str] = []
-    start = 0
-    chunk_bytes = 0
-    for index, character in enumerate(value):
-        character_bytes = len(character.encode("utf-8", errors="strict"))
-        if chunk_bytes and chunk_bytes + character_bytes > max_bytes:
-            chunks.append(value[start:index])
-            start = index
-            chunk_bytes = 0
-        chunk_bytes += character_bytes
-    if start < len(value):
-        chunks.append(value[start:])
-    return tuple(chunks)
+def build_root_span_spec(
+    record: ExecutionReservationRecord,
+    spec: PublicAgentSpec,
+) -> SpanSpec:
+    """Build the canonical root Agent span, including its join policy."""
+    return SpanSpec(
+        owner=record.owner,
+        execution_id=record.execution_id,
+        span_id=record.root_span_id,
+        kind="agent",
+        label_key=f"agent.{spec.slug}",
+        join_policy=None if spec.join == "not_applicable" else spec.join,
+    )
 
 
 class ExecutionRuntime:
     """Own admission, dispatch, and settlement around business Drivers."""
 
-    def __init__(
-        self,
-        *,
-        reservations: SQLiteExecutionReservationRepository,
-        journal: ExecutionJournal,
-        work: SQLiteExecutionWorkRepository,
-        drivers: Mapping[Driver, ExecutionDriver],
-        target_store: ExecutionTargetStore | None = None,
-        execution_log_store: ExecutionLogArtifactStore | None = None,
-        clock: Callable[[], datetime] | None = None,
-    ) -> None:
-        self._reservations = reservations
-        self._journal = journal
-        self._work = work
-        self._drivers = dict(drivers)
-        self._target_store = target_store
-        self._execution_log_store = execution_log_store
+    def __init__(self, **fields: Unpack[_ExecutionRuntimeFields]) -> None:
+        self._reservations = fields["reservations"]
+        self._journal = fields["journal"]
+        self._work = fields["work"]
+        self._drivers = dict(fields["drivers"])
+        self._target_store = fields.get("target_store")
+        self._execution_log_store = fields.get("execution_log_store")
+        clock = fields.get("clock")
         self._clock = clock or (lambda: datetime.now(UTC))
 
     async def start(
         self,
-        *,
-        owner: str,
-        execution_id: str,
-        fingerprint_version: int,
-        fingerprint: str,
-        command: ExecutionCommand,
-        reservation_command: ExecutionCommand | None = None,
-        transport: str,
+        **fields: Unpack[_ExecutionStartFields],
     ) -> DriverOutcome:
         """Reserve once while dispatching only prepared business arguments."""
+        command = fields["command"]
         spec = public_agent_spec(command.agent_slug)
         if spec is None:
             raise ExecutionRuntimeError("unknown_public_agent")
-        canonical_command = reservation_command or command
+        canonical_command = fields.get("reservation_command") or command
         if canonical_command.agent_slug != command.agent_slug:
             raise ExecutionRuntimeError("execution_identity_conflict")
         record = self._reservations.reserve(
-            owner=owner,
-            execution_id=execution_id,
-            fingerprint_version=fingerprint_version,
-            fingerprint=fingerprint,
+            owner=fields["owner"],
+            execution_id=fields["execution_id"],
+            fingerprint_version=fields["fingerprint_version"],
+            fingerprint=fields["fingerprint"],
             command=canonical_command,
         )
         if not self._reservations.claim_start(
-            owner=owner,
-            execution_id=execution_id,
+            owner=fields["owner"],
+            execution_id=fields["execution_id"],
         ):
-            return _record_outcome(
-                self._reservations.get(owner=owner, execution_id=execution_id)
+            return reservation_outcome(
+                self._reservations.get(
+                    owner=fields["owner"],
+                    execution_id=fields["execution_id"],
+                )
             )
 
-        context = _context(record, spec, transport)
-        root_span = self._work.create_span(
-            SpanSpec(
-                owner=owner,
-                execution_id=execution_id,
-                span_id=record.root_span_id,
-                kind="agent",
-                label_key=f"agent.{spec.slug}",
-                join_policy=(
-                    None if spec.join == "not_applicable" else spec.join
-                ),
-            )
-        )
+        context = build_execution_context(record, spec, fields["transport"])
+        root_span = self._work.create_span(build_root_span_spec(record, spec))
         self._append(
             context,
             event_type=ExecutionEventType.EXECUTION_ADMITTED,
@@ -187,43 +195,22 @@ class ExecutionRuntime:
             summary_text="Agent started",
         )
         root_span = self._work.update_span_status(
-            execution_id,
+            fields["execution_id"],
             record.root_span_id,
-            owner=owner,
+            owner=fields["owner"],
             status=SpanStatus.RUNNING,
             expected_revision=root_span.revision,
         )
         self._reservations.mark_running(
-            owner=owner,
-            execution_id=execution_id,
+            owner=fields["owner"],
+            execution_id=fields["execution_id"],
         )
 
-        services = ExecutionServices(
-            journal=self._journal,
-            reservations=self._reservations,
-            work=self._work,
-            clock=self._clock,
+        outcome = await self._execute_driver(
+            DriverOperation.START,
+            context,
+            command,
         )
-        driver = self._drivers.get(spec.driver)
-        if driver is None:
-            outcome = DriverOutcome.failed(code="driver_unavailable")
-        else:
-            try:
-                with bind_execution_boundary(context, services):
-                    outcome = await driver.execute(
-                        DriverOperation.START,
-                        context,
-                        command,
-                        services,
-                    )
-            except ExecutionRuntimeError as exc:
-                outcome = DriverOutcome.failed(
-                    code=exc.code,
-                    retryable=exc.retryable,
-                )
-            except Exception:
-                # Raw errors and private provider data never enter V2 facts.
-                outcome = DriverOutcome.failed(code="driver_unhandled_error")
 
         self._publish_outcome(
             context,
@@ -265,7 +252,7 @@ class ExecutionRuntime:
         spec = public_agent_spec(record.agent_slug)
         if spec is None:
             raise ExecutionRuntimeError("unknown_public_agent")
-        context = _context(record, spec, transport)
+        context = build_execution_context(record, spec, transport)
         root_span = self._work.get_span(
             execution_id,
             record.root_span_id,
@@ -342,28 +329,33 @@ class ExecutionRuntime:
             transport=transport,
         )
 
-    async def _operate(
-        self,
+    @staticmethod
+    def _operation_spec(
         operation: DriverOperation,
-        *,
-        owner: str,
-        execution_id: str,
+        record: ExecutionReservationRecord,
         command: ExecutionCommand,
-        transport: str,
-    ) -> DriverOutcome:
-        if command.action_id is None or command.expected_revision is None:
-            raise ExecutionRuntimeError("operation_identity_required")
-        record = self._reservations.get(owner=owner, execution_id=execution_id)
+    ) -> PublicAgentSpec:
+        """Validate that an operation targets the reserved public Agent."""
         spec = public_agent_spec(record.agent_slug)
         if spec is None or command.agent_slug != record.agent_slug:
             raise ExecutionRuntimeError("execution_agent_mismatch")
         if operation is DriverOperation.RESUME and spec.resume == "none":
             raise ExecutionRuntimeError("resume_unsupported")
-        context = _context(record, spec, transport)
+        return spec
+
+    def _claim_operation(
+        self,
+        operation: DriverOperation,
+        context: ExecutionContext,
+        command: ExecutionCommand,
+    ) -> DriverOutcome | None:
+        """Claim an operation, returning its replayed outcome when present."""
+        assert command.action_id is not None
+        assert command.expected_revision is not None
         try:
             claim = self._reservations.claim_operation(
-                owner=owner,
-                execution_id=execution_id,
+                owner=context.owner_ref,
+                execution_id=context.execution_id,
                 operation_id=command.action_id,
                 operation=operation.value,
                 expected_revision=command.expected_revision,
@@ -382,22 +374,44 @@ class ExecutionRuntime:
                     ),
                 )
             raise
-        if not claim.claimed:
-            if operation is DriverOperation.RESUME:
-                self._append_input_action(
-                    context,
-                    command=command,
-                    event_type=ExecutionEventType.INPUT_ACTION_REJECTED,
-                    outcome="duplicate_action",
-                )
-            if claim.outcome_json is not None:
-                return _outcome_from_json(claim.outcome_json)
-            return _record_outcome(
-                self._reservations.get(owner=owner, execution_id=execution_id)
+        if claim.claimed:
+            return None
+        if operation is DriverOperation.RESUME:
+            self._append_input_action(
+                context,
+                command=command,
+                event_type=ExecutionEventType.INPUT_ACTION_REJECTED,
+                outcome="duplicate_action",
             )
+        if claim.outcome_json is not None:
+            return deserialize_driver_outcome(claim.outcome_json)
+        return reservation_outcome(
+            self._reservations.get(
+                owner=context.owner_ref,
+                execution_id=context.execution_id,
+            )
+        )
+
+    async def _operate(
+        self,
+        operation: DriverOperation,
+        *,
+        owner: str,
+        execution_id: str,
+        command: ExecutionCommand,
+        transport: str,
+    ) -> DriverOutcome:
+        if command.action_id is None or command.expected_revision is None:
+            raise ExecutionRuntimeError("operation_identity_required")
+        record = self._reservations.get(owner=owner, execution_id=execution_id)
+        spec = self._operation_spec(operation, record, command)
+        context = build_execution_context(record, spec, transport)
+        replayed = self._claim_operation(operation, context, command)
+        if replayed is not None:
+            return replayed
 
         record = self._reservations.get(owner=owner, execution_id=execution_id)
-        context = _context(record, spec, transport)
+        context = build_execution_context(record, spec, transport)
         if operation is DriverOperation.RESUME:
             self._append_input_action(
                 context,
@@ -411,7 +425,7 @@ class ExecutionRuntime:
             owner=owner,
         )
         operation_token = f"{operation.value}:{command.action_id}"
-        if _deadline_exceeded(record, self._clock()):
+        if reservation_deadline_exceeded(record, self._clock()):
             self._reservations.require_provider_join_lease(
                 owner=owner, execution_id=execution_id
             )
@@ -472,7 +486,7 @@ class ExecutionRuntime:
                 context,
                 command=command,
                 event_type=ExecutionEventType.INPUT_RESOLVED,
-                outcome=_input_resolution_outcome(command, outcome),
+                outcome=input_resolution_outcome(command, outcome),
             )
         if outcome.terminal:
             self._settle_terminal(context, root_span.revision, outcome)
@@ -495,133 +509,82 @@ class ExecutionRuntime:
         operation_token: str,
     ) -> None:
         """Publish the public result, never private hand-off data."""
+        if outcome.result is None:
+            return
+        self._publish_message(
+            context,
+            outcome,
+            command=command,
+            operation_token=operation_token,
+        )
+        self._publish_artifacts(context, outcome)
+
+    def _publish_message(
+        self,
+        context: ExecutionContext,
+        outcome: DriverOutcome,
+        *,
+        command: ExecutionCommand,
+        operation_token: str,
+    ) -> None:
+        """Publish a bounded assistant message when the result has content."""
+        publications = build_message_publications(
+            context,
+            outcome,
+            command,
+            operation_token,
+            self._reservations.admitted_assistant_message_id(
+                owner=context.owner_ref,
+                execution_id=context.execution_id,
+            ),
+        )
+        for publication in publications:
+            self._append_publication(context, publication)
+
+    def _publish_artifacts(
+        self,
+        context: ExecutionContext,
+        outcome: DriverOutcome,
+    ) -> None:
+        """Publish public artifact facts and persist private delivery refs."""
         result = outcome.result
         if result is None:
             return
-        message_content = (
-            json.dumps(
-                result.tabular.to_public_dict(),
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-            if result.tabular is not None
-            else result.answer
-        )
-        if message_content:
-            output_revision = max(1, outcome.provider_revision)
-            message_id = _assistant_message_id(
-                context,
-                command,
-                admitted_message_id=(
-                    self._reservations.admitted_assistant_message_id(
-                        owner=context.owner_ref,
-                        execution_id=context.execution_id,
-                    )
-                ),
-            )
-            chunks = (
-                _utf8_bounded_chunks(message_content, max_bytes=4096)
-                if result.tabular is not None
-                else tuple(
-                    message_content[slice(index, index + 8192)]
-                    for index in range(0, len(message_content), 8192)
-                )
-            )
-            content_sha256 = hashlib.sha256(
-                message_content.encode("utf-8", errors="strict")
-            ).hexdigest()
-            base_offset = 0
-            for chunk_index, text in enumerate(chunks):
-                completed = outcome.terminal and chunk_index == len(chunks) - 1
-                event_type = (
-                    ExecutionEventType.MESSAGE_COMPLETED
-                    if completed
-                    else ExecutionEventType.MESSAGE_SNAPSHOT
-                )
-                offset = base_offset + len(text)
-                self._append(
-                    context,
-                    event_type=event_type,
-                    status=EventStatus(outcome.status.value),
-                    payload={
-                        "output_revision": output_revision,
-                        "message_id": message_id,
-                        "source_message_id": message_id,
-                        "base_offset": base_offset,
-                        "offset": offset,
-                        "total_length": len(message_content),
-                        "chunk_index": chunk_index,
-                        "chunk_count": len(chunks),
-                        "content_sha256": content_sha256,
-                        "text": text,
-                        **(
-                            {"references": list(result.references)}
-                            if completed and result.references
-                            else {}
-                        ),
-                    },
-                    summary_key=event_type.value,
-                    summary_text=(
-                        "Message completed"
-                        if completed
-                        else "Message snapshot updated"
-                    ),
-                    operation_token=(
-                        f"{operation_token}:message:{output_revision}:"
-                        f"{chunk_index}"
-                    ),
-                    source="message",
-                )
-                base_offset = offset
         for artifact in result.artifacts:
-            target_kind = str(artifact.target_kind)
             if (
                 self._target_store is not None
                 and artifact.private_delivery_ref is not None
             ):
                 try:
                     self._target_store.put(
-                        ExecutionTargetBindingV2(
-                            owner=context.owner_ref,
-                            execution_id=context.execution_id,
-                            kind=target_kind,
-                            target_id=artifact.target_id,
-                            role=artifact.role,
-                            name=artifact.name or artifact.role,
-                            media_type=artifact.media_type,
-                            size_bytes=artifact.size_bytes,
-                            delivery_ref=artifact.private_delivery_ref,
-                        )
+                        build_artifact_target_binding(context, artifact)
                     )
                 except ExecutionTargetBindingFenceError as exc:
                     raise ExecutionReservationConflictError(
                         "provider_join_lease_lost"
                     ) from exc
-            event_type = (
-                ExecutionEventType.ARTIFACT_PUBLISHED
-                if target_kind in {"artifact", "download"}
-                else ExecutionEventType.RESULT_PUBLISHED
-            )
-            self._append(
+            self._append_publication(
                 context,
-                event_type=event_type,
-                status=EventStatus(outcome.status.value),
-                payload={
-                    "name": artifact.name,
-                    "media_type": artifact.media_type,
-                    "size_bytes": artifact.size_bytes,
-                },
-                summary_key=f"result.{artifact.role}.published",
-                summary_text="Result published",
-                operation_token=(
-                    f"resource:{target_kind}:{artifact.target_id}"
-                ),
-                source="artifact",
-                target={
-                    "kind": target_kind,
-                    "id": artifact.target_id,
-                },
+                build_artifact_publication(outcome, artifact),
             )
+
+    def _append_publication(
+        self,
+        context: ExecutionContext,
+        publication: RuntimeEventPublication,
+    ) -> None:
+        """Append one fully prepared public Runtime event."""
+        self._append(
+            context,
+            event_type=publication.event_type,
+            status=publication.status,
+            payload=publication.payload,
+            summary_key=publication.summary[0],
+            summary_text=publication.summary[1],
+            operation_token=publication.operation_token,
+            source=publication.source,
+            target=publication.target,
+        )
 
     def _append_input_action(
         self,
@@ -634,7 +597,7 @@ class ExecutionRuntime:
         """Record bounded action state without exposing submitted input."""
         assert command.action_id is not None
         assert command.expected_revision is not None
-        surface_id = _public_action_surface_id(command)
+        surface_id = public_action_surface_id(command)
         self._append(
             context,
             event_type=event_type,
@@ -670,18 +633,19 @@ class ExecutionRuntime:
         driver = self._drivers.get(context.agent.driver)
         if driver is None:
             return DriverOutcome.failed(code="driver_unavailable")
-        try:
-            with bind_execution_boundary(context, services):
-                return await driver.execute(
-                    operation, context, command, services
+        outcome = DriverOutcome.failed(code="driver_unhandled_error")
+        with suppress(Exception):
+            try:
+                with bind_execution_boundary(context, services):
+                    outcome = await driver.execute(
+                        operation, context, command, services
+                    )
+            except ExecutionRuntimeError as exc:
+                outcome = DriverOutcome.failed(
+                    code=exc.code,
+                    retryable=exc.retryable,
                 )
-        except ExecutionRuntimeError as exc:
-            return DriverOutcome.failed(
-                code=exc.code,
-                retryable=exc.retryable,
-            )
-        except Exception:
-            return DriverOutcome.failed(code="driver_unhandled_error")
+        return outcome
 
     def _record_nonterminal(
         self,
@@ -824,7 +788,7 @@ class ExecutionRuntime:
             owner=context.owner_ref,
             execution_id=context.execution_id,
             operation_id=operation_id,
-            outcome_json=_outcome_json(outcome),
+            outcome_json=serialize_driver_outcome(outcome),
         )
 
     def _settle_terminal(
@@ -870,63 +834,58 @@ class ExecutionRuntime:
         """Best-effort publication of already-public operation facts."""
         if self._execution_log_store is None or self._target_store is None:
             return
-        try:
-            events: list[ExecutionEventV2] = []
-            after_seq = 0
-            while True:
-                page = self._journal.list_events(
-                    context.execution_id,
-                    owner=context.owner_ref,
-                    after_seq=after_seq,
-                    limit=200,
-                )
-                if page is None:
-                    return
-                events.extend(page.items)
-                after_seq = page.next_after_seq
-                if not page.has_more:
-                    break
-            if not any(event.work_unit_id is not None for event in events):
-                return
-            payload = build_execution_log_document(
-                context.execution_id, events
+        with suppress(Exception):
+            self._publish_execution_log_unchecked(context, outcome)
+
+    def _publish_execution_log_unchecked(
+        self,
+        context: ExecutionContext,
+        outcome: DriverOutcome,
+    ) -> None:
+        """Publish an execution log after the optional stores are present."""
+        assert self._execution_log_store is not None
+        assert self._target_store is not None
+        events: list[ExecutionEventV2] = []
+        after_seq = 0
+        while True:
+            page = self._journal.list_events(
+                context.execution_id,
+                owner=context.owner_ref,
+                after_seq=after_seq,
+                limit=200,
             )
-            artifact = self._execution_log_store.put(
+            if page is None:
+                return
+            events.extend(page.items)
+            after_seq = page.next_after_seq
+            if not page.has_more:
+                break
+        if not any(event.work_unit_id is not None for event in events):
+            return
+        payload = build_execution_log_document(context.execution_id, events)
+        artifact = self._execution_log_store.put(
+            owner=context.owner_ref,
+            execution_id=context.execution_id,
+            payload=payload,
+        )
+        self._target_store.put(
+            build_execution_log_target_binding(
                 owner=context.owner_ref,
                 execution_id=context.execution_id,
-                payload=payload,
+                artifact=artifact,
             )
-            self._target_store.put(
-                ExecutionTargetBindingV2(
-                    owner=context.owner_ref,
-                    execution_id=context.execution_id,
-                    kind="artifact",
-                    target_id=artifact.target_id,
-                    role="execution_log",
-                    name=artifact.name,
-                    media_type=artifact.media_type,
-                    size_bytes=artifact.size_bytes,
-                    delivery_ref=artifact.delivery_ref,
-                )
-            )
-            self._append(
-                context,
-                event_type=ExecutionEventType.ARTIFACT_PUBLISHED,
-                status=EventStatus(outcome.status.value),
-                payload={
-                    "name": artifact.name,
-                    "media_type": artifact.media_type,
-                    "size_bytes": artifact.size_bytes,
-                },
-                summary_key="result.execution_log.published",
-                summary_text="Execution log published",
-                operation_token=f"execution-log:{artifact.target_id}",
-                source="artifact",
-                target={"kind": "artifact", "id": artifact.target_id},
-            )
-        except Exception:
-            # Optional diagnostics can never replace the business outcome.
-            return
+        )
+        self._append(
+            context,
+            event_type=ExecutionEventType.ARTIFACT_PUBLISHED,
+            status=EventStatus(outcome.status.value),
+            payload=artifact_public_payload(artifact),
+            summary_key="result.execution_log.published",
+            summary_text="Execution log published",
+            operation_token=f"execution-log:{artifact.target_id}",
+            source="artifact",
+            target={"kind": "artifact", "id": artifact.target_id},
+        )
 
     def _append_todo_snapshot(
         self,
@@ -993,27 +952,24 @@ class ExecutionRuntime:
     def _append(
         self,
         context: ExecutionContext,
-        *,
-        event_type: ExecutionEventType,
-        status: EventStatus,
-        payload: dict[str, object],
-        summary_key: str,
-        summary_text: str,
-        operation_token: str = "start",
-        source: str = "runtime",
-        target: dict[str, str] | None = None,
+        **fields: Unpack[RuntimeAppendFields],
     ) -> None:
+        event_type = fields["event_type"]
+        operation_token = fields.get("operation_token", "start")
         intent = parse_execution_event_intent_v2(
             {
                 "type": event_type.value,
-                "status": status.value,
-                "source": source,
+                "status": fields["status"].value,
+                "source": fields.get("source", "runtime"),
                 "span_id": context.current_span_id,
                 "parent_span_id": context.parent_span_id,
                 "attempt": 1,
-                "summary": {"key": summary_key, "text": summary_text},
-                "public_payload": payload,
-                "target": target,
+                "summary": {
+                    "key": fields["summary_key"],
+                    "text": fields["summary_text"],
+                },
+                "public_payload": fields["payload"],
+                "target": fields.get("target"),
                 "idempotency_key": (
                     f"runtime:{context.current_span_id}:{event_type.value}:"
                     f"{operation_token}"
@@ -1030,115 +986,3 @@ class ExecutionRuntime:
             raise ExecutionReservationConflictError(
                 "provider_join_lease_lost"
             ) from exc
-
-
-def _context(
-    record: ExecutionReservationRecord,
-    spec: PublicAgentSpec,
-    transport: str,
-) -> ExecutionContext:
-    deadline = datetime.fromisoformat(
-        record.deadline_at.replace("Z", "+00:00")
-    )
-    return ExecutionContext(
-        owner_ref=record.owner,
-        execution_id=record.execution_id,
-        fingerprint_version=record.fingerprint_version,
-        fingerprint=record.fingerprint,
-        agent=spec,
-        root_span_id=record.root_span_id,
-        current_span_id=record.root_span_id,
-        transport=transport,
-        run_id=record.run_id,
-        deadline_at=deadline,
-    )
-
-
-def _record_outcome(record: ExecutionReservationRecord) -> DriverOutcome:
-    if record.status is ExecutionStatus.FAILED:
-        return DriverOutcome.failed(code="execution_failed")
-    return DriverOutcome(status=record.status)
-
-
-def _deadline_exceeded(
-    record: ExecutionReservationRecord,
-    now: datetime,
-) -> bool:
-    if record.status is ExecutionStatus.WAITING_INPUT:
-        return False
-    deadline = datetime.fromisoformat(
-        record.deadline_at.replace("Z", "+00:00")
-    )
-    return now >= deadline
-
-
-_PUBLIC_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-
-
-def _public_action_surface_id(command: ExecutionCommand) -> str:
-    """Prefer the validated surface, otherwise derive an opaque safe id."""
-    candidate = command.arguments.get("surface_id")
-    if isinstance(candidate, str) and _PUBLIC_IDENTIFIER.fullmatch(candidate):
-        return candidate
-    action_id = command.action_id or "action"
-    if _PUBLIC_IDENTIFIER.fullmatch(action_id):
-        return action_id
-    digest = hashlib.sha256(
-        action_id.encode("utf-8", errors="replace")
-    ).hexdigest()
-    return f"action-{digest[:32]}"
-
-
-def _input_resolution_outcome(
-    command: ExecutionCommand,
-    outcome: DriverOutcome,
-) -> str:
-    """Derive a finite public result without copying submitted values."""
-    arguments = command.arguments
-    if arguments.get("cancelled") is True:
-        return "cancelled"
-    if arguments.get("accepted") is True or arguments.get("approved") is True:
-        return "accepted"
-    return outcome.status.value
-
-
-def _outcome_json(outcome: DriverOutcome) -> str:
-    return json.dumps(
-        {
-            "status": outcome.status.value,
-            "failure": (
-                {
-                    "code": outcome.failure.code,
-                    "retryable": outcome.failure.retryable,
-                }
-                if outcome.failure is not None
-                else None
-            ),
-            "provider_revision": outcome.provider_revision,
-            "retry_after_ms": outcome.retry_after_ms,
-            "tracking_health": outcome.tracking_health.value,
-            "cancellation_outcome": outcome.cancellation_outcome,
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _outcome_from_json(value: str) -> DriverOutcome:
-    raw = json.loads(value)
-    failure = raw.get("failure")
-    if failure is not None:
-        return DriverOutcome.failed(
-            code=failure["code"],
-            retryable=bool(failure["retryable"]),
-        )
-    return DriverOutcome(
-        status=ExecutionStatus(raw["status"]),
-        provider_revision=int(raw.get("provider_revision", 0)),
-        retry_after_ms=raw.get("retry_after_ms"),
-        tracking_health=TrackingHealth(
-            raw.get("tracking_health", TrackingHealth.HEALTHY.value)
-        ),
-        cancellation_outcome=raw.get("cancellation_outcome"),
-    )

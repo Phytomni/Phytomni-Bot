@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 import hashlib
 from collections.abc import Mapping
-from typing import Literal, cast
+from typing import Annotated, Literal, NotRequired, TypedDict, Unpack, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,7 +17,6 @@ from ..public_agent_catalog import public_agent_spec
 from .execution_journal_store_v2 import ExecutionJournal
 from .execution_journal_v2 import (
     ExecutionEventV2,
-    ProgressPublicPayload,
     PublicOperationAttemptV2,
     PublicOperationProgressV2,
     PublicOperationRecordV2,
@@ -25,11 +24,25 @@ from .execution_journal_v2 import (
     PublicTarget,
     PublicTextPayload,
 )
+from .execution_progress_v2 import operation_progress
 from .execution_trace_detail import OPERATION_PRESENTER_REGISTRY
 
 
 class _PublicTraceModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+_OperationTimestamp = Annotated[str, Field()]
+_OperationDuration = Annotated[int, Field(ge=0)]
+_OperationAttempt = Annotated[int, Field(ge=1)]
+_OperationAttempts = Annotated[
+    tuple[PublicOperationAttemptV2, ...],
+    Field(max_length=8),
+]
+_OperationDetail = Annotated[
+    dict[str, int | bool | str],
+    Field(max_length=16),
+]
 
 
 class PublicTraceOperationV1(_PublicTraceModel):
@@ -40,14 +53,14 @@ class PublicTraceOperationV1(_PublicTraceModel):
     label_key: str = Field(min_length=1, max_length=128)
     fallback_label: str = Field(min_length=1, max_length=128)
     status: str = Field(min_length=1, max_length=32)
-    started_at: str
-    last_observation_at: str
-    completed_at: str | None = None
-    duration_ms: int = Field(ge=0)
-    current_attempt: int = Field(ge=1)
-    attempts: tuple[PublicOperationAttemptV2, ...] = Field(max_length=8)
+    started_at: _OperationTimestamp
+    last_observation_at: _OperationTimestamp
+    completed_at: _OperationTimestamp | None = None
+    duration_ms: _OperationDuration
+    current_attempt: _OperationAttempt
+    attempts: _OperationAttempts
     progress: PublicOperationProgressV2 | None = None
-    detail: dict[str, int | bool | str] = Field(max_length=16)
+    detail: _OperationDetail
     summary: PublicOperationSummaryV2 | None = None
     target: PublicTarget
 
@@ -99,6 +112,14 @@ TraceItemStatusV1 = Literal[
 ]
 
 
+class _TraceResolutionFields(TypedDict):
+    owner: str
+    execution_id: str
+    target_id: str
+    after_seq: NotRequired[int]
+    limit: NotRequired[int]
+
+
 def trace_target_for_operation(
     *,
     agent_slug: str,
@@ -123,61 +144,36 @@ def trace_target_for_operation(
 
 def resolve_trace_target(
     journal: ExecutionJournal,
-    *,
-    owner: str,
-    execution_id: str,
-    target_id: str,
-    after_seq: int = 0,
-    limit: int = 50,
+    **request: Unpack[_TraceResolutionFields],
 ) -> PublicTraceResolutionV1 | None:
     """Rebuild one safe trace page exclusively from canonical journal facts."""
+    after_seq = request.get("after_seq", 0)
+    limit = request.get("limit", 50)
     if after_seq < 0:
         raise ValueError("after_seq must be non-negative")
     if limit < 1 or limit > 100:
         raise ValueError("limit must be between 1 and 100")
-    projection = journal.get_projection(execution_id, owner=owner)
-    operation = next(
-        (
-            candidate
-            for candidate in projection.operations
-            if candidate.target is not None
-            and candidate.target.kind.value == "trace"
-            and candidate.target.id == target_id
-        ),
-        None,
+    projection = journal.get_projection(
+        request["execution_id"],
+        owner=request["owner"],
+    )
+    operation = _find_trace_operation(
+        projection.operations,
+        request["target_id"],
     )
     if operation is None or operation.target is None:
         return None
-    events = _all_events(journal, owner=owner, execution_id=execution_id)
-    analysis_span_id = next(
-        (
-            event.span_id
-            for event in events
-            if event.work_unit_id == operation.work_unit_id
-            and event.type.value.startswith("span.")
-            and getattr(event.public_payload, "phase", None)
-            == "remote.analysis"
-        ),
-        None,
+    events = _all_events(
+        journal,
+        owner=request["owner"],
+        execution_id=request["execution_id"],
     )
-    descendant_spans = {analysis_span_id} if analysis_span_id else set()
-    for event in events:
-        if event.parent_span_id in descendant_spans:
-            descendant_spans.add(event.span_id)
-
-    operations_by_work = {
-        candidate.work_unit_id: candidate
-        for candidate in projection.operations
-    }
-    items: list[PublicTraceFeedItemV1] = []
-    for event in events:
-        item = _trace_feed_item(
-            event,
-            operations_by_work=operations_by_work,
-            descendant_spans=descendant_spans,
-        )
-        if item is not None:
-            items.append(item)
+    descendant_spans = _descendant_spans(events, operation.work_unit_id)
+    items = _trace_feed_items(
+        events,
+        projection.operations,
+        descendant_spans,
+    )
     last_activity = items[-1].occurred_at if items else None
     remaining = [item for item in items if item.seq > after_seq]
     page_items = tuple(remaining[:limit])
@@ -201,6 +197,67 @@ def resolve_trace_target(
         next_after_seq=next_after_seq,
         has_more=len(remaining) > len(page_items),
     )
+
+
+def _find_trace_operation(
+    operations: tuple[PublicOperationRecordV2, ...],
+    target_id: str,
+) -> PublicOperationRecordV2 | None:
+    """Find the operation addressed by one opaque trace target."""
+    return next(
+        (
+            operation
+            for operation in operations
+            if operation.target is not None
+            and operation.target.kind.value == "trace"
+            and operation.target.id == target_id
+        ),
+        None,
+    )
+
+
+def _descendant_spans(
+    events: tuple[ExecutionEventV2, ...],
+    work_unit_id: str,
+) -> set[str]:
+    """Collect the analysis span and its ordered descendants."""
+    analysis_span_id = next(
+        (
+            event.span_id
+            for event in events
+            if event.work_unit_id == work_unit_id
+            and event.type.value.startswith("span.")
+            and getattr(event.public_payload, "phase", None)
+            == "remote.analysis"
+        ),
+        None,
+    )
+    descendants = {analysis_span_id} if analysis_span_id else set()
+    for event in events:
+        if event.parent_span_id in descendants:
+            descendants.add(event.span_id)
+    return descendants
+
+
+def _trace_feed_items(
+    events: tuple[ExecutionEventV2, ...],
+    operations: tuple[PublicOperationRecordV2, ...],
+    descendant_spans: set[str],
+) -> list[PublicTraceFeedItemV1]:
+    """Project all eligible semantic feed items in journal order."""
+    operations_by_work = {
+        operation.work_unit_id: operation for operation in operations
+    }
+    items: list[PublicTraceFeedItemV1] = []
+    for event in events:
+        item = _trace_feed_item(
+            event,
+            operations_by_work=operations_by_work,
+            descendant_spans=descendant_spans,
+        )
+        if item is not None:
+            items.append(item)
+    return items
 
 
 def _all_events(
@@ -236,34 +293,52 @@ def _trace_feed_item(
 ) -> PublicTraceFeedItemV1 | None:
     event_type = event.type.value
     if event_type in {"reasoning.summary", "decision.note"}:
-        if (
-            event.span_id not in descendant_spans
-            and not event.summary.key.startswith("gene_network.")
-        ):
-            return None
-        summary_kind: Literal["reasoning_summary", "decision"] = (
-            "reasoning_summary"
-            if event_type == "reasoning.summary"
-            else "decision"
-        )
-        if not isinstance(event.public_payload, PublicTextPayload):
-            return None
-        return PublicTraceFeedItemV1(
-            item_id=event.event_id,
-            seq=event.seq,
-            kind=summary_kind,
-            operation_key=event.summary.key,
-            label_key=f"execution.trace.{summary_kind}",
-            fallback_label=(
-                "Reasoning summary"
-                if summary_kind == "reasoning_summary"
-                else "Decision"
-            ),
-            status="running",
-            attempt=event.attempt,
-            occurred_at=event.occurred_at,
-            summary=event.public_payload.text,
-        )
+        return _summary_feed_item(event, descendant_spans)
+    return _work_feed_item(event, operations_by_work, descendant_spans)
+
+
+def _summary_feed_item(
+    event: ExecutionEventV2,
+    descendant_spans: set[str],
+) -> PublicTraceFeedItemV1 | None:
+    """Project one explicitly public reasoning or decision fact."""
+    if (
+        event.span_id not in descendant_spans
+        and not event.summary.key.startswith("gene_network.")
+    ):
+        return None
+    if not isinstance(event.public_payload, PublicTextPayload):
+        return None
+    summary_kind: Literal["reasoning_summary", "decision"] = (
+        "reasoning_summary"
+        if event.type.value == "reasoning.summary"
+        else "decision"
+    )
+    return PublicTraceFeedItemV1(
+        item_id=event.event_id,
+        seq=event.seq,
+        kind=summary_kind,
+        operation_key=event.summary.key,
+        label_key=f"execution.trace.{summary_kind}",
+        fallback_label=(
+            "Reasoning summary"
+            if summary_kind == "reasoning_summary"
+            else "Decision"
+        ),
+        status="running",
+        attempt=event.attempt,
+        occurred_at=event.occurred_at,
+        summary=event.public_payload.text,
+    )
+
+
+def _work_feed_item(
+    event: ExecutionEventV2,
+    operations_by_work: Mapping[str, PublicOperationRecordV2],
+    descendant_spans: set[str],
+) -> PublicTraceFeedItemV1 | None:
+    """Project one eligible work-unit event into the public trace feed."""
+    event_type = event.type.value
     if not event_type.startswith("work_unit."):
         return None
     if event.work_unit_id is None:
@@ -279,21 +354,9 @@ def _trace_feed_item(
         and event.parent_span_id not in descendant_spans
     ):
         return None
-    progress = None
-    if (
-        isinstance(event.public_payload, ProgressPublicPayload)
-        and event.public_payload.completed is not None
-        and event.public_payload.total is not None
-    ):
-        unit = event.public_payload.unit
-        if unit is None and len(presenter.counter_units) == 1:
-            unit = presenter.counter_units[0]
-        if unit is not None:
-            progress = PublicOperationProgressV2(
-                completed=event.public_payload.completed,
-                total=event.public_payload.total,
-                unit=unit,
-            )
+    progress = operation_progress(
+        event.public_payload, presenter.counter_units
+    )
     status = _trace_status(event.status.value)
     operation_kind: Literal["phase", "tool"] = (
         "phase" if presenter.semantic_kind == "phase" else "tool"

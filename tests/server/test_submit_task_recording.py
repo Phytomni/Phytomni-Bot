@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from tests.support.http_execution_fixtures import reserve_running_execution
 from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.mcp.handlers import (
@@ -19,13 +20,6 @@ from mcp_server_phytomni.mcp.handlers import (
 )
 from mcp_server_phytomni.runtime.execution_defaults import (
     empty_execution_projection,
-)
-from mcp_server_phytomni.runtime.execution_journal_v2 import ExecutionStatus
-from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-    SQLiteExecutionReservationRepository,
-)
-from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-    ExecutionCommand,
 )
 from mcp_server_phytomni.runtime.request_context import (
     current_accepted_task_ids,
@@ -42,35 +36,6 @@ from mcp_server_phytomni.runtime.submit_recorder import (
 from mcp_server_phytomni.runtime.task_manager import TaskManager
 
 pytestmark = pytest.mark.server
-
-
-def _reserve(
-    db_path: str,
-    *,
-    run_id: str,
-    execution_id: str,
-    owner: str,
-    agent: str,
-) -> None:
-    reservations = SQLiteExecutionReservationRepository(
-        db_path,
-        run_id_factory=lambda: run_id,
-    )
-    reservations.reserve(
-        owner=owner,
-        execution_id=execution_id,
-        fingerprint_version=1,
-        fingerprint=f"fixture:{execution_id}",
-        command=ExecutionCommand(agent_slug=agent, arguments={}),
-    )
-    assert reservations.record_observation(
-        owner=owner,
-        execution_id=execution_id,
-        status=ExecutionStatus.RUNNING,
-        tracking_health="healthy",
-        cancellation_state="unsupported",
-        next_attempt_at=None,
-    )
 
 
 @pytest.mark.parametrize(
@@ -119,10 +84,15 @@ def test_extractors_cover_every_remote_agent(
     result: dict[str, Any],
     expected: tuple[tuple[str, str, str | None, str | None], ...],
 ) -> None:
+    """Verify extractors cover every remote agent."""
     assert extract_task_submissions(result, agent) == expected
 
 
 def test_all_submit_handlers_are_decorated() -> None:
+    """Verify every submit-style handler carries the recorder wrapper.
+    ``functools.wraps`` inside the decorator factory keeps the original
+    handler reachable via ``__wrapped__`` even when the factory itself is
+    parameterised with a static agent slug."""
     for handler in (
         handle_analyst_agent,
         handle_deep_genome_agent,
@@ -136,6 +106,7 @@ def test_all_submit_handlers_are_decorated() -> None:
 async def test_decorator_preserves_result_but_requires_runtime(
     tasks_db_path: str,
 ) -> None:
+    """Verify decorator preserves result but requires runtime."""
     submitted = {"task_id": "T-1", "output_dir": "/obs/run"}
 
     async def fake_handler(_args: Any) -> Any:
@@ -147,7 +118,7 @@ async def test_decorator_preserves_result_but_requires_runtime(
         assert current_recorder_degraded() is True
         assert current_accepted_task_ids() == ("T-1",)
     assert TaskManager(tasks_db_path).get_task("T-1") is None
-    assert RunRegistry(tasks_db_path).list_runs(owner="alice") == []
+    assert not RunRegistry(tasks_db_path).list_runs(owner="alice")
 
 
 @pytest.mark.parametrize(
@@ -191,8 +162,9 @@ def test_recorder_attaches_children_to_one_reserved_runtime_run(
     expected_ids: tuple[str, ...],
     expected_dirs: list[str],
 ) -> None:
+    """Verify recorder attaches children to one reserved runtime run."""
     run_id = f"run-{agent}"
-    _reserve(
+    reserve_running_execution(
         tasks_db_path,
         run_id=run_id,
         execution_id=f"turn-{agent}",
@@ -221,7 +193,8 @@ def test_recorder_attaches_children_to_one_reserved_runtime_run(
 def test_agent_or_owner_mismatch_degrades_without_second_run(
     tasks_db_path: str,
 ) -> None:
-    _reserve(
+    """Verify agent or owner mismatch degrades without second run."""
+    reserve_running_execution(
         tasks_db_path,
         run_id="run-one",
         execution_id="turn-one",
@@ -245,12 +218,13 @@ def test_agent_or_owner_mismatch_degrades_without_second_run(
         )
         assert current_recorder_degraded() is True
     assert len(RunRegistry(tasks_db_path).list_runs(owner="alice")) == 1
-    assert RunRegistry(tasks_db_path).list_runs(owner="bob") == []
+    assert not RunRegistry(tasks_db_path).list_runs(owner="bob")
 
 
 def test_malformed_and_dedup_results_never_create_state(
     tasks_db_path: str,
 ) -> None:
+    """Verify malformed and dedup results never create state."""
     record_submitted_task("not a dict", agent="analyst")
     record_submitted_task({}, agent="analyst")
     record_submitted_task(
@@ -258,13 +232,14 @@ def test_malformed_and_dedup_results_never_create_state(
         agent="analyst",
     )
     assert TaskManager(tasks_db_path).get_task("ghost") is None
-    assert RunRegistry(tasks_db_path).list_runs(owner="anonymous") == []
+    assert not RunRegistry(tasks_db_path).list_runs(owner="anonymous")
 
 
 def test_submission_projection_keeps_bounded_warnings(
     tasks_db_path: str,
 ) -> None:
-    _reserve(
+    """Verify submission projection keeps bounded warnings."""
+    reserve_running_execution(
         tasks_db_path,
         run_id="run-warning",
         execution_id="turn-warning",
@@ -291,7 +266,13 @@ def test_submission_projection_keeps_bounded_warnings(
     assert record is not None and record.result is not None
     expected = empty_execution_projection(result_archive_required=True)
     expected["execution"]["tasks"] = [
-        {"id": "warning-1", "accepted": True, "status": "submitted"}
+        {
+            "id": "warning-1",
+            "accepted": True,
+            "status": "submitted",
+            "kind": "research",
+            "error_code": None,
+        }
     ]
     expected["execution"]["output_dirs"] = ["/r"]
     expected["execution"]["warnings"] = [

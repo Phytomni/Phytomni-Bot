@@ -33,6 +33,17 @@ def log_task_failure(task: asyncio.Task[Any], *, operation: str) -> None:
         )
 
 
+async def wait_for_stop(
+    stop: asyncio.Event, *, timeout_seconds: float
+) -> bool:
+    """Wait for a stop request until timeout and report whether it arrived."""
+    try:
+        await asyncio.wait_for(stop.wait(), timeout=timeout_seconds)
+    except TimeoutError:
+        return stop.is_set()
+    return True
+
+
 def _observe_cancelled_thread_wait(
     future: Future[Any],
     wrapped: asyncio.Future[Any],

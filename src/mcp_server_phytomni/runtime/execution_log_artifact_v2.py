@@ -14,8 +14,8 @@ from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
 from .execution_event_limits import DEFAULT_EXECUTION_TRACE_DETAIL_LIMITS
-from .execution_journal_schema import migrate_execution_journal_v2
 from .execution_journal_v2 import ExecutionEventV2
+from .execution_store_support_v2 import initialize_execution_v2_store
 from .execution_trace_detail import OPERATION_PRESENTER_REGISTRY
 from .sqlite import sqlite_transaction
 
@@ -41,7 +41,9 @@ class ExecutionLogArtifactStore(Protocol):
         owner: str,
         execution_id: str,
         payload: bytes,
-    ) -> ExecutionLogArtifactV2: ...
+    ) -> ExecutionLogArtifactV2:
+        """Persist immutable execution-log bytes and return their binding."""
+        raise NotImplementedError
 
     def get(
         self,
@@ -49,7 +51,8 @@ class ExecutionLogArtifactStore(Protocol):
         owner: str,
         execution_id: str,
         target_id: str,
-    ) -> bytes | None: ...
+    ) -> bytes | None:
+        """Read immutable log bytes through an owner-scoped target."""
 
 
 def build_execution_log_document(
@@ -147,16 +150,7 @@ class SQLiteExecutionLogArtifactStore:
 
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
-        self._init_db()
-
-    def _init_db(self) -> None:
-        from .run_registry import RunRegistry
-
-        RunRegistry(self.db_path)
-        with sqlite_transaction(self.db_path) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            migrate_execution_journal_v2(connection)
-            connection.commit()
+        initialize_execution_v2_store(self.db_path)
 
     def put(
         self,

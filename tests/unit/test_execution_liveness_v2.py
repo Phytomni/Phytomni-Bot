@@ -6,17 +6,45 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pytest
+from tests.support.execution_runtime_v2 import (
+    ExecutionRuntimeOverrides,
+    ExecutionStartRequest,
+    build_local_graph_runtime,
+    run_execution_start,
+)
+
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    ExecutionJournalValidationError,
+    parse_execution_event_intent_v2,
+)
+from mcp_server_phytomni.runtime.execution_liveness_v2 import (
+    ExecutionLivenessClocks,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    DriverOutcome,
+    TransportNeutralResult,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SQLiteExecutionWorkRepository,
+)
+from mcp_server_phytomni.runtime.operation_instrumentation_v2 import (
+    instrument_operation_invocation,
+    record_current_operation_liveness,
+)
 
 
 def test_three_liveness_clocks_advance_independently_without_regression() -> (
     None
 ):
-    from mcp_server_phytomni.runtime.execution_liveness_v2 import (
-        ExecutionLivenessClocks,
-    )
+    """Verify three liveness clocks advance independently without
+    regression."""
 
     clocks = ExecutionLivenessClocks().observe_execution_fact(
         "2026-08-22T04:00:05Z"
@@ -39,12 +67,7 @@ def test_three_liveness_clocks_advance_independently_without_regression() -> (
 
 
 def test_liveness_payload_requires_no_fabricated_percentage() -> None:
-    import pytest
-
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionJournalValidationError,
-        parse_execution_event_intent_v2,
-    )
+    """Verify liveness payload requires no fabricated percentage."""
 
     intent = parse_execution_event_intent_v2(
         {
@@ -86,31 +109,7 @@ def test_liveness_payload_requires_no_fabricated_percentage() -> None:
 def test_quiet_operation_liveness_is_coalesced_at_the_shared_window(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
-    from mcp_server_phytomni.runtime.operation_instrumentation_v2 import (
-        instrument_operation_invocation,
-        record_current_operation_liveness,
-    )
+    """Verify quiet operation liveness is coalesced at the shared window."""
 
     now = datetime(2026, 8, 22, 4, 0, tzinfo=UTC)
 
@@ -145,30 +144,16 @@ def test_quiet_operation_liveness_is_coalesced_at_the_shared_window(
         )
         return DriverOutcome.succeeded(TransportNeutralResult(answer="ok"))
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(
-            db_path, clock=clock
-        ),
-        journal=journal,
-        work=work,
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
-        clock=clock,
+    runtime = build_local_graph_runtime(
+        db_path,
+        start_handler,
+        journal,
+        work,
+        overrides=ExecutionRuntimeOverrides(clock=clock),
     )
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-quiet-liveness",
-            fingerprint_version=1,
-            fingerprint="a" * 64,
-            command=ExecutionCommand(
-                agent_slug="knowledge", arguments={"query": "rice"}
-            ),
-            transport="test",
-        )
+    outcome = run_execution_start(
+        runtime,
+        ExecutionStartRequest("turn-quiet-liveness", "a" * 64),
     )
     assert outcome.status.value == "succeeded"
 
@@ -194,13 +179,14 @@ def test_quiet_operation_liveness_is_coalesced_at_the_shared_window(
 
 
 def test_sse_heartbeat_is_transport_only_and_never_appended() -> None:
+    """Verify SSE heartbeat is transport only and never appended."""
     route = (
         Path(__file__).parents[2]
         / "src"
         / "mcp_server_phytomni"
         / "api"
         / "routes"
-        / "executions_v2.py"
+        / "execution_v2_read_routes.py"
     ).read_text(encoding="utf-8")
 
     heartbeat_start = route.index('yield ": heartbeat\\n\\n"') - 180

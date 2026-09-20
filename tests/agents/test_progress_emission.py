@@ -59,6 +59,7 @@ def _phases(seen: list[dict[str, Any]]) -> list[str]:
 async def test_chat_generate_node_emits_responding_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify chat generation reports progress before returning an answer."""
     seen = _install_writer(monkeypatch)
 
     async def _fake_chat(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -81,6 +82,7 @@ async def test_chat_generate_node_emits_responding_progress(
 async def test_chat_follow_up_node_emits_follow_up_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify follow-up generation reports its dedicated progress stage."""
     seen = _install_writer(monkeypatch)
 
     async def _fake_chat(*_args: Any, **_kwargs: Any) -> dict[str, Any]:

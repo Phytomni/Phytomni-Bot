@@ -415,17 +415,19 @@ def test_export_real_deep_genome_preserves_brief_gene_launch_barrier() -> None:
 
 
 def test_named_manifest_includes_architecture_metadata() -> None:
+    """Verify named manifests expose their public architecture metadata."""
     manifest = export_manifest(build_chat_graph(), graph_id="chat")
 
     assert manifest.graph_id == "chat"
     assert manifest.classification == "public"
     assert manifest.public_agent == "ChatAgent"
     assert manifest.lifecycle == ("synchronous", "streaming")
-    assert manifest.subgraph_dependencies == ()
+    assert not manifest.subgraph_dependencies
     assert manifest.remote_providers == ("model_provider",)
 
 
 def test_internal_graph_is_not_promoted_to_public_agent() -> None:
+    """Verify internal graphs stay excluded from the public agent catalog."""
     manifest = export_manifest(
         build_environment_graph(), graph_id="environment"
     )

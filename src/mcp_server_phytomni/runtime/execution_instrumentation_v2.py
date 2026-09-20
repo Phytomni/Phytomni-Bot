@@ -12,7 +12,8 @@ from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, cast
+from importlib import import_module
+from typing import Any, NotRequired, TypedDict, Unpack, cast
 
 from ..storage.path_policy import IdFactory
 from .execution_content_stream_v2 import execution_content_stream_for_db
@@ -21,11 +22,26 @@ from .execution_journal_v2 import (
     WorkUnitStatus,
     parse_execution_event_intent_v2,
 )
+from .execution_observation_store_v2 import (
+    append_observation_fact,
+    create_observed_span,
+    failed_observation_payloads,
+    failed_work_status,
+    finish_work_observation,
+    observation_deadline,
+    observation_duration_ms,
+    start_work_observation,
+    terminal_observation_presentation,
+    transition_span,
+)
 from .execution_runtime_contracts import ExecutionContext, ExecutionServices
 from .execution_work_store_v2 import (
     JoinPolicy,
-    SpanSpec,
     WorkUnitSpec,
+)
+from .instrumentation_contracts_v2 import (
+    ObservationFactIdentity,
+    keyword_signature,
 )
 
 
@@ -35,6 +51,17 @@ class ExecutionBoundary:
 
     context: ExecutionContext
     services: ExecutionServices
+
+    def nested(self, *, agent: Any, span_id: str) -> ExecutionBoundary:
+        """Create a child boundary while retaining the explicit services."""
+        return ExecutionBoundary(
+            context=self.context.nested(agent=agent, span_id=span_id),
+            services=self.services,
+        )
+
+    def nested_for_span(self, span_id: str) -> ExecutionBoundary:
+        """Create a same-Agent child boundary for an observed span."""
+        return self.nested(agent=self.context.agent, span_id=span_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +103,49 @@ class _ModelObservation:
     started_at: float
     max_attempts: int
     retry_count: int = 0
+
+
+class _ModelFactKwargs(ObservationFactIdentity):
+    """Presented fields for one model observation fact."""
+
+    text: str
+    payload: dict[str, object]
+    suffix: str
+
+
+class _NestedAgentFactKwargs(TypedDict):
+    """Presented fields for one nested-Agent span fact."""
+
+    event_type: str
+    status: str
+    span: Any
+    phase: str
+    text: str
+    payload: dict[str, object]
+
+
+class ChildWorkOptions(TypedDict):
+    """Optional policy accepted by the durable child-work schedulers."""
+
+    join_policy: NotRequired[JoinPolicy | None]
+    max_attempts: NotRequired[int]
+    deadline_at: NotRequired[str | None]
+
+
+_SCHEDULE_CHILD_SIGNATURE = keyword_signature(
+    (
+        ("work_unit_id", "str"),
+        ("operation_key", "str"),
+        ("driver", "str"),
+        ("call", "Callable[[], Awaitable[T]]"),
+    ),
+    (
+        ("join_policy", "JoinPolicy | None", None),
+        ("max_attempts", "int", 1),
+        ("deadline_at", "str | None", None),
+    ),
+    return_annotation="asyncio.Task[T]",
+)
 
 
 _CURRENT_BOUNDARY: ContextVar[ExecutionBoundary | None] = ContextVar(
@@ -205,24 +275,14 @@ async def instrument_tool_invocation[T](
     observation = _start_tool_observation(boundary, tool_key)
     if observation is None:
         return await call()
-    nested = ExecutionBoundary(
-        context=boundary.context.nested(
-            agent=boundary.context.agent,
-            span_id=observation.span.span_id,
-        ),
-        services=boundary.services,
-    )
+    nested = boundary.nested_for_span(observation.span.span_id)
     try:
         with bind_execution_boundary(nested.context, nested.services):
             result = await call()
     except BaseException as exc:
         _finish_tool_observation(
             observation,
-            status=(
-                WorkUnitStatus.CANCELLED
-                if isinstance(exc, asyncio.CancelledError)
-                else WorkUnitStatus.FAILED
-            ),
+            status=failed_work_status(exc),
         )
         raise
     _finish_tool_observation(observation, status=WorkUnitStatus.SUCCEEDED)
@@ -244,13 +304,7 @@ async def instrument_model_invocation[T](
     )
     if observation is None:
         return await call()
-    nested = ExecutionBoundary(
-        context=boundary.context.nested(
-            agent=boundary.context.agent,
-            span_id=observation.span.span_id,
-        ),
-        services=boundary.services,
-    )
+    nested = boundary.nested_for_span(observation.span.span_id)
     token = _CURRENT_MODEL_OBSERVATION.set(observation)
     try:
         with bind_execution_boundary(nested.context, nested.services):
@@ -258,11 +312,7 @@ async def instrument_model_invocation[T](
     except BaseException as exc:
         _finish_model_observation(
             observation,
-            status=(
-                WorkUnitStatus.CANCELLED
-                if isinstance(exc, asyncio.CancelledError)
-                else WorkUnitStatus.FAILED
-            ),
+            status=failed_work_status(exc),
         )
         raise
     finally:
@@ -330,109 +380,44 @@ def _start_model_observation(
     *,
     max_attempts: int,
 ) -> _ModelObservation | None:
-    context = boundary.context
     work_unit_id = IdFactory().new_id("work", "model")
     span_id = IdFactory().new_id("span", "model")
-    try:
-        work_unit = boundary.services.work.create_work_unit(
-            WorkUnitSpec(
-                owner=context.owner_ref,
-                execution_id=context.execution_id,
-                work_unit_id=work_unit_id,
-                parent_span_id=context.current_span_id,
-                operation_key="model.generate",
-                driver="model",
-                max_attempts=max_attempts,
-                deadline_at=(
-                    context.deadline_at.isoformat()
-                    if context.deadline_at is not None
-                    else None
-                ),
-            )
-        )
-        _append_model_fact(
+    observation = None
+    with suppress(Exception):
+        work_unit, span = start_work_observation(
             boundary,
-            event_type="work_unit.registered",
-            status="queued",
-            span_id=context.current_span_id,
-            parent_span_id=context.parent_span_id,
-            work_unit_id=work_unit_id,
-            attempt=work_unit.attempt,
-            text="Model work registered",
-            payload={"operation_key": "model.generate"},
-            suffix="registered",
+            {
+                "work_unit_id": work_unit_id,
+                "operation_key": "model.generate",
+                "driver": "model",
+                "max_attempts": max_attempts,
+                "deadline_at": observation_deadline(boundary),
+            },
+            {
+                "span_id": span_id,
+                "work_unit_id": work_unit_id,
+                "kind": "model_attempt",
+                "label_key": "execution.operation.model.generate",
+            },
+            {
+                "source": "runtime",
+                "summary_prefix": "model.generate",
+                "registered_text": "Model work registered",
+                "created_text": "Model attempt created",
+                "started_text": "Model generation started",
+                "work_payload": {"operation_key": "model.generate"},
+                "span_payload": {"phase": "model.generate"},
+                "style": "runtime",
+            },
         )
-        span = boundary.services.work.create_span(
-            SpanSpec(
-                owner=context.owner_ref,
-                execution_id=context.execution_id,
-                span_id=span_id,
-                parent_span_id=context.current_span_id,
-                work_unit_id=work_unit_id,
-                kind="model_attempt",
-                label_key="execution.operation.model.generate",
-                attempt=work_unit.attempt,
-            )
-        )
-        _append_model_fact(
-            boundary,
-            event_type="span.created",
-            status="pending",
-            span_id=span_id,
-            parent_span_id=context.current_span_id,
-            work_unit_id=work_unit_id,
-            attempt=work_unit.attempt,
-            text="Model attempt created",
-            payload={"phase": "model.generate"},
-            suffix="span:created",
-        )
-        work_unit = boundary.services.work.update_work_unit_status(
-            context.execution_id,
-            work_unit_id,
-            owner=context.owner_ref,
-            status=WorkUnitStatus.RUNNING,
-            expected_revision=work_unit.revision,
-        )
-        _append_model_fact(
-            boundary,
-            event_type="work_unit.attempt_started",
-            status="running",
-            span_id=span_id,
-            parent_span_id=context.current_span_id,
-            work_unit_id=work_unit_id,
-            attempt=work_unit.attempt,
-            text="Model generation started",
-            payload={"operation_key": "model.generate"},
-            suffix="attempt:1:started",
-        )
-        span = boundary.services.work.update_span_status(
-            context.execution_id,
-            span_id,
-            owner=context.owner_ref,
-            status=SpanStatus.RUNNING,
-            expected_revision=span.revision,
-        )
-        _append_model_fact(
-            boundary,
-            event_type="span.started",
-            status="running",
-            span_id=span_id,
-            parent_span_id=context.current_span_id,
-            work_unit_id=work_unit_id,
-            attempt=work_unit.attempt,
-            text="Model generation started",
-            payload={"phase": "model.generate"},
-            suffix="span:started",
-        )
-        return _ModelObservation(
+        observation = _ModelObservation(
             boundary=boundary,
             work_unit=work_unit,
             span=span,
             started_at=time.perf_counter(),
             max_attempts=max_attempts,
         )
-    except Exception:
-        return None
+    return observation
 
 
 def _finish_model_observation(
@@ -441,13 +426,8 @@ def _finish_model_observation(
     status: WorkUnitStatus,
 ) -> None:
     boundary = observation.boundary
-    context = boundary.context
-    duration_ms = max(
-        0, int((time.perf_counter() - observation.started_at) * 1000)
-    )
+    duration_ms = observation_duration_ms(observation.started_at)
     if status is WorkUnitStatus.SUCCEEDED:
-        work_event, span_event = "work_unit.succeeded", "span.succeeded"
-        span_status = SpanStatus.SUCCEEDED
         text = "Model generation completed"
         work_payload: dict[str, object] = {
             "operation_key": "model.generate",
@@ -458,8 +438,6 @@ def _finish_model_observation(
             "duration_ms": duration_ms,
         }
     elif status is WorkUnitStatus.CANCELLED:
-        work_event, span_event = "work_unit.cancelled", "span.cancelled"
-        span_status = SpanStatus.CANCELLED
         text = "Model generation cancelled"
         work_payload = {
             "operation_key": "model.generate",
@@ -470,96 +448,48 @@ def _finish_model_observation(
             "duration_ms": duration_ms,
         }
     else:
-        work_event, span_event = "work_unit.failed", "span.failed"
-        span_status = SpanStatus.FAILED
         text = "Model generation failed"
-        work_payload = {
-            "code": "model_invocation_failed",
-            "retryable": False,
-            "work_unit_id": observation.work_unit.work_unit_id,
-            "duration_ms": duration_ms,
-        }
-        span_payload = dict(work_payload)
-    with suppress(Exception):
-        boundary.services.work.update_work_unit_status(
-            context.execution_id,
+        work_payload, span_payload = failed_observation_payloads(
+            "model_invocation_failed",
             observation.work_unit.work_unit_id,
-            owner=context.owner_ref,
-            status=status,
-            expected_revision=observation.work_unit.revision,
+            duration_ms,
         )
-        _append_model_fact(
-            boundary,
-            event_type=work_event,
-            status=status.value,
-            span_id=observation.span.span_id,
-            parent_span_id=observation.span.parent_span_id,
-            work_unit_id=observation.work_unit.work_unit_id,
-            attempt=min(
-                observation.max_attempts,
-                observation.work_unit.attempt + observation.retry_count,
-            ),
-            text=text,
-            payload=work_payload,
-            suffix=f"work:{status.value}",
-        )
-        boundary.services.work.update_span_status(
-            context.execution_id,
-            observation.span.span_id,
-            owner=context.owner_ref,
-            status=span_status,
-            expected_revision=observation.span.revision,
-        )
-        _append_model_fact(
-            boundary,
-            event_type=span_event,
-            status=span_status.value,
-            span_id=observation.span.span_id,
-            parent_span_id=observation.span.parent_span_id,
-            work_unit_id=observation.work_unit.work_unit_id,
-            attempt=min(
-                observation.max_attempts,
-                observation.work_unit.attempt + observation.retry_count,
-            ),
-            text=text,
-            payload=span_payload,
-            suffix=f"span:{span_status.value}",
-        )
+    terminal = terminal_observation_presentation(
+        "runtime",
+        "model.generate",
+        text,
+        (work_payload, span_payload),
+        min(
+            observation.max_attempts,
+            observation.work_unit.attempt + observation.retry_count,
+        ),
+    )
+    records = (observation.work_unit, observation.span)
+    with suppress(Exception):
+        finish_work_observation(boundary, records, status, terminal)
 
 
 def _append_model_fact(
     boundary: ExecutionBoundary,
-    *,
-    event_type: str,
-    status: str,
-    span_id: str,
-    parent_span_id: str | None,
-    work_unit_id: str,
-    attempt: int,
-    text: str,
-    payload: dict[str, object],
-    suffix: str,
+    **fact: Unpack[_ModelFactKwargs],
 ) -> None:
-    boundary.services.journal.append(
-        boundary.context.execution_id,
-        owner=boundary.context.owner_ref,
-        intent=parse_execution_event_intent_v2(
-            {
-                "type": event_type,
-                "status": status,
-                "source": "runtime",
-                "span_id": span_id,
-                "parent_span_id": parent_span_id,
-                "work_unit_id": work_unit_id,
-                "attempt": attempt,
-                "summary": {
-                    "key": f"model.generate.{suffix}",
-                    "text": text,
-                },
-                "public_payload": payload,
-                "idempotency_key": f"work:{work_unit_id}:{suffix}",
-            }
-        ),
+    append_observation_fact(
+        boundary,
+        {
+            "event_type": fact["event_type"],
+            "status": fact["status"],
+            "source": "runtime",
+            "span_id": fact["span_id"],
+            "parent_span_id": fact["parent_span_id"],
+            "work_unit_id": fact["work_unit_id"],
+            "attempt": fact["attempt"],
+            "summary_key": f"model.generate.{fact['suffix']}",
+            "text": fact["text"],
+            "public_payload": fact["payload"],
+            "idempotency_key": (
+                f"work:{fact['work_unit_id']}:{fact['suffix']}"
+            ),
+        },
     )
 
 
@@ -583,12 +513,9 @@ async def instrument_nested_agent_invocation[T](
     observation = _start_nested_agent_observation(boundary, agent_slug)
     if observation is None:
         return await call()
-    nested = ExecutionBoundary(
-        context=boundary.context.nested(
-            agent=observation.agent,
-            span_id=observation.span.span_id,
-        ),
-        services=boundary.services,
+    nested = boundary.nested(
+        agent=observation.agent,
+        span_id=observation.span.span_id,
     )
     try:
         with bind_execution_boundary(nested.context, nested.services):
@@ -612,24 +539,21 @@ def _start_nested_agent_observation(
     boundary: ExecutionBoundary,
     agent_slug: str,
 ) -> _NestedAgentObservation | None:
-    from ..public_agent_catalog import public_agent_spec
-
-    agent = public_agent_spec(agent_slug)
+    catalog = import_module("..public_agent_catalog", __package__)
+    agent = catalog.public_agent_spec(agent_slug)
     if agent is None:
         return None
-    context = boundary.context
     phase = f"agent.{agent.slug}"
     span_id = IdFactory().new_id("span", "agent")
-    try:
-        span = boundary.services.work.create_span(
-            SpanSpec(
-                owner=context.owner_ref,
-                execution_id=context.execution_id,
-                span_id=span_id,
-                parent_span_id=context.current_span_id,
-                kind="nested_agent",
-                label_key=phase,
-            )
+    observation = None
+    with suppress(Exception):
+        span = create_observed_span(
+            boundary,
+            {
+                "span_id": span_id,
+                "kind": "nested_agent",
+                "label_key": phase,
+            },
         )
         _append_nested_agent_fact(
             boundary,
@@ -640,13 +564,7 @@ def _start_nested_agent_observation(
             text="Agent delegation created",
             payload={"phase": phase},
         )
-        span = boundary.services.work.update_span_status(
-            context.execution_id,
-            span_id,
-            owner=context.owner_ref,
-            status=SpanStatus.RUNNING,
-            expected_revision=span.revision,
-        )
+        span = transition_span(boundary, span, SpanStatus.RUNNING)
         _append_nested_agent_fact(
             boundary,
             event_type="span.started",
@@ -656,15 +574,14 @@ def _start_nested_agent_observation(
             text="Agent delegation started",
             payload={"phase": phase},
         )
-        return _NestedAgentObservation(
+        observation = _NestedAgentObservation(
             boundary=boundary,
             agent=agent,
             span=span,
             phase=phase,
             started_at=time.perf_counter(),
         )
-    except Exception:
-        return None
+    return observation
 
 
 def _finish_nested_agent_observation(
@@ -695,17 +612,10 @@ def _finish_nested_agent_observation(
             "code": "nested_agent_failed",
             "retryable": False,
         }
-    payload["duration_ms"] = max(
-        0, int((time.perf_counter() - observation.started_at) * 1000)
-    )
-    context = observation.boundary.context
+    payload["duration_ms"] = observation_duration_ms(observation.started_at)
     with suppress(Exception):
-        span = observation.boundary.services.work.update_span_status(
-            context.execution_id,
-            observation.span.span_id,
-            owner=context.owner_ref,
-            status=span_status,
-            expected_revision=observation.span.revision,
+        span = transition_span(
+            observation.boundary, observation.span, span_status
         )
         _append_nested_agent_fact(
             observation.boundary,
@@ -720,44 +630,82 @@ def _finish_nested_agent_observation(
 
 def _append_nested_agent_fact(
     boundary: ExecutionBoundary,
-    *,
-    event_type: str,
-    status: str,
-    span: Any,
-    phase: str,
-    text: str,
-    payload: dict[str, object],
+    **fact: Unpack[_NestedAgentFactKwargs],
 ) -> None:
-    suffix = event_type.rsplit(".", 1)[-1]
-    boundary.services.journal.append(
-        boundary.context.execution_id,
-        owner=boundary.context.owner_ref,
-        intent=parse_execution_event_intent_v2(
-            {
-                "type": event_type,
-                "status": status,
-                "source": "agent",
-                "span_id": span.span_id,
-                "parent_span_id": span.parent_span_id,
-                "attempt": span.attempt,
-                "summary": {
-                    "key": f"{phase}.{suffix}",
-                    "text": text,
-                },
-                "public_payload": payload,
-                "idempotency_key": f"span:{span.span_id}:{suffix}",
-            }
-        ),
+    span = fact["span"]
+    suffix = fact["event_type"].rsplit(".", 1)[-1]
+    append_observation_fact(
+        boundary,
+        {
+            "event_type": fact["event_type"],
+            "status": fact["status"],
+            "source": "agent",
+            "span_id": span.span_id,
+            "parent_span_id": span.parent_span_id,
+            "attempt": span.attempt,
+            "summary_key": f"{fact['phase']}.{suffix}",
+            "text": fact["text"],
+            "public_payload": fact["payload"],
+            "idempotency_key": f"span:{span.span_id}:{suffix}",
+        },
     )
+
+
+def _start_tool_observation(
+    boundary: ExecutionBoundary,
+    tool_key: str,
+) -> _ToolObservation | None:
+    presentation = _tool_presentation(tool_key)
+    work_unit_id = IdFactory().new_id("work", "tool")
+    span_id = IdFactory().new_id("span", "tool")
+    observation = None
+    with suppress(Exception):
+        work_unit, span = start_work_observation(
+            boundary,
+            {
+                "work_unit_id": work_unit_id,
+                "operation_key": presentation.operation_key,
+                "driver": "tool",
+                "max_attempts": 1,
+            },
+            {
+                "span_id": span_id,
+                "work_unit_id": work_unit_id,
+                "kind": "tool_attempt",
+                "label_key": presentation.label_key,
+            },
+            {
+                "source": "tool",
+                "summary_prefix": presentation.label_key,
+                "registered_text": "Tool work registered",
+                "created_text": "Tool attempt created",
+                "started_text": presentation.started_text,
+                "work_payload": {"operation_key": presentation.operation_key},
+                "span_payload": {"phase": presentation.label_key},
+                "style": "tool",
+            },
+        )
+        observation = _ToolObservation(
+            boundary=boundary,
+            presentation=presentation,
+            work_unit=work_unit,
+            span=span,
+            started_at=time.perf_counter(),
+        )
+    return observation
 
 
 def _tool_presentation(tool_key: str) -> ToolPublicPresentation:
     # Imported lazily so the runtime contract does not make the Agent catalog
     # depend on concrete instrumentation during module initialization.
-    from ..public_agent_catalog import PUBLIC_AGENT_CATALOG
-
+    catalog = import_module("..public_agent_catalog", __package__)
     spec = next(
-        (item for item in PUBLIC_AGENT_CATALOG if item.tool == tool_key), None
+        (
+            item
+            for item in catalog.PUBLIC_AGENT_CATALOG
+            if item.tool == tool_key
+        ),
+        None,
     )
     if spec is None:
         return ToolPublicPresentation(
@@ -785,132 +733,15 @@ def _tool_presentation(tool_key: str) -> ToolPublicPresentation:
     )
 
 
-def _start_tool_observation(
-    boundary: ExecutionBoundary,
-    tool_key: str,
-) -> _ToolObservation | None:
-    context = boundary.context
-    services = boundary.services
-    presentation = _tool_presentation(tool_key)
-    work_unit_id = IdFactory().new_id("work", "tool")
-    span_id = IdFactory().new_id("span", "tool")
-    try:
-        work_unit = services.work.create_work_unit(
-            WorkUnitSpec(
-                owner=context.owner_ref,
-                execution_id=context.execution_id,
-                work_unit_id=work_unit_id,
-                parent_span_id=context.current_span_id,
-                operation_key=presentation.operation_key,
-                driver="tool",
-                max_attempts=1,
-            )
-        )
-        _append_tool_fact(
-            boundary,
-            event_type="work_unit.registered",
-            status="queued",
-            span_id=context.current_span_id,
-            parent_span_id=context.parent_span_id,
-            work_unit_id=work_unit_id,
-            attempt=work_unit.attempt,
-            presentation=presentation,
-            text="Tool work registered",
-            payload={"operation_key": presentation.operation_key},
-            idempotency_key=f"work:{work_unit_id}:registered",
-        )
-        span = services.work.create_span(
-            SpanSpec(
-                owner=context.owner_ref,
-                execution_id=context.execution_id,
-                span_id=span_id,
-                parent_span_id=context.current_span_id,
-                work_unit_id=work_unit_id,
-                kind="tool_attempt",
-                label_key=presentation.label_key,
-                attempt=work_unit.attempt,
-            )
-        )
-        _append_tool_fact(
-            boundary,
-            event_type="span.created",
-            status="pending",
-            span_id=span_id,
-            parent_span_id=context.current_span_id,
-            work_unit_id=work_unit_id,
-            attempt=work_unit.attempt,
-            presentation=presentation,
-            text="Tool attempt created",
-            payload={"phase": presentation.label_key},
-            idempotency_key=f"span:{span_id}:created",
-        )
-        work_unit = services.work.update_work_unit_status(
-            context.execution_id,
-            work_unit_id,
-            owner=context.owner_ref,
-            status=WorkUnitStatus.RUNNING,
-            expected_revision=work_unit.revision,
-        )
-        _append_tool_fact(
-            boundary,
-            event_type="work_unit.attempt_started",
-            status="running",
-            span_id=span_id,
-            parent_span_id=context.current_span_id,
-            work_unit_id=work_unit_id,
-            attempt=work_unit.attempt,
-            presentation=presentation,
-            text=presentation.started_text,
-            payload={"operation_key": presentation.operation_key},
-            idempotency_key=(
-                f"work:{work_unit_id}:attempt:{work_unit.attempt}:started"
-            ),
-        )
-        span = services.work.update_span_status(
-            context.execution_id,
-            span_id,
-            owner=context.owner_ref,
-            status=SpanStatus.RUNNING,
-            expected_revision=span.revision,
-        )
-        _append_tool_fact(
-            boundary,
-            event_type="span.started",
-            status="running",
-            span_id=span_id,
-            parent_span_id=context.current_span_id,
-            work_unit_id=work_unit_id,
-            attempt=work_unit.attempt,
-            presentation=presentation,
-            text=presentation.started_text,
-            payload={"phase": presentation.label_key},
-            idempotency_key=f"span:{span_id}:started",
-        )
-        return _ToolObservation(
-            boundary=boundary,
-            presentation=presentation,
-            work_unit=work_unit,
-            span=span,
-            started_at=time.perf_counter(),
-        )
-    except Exception:
-        return None
-
-
 def _finish_tool_observation(
     observation: _ToolObservation,
     *,
     status: WorkUnitStatus,
 ) -> None:
     boundary = observation.boundary
-    context = boundary.context
     presentation = observation.presentation
-    duration_ms = max(
-        0, int((time.perf_counter() - observation.started_at) * 1000)
-    )
+    duration_ms = observation_duration_ms(observation.started_at)
     if status is WorkUnitStatus.SUCCEEDED:
-        work_event, span_event = "work_unit.succeeded", "span.succeeded"
-        span_status = SpanStatus.SUCCEEDED
         text = presentation.succeeded_text
         work_payload: dict[str, object] = {
             "operation_key": presentation.operation_key,
@@ -921,8 +752,6 @@ def _finish_tool_observation(
             "duration_ms": duration_ms,
         }
     elif status is WorkUnitStatus.CANCELLED:
-        work_event, span_event = "work_unit.cancelled", "span.cancelled"
-        span_status = SpanStatus.CANCELLED
         text = "Tool cancelled"
         work_payload = {
             "operation_key": presentation.operation_key,
@@ -933,106 +762,22 @@ def _finish_tool_observation(
             "duration_ms": duration_ms,
         }
     else:
-        work_event, span_event = "work_unit.failed", "span.failed"
-        span_status = SpanStatus.FAILED
         text = presentation.failed_text
-        work_payload = {
-            "code": "tool_execution_failed",
-            "retryable": False,
-            "work_unit_id": observation.work_unit.work_unit_id,
-            "duration_ms": duration_ms,
-        }
-        span_payload = {
-            "code": "tool_execution_failed",
-            "retryable": False,
-            "work_unit_id": observation.work_unit.work_unit_id,
-            "duration_ms": duration_ms,
-        }
-    with suppress(Exception):
-        boundary.services.work.update_work_unit_status(
-            context.execution_id,
+        work_payload, span_payload = failed_observation_payloads(
+            "tool_execution_failed",
             observation.work_unit.work_unit_id,
-            owner=context.owner_ref,
-            status=status,
-            expected_revision=observation.work_unit.revision,
+            duration_ms,
         )
-        _append_tool_fact(
-            boundary,
-            event_type=work_event,
-            status=status.value,
-            span_id=observation.span.span_id,
-            parent_span_id=observation.span.parent_span_id,
-            work_unit_id=observation.work_unit.work_unit_id,
-            attempt=observation.work_unit.attempt,
-            presentation=presentation,
-            text=text,
-            payload=work_payload,
-            idempotency_key=(
-                f"work:{observation.work_unit.work_unit_id}:"
-                f"attempt:{observation.work_unit.attempt}:{status.value}"
-            ),
-        )
-        boundary.services.work.update_span_status(
-            context.execution_id,
-            observation.span.span_id,
-            owner=context.owner_ref,
-            status=span_status,
-            expected_revision=observation.span.revision,
-        )
-        idempotency_key = (
-            f"span:{observation.span.span_id}:{span_status.value}"
-        )
-        _append_tool_fact(
-            boundary,
-            event_type=span_event,
-            status=span_status.value,
-            span_id=observation.span.span_id,
-            parent_span_id=observation.span.parent_span_id,
-            work_unit_id=observation.work_unit.work_unit_id,
-            attempt=observation.work_unit.attempt,
-            presentation=presentation,
-            text=text,
-            payload=span_payload,
-            idempotency_key=idempotency_key,
-        )
-
-
-def _append_tool_fact(
-    boundary: ExecutionBoundary,
-    *,
-    event_type: str,
-    status: str,
-    span_id: str,
-    parent_span_id: str | None,
-    work_unit_id: str,
-    attempt: int,
-    presentation: ToolPublicPresentation,
-    text: str,
-    payload: dict[str, object],
-    idempotency_key: str,
-) -> None:
-    suffix = event_type.rsplit(".", 1)[-1]
-    boundary.services.journal.append(
-        boundary.context.execution_id,
-        owner=boundary.context.owner_ref,
-        intent=parse_execution_event_intent_v2(
-            {
-                "type": event_type,
-                "status": status,
-                "source": "tool",
-                "span_id": span_id,
-                "parent_span_id": parent_span_id,
-                "work_unit_id": work_unit_id,
-                "attempt": attempt,
-                "summary": {
-                    "key": f"{presentation.label_key}.{suffix}",
-                    "text": text,
-                },
-                "public_payload": payload,
-                "idempotency_key": idempotency_key,
-            }
-        ),
+    terminal = terminal_observation_presentation(
+        "tool",
+        presentation.label_key,
+        text,
+        (work_payload, span_payload),
+        observation.work_unit.attempt,
     )
+    records = (observation.work_unit, observation.span)
+    with suppress(Exception):
+        finish_work_observation(boundary, records, status, terminal)
 
 
 def schedule_durable_child_work[T](
@@ -1041,9 +786,7 @@ def schedule_durable_child_work[T](
     operation_key: str,
     driver: str,
     call: Callable[[], Awaitable[T]],
-    join_policy: JoinPolicy | None = None,
-    max_attempts: int = 1,
-    deadline_at: str | None = None,
+    **options: Unpack[ChildWorkOptions],
 ) -> asyncio.Task[T]:
     """Persist child-work intent before scheduling its coroutine.
 
@@ -1051,6 +794,13 @@ def schedule_durable_child_work[T](
     after registration but before task execution therefore leaves a pending
     work unit for the supervisor instead of losing an untracked task.
     """
+    _SCHEDULE_CHILD_SIGNATURE.bind(
+        work_unit_id=work_unit_id,
+        operation_key=operation_key,
+        driver=driver,
+        call=call,
+        **options,
+    )
     boundary = current_execution_boundary(required=True)
     assert boundary is not None
     context = boundary.context
@@ -1066,9 +816,9 @@ def schedule_durable_child_work[T](
             parent_span_id=context.current_span_id,
             operation_key=operation_key,
             driver=driver,
-            join_policy=join_policy,
-            max_attempts=max_attempts,
-            deadline_at=deadline_at,
+            join_policy=options.get("join_policy"),
+            max_attempts=options.get("max_attempts", 1),
+            deadline_at=options.get("deadline_at"),
         )
     )
     services.journal.append(
@@ -1105,9 +855,7 @@ def schedule_public_agent_child_work[T](
     operation_key: str,
     driver: str,
     call: Callable[[], Awaitable[T]],
-    join_policy: JoinPolicy | None = None,
-    max_attempts: int = 1,
-    deadline_at: str | None = None,
+    **options: Unpack[ChildWorkOptions],
 ) -> asyncio.Task[T]:
     """Use durable V2 scheduling when bound, with a legacy thin fallback.
 
@@ -1116,6 +864,13 @@ def schedule_public_agent_child_work[T](
     direct unit tests and bounded V1 adapters behavior-compatible without
     copying the scheduling decision into Agent modules.
     """
+    _SCHEDULE_CHILD_SIGNATURE.bind(
+        work_unit_id=work_unit_id,
+        operation_key=operation_key,
+        driver=driver,
+        call=call,
+        **options,
+    )
     if current_execution_boundary() is None:
 
         async def run_legacy_child() -> T:
@@ -1127,7 +882,12 @@ def schedule_public_agent_child_work[T](
         operation_key=operation_key,
         driver=driver,
         call=call,
-        join_policy=join_policy,
-        max_attempts=max_attempts,
-        deadline_at=deadline_at,
+        **options,
     )
+
+
+for _scheduler in (
+    schedule_durable_child_work,
+    schedule_public_agent_child_work,
+):
+    setattr(_scheduler, "__signature__", _SCHEDULE_CHILD_SIGNATURE)

@@ -737,7 +737,7 @@ async def test_get_run_does_not_reconcile_non_terminal_children(
     assert body["status"] == "running"
     assert body["origin"] == "remote"
     assert sorted(body["task_ids"]) == ["t-1", "t-2"]
-    assert reconciled == []
+    assert not reconciled
     record = registry.get_run("run-r-1", owner="u1")
     assert record is not None
     assert record.status == "running"

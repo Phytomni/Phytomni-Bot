@@ -10,7 +10,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
-from .execution_journal_schema import migrate_execution_journal_v2
+from .execution_store_support_v2 import (
+    initialize_execution_v2_store,
+    validate_provider_join_lease_token,
+)
 from .sqlite import sqlite_transaction
 
 
@@ -23,13 +26,19 @@ class ExecutionTargetBindingFenceError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
-class ExecutionTargetBindingV2:
-    """Private delivery metadata; never serialize this record publicly."""
+class _ExecutionTargetIdentity:
+    """Owner-scoped public identity for one execution target."""
 
     owner: str
     execution_id: str
     kind: str
     target_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionTargetBindingV2(_ExecutionTargetIdentity):
+    """Private delivery metadata; never serialize this record publicly."""
+
     role: str
     name: str
     media_type: str
@@ -41,7 +50,8 @@ class ExecutionTargetBindingV2:
 class ExecutionTargetStore(Protocol):
     """Immutable target binding boundary used by Runtime and HTTP delivery."""
 
-    def put(self, binding: ExecutionTargetBindingV2) -> None: ...
+    def put(self, binding: ExecutionTargetBindingV2) -> None:
+        """Persist one immutable private target binding."""
 
     def get(
         self,
@@ -50,7 +60,8 @@ class ExecutionTargetStore(Protocol):
         execution_id: str,
         kind: str,
         target_id: str,
-    ) -> ExecutionTargetBindingV2 | None: ...
+    ) -> ExecutionTargetBindingV2 | None:
+        """Read one owner-scoped target binding when it remains live."""
 
 
 class SQLiteExecutionTargetStore:
@@ -62,25 +73,13 @@ class SQLiteExecutionTargetStore:
         *,
         expected_provider_join_lease_token: str | None = None,
     ) -> None:
-        if expected_provider_join_lease_token is not None and (
-            not expected_provider_join_lease_token
-            or len(expected_provider_join_lease_token) > 128
-        ):
-            raise ValueError("invalid provider join lease token")
         self.db_path = db_path
         self._expected_provider_join_lease_token = (
-            expected_provider_join_lease_token
+            validate_provider_join_lease_token(
+                expected_provider_join_lease_token
+            )
         )
-        self._init_db()
-
-    def _init_db(self) -> None:
-        from .run_registry import RunRegistry
-
-        RunRegistry(self.db_path)
-        with sqlite_transaction(self.db_path) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            migrate_execution_journal_v2(connection)
-            connection.commit()
+        initialize_execution_v2_store(self.db_path)
 
     def put(self, binding: ExecutionTargetBindingV2) -> None:
         """Persist once; a target id can never be rebound to another object."""

@@ -161,6 +161,8 @@ async def test_async_obsfs_listing_stops_after_limit(
     original_scandir = artifact_listing.os.scandir
 
     class ManifestLastScandir:
+        """Scandir double that yields the manifest entry last."""
+
         def __init__(self, path) -> None:
             with original_scandir(path) as entries:
                 self._entries = sorted(
@@ -176,7 +178,7 @@ async def test_async_obsfs_listing_stops_after_limit(
     monkeypatch.setattr(
         artifact_listing.os,
         "scandir",
-        lambda path: ManifestLastScandir(path),
+        ManifestLastScandir,
     )
 
     visited: list[str] = []

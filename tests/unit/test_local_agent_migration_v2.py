@@ -6,59 +6,65 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import pytest
+from tests.support.execution_dispatch_fixtures import run_migrated_agent
+
+from mcp_server_phytomni.public_agent_catalog import public_agent_spec
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
 
 
 @pytest.mark.parametrize(
-    ("slug", "driver", "topology", "join", "checkpoint", "resume"),
+    ("slug", "expected"),
     [
         (
             "chat",
-            "resumable_graph",
-            "conditional",
-            "not_applicable",
-            "graph",
-            "action_and_recovery",
+            (
+                "resumable_graph",
+                "conditional",
+                "not_applicable",
+                "graph",
+                "action_and_recovery",
+            ),
         ),
         (
             "knowledge",
-            "local_graph",
-            "conditional",
-            "not_applicable",
-            "none",
-            "none",
+            (
+                "local_graph",
+                "conditional",
+                "not_applicable",
+                "none",
+                "none",
+            ),
         ),
-        ("data", "local_graph", "serial", "not_applicable", "none", "none"),
+        (
+            "data",
+            ("local_graph", "serial", "not_applicable", "none", "none"),
+        ),
         (
             "brief_gene",
-            "local_graph",
-            "hybrid",
-            "best_effort",
-            "none",
-            "none",
+            ("local_graph", "hybrid", "best_effort", "none", "none"),
         ),
         (
             "review",
-            "resumable_graph",
-            "parallel",
-            "all",
-            "graph",
-            "action_and_recovery",
+            (
+                "resumable_graph",
+                "parallel",
+                "all",
+                "graph",
+                "action_and_recovery",
+            ),
         ),
     ],
 )
 def test_local_cohort_catalog_declares_one_runtime_semantics(
     slug: str,
-    driver: str,
-    topology: str,
-    join: str,
-    checkpoint: str,
-    resume: str,
+    expected: tuple[str, str, str, str, str],
 ) -> None:
-    from mcp_server_phytomni.public_agent_catalog import public_agent_spec
+    """Verify local cohort catalog declares one runtime semantics."""
 
     spec = public_agent_spec(slug)
     assert spec is not None
@@ -68,7 +74,7 @@ def test_local_cohort_catalog_declares_one_runtime_semantics(
         spec.join,
         spec.checkpoint,
         spec.resume,
-    ) == (driver, topology, join, checkpoint, resume)
+    ) == expected
 
 
 @pytest.mark.parametrize(
@@ -78,12 +84,7 @@ def test_local_cohort_preserves_business_value_and_terminal_replay(
     tmp_path: Path,
     slug: str,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
+    """Verify local cohort preserves business value and terminal replay."""
 
     expected = {"agent": slug, "business": "unchanged"}
     calls = 0
@@ -95,16 +96,12 @@ def test_local_cohort_preserves_business_value_and_terminal_replay(
 
     db_path = tmp_path / f"{slug}.db"
     execution_id = f"turn-{slug}"
-    first = asyncio.run(
-        invoke_public_agent(
-            db_path=str(db_path),
-            owner="alice",
-            execution_id=execution_id,
-            agent_slug=slug,
-            arguments={"query": "rice"},
-            transport="authenticated_http",
-            call=business_call,
-        )
+    first = run_migrated_agent(
+        db_path,
+        execution_id,
+        slug,
+        "authenticated_http",
+        business_call,
     )
     assert first == expected
     assert calls == 1
@@ -123,10 +120,11 @@ def test_local_cohort_preserves_business_value_and_terminal_replay(
 
 
 def test_agent_modules_do_not_bypass_shared_graph_runner() -> None:
+    """Verify agent modules do not bypass shared graph runner."""
     root = Path(__file__).parents[2] / "src/mcp_server_phytomni/agents"
     bypasses: list[str] = []
     for source in root.rglob("*.py"):
         text = source.read_text(encoding="utf-8")
         if ".ainvoke(" in text or ".astream(" in text:
             bypasses.append(source.relative_to(root).as_posix())
-    assert bypasses == []
+    assert not bypasses

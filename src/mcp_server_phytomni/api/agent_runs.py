@@ -14,13 +14,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import nullcontext
-from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from importlib import import_module
 from inspect import Parameter, Signature
-from typing import Any, cast
+from typing import Any, NotRequired, TypedDict, Unpack, cast
 
-from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
 from ..agents.brief_gene.resolve_query import resolve_brief_gene_user_query
@@ -55,17 +53,40 @@ from ..runtime.execution_runtime_contracts import (
 )
 from ..runtime.locale import current_effective_locale
 from ..runtime.research_input_store import ResearchInputStore
-from ..runtime.run_registry import RunRegistry, RunRequestInfo
+from ..runtime.run_registry import RunRegistry
 from ..runtime.stage_trace import DataStage
 from ..runtime.submission_outcome import (
     project_submission_warnings as _project_warnings,
 )
 from ..storage.path_policy import IdFactory
 from . import research_capabilities, run_lifecycle
-from .agent_run_support import request_info_query, running_agent_run_response
+from .agent_run_pipeline import (
+    AgentRunPreflight as _AgentRunPreflight,
+)
+from .agent_run_pipeline import (
+    AgentRunPreparation as _AgentRunPreparation,
+)
+from .agent_run_pipeline import (
+    existing_execution_identity as _existing_execution_identity,
+)
+from .agent_run_pipeline import (
+    failed_remote_runtime_response as _failed_remote_runtime_response,
+)
+from .agent_run_pipeline import (
+    format_agent_run_result as _format_agent_run_result,
+)
+from .agent_run_pipeline import preflight_agent_run as _preflight_agent_run
+from .agent_run_pipeline import prepare_agent_run as _prepare_agent_run
+from .agent_run_pipeline import (
+    remote_agent_run_response as _remote_agent_run_response,
+)
+from .agent_run_pipeline import resolve_remote_run as _resolve_remote_run
+from .agent_run_pipeline import (
+    sync_agent_run_response as _sync_agent_run_response,
+)
+from .agent_run_support import running_agent_run_response
 from .attachments import (
     AttachmentContractError,
-    ManagedAttachmentEvidence,
     redact_managed_attachment_values,
     validate_research_attachment_bundle,
 )
@@ -73,7 +94,6 @@ from .lifecycle_contract import (
     SafeApiError,
     SafeErrorCode,
     build_agent_run_response,
-    canonicalize_agent_run_body,
     empty_agent_result,
 )
 from .research_capabilities import research_input_runtime_capability
@@ -85,7 +105,7 @@ from .research_input import (
     parse_idempotency_identity,
     research_input_root_worker_ready,
 )
-from .resolvers import ResolverDispatch, apply_runs_resolver
+from .resolvers import apply_runs_resolver
 from .resumable_uploads import UploadContractError
 from .routes.context_helpers import safe_native_request_json
 
@@ -97,6 +117,45 @@ class ResearchHttpRuntimeOptions:
     """Runtime policy for the private Research HTTP adapter seam."""
 
     allow_uninstalled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class _ResearchRuntimeLocation:
+    """Configuration and storage location for Research admission."""
+
+    config: ApiConfig
+    db_path: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ResearchRuntimeIdentity:
+    """Public execution identity and transport for Research admission."""
+
+    execution_id: str | None
+    transport: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ResearchRuntimeInvocation:
+    """Compact request passed into the public Research Runtime root."""
+
+    request: ResearchHttpAdmissionInput
+    attachment_bundle: Any
+    arguments: Mapping[str, Any]
+    location: _ResearchRuntimeLocation
+    identity: _ResearchRuntimeIdentity
+    runtime_options: ResearchHttpRuntimeOptions
+
+
+class _ResearchRuntimeCallOptions(TypedDict):
+    """Compatible keyword controls for public Research Runtime admission."""
+
+    arguments: Mapping[str, Any]
+    config: ApiConfig
+    db_path: str
+    execution_id: str | None
+    transport: str
+    runtime_options: NotRequired[ResearchHttpRuntimeOptions]
 
 
 __all__ = [
@@ -376,32 +435,53 @@ async def invoke_research_http_run(
 async def invoke_research_http_run_via_runtime(
     request: ResearchHttpAdmissionInput,
     attachment_bundle: Any,
-    *,
-    arguments: Mapping[str, Any],
-    config: ApiConfig,
-    db_path: str,
-    execution_id: str | None,
-    transport: str,
-    runtime_options: ResearchHttpRuntimeOptions = ResearchHttpRuntimeOptions(),
+    **options: Unpack[_ResearchRuntimeCallOptions],
 ) -> tuple[dict[str, Any], int]:
     """Adapt the Research domain admission to the one public Runtime root."""
-    public_execution_id = execution_id or _research_execution_id(request)
-    owner = request.owner
+    return await _invoke_research_runtime(
+        _ResearchRuntimeInvocation(
+            request=request,
+            attachment_bundle=attachment_bundle,
+            arguments=options["arguments"],
+            location=_ResearchRuntimeLocation(
+                config=options["config"],
+                db_path=options["db_path"],
+            ),
+            identity=_ResearchRuntimeIdentity(
+                execution_id=options["execution_id"],
+                transport=options["transport"],
+            ),
+            runtime_options=options.get(
+                "runtime_options", ResearchHttpRuntimeOptions()
+            ),
+        )
+    )
+
+
+async def _invoke_research_runtime(
+    invocation: _ResearchRuntimeInvocation,
+) -> tuple[dict[str, Any], int]:
+    """Bind one prepared Research admission to its execution identity."""
+    request = invocation.request
+    db_path = invocation.location.db_path
+    public_execution_id = (
+        invocation.identity.execution_id or _research_execution_id(request)
+    )
     repository = SQLiteExecutionReservationRepository(db_path)
     selected_command = ExecutionCommand(
         agent_slug="research",
-        arguments=dict(arguments),
+        arguments=dict(invocation.arguments),
     )
     try:
         with bind_routed_reservation_identity(
             db_path=db_path,
-            owner=owner,
+            owner=request.owner,
             execution_id=public_execution_id,
             command=selected_command,
         ):
             try:
                 reservation = repository.get(
-                    owner=owner,
+                    owner=request.owner,
                     execution_id=public_execution_id,
                 )
             except ExecutionReservationNotFoundError:
@@ -428,19 +508,19 @@ async def invoke_research_http_run_via_runtime(
             async def admit() -> tuple[dict[str, Any], int]:
                 return await invoke_research_http_run(
                     runtime_request,
-                    attachment_bundle,
-                    config=config,
+                    invocation.attachment_bundle,
+                    config=invocation.location.config,
                     db_path=db_path,
-                    runtime_options=runtime_options,
+                    runtime_options=invocation.runtime_options,
                 )
 
             return await invoke_public_agent(
                 db_path=db_path,
-                owner=owner,
+                owner=request.owner,
                 execution_id=public_execution_id,
                 agent_slug="research",
-                arguments=dict(arguments),
-                transport=transport,
+                arguments=dict(invocation.arguments),
+                transport=invocation.identity.transport,
                 call=admit,
                 fingerprint_version=(
                     reservation.fingerprint_version
@@ -551,232 +631,6 @@ def _research_replay_response(
     return body, 200
 
 
-@dataclass(frozen=True, slots=True)
-class _AgentRunPreparation:
-    """Resolved context shared by one native agent-run response."""
-
-    tool_name: str
-    owner: str
-    request_info: RunRequestInfo
-    resolve_meta: dict[str, Any]
-
-
-@dataclass(frozen=True, slots=True)
-class _AgentRunPreflight:
-    """Synchronous validation and immutable request context for one run."""
-
-    tool_name: str
-    owner: str
-    request_info: RunRequestInfo
-
-
-def _project_submission_warnings(raw: Any) -> list[dict[str, Any]]:
-    """Project safe remote-submission warnings into HTTP execution state."""
-    if not isinstance(raw, Mapping):
-        return []
-    return _app_attr("_project_warnings")(raw.get("submission_warnings"))
-
-
-def _preflight_agent_run(
-    *,
-    agent: str,
-    arguments: dict[str, Any],
-    dialogue_id: str | None,
-    request_json: str | None,
-    attachment_evidence: ManagedAttachmentEvidence | None = None,
-    execution_id: str | None = None,
-) -> _AgentRunPreflight:
-    """Validate structural inputs and capture request context before
-    dispatch."""
-    app = _app_module()
-    tool_name = _app_attr("_AGENT_SLUG_TO_TOOL").get(agent)
-    if tool_name is None:
-        raise HTTPException(
-            status_code=404, detail=f"agent not found: {agent}"
-        )
-    if agent in _app_attr("_REMOTE_AGENT_SLUGS"):
-        validation_arguments = deepcopy(arguments)
-        if agent in {"deep_genome", "design"} and validation_arguments.get(
-            "resolve_gene_id"
-        ):
-            validation_arguments.setdefault("species_code", "ath")
-            validation_arguments.setdefault("gene_id", "AT1G01010")
-        elif agent == "network" and validation_arguments.get("resolve_to_id"):
-            validation_arguments.setdefault("species_code", "osa")
-            validation_arguments.setdefault("to_id", "TO:0000001")
-        _app_attr("validate_tool_arguments")(tool_name, validation_arguments)
-    owner = _app_attr("current_request_user")() or "anonymous"
-    # Attachment provenance is owner-scoped independently of the accepted
-    # run owner, which remains the authenticated principal below.
-    validation_owner = (
-        attachment_evidence.attachment_owner
-        if attachment_evidence is not None
-        else owner
-    )
-    _app_attr("validate_native_attachments")(
-        agent,
-        arguments,
-        owner=validation_owner,
-        db_path=_app_attr("resolve_tasks_db_path")(),
-        managed_evidence=attachment_evidence,
-    )
-    return _AgentRunPreflight(
-        tool_name=tool_name,
-        owner=owner,
-        request_info=RunRequestInfo(
-            dialogue_id=dialogue_id,
-            request_id=_app_attr("current_request_id")(),
-            query=request_info_query(arguments, request_json),
-            tool_name=tool_name,
-            model=None,
-            request_json=request_json,
-            locale=app.current_effective_locale(),
-            execution_id=execution_id,
-        ),
-    )
-
-
-async def _prepare_agent_run(
-    *,
-    agent: str,
-    arguments: dict[str, Any],
-    preflight: _AgentRunPreflight,
-) -> _AgentRunPreparation:
-    """Resolve semantic arguments after structural preflight."""
-    app = _app_module()
-    resolve_meta = await app.apply_runs_resolver(
-        agent,
-        arguments,
-        dispatch=ResolverDispatch(
-            brief_gene_resolver=app.resolve_brief_gene_user_query,
-            deep_genome_resolver=app.resolve_deep_genome_user_query,
-            design_resolver=app.resolve_design_user_query,
-            network_resolver=app.resolve_network_user_query,
-        ),
-    )
-    _app_attr("validate_tool_arguments")(preflight.tool_name, arguments)
-    return _AgentRunPreparation(
-        tool_name=preflight.tool_name,
-        owner=preflight.owner,
-        request_info=preflight.request_info,
-        resolve_meta=resolve_meta,
-    )
-
-
-def _format_agent_run_result(
-    envelope: Any,
-    *,
-    resolve_meta: dict[str, Any],
-    debug: bool,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Build raw and default-projected result blocks from one envelope."""
-    formatted_dict = asdict(envelope.formatted)
-    if resolve_meta:
-        existing_meta = formatted_dict.get("metadata") or {}
-        if not isinstance(existing_meta, dict):
-            existing_meta = {}
-        formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
-    execution = getattr(envelope, "execution", None)
-    if execution is None:
-        # Keep compatibility for narrow adapters that still provide the
-        # historical two-field envelope during the migration.
-        execution_dict: dict[str, Any] = {
-            "warnings": _project_submission_warnings(envelope.raw),
-        }
-    else:
-        execution_dict = asdict(execution)
-    result = {
-        "formatted": formatted_dict,
-        "execution": execution_dict,
-        "raw": envelope.raw,
-    }
-    response_result = result if debug else strip_agent_result(result)
-    return result, response_result
-
-
-def _remote_agent_run_response(
-    *,
-    agent: str,
-    owner: str,
-    request_info: RunRequestInfo,
-    response_result: dict[str, Any],
-) -> tuple[dict[str, Any], int]:
-    """Shape a compatibility 202 over the Runtime-owned execution root."""
-    boundary = current_execution_boundary()
-    if boundary is None or boundary.context.owner_ref != owner:
-        raise ExecutionRuntimeError("execution_boundary_required")
-    run_id = boundary.context.run_id
-    if run_id is None:
-        raise ExecutionRuntimeError("execution_run_id_required")
-    task_ids = tuple(_app_attr("current_accepted_task_ids")())
-    degraded_tracking = bool(_app_attr("current_recorder_degraded")())
-    if not task_ids:
-        raise ExecutionRuntimeError("remote_submission_identity_required")
-    _app_attr("_stamp_remote_request_info")(
-        run_id=run_id, owner=owner, request_info=request_info
-    )
-    result = (
-        empty_agent_result(degraded=True)
-        if degraded_tracking
-        else response_result
-    )
-    body = build_agent_run_response(
-        run_id=run_id,
-        agent=agent,
-        status="running",
-        task_ids=task_ids,
-        result=result,
-        persisted=True,
-        degraded_tracking=degraded_tracking,
-    )
-    return body, 202
-
-
-async def _sync_agent_run_response(
-    *,
-    agent: str,
-    owner: str,
-    request_info: RunRequestInfo,
-    result: dict[str, Any],
-    response_result: dict[str, Any],
-    reserved_run_id: str,
-) -> tuple[dict[str, Any], int]:
-    """Shape a terminal response over the Runtime-owned run identity."""
-    del owner, request_info, result
-    run_id = reserved_run_id
-    canonical = canonicalize_agent_run_body(
-        {
-            "id": run_id,
-            "object": "agent.run",
-            "agent": agent,
-            "status": "succeeded",
-            "task_ids": [],
-            "result": response_result,
-        }
-    )
-    body = build_agent_run_response(
-        run_id=run_id,
-        agent=agent,
-        status="succeeded",
-        task_ids=(),
-        result=canonical["result"],
-        persisted=True,
-        degraded_tracking=canonical.get("degraded_tracking") is True,
-    )
-    return body, 200
-
-
-def _resolve_remote_run(owner: str) -> run_lifecycle.ResolvedRemoteRun:
-    """Compatibility seam for remote-run context recovery."""
-    return run_lifecycle.resolve_remote_run(
-        owner,
-        run_id=_app_attr("current_run_id")(),
-        accepted_task_ids=_app_attr("current_accepted_task_ids")(),
-        recorder_degraded=_app_attr("current_recorder_degraded")(),
-        db_path=_app_attr("resolve_tasks_db_path")(),
-    )
-
-
 def _has_in_request_context_execution(request: Mapping[str, Any]) -> bool:
     """Return whether this invoke carries V1 conversation execution fields.
 
@@ -876,39 +730,127 @@ async def _invoke_agent_run_request(
         raise
 
 
-def _failed_remote_runtime_response(
-    *, owner: str, execution_id: str, agent: str
-) -> tuple[dict[str, Any], int]:
-    """Project a safe compatibility response from a failed V2 reservation."""
-    record = SQLiteExecutionReservationRepository(
-        _app_attr("resolve_tasks_db_path")()
-    ).get(owner=owner, execution_id=execution_id)
-    body = build_agent_run_response(
-        run_id=record.run_id,
-        agent=agent,
-        status="failed",
-        task_ids=tuple(_app_attr("current_accepted_task_ids")()),
-        result=empty_agent_result(
-            degraded=bool(_app_attr("current_recorder_degraded")())
-        ),
-        persisted=True,
-        degraded_tracking=bool(_app_attr("current_recorder_degraded")()),
+def _has_review_adapter(request: Mapping[str, Any]) -> bool:
+    """Return whether a Review request carries the synchronous adapter."""
+    private_state = request.get("private_agent_state")
+    return isinstance(private_state, Mapping) and (
+        private_state.get("review_adapter") is not None
     )
-    return body, 202
 
 
-def _existing_execution_identity(
-    *, db_path: str, owner: str, execution_id: str
-) -> tuple[int, str] | None:
-    """Reuse the admission identity after Expert routing binds an Agent."""
-    try:
-        record = SQLiteExecutionReservationRepository(db_path).get(
-            owner=owner,
-            execution_id=execution_id,
-        )
-    except ExecutionReservationNotFoundError:
+def _requires_sync_reservation(request: Mapping[str, Any]) -> bool:
+    """Return whether this local request must attach its reserved run."""
+    execution_id = request.get("execution_id")
+    if not isinstance(execution_id, str) or not execution_id:
+        return False
+    agent = request["agent"]
+    if agent in _app_attr("_REMOTE_AGENT_SLUGS"):
+        return False
+    if agent != "review":
+        return True
+    return _has_review_adapter(request)
+
+
+def _attach_prepared_execution(
+    request: Mapping[str, Any],
+    prepared: _AgentRunPreparation,
+) -> str | None:
+    """Attach request metadata to the Runtime-reserved local run."""
+    if not _requires_sync_reservation(request):
         return None
-    return record.fingerprint_version, record.fingerprint
+    execution_id = cast(str, request["execution_id"])
+    boundary = current_execution_boundary()
+    if (
+        boundary is None
+        or boundary.context.execution_id != execution_id
+        or boundary.context.owner_ref != prepared.owner
+    ):
+        raise ExecutionRuntimeError("execution_boundary_required")
+    run_id = boundary.context.run_id
+    assert run_id is not None
+    try:
+        run_lifecycle.attach_execution_request_info(
+            run_id=run_id,
+            owner=prepared.owner,
+            request_info=prepared.request_info,
+            db_path=_app_attr("resolve_tasks_db_path")(),
+        )
+    except run_lifecycle.RunPersistenceError as exc:
+        raise SafeApiError(
+            status_code=500,
+            code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
+            message="The admitted run could not be persisted.",
+            stage="run_persist",
+            retryable=False,
+        ) from exc
+    return run_id
+
+
+async def _invoke_prepared_envelope(
+    request: Mapping[str, Any],
+    prepared: _AgentRunPreparation,
+) -> Any:
+    """Invoke the selected tool with context only when supplied."""
+    app = _app_module()
+    if _has_in_request_context_execution(request):
+        return await app.invoke_tool_enveloped(
+            prepared.tool_name,
+            request["arguments"],
+            conversation_messages=request.get("conversation_messages", ()),
+            agent_thread_id=request.get("agent_thread_id"),
+            private_agent_state=request.get("private_agent_state"),
+        )
+    return await app.invoke_tool_enveloped(
+        prepared.tool_name,
+        request["arguments"],
+    )
+
+
+async def _format_prepared_result(
+    request: Mapping[str, Any],
+    prepared: _AgentRunPreparation,
+    envelope: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Format and redact one tool envelope for its public response."""
+    agent = request["agent"]
+    format_context = (
+        _app_attr("trace_data_stage")(
+            DataStage.RESULT_FORMAT,
+            dependency="formatter",
+        )
+        if agent == "data"
+        else nullcontext()
+    )
+    async with format_context:
+        result, response_result = _app_attr("_format_agent_run_result")(
+            envelope,
+            resolve_meta=prepared.resolve_meta,
+            debug=request.get("debug", False),
+        )
+    attachment_evidence = request.get("attachment_evidence")
+    if attachment_evidence is not None:
+        result = redact_managed_attachment_values(result, attachment_evidence)
+        result = strip_agent_result(result)
+        response_result = strip_agent_result(result)
+    return result, response_result
+
+
+async def _invoke_review_interrupt(
+    request: Mapping[str, Any],
+    prepared: _AgentRunPreparation,
+) -> tuple[dict[str, Any], int]:
+    """Run the legacy Review interrupt path for an unadapted request."""
+    execution = await _app_attr("_run_review_with_interrupt")(
+        arguments=request["arguments"],
+        request_info=prepared.request_info,
+    )
+    return (
+        _app_attr("_review_run_body")(
+            execution,
+            debug=request.get("debug", False),
+        ),
+        200,
+    )
 
 
 async def _dispatch_agent_run_request(
@@ -924,97 +866,15 @@ async def _invoke_prepared_agent_run(
     prepared: _AgentRunPreparation,
 ) -> tuple[dict[str, Any], int]:
     """Format and settle a request after structural and semantic setup."""
-    app = _app_module()
     agent = request["agent"]
-    arguments = request["arguments"]
-    private_agent_state = request.get("private_agent_state")
-    debug = request.get("debug", False)
-    attachment_evidence = request.get("attachment_evidence")
-    execution_id = request.get("execution_id")
-    reserved_run_id: str | None = None
-    if (
-        isinstance(execution_id, str)
-        and execution_id
-        and agent not in _app_attr("_REMOTE_AGENT_SLUGS")
-        and (
-            agent != "review"
-            or (
-                isinstance(private_agent_state, Mapping)
-                and private_agent_state.get("review_adapter") is not None
-            )
-        )
-    ):
-        boundary = current_execution_boundary()
-        if (
-            boundary is None
-            or boundary.context.execution_id != execution_id
-            or boundary.context.owner_ref != prepared.owner
-        ):
-            raise ExecutionRuntimeError("execution_boundary_required")
-        reserved_run_id = boundary.context.run_id
-        assert reserved_run_id is not None
-        try:
-            run_lifecycle.attach_execution_request_info(
-                run_id=reserved_run_id,
-                owner=prepared.owner,
-                request_info=prepared.request_info,
-                db_path=_app_attr("resolve_tasks_db_path")(),
-            )
-        except run_lifecycle.RunPersistenceError as exc:
-            raise SafeApiError(
-                status_code=500,
-                code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
-                message="The admitted run could not be persisted.",
-                stage="run_persist",
-                retryable=False,
-            ) from exc
-    if agent == "review" and not (
-        isinstance(private_agent_state, Mapping)
-        and private_agent_state.get("review_adapter") is not None
-    ):
-        execution = await _app_attr("_run_review_with_interrupt")(
-            arguments=arguments,
-            request_info=prepared.request_info,
-        )
-        return _app_attr("_review_run_body")(execution, debug=debug), 200
+    reserved_run_id = _attach_prepared_execution(request, prepared)
+    if agent == "review" and not _has_review_adapter(request):
+        return await _invoke_review_interrupt(request, prepared)
     try:
-        if (
-            request.get("conversation_messages", ())
-            or request.get("agent_thread_id") is not None
-            or private_agent_state is not None
-        ):
-            envelope = await app.invoke_tool_enveloped(
-                prepared.tool_name,
-                arguments,
-                conversation_messages=request.get("conversation_messages", ()),
-                agent_thread_id=request.get("agent_thread_id"),
-                private_agent_state=private_agent_state,
-            )
-        else:
-            envelope = await app.invoke_tool_enveloped(
-                prepared.tool_name,
-                arguments,
-            )
-        format_context = (
-            _app_attr("trace_data_stage")(
-                DataStage.RESULT_FORMAT,
-                dependency="formatter",
-            )
-            if agent == "data"
-            else nullcontext()
+        envelope = await _invoke_prepared_envelope(request, prepared)
+        result, response_result = await _format_prepared_result(
+            request, prepared, envelope
         )
-        async with format_context:
-            result, response_result = _app_attr("_format_agent_run_result")(
-                envelope,
-                resolve_meta=prepared.resolve_meta,
-                debug=debug,
-            )
-        if attachment_evidence is not None:
-            result = redact_managed_attachment_values(
-                result, attachment_evidence
-            )
-            result = strip_agent_result(result)
-            response_result = strip_agent_result(result)
         if agent in _app_attr("_REMOTE_AGENT_SLUGS"):
             return _app_attr("_remote_agent_run_response")(
                 agent=agent,
@@ -1036,7 +896,7 @@ async def _invoke_prepared_agent_run(
         raise
     except Exception as exc:
         safe_error = (
-            getattr(app, "_factory").project_data_stage_error(exc)
+            getattr(_app_module(), "_factory").project_data_stage_error(exc)
             if agent == "data"
             else None
         )

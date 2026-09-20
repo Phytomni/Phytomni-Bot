@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import Any
 
 from .models import AguiEvent
@@ -33,11 +34,10 @@ def text_message_start(message_id: str) -> AguiEvent:
 
 def text_message_content(message_id: str, delta: str) -> AguiEvent:
     """Return one ``TextMessageContent`` delta frame."""
-    from ...runtime.execution_instrumentation_v2 import (
-        publish_execution_content_delta,
+    instrumentation = import_module(
+        "mcp_server_phytomni.runtime.execution_instrumentation_v2"
     )
-
-    publish_execution_content_delta(delta)
+    instrumentation.publish_execution_content_delta(delta)
     return AguiEvent(
         type="TextMessageContent",
         data={
@@ -82,9 +82,10 @@ def step_started(step_name: str) -> AguiEvent:
 
 def custom(name: str, value: Any) -> AguiEvent:
     """Return a ``Custom`` profile frame."""
-    from ...runtime.legacy_event_adapter_v2 import adapt_agui_custom_to_v2
-
-    adapt_agui_custom_to_v2(name, value)
+    adapter = import_module(
+        "mcp_server_phytomni.runtime.legacy_event_adapter_v2"
+    )
+    adapter.adapt_agui_custom_to_v2(name, value)
     return AguiEvent(
         type="Custom",
         data={"type": "Custom", "name": name, "value": value},

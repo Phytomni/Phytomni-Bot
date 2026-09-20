@@ -7,11 +7,13 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from fastapi import HTTPException
+from tests.support.a2ui_contract_fakes import chat_terminal_state
 
 from mcp_server_phytomni.agents.shared.a2ui import (
     A2UI_CATALOG_VERSION,
@@ -165,33 +167,40 @@ async def _seed_pause(
     )
 
 
+@dataclass(frozen=True)
+class _ResumeContext:
+    """Stable execution identity for one A2UI resume request."""
+
+    db_path: str
+    run_id: str
+    execution_id: str
+    agent: str
+
+
 async def _resume(
-    db_path: str,
+    context: _ResumeContext,
     *,
-    run_id: str,
-    execution_id: str,
-    agent: str,
     body: A2uiActionRequest,
     dependencies: a2ui_runtime.A2UIRuntimeDependencies,
 ) -> tuple[dict[str, Any], int]:
-    reservation = SQLiteExecutionReservationRepository(db_path).get(
+    reservation = SQLiteExecutionReservationRepository(context.db_path).get(
         owner="alice",
-        execution_id=execution_id,
+        execution_id=context.execution_id,
     )
 
     async def domain() -> tuple[dict[str, Any], int]:
         return await a2ui_resume.resume_a2ui_run(
-            run_id=run_id,
+            run_id=context.run_id,
             body=body,
             debug=False,
             dependencies=dependencies,
         )
 
     return await invoke_public_agent_operation(
-        db_path=db_path,
+        db_path=context.db_path,
         owner="alice",
-        execution_id=execution_id,
-        agent_slug=agent,
+        execution_id=context.execution_id,
+        agent_slug=context.agent,
         operation="resume",
         action_id=body.action_id,
         expected_revision=reservation.supervisor_revision,
@@ -202,11 +211,13 @@ async def _resume(
 
 
 def test_projection_helpers_remain_runtime_facade_exports() -> None:
+    """Keep the historical runtime import path as a compatibility facade."""
     for name in a2ui_projection.__all__:
         assert getattr(a2ui_runtime, name) is getattr(a2ui_projection, name)
 
 
 def test_submission_mapping_and_round_cap() -> None:
+    """Confirm/form/choice projections and the hard N=2 bound stay locked."""
     submitted = a2ui_runtime.submitted_a2ui_value(
         _surface("s1"),
         {"accepted": True},
@@ -228,6 +239,7 @@ def test_submission_mapping_and_round_cap() -> None:
 async def test_chat_terminal_resume_uses_one_runtime_and_redacts_raw(
     tmp_path: Any,
 ) -> None:
+    """Verify chat terminal resume uses one runtime and redacts raw."""
     db_path = str(tmp_path / "chat-resume.db")
     run_id = "run-chat-resume"
     execution_id = "turn-chat-resume"
@@ -241,24 +253,10 @@ async def test_chat_terminal_resume_uses_one_runtime_and_redacts_raw(
     async def resume_graph(
         _graph: Any, _run_id: str, _payload: Mapping[str, Any]
     ) -> dict[str, Any]:
-        return {
-            "response": {
-                "choices": [
-                    {
-                        "message": {
-                            "content": "done",
-                            "follow_up_questions": [],
-                        }
-                    }
-                ]
-            }
-        }
+        return chat_terminal_state()
 
     body, status = await _resume(
-        db_path,
-        run_id=run_id,
-        execution_id=execution_id,
-        agent="chat",
+        _ResumeContext(db_path, run_id, execution_id, "chat"),
         body=_action(run_id),
         dependencies=_dependencies(db_path, resume_graph),
     )
@@ -282,6 +280,7 @@ async def test_chat_terminal_resume_uses_one_runtime_and_redacts_raw(
 async def test_review_reinterrupt_stays_on_same_execution(
     tmp_path: Any,
 ) -> None:
+    """Verify review reinterrupt stays on same execution."""
     db_path = str(tmp_path / "review-reinterrupt.db")
     run_id = "run-review-reinterrupt"
     execution_id = "turn-review-reinterrupt"
@@ -298,10 +297,7 @@ async def test_review_reinterrupt_stays_on_same_execution(
         return {"__interrupt__": [{"summary": "review again"}]}
 
     body, status = await _resume(
-        db_path,
-        run_id=run_id,
-        execution_id=execution_id,
-        agent="review",
+        _ResumeContext(db_path, run_id, execution_id, "review"),
         body=_action(run_id),
         dependencies=_dependencies(db_path, resume_graph),
     )
@@ -314,6 +310,7 @@ async def test_review_reinterrupt_stays_on_same_execution(
 async def test_duplicate_resume_cannot_reenter_business_graph(
     tmp_path: Any,
 ) -> None:
+    """Verify duplicate resume cannot reenter business graph."""
     db_path = str(tmp_path / "duplicate-resume.db")
     run_id = "run-duplicate-resume"
     execution_id = "turn-duplicate-resume"
@@ -335,19 +332,13 @@ async def test_duplicate_resume_cannot_reenter_business_graph(
     dependencies = _dependencies(db_path, resume_graph)
     action = _action(run_id)
     await _resume(
-        db_path,
-        run_id=run_id,
-        execution_id=execution_id,
-        agent="chat",
+        _ResumeContext(db_path, run_id, execution_id, "chat"),
         body=action,
         dependencies=dependencies,
     )
     with pytest.raises(ExecutionReservationConflictError):
         await _resume(
-            db_path,
-            run_id=run_id,
-            execution_id=execution_id,
-            agent="chat",
+            _ResumeContext(db_path, run_id, execution_id, "chat"),
             body=action,
             dependencies=dependencies,
         )
@@ -355,6 +346,7 @@ async def test_duplicate_resume_cannot_reenter_business_graph(
 
 
 async def test_legacy_a2ui_rows_are_read_only(tmp_path: Any) -> None:
+    """Verify legacy A2UI rows are read only."""
     db_path = str(tmp_path / "legacy-read-only.db")
     run_id = "legacy-run"
     RunRegistry(db_path).create_run(
@@ -380,6 +372,7 @@ async def test_legacy_a2ui_rows_are_read_only(tmp_path: Any) -> None:
 
 
 def test_review_run_body_shapes_interrupt_and_debug() -> None:
+    """Review HTTP bodies keep interrupt and debug raw payloads distinct."""
     interrupt_body = a2ui_resume.review_run_body(
         a2ui_resume.ReviewExecution(
             run_id="r1",

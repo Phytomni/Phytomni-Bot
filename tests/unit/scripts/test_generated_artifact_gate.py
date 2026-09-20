@@ -26,6 +26,7 @@ def _module():
 
 
 def test_generated_path_classifier_is_path_scoped() -> None:
+    """Verify generated path classifier is path scoped."""
     helper = _module()
     for path in (
         ".gocache/00/cache-entry",
@@ -51,6 +52,7 @@ def test_generated_path_classifier_is_path_scoped() -> None:
 def test_inventory_separates_business_source_and_rejects_tracked_cache(
     tmp_path: Path,
 ) -> None:
+    """Verify inventory separates business source and rejects tracked cache."""
     helper = _module()
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / ".gitignore").write_text("/.gocache/\n", encoding="utf-8")
