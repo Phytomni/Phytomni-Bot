@@ -400,7 +400,7 @@ def execution_convergence_inventory(root: Path = ROOT) -> dict[str, Any]:
 def execution_convergence_violations(
     root: Path = ROOT,
 ) -> list[str]:
-    """Report every execution-runtime bypass; historical allowlists are forbidden."""
+    """Report runtime bypasses; historical allowlists are forbidden."""
 
     observed = execution_convergence_inventory(root)
     violations: list[str] = []
@@ -442,7 +442,8 @@ _RECIPES = {
     ),
     "web_go": "cd apps/server && go test ./...",
     "web_frontend": (
-        "cd apps/web && npm run type-check && npm run test:run && npm run build"
+        "cd apps/web && npm run type-check && "
+        "npm run test:run && npm run build"
     ),
     "cross_repo_contract": (
         "python scripts/check_public_agent_catalog.py && "

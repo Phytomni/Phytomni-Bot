@@ -107,7 +107,7 @@ def test_owner_scoped_reads_hide_foreign_and_unknown_runs(
     tmp_path: Path,
 ) -> None:
     from mcp_server_phytomni.runtime.execution_event_store import (
-        ExecutionEventRunNotFound,
+        ExecutionEventRunNotFoundError,
     )
 
     store = _store(tmp_path)
@@ -117,9 +117,9 @@ def test_owner_scoped_reads_hide_foreign_and_unknown_runs(
     assert store.list_events("missing", owner="alice") is None
     assert store.get_event("run-1", event.event_id, owner="mallory") is None
     assert store.get_event("missing", event.event_id, owner="alice") is None
-    with pytest.raises(ExecutionEventRunNotFound):
+    with pytest.raises(ExecutionEventRunNotFoundError):
         store.append("run-1", owner="mallory", intent=_intent())
-    with pytest.raises(ExecutionEventRunNotFound):
+    with pytest.raises(ExecutionEventRunNotFoundError):
         store.append("missing", owner="alice", intent=_intent())
 
 

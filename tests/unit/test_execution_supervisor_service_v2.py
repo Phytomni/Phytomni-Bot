@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from mcp_server_phytomni.runtime.execution_journal_v2 import WorkUnitStatus
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
 def test_analysis_provider_poller_projects_live_status_and_revision(
@@ -343,7 +343,7 @@ def test_domain_terminal_is_projected_into_the_one_runtime_journal(
             call=accepted,
         )
     )
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET status = 'succeeded' "
             "WHERE user_id = ? AND execution_id = ?",
@@ -591,7 +591,7 @@ def test_stale_provider_join_token_cannot_commit_domain_terminal(
         db_path, expected_provider_join_lease_token="lease-old"
     )
     stale.create_run(RunSpec("run-fenced", "alice", "network", "local"))
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_provider_join_lease_owner = ?, "
             "execution_provider_join_lease_expires_at = ? "
@@ -607,7 +607,7 @@ def test_stale_provider_join_token_cannot_commit_domain_terminal(
     stale_current = stale.get_run("run-fenced", owner="alice")
     assert stale_current is not None
 
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_provider_join_lease_owner = ?, "
             "execution_provider_join_lease_expires_at = ? "
@@ -674,7 +674,7 @@ def test_stale_provider_join_token_cannot_claim_runtime_operation(
     baseline = SQLiteExecutionReservationRepository(db_path).get(
         owner="alice", execution_id="turn-runtime-fenced"
     )
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_provider_join_lease_owner = ?, "
             "execution_provider_join_lease_expires_at = ? "
@@ -761,7 +761,7 @@ def test_expired_provider_join_token_cannot_renew_or_claim_runtime(
     baseline = SQLiteExecutionReservationRepository(db_path).get(
         owner="alice", execution_id="turn-expired"
     )
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_provider_join_lease_owner = ?, "
             "execution_provider_join_lease_expires_at = ? "
@@ -838,7 +838,7 @@ def test_provider_join_losing_lease_after_claim_cannot_publish(
     baseline = SQLiteExecutionReservationRepository(db_path).get(
         owner="alice", execution_id="turn-post-claim"
     )
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_provider_join_lease_owner = ?, "
             "execution_provider_join_lease_expires_at = ? "
@@ -880,7 +880,7 @@ def test_provider_join_losing_lease_after_claim_cannot_publish(
             )
         )
         await asyncio.wait_for(started.wait(), timeout=1)
-        with sqlite3.connect(db_path) as connection:
+        with sqlite_transaction(db_path) as connection:
             connection.execute(
                 "UPDATE runs SET execution_provider_join_lease_owner = ?, "
                 "execution_provider_join_lease_expires_at = ? "
@@ -950,7 +950,7 @@ def test_provider_join_takeover_after_preflight_cannot_publish(
     )
     journal = SQLiteExecutionJournal(db_path)
     before = journal.get_projection("turn-publication-fenced", owner="alice")
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_provider_join_lease_owner = ?, "
             "execution_provider_join_lease_expires_at = ? "
@@ -980,7 +980,7 @@ def test_provider_join_takeover_after_preflight_cannot_publish(
         if takeover_done:
             return
         takeover_done = True
-        with sqlite3.connect(db_path) as connection:
+        with sqlite_transaction(db_path) as connection:
             connection.execute(
                 "UPDATE runs SET execution_provider_join_lease_owner = ?, "
                 "execution_provider_join_lease_expires_at = ? "
@@ -1053,7 +1053,7 @@ def test_provider_join_takeover_after_preflight_cannot_publish(
     assert after.status.value == "running"
     assert after.terminal is None
     assert after.results == ()
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         targets = connection.execute(
             "SELECT COUNT(*) FROM execution_target_bindings_v2 "
             "WHERE owner_ref = ? AND execution_id = ?",
@@ -1196,7 +1196,7 @@ def test_provider_join_projects_terminal_result_and_download_target(
     assert projection.status.value == "succeeded"
     assert projection.terminal is not None
     assert len(projection.results) == 1
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         binding = connection.execute(
             "SELECT role, name, delivery_ref "
             "FROM execution_target_bindings_v2 WHERE owner_ref = ? "
@@ -1268,7 +1268,7 @@ def test_provider_join_projects_domain_terminal_row_before_runtime_settlement(
             "last_error_code": None,
         },
     }
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET status = 'succeeded', result_json = ? "
             "WHERE user_id = ? AND execution_id = ?",
@@ -1296,7 +1296,7 @@ def test_provider_join_projects_domain_terminal_row_before_runtime_settlement(
     assert [result.name for result in projection.results] == [
         "network-results.zip"
     ]
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         binding = connection.execute(
             "SELECT target_kind, role, name, delivery_ref "
             "FROM execution_target_bindings_v2 WHERE owner_ref = ? "

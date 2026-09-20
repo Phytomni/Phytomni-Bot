@@ -7,12 +7,13 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
+
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
 def _seed_execution(db_path: Path, owner: str, execution_id: str) -> None:
@@ -27,7 +28,7 @@ def _seed_execution(db_path: Path, owner: str, execution_id: str) -> None:
         local_run_spec(f"run-{execution_id}", owner, "chat"),
         request_info=RunRequestInfo(execution_id=execution_id),
     )
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_id = ? WHERE run_id = ?",
             (execution_id, f"run-{execution_id}"),
@@ -325,7 +326,7 @@ def test_tombstone_purges_only_v2_execution_children(tmp_path: Path) -> None:
     _seed_execution(db_path, "alice", "turn-delete")
     journal = SQLiteExecutionJournal(str(db_path))
     journal.append("turn-delete", owner="alice", intent=_intent(1))
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "CREATE TABLE IF NOT EXISTS run_events (run_id TEXT, seq INTEGER)"
         )
@@ -338,7 +339,7 @@ def test_tombstone_purges_only_v2_execution_children(tmp_path: Path) -> None:
 
     with pytest.raises(ExecutionJournalNotFoundError):
         journal.list_events("turn-delete", owner="alice")
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         assert (
             connection.execute("SELECT COUNT(*) FROM run_events").fetchone()[0]
             == 1
@@ -369,7 +370,7 @@ def test_failed_append_rolls_back_and_corrupt_projection_rebuilds(
     )
     with pytest.raises(RuntimeError, match="simulated crash"):
         crashing.append("turn-crash", owner="alice", intent=_intent(1))
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         assert (
             connection.execute(
                 "SELECT COUNT(*) FROM execution_events_v2"
@@ -380,7 +381,7 @@ def test_failed_append_rolls_back_and_corrupt_projection_rebuilds(
     journal = SQLiteExecutionJournal(str(db_path))
     first = journal.append("turn-crash", owner="alice", intent=_intent(1))
     assert first.seq == 1
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE execution_projection_v2 SET projection_json = 'not-json' "
             "WHERE owner_ref = 'alice' AND execution_id = 'turn-crash'"

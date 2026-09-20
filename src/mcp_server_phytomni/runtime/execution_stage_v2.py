@@ -254,16 +254,14 @@ def _target_stage(
     signal: ExecutionStageSignal,
     current: ExecutionStage | str,
 ) -> ExecutionStage:
+    signals = ExecutionStageSignal
+    stages = ExecutionStage
     return {
-        ExecutionStageSignal.PROVIDER_SUBMITTED: ExecutionStage.ORCHESTRATION,
-        ExecutionStageSignal.PROVIDER_STATE_CHANGED: (
-            ExecutionStage.SCIENTIFIC_EXECUTION
-        ),
-        ExecutionStageSignal.SCIENTIFIC_EXECUTION_STARTED: (
-            ExecutionStage.SCIENTIFIC_EXECUTION
-        ),
-        ExecutionStageSignal.CONSOLIDATION_STARTED: ExecutionStage.CONSOLIDATION,
-        ExecutionStageSignal.ANSWER_AVAILABLE: ExecutionStage.RESPONSE_SETTLEMENT,
+        signals.PROVIDER_SUBMITTED: stages.ORCHESTRATION,
+        signals.PROVIDER_STATE_CHANGED: stages.SCIENTIFIC_EXECUTION,
+        signals.SCIENTIFIC_EXECUTION_STARTED: stages.SCIENTIFIC_EXECUTION,
+        signals.CONSOLIDATION_STARTED: stages.CONSOLIDATION,
+        signals.ANSWER_AVAILABLE: stages.RESPONSE_SETTLEMENT,
     }.get(signal, ExecutionStage(current))
 
 

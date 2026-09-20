@@ -536,12 +536,14 @@ def _apply_stage_event(
         else:
             signal = ExecutionStageSignal.SCIENTIFIC_EXECUTION_STARTED
 
+    events = ExecutionEventType
+    signals = ExecutionStageSignal
     terminal_signal = {
-        ExecutionEventType.EXECUTION_SUCCEEDED: ExecutionStageSignal.ROOT_SUCCEEDED,
-        ExecutionEventType.EXECUTION_PARTIAL: ExecutionStageSignal.ROOT_PARTIAL,
-        ExecutionEventType.EXECUTION_FAILED: ExecutionStageSignal.ROOT_FAILED,
-        ExecutionEventType.EXECUTION_CANCELLED: ExecutionStageSignal.ROOT_CANCELLED,
-        ExecutionEventType.EXECUTION_TIMED_OUT: ExecutionStageSignal.ROOT_TIMED_OUT,
+        events.EXECUTION_SUCCEEDED: signals.ROOT_SUCCEEDED,
+        events.EXECUTION_PARTIAL: signals.ROOT_PARTIAL,
+        events.EXECUTION_FAILED: signals.ROOT_FAILED,
+        events.EXECUTION_CANCELLED: signals.ROOT_CANCELLED,
+        events.EXECUTION_TIMED_OUT: signals.ROOT_TIMED_OUT,
     }.get(event.type)
     if terminal_signal in {
         ExecutionStageSignal.ROOT_SUCCEEDED,
@@ -558,11 +560,12 @@ def _apply_stage_event(
     if terminal_signal is not None:
         signal = terminal_signal
     if signal is not None:
+        stages = ExecutionStage
         target_stage = {
-            ExecutionStageSignal.PROVIDER_SUBMITTED: ExecutionStage.ORCHESTRATION,
-            ExecutionStageSignal.SCIENTIFIC_EXECUTION_STARTED: ExecutionStage.SCIENTIFIC_EXECUTION,
-            ExecutionStageSignal.CONSOLIDATION_STARTED: ExecutionStage.CONSOLIDATION,
-            ExecutionStageSignal.ANSWER_AVAILABLE: ExecutionStage.RESPONSE_SETTLEMENT,
+            signals.PROVIDER_SUBMITTED: stages.ORCHESTRATION,
+            signals.SCIENTIFIC_EXECUTION_STARTED: stages.SCIENTIFIC_EXECUTION,
+            signals.CONSOLIDATION_STARTED: stages.CONSOLIDATION,
+            signals.ANSWER_AVAILABLE: stages.RESPONSE_SETTLEMENT,
         }.get(signal)
         if target_stage is not None and list(ExecutionStage).index(
             target_stage

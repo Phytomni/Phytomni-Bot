@@ -121,9 +121,7 @@ def test_coverage_uses_shared_seams_instead_of_changing_agent_results() -> (
     assert "submit_analyst_via_subgraph" in sources["deep_genome"]
 
 
-def test_network_submission_remote_consolidation_and_root_terminal_are_distinct() -> (
-    None
-):
+def test_network_submission_and_terminal_events_are_distinct() -> None:
     from mcp_server_phytomni.runtime.execution_stage_v2 import (
         ExecutionStageSignal,
         empty_execution_stage_state,

@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -35,6 +34,7 @@ from mcp_server_phytomni.runtime.execution_runtime_contracts import (
 from mcp_server_phytomni.runtime.provider_instrumentation_v2 import (
     instrument_provider_submission,
 )
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 pytestmark = pytest.mark.unit
 
@@ -93,7 +93,9 @@ async def test_autonomous_expert_routes_to_one_durable_design_start(
         tool: str, arguments: dict[str, object], **kwargs: object
     ) -> None:
         assert tool == "ExpertRouter"
-        assert arguments["__conversation"]["requested_agent_id"] is None  # type: ignore[index]
+        conversation = arguments["__conversation"]
+        assert isinstance(conversation, dict)
+        assert conversation["requested_agent_id"] is None
         fingerprint_version = kwargs["fingerprint_version"]
         assert isinstance(fingerprint_version, int)
         outer = CanonicalReservationIdentity(
@@ -158,7 +160,7 @@ async def test_autonomous_expert_routes_to_one_durable_design_start(
     projection = SQLiteExecutionJournal(db_path).get_projection(
         execution_id, owner="alice"
     )
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         command_state = connection.execute(
             "SELECT state FROM execution_commands_v2 "
             "WHERE owner_ref = ? AND execution_id = ?",

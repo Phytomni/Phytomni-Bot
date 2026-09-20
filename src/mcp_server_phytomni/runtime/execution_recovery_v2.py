@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Protocol
 
 from .execution_journal_store_v2 import ExecutionJournal
 from .execution_journal_v2 import ExecutionStatus
@@ -19,7 +20,14 @@ from .execution_runtime_contracts import (
 )
 from .execution_runtime_v2 import ExecutionRuntime
 from .execution_work_store_v2 import WorkUnitRecord
-from .provider_reconciliation_v2 import ProviderReconciler
+
+
+class ProviderReconcilerProtocol(Protocol):
+    """Minimal provider-recovery dependency used by the coordinator."""
+
+    async def reconcile(self, unit: WorkUnitRecord) -> bool:
+        """Reconcile one durable provider work unit."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +48,7 @@ class ExecutionRecoveryCoordinator:
         runtime: ExecutionRuntime,
         reservations: SQLiteExecutionReservationRepository,
         journal: ExecutionJournal,
-        providers: ProviderReconciler,
+        providers: ProviderReconcilerProtocol,
     ) -> None:
         self._runtime = runtime
         self._reservations = reservations

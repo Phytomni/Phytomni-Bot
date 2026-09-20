@@ -41,6 +41,7 @@ from mcp_server_phytomni.runtime.execution_work_store_v2 import (
     SQLiteExecutionWorkRepository,
     WorkUnitSpec,
 )
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 pytestmark = pytest.mark.server
 
@@ -91,7 +92,7 @@ async def test_service_admission_is_durable_idempotent_and_non_executing(
         "idempotent_replay": False,
     }
     assert replay.json() == {**first.json(), "idempotent_replay": True}
-    with sqlite3.connect(tasks_db_path) as connection:
+    with sqlite_transaction(tasks_db_path) as connection:
         run = connection.execute(
             "SELECT status, request_json FROM runs WHERE user_id = ? "
             "AND execution_id = ?",
@@ -358,7 +359,7 @@ async def test_v2_target_delivery_is_private_owner_scoped_and_click_time(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Public resolution exposes no OBS ref; content is reauthorized per click."""
+    """Resolution hides OBS refs and reauthorizes content per click."""
     monkeypatch.setenv("API_SERVICE_TOKEN", "execution-service-token")
     _seed_v2(
         tasks_db_path,
@@ -399,20 +400,16 @@ async def test_v2_target_delivery_is_private_owner_scoped_and_click_time(
         "X-Phyto-Owner": "u1",
     }
 
-    resolution = await api_client.get(
-        "/v2/executions/turn-v2-target-delivery/targets/artifact/artifact-report",
-        headers=headers,
+    target_path = (
+        "/v2/executions/turn-v2-target-delivery/targets/"
+        "artifact/artifact-report"
     )
-    content = await api_client.get(
-        "/v2/executions/turn-v2-target-delivery/targets/artifact/artifact-report/content",
-        headers=headers,
-    )
-    escaped = await api_client.get(
-        "/v2/executions/turn-v2-target-delivery/targets/artifact/artifact-report/content",
-        headers=headers,
-    )
+    content_path = f"{target_path}/content"
+    resolution = await api_client.get(target_path, headers=headers)
+    content = await api_client.get(content_path, headers=headers)
+    escaped = await api_client.get(content_path, headers=headers)
     foreign = await api_client.get(
-        "/v2/executions/turn-v2-target-delivery/targets/artifact/artifact-report/content",
+        content_path,
         headers={**headers, "X-Phyto-Owner": "other"},
     )
 
@@ -516,7 +513,7 @@ async def test_v2_action_and_cancellation_are_revision_checked(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Unsupported/wrong-state actions fail safely; cancellation is explicit."""
+    """Unsupported actions fail safely and cancellation stays explicit."""
     monkeypatch.setenv("API_SERVICE_TOKEN", "execution-service-token")
     record, _started, _published = _seed_v2(
         tasks_db_path, owner="u1", execution_id="turn-v2-control"
@@ -629,7 +626,7 @@ async def test_v2_stream_starts_with_snapshot_and_drains_terminal_backlog(
     assert response.text.count("event: execution_event\n") == 2
 
 
-async def test_v2_get_and_stream_snapshots_include_sequence_free_provider_contact(
+async def test_v2_snapshots_include_sequence_free_provider_contact(
     api_client: httpx.AsyncClient,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -888,7 +885,7 @@ async def test_v2_reconcile_snapshot_is_degraded_without_fabricated_events(
         headers={"X-Service-Token": "execution-service-token"},
         json=_admission(execution_id=execution_id),
     )
-    with sqlite3.connect(tasks_db_path) as connection:
+    with sqlite_transaction(tasks_db_path) as connection:
         connection.execute(
             "UPDATE execution_commands_v2 SET state = 'reconcile', "
             "classification = 'reconcile', reconcile_attempt = 2, "
@@ -1104,7 +1101,10 @@ async def test_v2_trace_target_resolves_bounded_canonical_public_feed(
                 "text": "Reasoning summary",
             },
             "public_payload": {
-                "text": "Validated the trait target and species for network analysis."
+                "text": (
+                    "Validated the trait target and species for "
+                    "network analysis."
+                )
             },
         },
         {
@@ -1171,10 +1171,11 @@ async def test_v2_trace_target_resolves_bounded_canonical_public_feed(
         f"/v2/executions/{record.execution_id}/targets/trace/{target['id']}",
         headers={**headers, "X-Phyto-Owner": "other-user"},
     )
-    missing = await api_client.get(
-        f"/v2/executions/{record.execution_id}/targets/trace/trc_A1b2C3d4E5f6G7h8",
-        headers=headers,
+    missing_path = (
+        f"/v2/executions/{record.execution_id}/targets/trace/"
+        "trc_A1b2C3d4E5f6G7h8"
     )
+    missing = await api_client.get(missing_path, headers=headers)
     assert foreign.status_code == missing.status_code == 404
 
 
@@ -1235,7 +1236,7 @@ async def test_v2_contract_reports_version_gap_degraded_and_terminal_conflicts(
             }
         ),
     )
-    with sqlite3.connect(tasks_db_path) as connection:
+    with sqlite_transaction(tasks_db_path) as connection:
         connection.execute(
             "DELETE FROM execution_events_v2 WHERE owner_ref = ? "
             "AND execution_id = ? AND seq = 1",
@@ -1304,7 +1305,7 @@ async def test_v1_run_history_is_a_read_only_projection_of_v2(
     ]
     assert all(item["schema_version"] == 1 for item in items)
     assert all(item["run_id"] == record.run_id for item in items)
-    with sqlite3.connect(tasks_db_path) as connection:
+    with sqlite_transaction(tasks_db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM run_events WHERE run_id = ?",
             (record.run_id,),

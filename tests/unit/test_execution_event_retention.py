@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Iterator, Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -23,6 +22,7 @@ from mcp_server_phytomni.runtime.execution_events import (
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.run_registry_models import RunSpec
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
 def _intent(
@@ -186,7 +186,7 @@ def test_parent_run_expiry_purges_event_ledger_and_projection(
 ) -> None:
     db_path, registry, store = _store(tmp_path)
     store.append("run-1", owner="alice", intent=_intent("run.started"))
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET expires_at = ? WHERE run_id = ?",
             ("2000-01-01T00:00:00+00:00", "run-1"),
@@ -194,7 +194,7 @@ def test_parent_run_expiry_purges_event_ledger_and_projection(
         connection.commit()
 
     assert registry.purge_expired() == 1
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         event_count = connection.execute(
             "SELECT COUNT(*) FROM run_events WHERE run_id = 'run-1'"
         ).fetchone()[0]

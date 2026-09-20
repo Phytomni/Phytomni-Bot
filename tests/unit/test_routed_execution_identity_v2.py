@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api import factory
 from mcp_server_phytomni.runtime import execution_entrypoint_v2 as entrypoint
 from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
@@ -464,23 +465,17 @@ async def test_direct_selected_agent_does_not_apply_routed_transition(
             "result": empty_agent_result(),
         }, 200
 
-    app_attributes: dict[str, object] = {
-        "current_request_user": lambda: "alice",
-        "_invoke_agent_run": fake_invoke_agent_run,
-    }
     monkeypatch.setattr(factory, "_tasks_db_path", lambda: db_path)
-    monkeypatch.setattr(
-        factory, "_app_attr", lambda name: app_attributes[name]
-    )
+    monkeypatch.setattr(api_app, "current_request_user", lambda: "alice")
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke_agent_run)
     monkeypatch.setattr(
         SQLiteExecutionReservationRepository,
         "bind_routed_agent",
         counted_bind,
     )
-    adapters = factory._RouteAdapters(  # noqa: SLF001
-        runtime=factory._RuntimeState(  # noqa: SLF001
-            rate_limit=lambda _key, _limit: None
-        )
+    app = factory.build_app()
+    invoke_agent_run = (
+        app.state.agent_route_dependencies.native.invoke_agent_run
     )
     identity = CanonicalReservationIdentity(
         owner="alice",
@@ -491,7 +486,7 @@ async def test_direct_selected_agent_does_not_apply_routed_transition(
     )
 
     with bind_canonical_reservation_identity(identity):
-        await adapters.invoke_agent_run(
+        await invoke_agent_run(
             agent="design",
             arguments=dict(command.arguments),
             execution_id=execution_id,

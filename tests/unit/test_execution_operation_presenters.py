@@ -66,9 +66,7 @@ def test_registry_sanitizes_metadata_counters_and_targets() -> None:
     assert artifact.target == {"kind": "artifact", "id": "execution-log-1"}
 
 
-def test_registry_drops_invalid_scalar_values_and_unknown_operation_payloads() -> (
-    None
-):
+def test_registry_drops_invalid_and_unknown_operation_payloads() -> None:
     from mcp_server_phytomni.runtime.execution_trace_detail import (
         OPERATION_PRESENTER_REGISTRY,
     )

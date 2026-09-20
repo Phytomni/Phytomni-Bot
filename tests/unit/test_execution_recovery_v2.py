@@ -104,7 +104,7 @@ def test_pending_submission_checkpoint_and_join_delegate_to_driver_recovery(
         runtime=runtime,
         reservations=reservations,
         journal=journal,
-        providers=Providers(),  # type: ignore[arg-type]
+        providers=Providers(),
     )
     result = asyncio.run(recovery.recover_work_unit(unit))
     assert result.driver_recovered == 1
@@ -151,7 +151,7 @@ def test_acknowledged_remote_work_delegates_to_provider_reconciler(
         runtime=runtime,
         reservations=reservations,
         journal=journal,
-        providers=Providers(),  # type: ignore[arg-type]
+        providers=Providers(),
     )
     result = asyncio.run(recovery.recover_work_unit(unit))
     assert result.provider_reconciled == 1
@@ -200,7 +200,7 @@ def test_terminal_journal_crash_window_settles_without_rerunning_agent(
         runtime=runtime,
         reservations=reservations,
         journal=journal,
-        providers=Providers(),  # type: ignore[arg-type]
+        providers=Providers(),
     )
     assert recovery.settle_pending_terminal_projections() == 1
     assert recovery.settle_pending_terminal_projections() == 0

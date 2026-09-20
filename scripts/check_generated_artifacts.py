@@ -31,7 +31,7 @@ def is_generated_path(value: str) -> bool:
     if any(part in _GENERATED_DIRECTORY_NAMES for part in parts):
         return True
     if any(
-        parts[index : index + 2] == ("node_modules", ".vite")
+        parts[slice(index, index + 2)] == ("node_modules", ".vite")
         for index in range(max(0, len(parts) - 1))
     ):
         return True
@@ -56,7 +56,7 @@ def _git_lines(repo: Path, *arguments: str) -> list[str]:
 
 
 def generated_artifact_inventory(repo: Path) -> dict[str, Any]:
-    """Separate generated findings from reviewable untracked business source."""
+    """Split generated findings from untracked business source."""
     root = repo.resolve()
     tracked = _git_lines(root, "ls-files")
     untracked = _git_lines(root, "ls-files", "--others", "--exclude-standard")

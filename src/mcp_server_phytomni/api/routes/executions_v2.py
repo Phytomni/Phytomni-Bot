@@ -68,6 +68,7 @@ from ...runtime.execution_work_store_v2 import (
     ExecutionWorkNotFoundError,
     SQLiteExecutionWorkRepository,
 )
+from ...runtime.sqlite import sqlite_transaction
 from ...storage.downloads import download_obs_file
 from ..lifecycle_contract import SafeApiError
 
@@ -154,7 +155,7 @@ def _project_reservation_diagnostics(
 ) -> Any:
     """Overlay bounded pre-journal reconcile health on GET/SSE snapshots."""
     try:
-        with sqlite3.connect(db_path) as connection:
+        with sqlite_transaction(db_path) as connection:
             row = connection.execute(
                 "SELECT state FROM execution_commands_v2 "
                 "WHERE owner_ref = ? AND execution_id = ?",
@@ -460,9 +461,8 @@ def register_execution_v2_routes(
             content_offset = after_offset
             delivered = 0
             idle_polls = 0
-            delivered_provider_contact_at = (
-                initial_projection.execution_stage.clocks.last_provider_contact_at
-            )
+            stage_clocks = initial_projection.execution_stage.clocks
+            delivered_contact_at = stage_clocks.last_provider_contact_at
             yield _sse_frame(
                 event="execution_snapshot",
                 data=initial_projection.model_dump(mode="json"),
@@ -560,8 +560,8 @@ def register_execution_v2_routes(
                 provider_contact_at = (
                     projection.execution_stage.clocks.last_provider_contact_at
                 )
-                if provider_contact_at != delivered_provider_contact_at:
-                    delivered_provider_contact_at = provider_contact_at
+                if provider_contact_at != delivered_contact_at:
+                    delivered_contact_at = provider_contact_at
                     yield _sse_frame(
                         event="execution_snapshot",
                         data=projection.model_dump(mode="json"),
@@ -682,7 +682,8 @@ def register_execution_v2_routes(
         }
         if binding is not None:
             # These immutable, bounded display fields are already public result
-            # facts. Keep the private delivery_ref and semantic role server-side.
+            # facts. Keep the private delivery_ref and semantic role
+            # server-side.
             response_body.update(
                 {
                     "name": binding.name,

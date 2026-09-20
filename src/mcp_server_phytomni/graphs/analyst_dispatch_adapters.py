@@ -22,17 +22,24 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from ..agents.analyst.state import AnalystInput
-from ..agents.analyst.task_ops import verified_reuse_task_ids
+from ..agents.analyst.task_ops import (
+    discard_duplicate_job,
+    task_delete,
+    verified_reuse_task_ids,
+)
 from ..agents.shared.analysis import prepare_analyst_dispatch_context
 from ..agents.shared.analysis_requests import (
     build_analyst_analysis_request,
     build_analyst_prompt_parts,
 )
 from ..agents.shared.options import resolve_agent_locale
+from ..runtime.fingerprint_jobs import try_attach_reuse_claim
 from ..runtime.langgraph_runner import invoke_graph
+from ..runtime.request_context import current_request_user, current_run_id
 from ..runtime.result_run_layout import result_run_root_from_child
 from ..runtime.task_dedup import (
     analyst_task_fingerprint,
+    persist_submitted_fingerprint,
     record_dispatch_submission,
     should_reuse_prior_task,
 )
@@ -234,8 +241,9 @@ async def submit_analyst_via_subgraph(
     context = await prepare_analyst_dispatch_context(
         config, request, fingerprint
     )
+    rejected_source_id = None
     if fingerprint is not None:
-        reused, _rejected_source_id = await _reuse_prior_dispatch(
+        reused, rejected_source_id = await _reuse_prior_dispatch(
             fingerprint, require_terminal_success=is_polling
         )
         if reused is not None:
@@ -275,13 +283,9 @@ async def submit_analyst_via_subgraph(
         map_analyst_output_to_dispatch_state(final_state),
         context.analysis_type,
     )
-    task_id = result.get("task_id")
-    if isinstance(task_id, str) and task_id and fingerprint is not None:
-        record_dispatch_submission(
-            task_id,
-            str(result.get("output_dir") or ""),
-            fingerprint,
-        )
+    await _persist_subgraph_fingerprint(
+        result, fingerprint, is_polling, rejected_source_id
+    )
     logger.info(
         "%s task completed via subgraph (task_id: %s)",
         context.analysis_type,
@@ -359,7 +363,7 @@ async def _reuse_prior_dispatch(
     *,
     require_terminal_success: bool,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Return a reuse result and the source excluded from fresh work.
+    """Return a reuse result and the source excluded if fresh work is needed.
 
     Reads the fingerprint row, applies the cheap status gate, then the
     live verification (probe + is_polling-aware decision). The reuse
@@ -378,9 +382,8 @@ async def _reuse_prior_dispatch(
     Returns:
         The optional reuse dict and the exact remote source considered.
     """
-    prior = TaskManager(resolve_tasks_db_path()).get_task_by_fingerprint(
-        fingerprint
-    )
+    db_path = resolve_tasks_db_path()
+    prior = TaskManager(db_path).get_task_by_fingerprint(fingerprint)
     if prior is None:
         return None, None
     source_id = str(prior.get("source_task_id") or prior["task_id"])
@@ -390,9 +393,19 @@ async def _reuse_prior_dispatch(
         prior,
         require_terminal_success=require_terminal_success,
     )
-    if reuse_ids is None:
+    claim = try_attach_reuse_claim(
+        db_path,
+        fingerprint=fingerprint,
+        prior=prior,
+        reuse_ids=reuse_ids,
+        identity=(
+            _claim_run_id(reuse_ids[0] if reuse_ids else ""),
+            _claim_user_id(),
+        ),
+    )
+    if claim is None:
         return None, source_id
-    caller_task_id, source_task_id = reuse_ids
+    caller_task_id, source_task_id = claim
     return {
         "task_id": caller_task_id,
         "output_dir": prior["output_dir"],
@@ -401,3 +414,29 @@ async def _reuse_prior_dispatch(
         "task_status": prior["status"],
         "source_task_id": source_task_id,
     }, source_id
+
+
+def _claim_run_id(claimant_task_id: str) -> str:
+    """Bind a claim to the request run, or the caller-owned task id."""
+    return current_run_id() or claimant_task_id
+
+
+def _claim_user_id() -> str:
+    """Bind a claim to the request user, or the anonymous MCP owner."""
+    return current_request_user() or "anonymous"
+
+
+async def _persist_subgraph_fingerprint(
+    result: dict[str, Any],
+    fingerprint: str | None,
+    force_new: bool,
+    rejected_source_id: str | None,
+) -> None:
+    """Record a new fingerprint job when the subgraph minted a task id."""
+    orphan = persist_submitted_fingerprint(
+        result,
+        fingerprint,
+        force_new=force_new,
+        rejected_ei_task_id=rejected_source_id,
+    )
+    await discard_duplicate_job(orphan, task_delete)

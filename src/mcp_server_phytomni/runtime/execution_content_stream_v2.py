@@ -129,7 +129,7 @@ class ExecutionContentStreamV2:
         output_revision: int,
         after_offset: int,
     ) -> tuple[ExecutionContentDeltaV2, ...]:
-        """Return resumable frames, switching to a newer revision if present."""
+        """Return resumable frames and adopt a newer revision if present."""
         with self._lock:
             frames = tuple(self._frames.get((owner, execution_id), ()))
         if not frames:

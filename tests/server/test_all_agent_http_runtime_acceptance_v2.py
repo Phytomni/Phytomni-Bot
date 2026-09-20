@@ -38,7 +38,7 @@ async def test_real_http_handler_reserves_drives_and_journals_once(
     review_app_factory: Any,
     spec,
 ) -> None:
-    """Fake only the provider edge while executing the production HTTP route."""
+    """Fake the provider edge while exercising the production route."""
     dependency, arguments, expected = REAL_HANDLER_FIXTURES[spec.slug]
     calls: list[dict[str, object]] = []
 

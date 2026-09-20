@@ -32,6 +32,7 @@ from .execution_runtime_contracts import (
     ExecutionCommand,
     TerminalSettlementAuthority,
 )
+from .sqlite import sqlite_transaction
 
 _LOGGER = logging.getLogger(__name__)
 _TERMINAL_STATUSES = {
@@ -40,6 +41,28 @@ _TERMINAL_STATUSES = {
     ExecutionStatus.FAILED.value,
     ExecutionStatus.CANCELLED.value,
     ExecutionStatus.TIMED_OUT.value,
+}
+_EVIDENCE_COUNT_QUERIES = {
+    "execution_events_v2": (
+        "SELECT COUNT(*) FROM execution_events_v2 WHERE owner_ref = ? "
+        "AND execution_id = ?"
+    ),
+    "execution_spans": (
+        "SELECT COUNT(*) FROM execution_spans WHERE owner_ref = ? "
+        "AND execution_id = ?"
+    ),
+    "execution_work_units": (
+        "SELECT COUNT(*) FROM execution_work_units WHERE owner_ref = ? "
+        "AND execution_id = ?"
+    ),
+    "execution_target_bindings_v2": (
+        "SELECT COUNT(*) FROM execution_target_bindings_v2 "
+        "WHERE owner_ref = ? AND execution_id = ?"
+    ),
+    "execution_operations_v2": (
+        "SELECT COUNT(*) FROM execution_operations_v2 WHERE owner_ref = ? "
+        "AND execution_id = ?"
+    ),
 }
 
 
@@ -127,7 +150,7 @@ def read_reconcile_evidence(
     *, db_path: str, claim: ClaimedReconcileCommand
 ) -> ReconcileEvidence:
     """Read all start/terminal authorities in one SQLite snapshot."""
-    with sqlite3.connect(db_path, timeout=10) as connection:
+    with sqlite_transaction(db_path, timeout=10) as connection:
         connection.execute("PRAGMA busy_timeout=5000")
         connection.execute("BEGIN")
         reservation = connection.execute(
@@ -435,8 +458,7 @@ def _count(
 ) -> int:
     return int(
         connection.execute(
-            f"SELECT COUNT(*) FROM {table} WHERE owner_ref = ? "  # noqa: S608
-            "AND execution_id = ?",
+            _EVIDENCE_COUNT_QUERIES[table],
             (claim.owner_ref, claim.execution_id),
         ).fetchone()[0]
     )
@@ -447,7 +469,7 @@ def _mark_reconcile_degraded(
     claim: ClaimedReconcileCommand,
     code: str,
 ) -> None:
-    with sqlite3.connect(db_path, timeout=10) as connection:
+    with sqlite_transaction(db_path, timeout=10) as connection:
         connection.execute(
             "UPDATE runs SET execution_tracking_health = 'degraded', "
             "updated_at = ? WHERE user_id = ? AND execution_id = ? "

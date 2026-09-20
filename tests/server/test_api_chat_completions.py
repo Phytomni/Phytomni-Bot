@@ -10,7 +10,6 @@ follow_up_questions preserved, stream rejection, and unknown model.
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID
@@ -57,6 +56,7 @@ from mcp_server_phytomni.runtime.execution_v1_projection_v2 import (
     V1ExecutionCompatibilityReader,
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 pytestmark = pytest.mark.server
 
@@ -922,7 +922,7 @@ async def test_chat_completion_reserves_public_execution_before_handler(
     assert "decision.note" in kinds
     assert "tool.completed" in kinds
     assert kinds[-1] == "run.succeeded"
-    with sqlite3.connect(tasks_db_path) as connection:
+    with sqlite_transaction(tasks_db_path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM run_events WHERE run_id = ?",
             (observed["run_id"],),

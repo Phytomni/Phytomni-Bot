@@ -437,7 +437,7 @@ async def invoke_public_agent_stream_response(
         )
 
     async def wrapped() -> AsyncIterator[Any]:
-        iterator = body_iterator.__aiter__()
+        iterator = aiter(body_iterator)
         completed = False
         terminal_settled = False
         if len(stream_boundary) != 1:
@@ -463,7 +463,7 @@ async def invoke_public_agent_stream_response(
                 with bind_execution_boundary(context, services):
                     token = _ACTIVE_EXECUTION.set(True)
                     try:
-                        chunk = await iterator.__anext__()
+                        chunk = await anext(iterator)
                     except StopAsyncIteration:
                         completed = True
                         break
@@ -901,7 +901,7 @@ def _safe_public_answer(
     for index in range(0, len(value), 8192):
         try:
             validate_public_execution_value(
-                value[index : index + 8192],
+                value[slice(index, index + 8192)],
                 max_string_chars=8192,
             )
         except PublicExecutionDataError:

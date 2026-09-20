@@ -343,7 +343,8 @@ class RunRegistry(RunRegistryViewsMixin):
                     locale, external_execution_id,
                     a2a_task_id, a2a_context_id, a2a_message_id
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (

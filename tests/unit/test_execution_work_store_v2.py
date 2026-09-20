@@ -6,11 +6,13 @@
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
+
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
 def _seed_execution(db_path: Path, owner: str, execution_id: str) -> None:
@@ -19,7 +21,7 @@ def _seed_execution(db_path: Path, owner: str, execution_id: str) -> None:
 
     registry = RunRegistry(str(db_path))
     registry.create_run(local_run_spec(f"run-{execution_id}", owner, "chat"))
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_id = ? WHERE run_id = ?",
             (execution_id, f"run-{execution_id}"),
@@ -344,15 +346,17 @@ def test_invalid_join_policy_or_foreign_execution_fails_closed(
             label_key="activity.agent",
         )
     )
-    with pytest.raises(ValueError):
-        WorkUnitSpec(
-            owner="alice",
-            execution_id="turn-owned",
-            work_unit_id="work-invalid",
-            parent_span_id="span-root",
-            operation_key="tool.invalid",
-            driver="local_graph",
-            join_policy="sometimes",  # type: ignore[arg-type]
+    with pytest.raises(ValidationError):
+        WorkUnitSpec.model_validate(
+            {
+                "owner": "alice",
+                "execution_id": "turn-owned",
+                "work_unit_id": "work-invalid",
+                "parent_span_id": "span-root",
+                "operation_key": "tool.invalid",
+                "driver": "local_graph",
+                "join_policy": "sometimes",
+            }
         )
     with pytest.raises(ExecutionWorkNotFoundError):
         repository.get_span("turn-owned", "span-root", owner="mallory")

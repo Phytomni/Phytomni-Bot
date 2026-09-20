@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -18,6 +17,7 @@ from mcp_server_phytomni.runtime.execution_events import (
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.run_registry_models import RunSpec
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
 def _intent(
@@ -183,9 +183,10 @@ def test_missing_or_corrupt_projection_is_rebuilt_from_ledger(
             }
         )
         store.append("run-1", owner="alice", intent=intent)
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
-            "UPDATE run_event_projection SET projection_json = ?, latest_seq = ? "
+            "UPDATE run_event_projection SET projection_json = ?, "
+            "latest_seq = ? "
             "WHERE run_id = ?",
             ("{not-json", 99, "run-1"),
         )
@@ -196,7 +197,7 @@ def test_missing_or_corrupt_projection_is_rebuilt_from_ledger(
     assert rebuilt is not None
     assert rebuilt.latest_seq == 3
     assert [item.id for item in rebuilt.todos] == ["prepare", "analyze"]
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         cached = connection.execute(
             "SELECT latest_seq, projection_json FROM run_event_projection "
             "WHERE run_id = 'run-1'"

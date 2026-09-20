@@ -117,10 +117,8 @@ def test_adapter_diagnostics_are_bounded_and_never_retain_raw_payloads() -> (
     }
     assert "payload" not in str(serialized)
     with pytest.raises(ValidationError):
-        ProviderTraceRejection(
-            index=0,
-            code="unknown_record",
-            raw="private",  # type: ignore[call-arg]
+        ProviderTraceRejection.model_validate(
+            {"index": 0, "code": "unknown_record", "raw": "private"}
         )
 
 

@@ -114,8 +114,7 @@ line-length = 79
 target-version = ["py312"]
 exclude = '''
 /(
-    \.codex-tmp-review-debug
-  | \.git
+    \.git
   | \.mypy_cache
   | \.pytest_cache
   | \.ruff_cache
@@ -128,7 +127,6 @@ line-length = 79
 target-version = "py312"
 src = ["src"]
 exclude = [
-    ".codex-tmp-review-debug",
     ".git",
     ".mypy_cache",
     ".pytest_cache",
@@ -151,7 +149,6 @@ mypy_path = ["src", "typings"]
 warn_unused_ignores = true
 warn_redundant_casts = true
 exclude = [
-    "\\.codex-tmp-review-debug/",
     "\\.mypy_cache/",
     "\\.pytest_cache/",
     "\\.ruff_cache/",
@@ -161,7 +158,6 @@ exclude = [
 [tool.pyright]
 include = ["src"]
 exclude = [
-    "**/.codex-tmp-review-debug",
     "**/.mypy_cache",
     "**/.pytest_cache",
     "**/.ruff_cache",

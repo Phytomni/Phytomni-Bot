@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -42,6 +41,7 @@ from mcp_server_phytomni.runtime.execution_runtime_contracts import (
     ExecutionCommand,
     TerminalSettlementAuthority,
 )
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 pytestmark = pytest.mark.unit
 
@@ -164,7 +164,7 @@ def _prepare_routed_reconcile(
 
 
 def _command_row(db_path: str) -> tuple[object, ...]:
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         row = connection.execute(
             "SELECT state, reconcile_attempt, reconcile_redispatch_count, "
             "last_error_code FROM execution_commands_v2 "
@@ -377,7 +377,7 @@ async def test_routed_reconcile_operation_evidence_suppresses_redispatch(
     db_path = str(tmp_path / "routed-operation-evidence.db")
     queue = _prepare_routed_reconcile(db_path)
     now = datetime.now(UTC).isoformat()
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "INSERT INTO execution_operations_v2 (owner_ref, execution_id, "
             "operation_id, operation, expected_revision, command_hash, "
@@ -413,7 +413,7 @@ async def test_routed_operation_evidence_is_acknowledged_without_replay(
     db_path = str(tmp_path / "routed-operation-acknowledged.db")
     queue = _prepare_routed_reconcile(db_path)
     now = datetime.now(UTC).isoformat()
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "INSERT INTO execution_operations_v2 (owner_ref, execution_id, "
             "operation_id, operation, expected_revision, command_hash, "
@@ -460,7 +460,7 @@ async def test_reported_routed_ambiguous_row_recovers_once(
 ) -> None:
     db_path = str(tmp_path / "reported-routed-ambiguous.db")
     _prepare_routed_reconcile(db_path)
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE execution_commands_v2 SET reconcile_attempt = 52, "
             "last_error_code = 'reconcile_ambiguous' "
@@ -522,7 +522,7 @@ async def test_expired_routed_reconcile_terminalizes_without_replay(
     db_path = str(tmp_path / "expired-routed-reconcile.db")
     now = datetime(2026, 8, 24, 2, 15, tzinfo=UTC)
     queue = _prepare_routed_reconcile(db_path, clock=now)
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_deadline_at = ? "
             "WHERE execution_id = ?",
@@ -645,7 +645,7 @@ async def test_reconcile_deadline_settles_one_canonical_failure(
     db_path = str(tmp_path / "deadline-reconcile.db")
     now = datetime(2026, 8, 24, 2, 15, tzinfo=UTC)
     queue = _prepare_reconcile(db_path, clock=now)
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_deadline_at = ? WHERE execution_id = ?",
             ((now - timedelta(seconds=1)).isoformat(), _EXECUTION_ID),
@@ -731,7 +731,7 @@ def test_safe_redispatch_rejects_non_failed_context_turn(
     context = ConversationContextStore(db_path)
     context.begin_turn(_CONVERSATION_KEY, _TURN_ID, "append", 0)
     if turn_state != "in_progress":
-        with sqlite3.connect(db_path) as connection:
+        with sqlite_transaction(db_path) as connection:
             connection.execute(
                 "UPDATE conversation_turns SET state = ? "
                 "WHERE conversation_key = ? AND turn_id = ?",

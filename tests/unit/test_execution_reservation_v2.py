@@ -16,6 +16,8 @@ from typing import Literal
 
 import pytest
 
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
+
 
 def _command(slug: str = "chat", **arguments: object):
     from mcp_server_phytomni.runtime.execution_runtime_contracts import (
@@ -125,7 +127,7 @@ def test_concurrent_retry_creates_one_binding_and_one_run(
 
     assert len({record.run_id for record in records}) == 1
     assert len({record.root_span_id for record in records}) == 1
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         assert (
             connection.execute(
                 "SELECT COUNT(*) FROM runs WHERE user_id = 'alice' "
@@ -172,7 +174,7 @@ def test_private_expert_router_rebinds_once_without_new_public_execution(
             execution_id="turn-expert",
             command=_command("chat", user_query="rice"),
         )
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         assert (
             connection.execute(
                 "SELECT COUNT(*) FROM runs WHERE execution_id = 'turn-expert'"
@@ -198,7 +200,7 @@ def test_reservation_stores_only_command_hash_not_raw_arguments(
         command=_command(query="private-marker-value"),
     )
 
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         row = connection.execute(
             "SELECT execution_command_hash, request_json FROM runs "
             "WHERE execution_id = 'turn-private'"
@@ -543,7 +545,7 @@ def test_terminal_settlement_provider_lease_expiry_publishes_nothing(
         fingerprint="v" * 64,
         command=_command(query="rice"),
     )
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_provider_join_lease_owner = ?, "
             "execution_provider_join_lease_expires_at = ? "

@@ -387,17 +387,16 @@ async def _select_expert_routing(
                 error=exc,
             )
             raise _routing_contract_error() from exc
-        else:
-            _record_v0_route_outcome(
-                ExpertRouteOutcome.DECLINED_CHAT_FALLBACK,
-                payload=payload,
-                http_status=202,
-                error=exc,
-            )
-            selection = ToolSelection(
-                tool_name="ChatAgent",
-                arguments={"user_query": payload.user_query},
-            )
+        _record_v0_route_outcome(
+            ExpertRouteOutcome.DECLINED_CHAT_FALLBACK,
+            payload=payload,
+            http_status=202,
+            error=exc,
+        )
+        selection = ToolSelection(
+            tool_name="ChatAgent",
+            arguments={"user_query": payload.user_query},
+        )
     except ExpertRoutingContractError as exc:
         _record_v0_route_outcome(
             ExpertRouteOutcome.SELECTION_CONTRACT,

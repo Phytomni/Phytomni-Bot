@@ -95,7 +95,7 @@ def _utf8_bounded_chunks(value: str, *, max_bytes: int) -> tuple[str, ...]:
 
 
 class ExecutionRuntime:
-    """Own admission dispatch and terminal settlement around business Drivers."""
+    """Own admission, dispatch, and settlement around business Drivers."""
 
     def __init__(
         self,
@@ -222,7 +222,7 @@ class ExecutionRuntime:
                     retryable=exc.retryable,
                 )
             except Exception:
-                # Raw exception text and private provider data never enter V2 facts.
+                # Raw errors and private provider data never enter V2 facts.
                 outcome = DriverOutcome.failed(code="driver_unhandled_error")
 
         self._publish_outcome(
@@ -282,7 +282,7 @@ class ExecutionRuntime:
         command: ExecutionCommand,
         transport: str,
     ) -> DriverOutcome:
-        """Apply one revision-checked input action and resume the same execution."""
+        """Apply a checked input action and resume the same execution."""
         return await self._operate(
             DriverOperation.RESUME,
             owner=owner,
@@ -299,7 +299,7 @@ class ExecutionRuntime:
         command: ExecutionCommand,
         transport: str,
     ) -> DriverOutcome:
-        """Request explicit cancellation without coupling it to stream closure."""
+        """Request cancellation without coupling it to stream closure."""
         return await self._operate(
             DriverOperation.CANCEL,
             owner=owner,
@@ -316,7 +316,7 @@ class ExecutionRuntime:
         command: ExecutionCommand,
         transport: str = "supervisor",
     ) -> DriverOutcome:
-        """Recover durable Driver state under an idempotent supervisor action."""
+        """Recover Driver state under an idempotent supervisor action."""
         return await self._operate(
             DriverOperation.RECOVER,
             owner=owner,
@@ -333,7 +333,7 @@ class ExecutionRuntime:
         command: ExecutionCommand,
         transport: str = "supervisor",
     ) -> DriverOutcome:
-        """Fold one durable provider observation through the canonical Driver."""
+        """Fold a provider observation through the canonical Driver."""
         return await self._operate(
             DriverOperation.RECONCILE,
             owner=owner,
@@ -494,7 +494,7 @@ class ExecutionRuntime:
         command: ExecutionCommand,
         operation_token: str,
     ) -> None:
-        """Publish only the normalized public result, never private hand-off data."""
+        """Publish the public result, never private hand-off data."""
         result = outcome.result
         if result is None:
             return
@@ -523,7 +523,7 @@ class ExecutionRuntime:
                 _utf8_bounded_chunks(message_content, max_bytes=4096)
                 if result.tabular is not None
                 else tuple(
-                    message_content[index : index + 8192]
+                    message_content[slice(index, index + 8192)]
                     for index in range(0, len(message_content), 8192)
                 )
             )

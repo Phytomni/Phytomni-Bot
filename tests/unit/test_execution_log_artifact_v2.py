@@ -148,9 +148,7 @@ def test_terminal_runtime_publishes_owner_scoped_execution_log(
     )
 
 
-def test_execution_log_builder_is_bounded_and_ignores_non_operation_facts() -> (
-    None
-):
+def test_log_builder_is_bounded_and_ignores_non_operation_facts() -> None:
     from mcp_server_phytomni.runtime.execution_event_limits import (
         DEFAULT_EXECUTION_TRACE_DETAIL_LIMITS,
     )
