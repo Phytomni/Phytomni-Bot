@@ -25,6 +25,7 @@ class ExecutionEventSink(Protocol):
 
     def emit(self, intent: ExecutionEventIntent) -> ExecutionEventV1 | None:
         """Commit one event intent and return its durable representation."""
+        raise NotImplementedError
 
 
 class _AppendStore(Protocol):
@@ -38,6 +39,7 @@ class _AppendStore(Protocol):
         intent: ExecutionEventIntent,
     ) -> ExecutionEventV1:
         """Append one intent to the event stream for a run."""
+        raise NotImplementedError
 
 
 class NoOpExecutionEventSink:
