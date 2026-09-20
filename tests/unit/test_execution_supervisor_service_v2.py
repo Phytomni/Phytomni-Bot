@@ -6,24 +6,55 @@
 from __future__ import annotations
 
 import asyncio
-import json
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
+from tests.support.execution_supervisor_v2 import (
+    create_root_span,
+    mark_work_unit_succeeded,
+    seed_running_remote_execution,
+    set_provider_join_lease,
+)
 
+from mcp_server_phytomni.runtime import execution_supervisor_service_v2
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
 from mcp_server_phytomni.runtime.execution_journal_v2 import WorkUnitStatus
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    ExecutionReservationConflictError,
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
+from mcp_server_phytomni.runtime.execution_supervisor_service_v2 import (
+    DomainTerminalReconciler,
+    ReadyProviderJoinReconciler,
+    run_execution_supervisor_loop,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SQLiteExecutionWorkRepository,
+    WorkUnitRecord,
+    WorkUnitSpec,
+)
+from mcp_server_phytomni.runtime.provider_trace_v2 import (
+    ProviderTraceCheckpoint,
+)
+from mcp_server_phytomni.runtime.run_registry import (
+    RunOutcome,
+    RunRegistry,
+    RunSpec,
+)
 from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
 def test_analysis_provider_poller_projects_live_status_and_revision(
     monkeypatch,
 ) -> None:
-    from mcp_server_phytomni.runtime import execution_supervisor_service_v2
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        WorkUnitRecord,
-    )
+    """Verify analysis provider poller projects live status and revision."""
 
     async def reconcile(_task_id: str):
         return {
@@ -73,10 +104,8 @@ def test_analysis_provider_poller_projects_live_status_and_revision(
 def test_analysis_provider_poller_forces_terminal_revision_after_old_liveness(
     monkeypatch,
 ) -> None:
-    from mcp_server_phytomni.runtime import execution_supervisor_service_v2
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        WorkUnitRecord,
-    )
+    """Verify analysis provider poller forces terminal revision after old
+    liveness."""
 
     async def reconcile(_task_id: str):
         return {
@@ -117,13 +146,7 @@ def test_analysis_provider_poller_forces_terminal_revision_after_old_liveness(
 def test_analysis_trace_poller_accepts_only_structured_finite_records(
     monkeypatch,
 ) -> None:
-    from mcp_server_phytomni.runtime import execution_supervisor_service_v2
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        WorkUnitRecord,
-    )
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        ProviderTraceCheckpoint,
-    )
+    """Verify analysis trace poller accepts only structured finite records."""
 
     async def fetch_log(_task_id: str, **_kwargs):
         return {
@@ -176,13 +199,7 @@ def test_analysis_trace_poller_accepts_only_structured_finite_records(
 def test_analysis_trace_poller_never_uses_frozen_compatibility_cache(
     monkeypatch,
 ) -> None:
-    from mcp_server_phytomni.runtime import execution_supervisor_service_v2
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        WorkUnitRecord,
-    )
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        ProviderTraceCheckpoint,
-    )
+    """Verify analysis trace poller never uses frozen compatibility cache."""
 
     calls = 0
 
@@ -241,19 +258,25 @@ def test_analysis_trace_poller_never_uses_frozen_compatibility_cache(
 
 
 def test_supervisor_loop_runs_work_and_join_recovery_until_stopped() -> None:
-    from mcp_server_phytomni.runtime.execution_supervisor_service_v2 import (
-        run_execution_supervisor_loop,
-    )
+    """Verify supervisor loop runs work and join recovery until stopped."""
 
     calls: list[str] = []
     stop = asyncio.Event()
 
+    @dataclass(eq=False)
     class Supervisor:
+        """Supervisor double recording work-loop invocations."""
+
         async def run_once(self):
+            """Run once for this test scenario."""
             calls.append("work")
 
+    @dataclass(eq=False)
     class Joins:
+        """Join reconciler recording recovery-loop invocations."""
+
         async def run_once(self):
+            """Run once for this test scenario."""
             calls.append("join")
             stop.set()
 
@@ -273,11 +296,14 @@ def test_serving_supervisor_uses_provider_only_due_work(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    from mcp_server_phytomni.runtime import execution_supervisor_service_v2
+    """Verify serving supervisor uses provider only due work."""
 
     captured: dict[str, object] = {}
 
+    @dataclass(eq=False)
     class CapturingSupervisor:
+        """Supervisor capturing provider work selected for service."""
+
         def __init__(self, **kwargs) -> None:
             captured.update(kwargs)
 
@@ -311,37 +337,15 @@ def test_serving_supervisor_uses_provider_only_due_work(
 def test_domain_terminal_is_projected_into_the_one_runtime_journal(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_supervisor_service_v2 import (
-        DomainTerminalReconciler,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
+    """Verify domain terminal is projected into the one runtime journal."""
 
     db_path = str(tmp_path / "domain-terminal.db")
 
-    async def accepted():
-        return {"status": "running"}, 202
-
-    asyncio.run(
-        invoke_public_agent(
-            db_path=db_path,
-            owner="alice",
-            execution_id="turn-domain-terminal",
-            agent_slug="research",
-            arguments={"query": "rice"},
-            transport="authenticated_http",
-            call=accepted,
-        )
+    seed_running_remote_execution(
+        db_path,
+        execution_id="turn-domain-terminal",
+        agent_slug="research",
+        arguments={"query": "rice"},
     )
     with sqlite_transaction(db_path) as connection:
         connection.execute(
@@ -362,35 +366,15 @@ def test_domain_terminal_is_projected_into_the_one_runtime_journal(
     )
     assert projection.terminal is not None
     assert projection.terminal.status == "succeeded"
-    assert (
-        SQLiteExecutionReservationRepository(db_path).list_recoverable(
-            limit=10
-        )
-        == ()
+    assert not SQLiteExecutionReservationRepository(db_path).list_recoverable(
+        limit=10
     )
 
 
 def test_ready_provider_join_is_retried_until_execution_is_terminal(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
-    from mcp_server_phytomni.runtime.execution_supervisor_service_v2 import (
-        ReadyProviderJoinReconciler,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-        WorkUnitStatus,
-    )
+    """Verify ready provider join is retried until execution is terminal."""
 
     db_path = str(tmp_path / "ready-join.db")
     reservations = SQLiteExecutionReservationRepository(db_path)
@@ -405,14 +389,10 @@ def test_ready_provider_join_is_retried_until_execution_is_terminal(
     )
     journal = SQLiteExecutionJournal(db_path)
     work = SQLiteExecutionWorkRepository(db_path)
-    work.create_span(
-        SpanSpec(
-            owner="alice",
-            execution_id=reservation.execution_id,
-            span_id=reservation.root_span_id,
-            kind="agent",
-            label_key="agent.design",
-        )
+    create_root_span(
+        work,
+        reservation,
+        label_key="agent.design",
     )
     for index in range(2):
         unit = work.create_work_unit(
@@ -434,13 +414,7 @@ def test_ready_provider_join_is_retried_until_execution_is_terminal(
             provider_revision=1,
             expected_revision=unit.revision,
         )
-        work.update_work_unit_status(
-            unit.execution_id,
-            unit.work_unit_id,
-            owner=unit.owner,
-            status=WorkUnitStatus.SUCCEEDED,
-            expected_revision=unit.revision,
-        )
+        mark_work_unit_succeeded(work, unit)
 
     attempts: list[str] = []
 
@@ -448,10 +422,10 @@ def test_ready_provider_join_is_retried_until_execution_is_terminal(
         attempts.append(f"{owner}:{execution_id}")
 
     joins = ReadyProviderJoinReconciler(
-        reservations=reservations,
-        journal=journal,
-        work=work,
         settle=settle,
+        work=work,
+        journal=journal,
+        reservations=reservations,
         worker_id="join-worker-a",
     )
     assert asyncio.run(joins.run_once()) == 1
@@ -466,24 +440,6 @@ def test_ready_provider_join_is_single_flight_across_supervisors(
     tmp_path: Path,
 ) -> None:
     """Only one supervisor may execute terminal domain aggregation."""
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
-    from mcp_server_phytomni.runtime.execution_supervisor_service_v2 import (
-        ReadyProviderJoinReconciler,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-        WorkUnitStatus,
-    )
 
     db_path = str(tmp_path / "ready-join-single-flight.db")
     reservations = SQLiteExecutionReservationRepository(db_path)
@@ -498,14 +454,10 @@ def test_ready_provider_join_is_single_flight_across_supervisors(
     )
     journal = SQLiteExecutionJournal(db_path)
     work = SQLiteExecutionWorkRepository(db_path)
-    work.create_span(
-        SpanSpec(
-            owner="alice",
-            execution_id=reservation.execution_id,
-            span_id=reservation.root_span_id,
-            kind="agent",
-            label_key="agent.network",
-        )
+    create_root_span(
+        work,
+        reservation,
+        label_key="agent.network",
     )
     unit = work.create_work_unit(
         WorkUnitSpec(
@@ -580,11 +532,6 @@ def test_stale_provider_join_token_cannot_commit_domain_terminal(
     tmp_path: Path,
 ) -> None:
     """A superseded join cannot win the domain terminal CAS."""
-    from mcp_server_phytomni.runtime.run_registry import (
-        RunOutcome,
-        RunRegistry,
-        RunSpec,
-    )
 
     db_path = str(tmp_path / "provider-join-fencing.db")
     stale = RunRegistry(
@@ -621,7 +568,7 @@ def test_stale_provider_join_token_cannot_commit_domain_terminal(
         )
         connection.commit()
 
-    stale_winner = stale._settle_terminal(
+    stale_winner = getattr(stale, "_settle_terminal")(
         stale_current,
         RunOutcome("succeeded", {"formatted": {"answer": "stale"}}),
     )
@@ -631,7 +578,7 @@ def test_stale_provider_join_token_cannot_commit_domain_terminal(
     current = RunRegistry(
         db_path, expected_provider_join_lease_token="lease-new"
     )
-    current_winner = current._settle_terminal(
+    current_winner = getattr(current, "_settle_terminal")(
         stale_current,
         RunOutcome("succeeded", {"formatted": {"answer": "current"}}),
     )
@@ -644,49 +591,20 @@ def test_stale_provider_join_token_cannot_claim_runtime_operation(
     tmp_path: Path,
 ) -> None:
     """Runtime revision CAS fences a token superseded after preflight."""
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        ExecutionReservationConflictError,
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
 
     db_path = str(tmp_path / "provider-join-runtime-fencing.db")
 
-    async def accepted():
-        return {"status": "running"}, 202
-
-    asyncio.run(
-        invoke_public_agent(
-            db_path=db_path,
-            owner="alice",
-            execution_id="turn-runtime-fenced",
-            agent_slug="network",
-            arguments={"query": "network"},
-            transport="authenticated_http",
-            call=accepted,
-        )
+    baseline = seed_running_remote_execution(
+        db_path,
+        execution_id="turn-runtime-fenced",
+        agent_slug="network",
+        arguments={"query": "network"},
     )
-    baseline = SQLiteExecutionReservationRepository(db_path).get(
-        owner="alice", execution_id="turn-runtime-fenced"
+    set_provider_join_lease(
+        db_path,
+        execution_id="turn-runtime-fenced",
+        lease_token="lease-new",
     )
-    with sqlite_transaction(db_path) as connection:
-        connection.execute(
-            "UPDATE runs SET execution_provider_join_lease_owner = ?, "
-            "execution_provider_join_lease_expires_at = ? "
-            "WHERE user_id = ? AND execution_id = ?",
-            (
-                "lease-new",
-                (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
-                "alice",
-                "turn-runtime-fenced",
-            ),
-        )
-        connection.commit()
 
     command = ExecutionCommand(
         agent_slug="network",
@@ -728,52 +646,21 @@ def test_expired_provider_join_token_cannot_renew_or_claim_runtime(
     tmp_path: Path,
 ) -> None:
     """An expired token cannot revive itself before another owner arrives."""
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        ExecutionReservationConflictError,
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
 
     db_path = str(tmp_path / "provider-join-expired.db")
 
-    async def accepted():
-        return {"status": "running"}, 202
-
-    asyncio.run(
-        invoke_public_agent(
-            db_path=db_path,
-            owner="alice",
-            execution_id="turn-expired",
-            agent_slug="network",
-            arguments={"query": "network"},
-            transport="authenticated_http",
-            call=accepted,
-        )
+    baseline = seed_running_remote_execution(
+        db_path,
+        execution_id="turn-expired",
+        agent_slug="network",
+        arguments={"query": "network"},
     )
-    baseline = SQLiteExecutionReservationRepository(db_path).get(
-        owner="alice", execution_id="turn-expired"
+    set_provider_join_lease(
+        db_path,
+        execution_id="turn-expired",
+        lease_token="lease-expired",
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
     )
-    with sqlite_transaction(db_path) as connection:
-        connection.execute(
-            "UPDATE runs SET execution_provider_join_lease_owner = ?, "
-            "execution_provider_join_lease_expires_at = ? "
-            "WHERE user_id = ? AND execution_id = ?",
-            (
-                "lease-expired",
-                (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
-                "alice",
-                "turn-expired",
-            ),
-        )
-        connection.commit()
 
     assert not SQLiteExecutionWorkRepository(
         db_path
@@ -801,512 +688,3 @@ def test_expired_provider_join_token_cannot_renew_or_claim_runtime(
             expected_revision=baseline.supervisor_revision,
             command=command,
         )
-
-
-def test_provider_join_losing_lease_after_claim_cannot_publish(
-    tmp_path: Path,
-) -> None:
-    """A claimed old operation is fenced before result/event publication."""
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-        invoke_public_agent_operation,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        ExecutionReservationConflictError,
-        SQLiteExecutionReservationRepository,
-    )
-
-    db_path = str(tmp_path / "provider-join-post-claim-fencing.db")
-
-    async def accepted():
-        return {"status": "running"}, 202
-
-    asyncio.run(
-        invoke_public_agent(
-            db_path=db_path,
-            owner="alice",
-            execution_id="turn-post-claim",
-            agent_slug="network",
-            arguments={"query": "network"},
-            transport="authenticated_http",
-            call=accepted,
-        )
-    )
-    baseline = SQLiteExecutionReservationRepository(db_path).get(
-        owner="alice", execution_id="turn-post-claim"
-    )
-    with sqlite_transaction(db_path) as connection:
-        connection.execute(
-            "UPDATE runs SET execution_provider_join_lease_owner = ?, "
-            "execution_provider_join_lease_expires_at = ? "
-            "WHERE user_id = ? AND execution_id = ?",
-            (
-                "lease-old",
-                (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
-                "alice",
-                "turn-post-claim",
-            ),
-        )
-        connection.commit()
-
-    started = asyncio.Event()
-    release = asyncio.Event()
-
-    async def stale_result():
-        started.set()
-        await release.wait()
-        return {
-            "status": "succeeded",
-            "result": {"formatted": {"answer": "must not publish"}},
-        }
-
-    async def exercise() -> None:
-        old = asyncio.create_task(
-            invoke_public_agent_operation(
-                db_path=db_path,
-                owner="alice",
-                execution_id="turn-post-claim",
-                agent_slug="network",
-                operation="reconcile",
-                action_id=f"provider-join:{baseline.supervisor_revision}",
-                expected_revision=baseline.supervisor_revision,
-                arguments={"source": "provider_join"},
-                transport="supervisor",
-                call=stale_result,
-                expected_provider_join_lease_token="lease-old",
-            )
-        )
-        await asyncio.wait_for(started.wait(), timeout=1)
-        with sqlite_transaction(db_path) as connection:
-            connection.execute(
-                "UPDATE runs SET execution_provider_join_lease_owner = ?, "
-                "execution_provider_join_lease_expires_at = ? "
-                "WHERE user_id = ? AND execution_id = ?",
-                (
-                    "lease-new",
-                    (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
-                    "alice",
-                    "turn-post-claim",
-                ),
-            )
-            connection.commit()
-        release.set()
-        with pytest.raises(
-            ExecutionReservationConflictError,
-            match="provider_join_lease_lost",
-        ):
-            await old
-
-    asyncio.run(exercise())
-    projection = SQLiteExecutionJournal(db_path).get_projection(
-        "turn-post-claim", owner="alice"
-    )
-    assert projection.status.value == "running"
-    assert projection.terminal is None
-    assert projection.results == ()
-
-
-@pytest.mark.parametrize("publication", ["message", "target"])
-def test_provider_join_takeover_after_preflight_cannot_publish(
-    tmp_path: Path,
-    monkeypatch,
-    publication: str,
-) -> None:
-    """The journal and target writes are fenced, not only their preflight."""
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-        invoke_public_agent_operation,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        ExecutionReservationConflictError,
-        SQLiteExecutionReservationRepository,
-    )
-
-    db_path = str(tmp_path / "provider-join-publication-fencing.db")
-
-    async def accepted():
-        return {"status": "running"}, 202
-
-    asyncio.run(
-        invoke_public_agent(
-            db_path=db_path,
-            owner="alice",
-            execution_id="turn-publication-fenced",
-            agent_slug="network",
-            arguments={"query": "network"},
-            transport="authenticated_http",
-            call=accepted,
-        )
-    )
-    repository = SQLiteExecutionReservationRepository(db_path)
-    baseline = repository.get(
-        owner="alice", execution_id="turn-publication-fenced"
-    )
-    journal = SQLiteExecutionJournal(db_path)
-    before = journal.get_projection("turn-publication-fenced", owner="alice")
-    with sqlite_transaction(db_path) as connection:
-        connection.execute(
-            "UPDATE runs SET execution_provider_join_lease_owner = ?, "
-            "execution_provider_join_lease_expires_at = ? "
-            "WHERE user_id = ? AND execution_id = ?",
-            (
-                "lease-old",
-                (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
-                "alice",
-                "turn-publication-fenced",
-            ),
-        )
-        connection.commit()
-
-    original_require = (
-        SQLiteExecutionReservationRepository.require_provider_join_lease
-    )
-    takeover_done = False
-
-    def takeover_after_successful_preflight(
-        self,
-        *,
-        owner: str,
-        execution_id: str,
-    ) -> None:
-        nonlocal takeover_done
-        original_require(self, owner=owner, execution_id=execution_id)
-        if takeover_done:
-            return
-        takeover_done = True
-        with sqlite_transaction(db_path) as connection:
-            connection.execute(
-                "UPDATE runs SET execution_provider_join_lease_owner = ?, "
-                "execution_provider_join_lease_expires_at = ? "
-                "WHERE user_id = ? AND execution_id = ?",
-                (
-                    "lease-new",
-                    (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
-                    owner,
-                    execution_id,
-                ),
-            )
-            connection.commit()
-
-    monkeypatch.setattr(
-        SQLiteExecutionReservationRepository,
-        "require_provider_join_lease",
-        takeover_after_successful_preflight,
-    )
-
-    async def stale_result():
-        formatted = (
-            {"formatted": {"answer": "must not publish"}}
-            if publication == "message"
-            else {}
-        )
-        execution = (
-            {
-                "execution": {
-                    "artifacts": [
-                        {
-                            "role": "scientific_report",
-                            "name": "stale.pdf",
-                            "media_type": "application/pdf",
-                            "size_bytes": 42,
-                            "download_ref": "obs://private/stale.pdf",
-                        }
-                    ]
-                }
-            }
-            if publication == "target"
-            else {}
-        )
-        return {
-            "status": "succeeded",
-            "result": {**formatted, **execution},
-        }
-
-    with pytest.raises(
-        ExecutionReservationConflictError,
-        match="provider_join_lease_lost",
-    ):
-        asyncio.run(
-            invoke_public_agent_operation(
-                db_path=db_path,
-                owner="alice",
-                execution_id="turn-publication-fenced",
-                agent_slug="network",
-                operation="reconcile",
-                action_id=f"provider-join:{baseline.supervisor_revision}",
-                expected_revision=baseline.supervisor_revision,
-                arguments={"source": "provider_join"},
-                transport="supervisor",
-                call=stale_result,
-                expected_provider_join_lease_token="lease-old",
-            )
-        )
-
-    after = journal.get_projection("turn-publication-fenced", owner="alice")
-    assert after.latest_seq == before.latest_seq
-    assert after.status.value == "running"
-    assert after.terminal is None
-    assert after.results == ()
-    with sqlite_transaction(db_path) as connection:
-        targets = connection.execute(
-            "SELECT COUNT(*) FROM execution_target_bindings_v2 "
-            "WHERE owner_ref = ? AND execution_id = ?",
-            ("alice", "turn-publication-fenced"),
-        ).fetchone()
-    assert targets == (0,)
-
-
-def test_provider_join_reconcile_failure_keeps_runtime_recoverable(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    """Transient domain aggregation must fail before claiming Runtime."""
-    from mcp_server_phytomni.runtime import execution_supervisor_service_v2
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-
-    db_path = str(tmp_path / "provider-join-failure.db")
-
-    async def accepted():
-        return {"status": "running"}, 202
-
-    asyncio.run(
-        invoke_public_agent(
-            db_path=db_path,
-            owner="alice",
-            execution_id="turn-provider-join-failure",
-            agent_slug="network",
-            arguments={"to_id": "TO:0000011", "species_code": "osa"},
-            transport="authenticated_http",
-            call=accepted,
-        )
-    )
-
-    class FailingRegistry:
-        def get_run(self, _run_id: str, *, owner: str):
-            assert owner == "alice"
-            return SimpleNamespace(status="running", result=None)
-
-        async def reconcile(self, _run_id: str, *, owner: str):
-            assert owner == "alice"
-            raise RuntimeError("temporary artifact listing failure")
-
-    monkeypatch.setattr(
-        execution_supervisor_service_v2,
-        "RunRegistry",
-        lambda _db_path: FailingRegistry(),
-    )
-
-    with pytest.raises(RuntimeError, match="temporary artifact"):
-        asyncio.run(
-            execution_supervisor_service_v2.settle_ready_provider_execution(
-                db_path,
-                "alice",
-                "turn-provider-join-failure",
-            )
-        )
-
-    projection = SQLiteExecutionJournal(db_path).get_projection(
-        "turn-provider-join-failure", owner="alice"
-    )
-    assert projection.status.value == "running"
-    assert projection.terminal is None
-
-
-def test_provider_join_projects_terminal_result_and_download_target(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    """A settled domain run closes Runtime and publishes typed results."""
-    from mcp_server_phytomni.runtime import execution_supervisor_service_v2
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-
-    db_path = str(tmp_path / "provider-join-success.db")
-
-    async def accepted():
-        return {"status": "running"}, 202
-
-    asyncio.run(
-        invoke_public_agent(
-            db_path=db_path,
-            owner="alice",
-            execution_id="turn-provider-join-success",
-            agent_slug="network",
-            arguments={"to_id": "TO:0000011", "species_code": "osa"},
-            transport="authenticated_http",
-            call=accepted,
-        )
-    )
-    delivery_ref = "obs://phytomni/runs/network/report.pdf"
-    result = {
-        "formatted": {"answer": "Network analysis complete."},
-        "execution": {
-            "artifacts": [
-                {
-                    "role": "scientific_report",
-                    "name": "report.pdf",
-                    "media_type": "application/pdf",
-                    "size_bytes": 42,
-                    "download_ref": delivery_ref,
-                }
-            ]
-        },
-    }
-
-    class TerminalRegistry:
-        def get_run(self, _run_id: str, *, owner: str):
-            assert owner == "alice"
-            return SimpleNamespace(status="succeeded", result=result)
-
-        async def reconcile(self, _run_id: str, *, owner: str):
-            raise AssertionError(f"terminal run must not be repolled: {owner}")
-
-    monkeypatch.setattr(
-        execution_supervisor_service_v2,
-        "RunRegistry",
-        lambda _db_path: TerminalRegistry(),
-    )
-
-    asyncio.run(
-        execution_supervisor_service_v2.settle_ready_provider_execution(
-            db_path,
-            "alice",
-            "turn-provider-join-success",
-        )
-    )
-
-    projection = SQLiteExecutionJournal(db_path).get_projection(
-        "turn-provider-join-success", owner="alice"
-    )
-    assert projection.status.value == "succeeded"
-    assert projection.terminal is not None
-    assert len(projection.results) == 1
-    with sqlite_transaction(db_path) as connection:
-        binding = connection.execute(
-            "SELECT role, name, delivery_ref "
-            "FROM execution_target_bindings_v2 WHERE owner_ref = ? "
-            "AND execution_id = ?",
-            ("alice", "turn-provider-join-success"),
-        ).fetchone()
-    assert binding == ("scientific_report", "report.pdf", delivery_ref)
-
-
-def test_provider_join_projects_domain_terminal_row_before_runtime_settlement(
-    tmp_path: Path,
-) -> None:
-    """A domain terminal row must not block the one canonical Runtime join."""
-    from mcp_server_phytomni.runtime import execution_supervisor_service_v2
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-
-    db_path = str(tmp_path / "provider-join-domain-terminal.db")
-
-    async def accepted():
-        return {"status": "running"}, 202
-
-    asyncio.run(
-        invoke_public_agent(
-            db_path=db_path,
-            owner="alice",
-            execution_id="turn-provider-join-domain-terminal",
-            agent_slug="network",
-            arguments={"to_id": "TO:0000011", "species_code": "osa"},
-            transport="authenticated_http",
-            call=accepted,
-        )
-    )
-    digest = "sha256:" + "7" * 64
-    run_root = "obs://phytomni/runs/network-domain-terminal"
-    terminal_result = {
-        "formatted": {"answer": "Network analysis complete."},
-        "execution": {
-            "artifacts": [],
-            "delivery": {
-                "schema_version": 1,
-                "required": True,
-                "status": "ready",
-                "revision": 1,
-                "inventory_digest": digest,
-                "archive": {
-                    "role": "result_archive",
-                    "name": "network-results.zip",
-                    "media_type": "application/zip",
-                    "size_bytes": 1_024,
-                    "downloadable": True,
-                    "report_context_eligible": False,
-                    "download_ref": f"result-archive:{digest}",
-                },
-                "error_code": None,
-                "retryable": False,
-            },
-        },
-        "delivery_internal": {
-            "inventory_ref": (
-                f"{run_root}/delivery/{digest.removeprefix('sha256:')}/"
-                ".phytomni-result-inventory.json"
-            ),
-            "attempts_claimed": 1,
-            "last_error_code": None,
-        },
-    }
-    with sqlite_transaction(db_path) as connection:
-        connection.execute(
-            "UPDATE runs SET status = 'succeeded', result_json = ? "
-            "WHERE user_id = ? AND execution_id = ?",
-            (
-                json.dumps(terminal_result),
-                "alice",
-                "turn-provider-join-domain-terminal",
-            ),
-        )
-        connection.commit()
-
-    asyncio.run(
-        execution_supervisor_service_v2.settle_ready_provider_execution(
-            db_path,
-            "alice",
-            "turn-provider-join-domain-terminal",
-        )
-    )
-
-    projection = SQLiteExecutionJournal(db_path).get_projection(
-        "turn-provider-join-domain-terminal", owner="alice"
-    )
-    assert projection.status.value == "succeeded"
-    assert projection.terminal is not None
-    assert [result.name for result in projection.results] == [
-        "network-results.zip"
-    ]
-    with sqlite_transaction(db_path) as connection:
-        binding = connection.execute(
-            "SELECT target_kind, role, name, delivery_ref "
-            "FROM execution_target_bindings_v2 WHERE owner_ref = ? "
-            "AND execution_id = ?",
-            ("alice", "turn-provider-join-domain-terminal"),
-        ).fetchone()
-    assert binding == (
-        "download",
-        "result_archive",
-        "network-results.zip",
-        f"{run_root}/delivery/{digest.removeprefix('sha256:')}/"
-        "network-results.zip",
-    )

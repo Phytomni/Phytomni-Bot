@@ -7,32 +7,39 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 import pytest
 from pydantic import ValidationError
+from tests.support.execution_event_fixtures import (
+    EXECUTION_RUNTIME_V2_FIXTURES,
+)
 
-FIXTURES = (
-    Path(__file__).parents[2]
-    / "docs"
-    / "contracts"
-    / "execution-runtime"
-    / "v2"
-    / "fixtures.json"
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    ActionRevision,
+    ExecutionEventType,
+    ExecutionJournalValidationError,
+    ExecutionStatus,
+    OutputRevision,
+    PublicTarget,
+    PublicTargetKind,
+    SpanStatus,
+    TerminalStatusV2,
+    TrackingHealth,
+    WorkUnitStatus,
+    parse_execution_event_v2,
 )
 
 
 def _durable_event() -> dict[str, Any]:
-    fixtures = json.loads(FIXTURES.read_text(encoding="utf-8"))
+    fixtures = json.loads(
+        EXECUTION_RUNTIME_V2_FIXTURES.read_text(encoding="utf-8")
+    )
     return dict(fixtures["durable_event"])
 
 
 def test_frozen_v2_event_fixture_round_trips() -> None:
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionEventType,
-        parse_execution_event_v2,
-    )
+    """Verify frozen V2 event fixture round trips."""
 
     raw = _durable_event()
     event = parse_execution_event_v2(raw)
@@ -42,25 +49,16 @@ def test_frozen_v2_event_fixture_round_trips() -> None:
 
 
 def test_v2_contracts_expose_only_finite_lifecycle_vocabularies() -> None:
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionStatus,
-        SpanStatus,
-        TrackingHealth,
-        WorkUnitStatus,
-    )
+    """Verify V2 contracts expose only finite lifecycle vocabularies."""
 
-    assert {status.value for status in ExecutionStatus} == {
+    expected = {
         "admitted",
         "queued",
         "dispatching",
         "running",
         "waiting_input",
-        "succeeded",
-        "partial",
-        "failed",
-        "cancelled",
-        "timed_out",
-    }
+    } | set(get_args(TerminalStatusV2))
+    assert {status.value for status in ExecutionStatus} == expected
     assert "retry_scheduled" in {status.value for status in WorkUnitStatus}
     assert "skipped" in {status.value for status in SpanStatus}
     assert {health.value for health in TrackingHealth} == {
@@ -110,10 +108,7 @@ def test_v2_contracts_expose_only_finite_lifecycle_vocabularies() -> None:
 def test_v2_public_contract_rejects_private_or_unsafe_data(
     path: tuple[str, str], value: object, reason: str
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionJournalValidationError,
-        parse_execution_event_v2,
-    )
+    """Verify V2 public contract rejects private or unsafe data."""
 
     raw = _durable_event()
     parent = dict(raw[path[0]])
@@ -125,10 +120,7 @@ def test_v2_public_contract_rejects_private_or_unsafe_data(
 
 
 def test_v2_event_rejects_unknown_type_and_oversized_public_data() -> None:
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionJournalValidationError,
-        parse_execution_event_v2,
-    )
+    """Verify V2 event rejects unknown type and oversized public data."""
 
     unknown = _durable_event()
     unknown["type"] = "provider.private_update"
@@ -146,10 +138,7 @@ def test_v2_event_rejects_unknown_type_and_oversized_public_data() -> None:
 
 
 def test_event_type_selects_a_strict_payload_model() -> None:
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ExecutionJournalValidationError,
-        parse_execution_event_v2,
-    )
+    """Verify event type selects a strict payload model."""
 
     raw = _durable_event()
     raw["public_payload"] = {"phase": "retrieval", "provider": "private"}
@@ -160,12 +149,7 @@ def test_event_type_selects_a_strict_payload_model() -> None:
 
 
 def test_output_action_and_target_revisions_are_bounded() -> None:
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        ActionRevision,
-        OutputRevision,
-        PublicTarget,
-        PublicTargetKind,
-    )
+    """Verify output action and target revisions are bounded."""
 
     assert OutputRevision(revision=3, offset=9).model_dump() == {
         "revision": 3,

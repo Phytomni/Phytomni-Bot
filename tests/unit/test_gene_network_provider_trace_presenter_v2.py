@@ -6,48 +6,24 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import cast
+from tests.support.provider_trace_v2 import (
+    provider_trace_observation,
+    provider_trace_presenter_arguments,
+    provider_trace_unit,
+)
 
 from mcp_server_phytomni.runtime.execution_journal_v2 import (
     ProgressPublicPayload,
     WorkUnitPublicPayload,
 )
-from mcp_server_phytomni.runtime.execution_work_store_v2 import WorkUnitRecord
-from mcp_server_phytomni.runtime.provider_trace_v2 import (
-    ProviderTraceObservation,
-    ProviderTraceRecord,
+from mcp_server_phytomni.runtime.gene_network_provider_trace_v2 import (
+    present_gene_network_provider_record,
 )
-
-
-def _observation(record: ProviderTraceRecord) -> ProviderTraceObservation:
-    return ProviderTraceObservation(
-        schema_version=1,
-        adapter_version="analysis-delta-v1",
-        source_revision=7,
-        next_cursor="private-cursor",
-        snapshot_complete=False,
-        health="healthy",
-        records=(record,),
-    )
-
-
-def _unit() -> WorkUnitRecord:
-    return cast(
-        WorkUnitRecord,
-        SimpleNamespace(
-            execution_id="execution-public",
-            work_unit_id="private-analysis-work-unit",
-            parent_span_id="root-span",
-            attempt=1,
-        ),
-    )
+from mcp_server_phytomni.runtime.provider_trace_v2 import ProviderTraceRecord
 
 
 def test_recognized_provider_tool_becomes_opaque_analysis_child() -> None:
-    from mcp_server_phytomni.runtime.gene_network_provider_trace_v2 import (
-        present_gene_network_provider_record,
-    )
+    """Verify recognized provider tool becomes opaque analysis child."""
 
     record = ProviderTraceRecord(
         source_identity="provider-record-secret",
@@ -58,9 +34,7 @@ def test_recognized_provider_tool_becomes_opaque_analysis_child() -> None:
         total=5,
     )
     intents = present_gene_network_provider_record(
-        _unit(),
-        _observation(record),
-        record,
+        *provider_trace_presenter_arguments(record),
         analysis_span_id="analysis-span-public",
     )
 
@@ -97,9 +71,7 @@ def test_recognized_provider_tool_becomes_opaque_analysis_child() -> None:
 
 
 def test_unknown_or_mismatched_provider_records_stay_private() -> None:
-    from mcp_server_phytomni.runtime.gene_network_provider_trace_v2 import (
-        present_gene_network_provider_record,
-    )
+    """Verify unknown or mismatched provider records stay private."""
 
     for record in (
         ProviderTraceRecord(
@@ -117,8 +89,8 @@ def test_unknown_or_mismatched_provider_records_stay_private() -> None:
     ):
         assert (
             present_gene_network_provider_record(
-                _unit(),
-                _observation(record),
+                provider_trace_unit(),
+                provider_trace_observation(record),
                 record,
                 analysis_span_id="analysis-span-public",
             )

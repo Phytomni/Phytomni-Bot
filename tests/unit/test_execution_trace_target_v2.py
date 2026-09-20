@@ -8,11 +8,23 @@ from __future__ import annotations
 
 import re
 
+from tests.support.public_agent_catalog_expectations import (
+    EXPECTED_TRACE_TARGET_AGENT_SLUGS,
+)
+
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    parse_execution_event_v2,
+)
+from mcp_server_phytomni.runtime.execution_projection_v2 import (
+    fold_execution_events_v2,
+)
+from mcp_server_phytomni.runtime.execution_trace_target_v2 import (
+    trace_target_for_operation,
+)
+
 
 def test_trace_target_is_opaque_stable_and_catalog_scoped() -> None:
-    from mcp_server_phytomni.runtime.execution_trace_target_v2 import (
-        trace_target_for_operation,
-    )
+    """Verify trace target is opaque stable and catalog scoped."""
 
     target = trace_target_for_operation(
         agent_slug="network",
@@ -39,13 +51,7 @@ def test_trace_target_is_opaque_stable_and_catalog_scoped() -> None:
             execution_id="execution-private-identity",
             work_unit_id="work-private-identity",
         )
-        for slug in (
-            "analyst",
-            "deep_genome",
-            "research",
-            "design",
-            "network",
-        )
+        for slug in EXPECTED_TRACE_TARGET_AGENT_SLUGS
     }
     assert all(value is not None for value in enabled.values())
     assert len(
@@ -72,15 +78,7 @@ def test_trace_target_is_opaque_stable_and_catalog_scoped() -> None:
 
 
 def test_trace_target_is_admitted_and_grouped_on_remote_analysis() -> None:
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        parse_execution_event_v2,
-    )
-    from mcp_server_phytomni.runtime.execution_projection_v2 import (
-        fold_execution_events_v2,
-    )
-    from mcp_server_phytomni.runtime.execution_trace_target_v2 import (
-        trace_target_for_operation,
-    )
+    """Verify trace target is admitted and grouped on remote analysis."""
 
     target = trace_target_for_operation(
         agent_slug="network",

@@ -10,10 +10,9 @@ import json
 import sqlite3
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
-from ..storage.path_policy import IdFactory
 from .execution_event_limits import (
     DEFAULT_EXECUTION_EVENT_LIMITS,
     ExecutionEventLimitError,
@@ -30,6 +29,7 @@ from .execution_events import (
     parse_execution_event,
     parse_run_event_projection,
 )
+from .execution_store_support_v2 import event_store_settings
 
 _CREATE_RUN_EVENTS_DDL = """
 CREATE TABLE IF NOT EXISTS run_events (
@@ -107,7 +107,9 @@ class ExecutionEventStore(Protocol):
         *,
         owner: str,
         intent: ExecutionEventIntent,
-    ) -> ExecutionEventV1: ...
+    ) -> ExecutionEventV1:
+        """Append one validated event under its owner-scoped run."""
+        raise NotImplementedError
 
     def list_events(
         self,
@@ -116,7 +118,8 @@ class ExecutionEventStore(Protocol):
         owner: str,
         after_seq: int = 0,
         limit: int | None = None,
-    ) -> ExecutionEventPage | None: ...
+    ) -> ExecutionEventPage | None:
+        """Return a bounded ordered replay page for a visible run."""
 
     def get_event(
         self,
@@ -124,14 +127,16 @@ class ExecutionEventStore(Protocol):
         event_id: str,
         *,
         owner: str,
-    ) -> ExecutionEventV1 | None: ...
+    ) -> ExecutionEventV1 | None:
+        """Read one owner-scoped event by its stable identity."""
 
     def get_projection(
         self,
         run_id: str,
         *,
         owner: str,
-    ) -> RunEventProjectionV1 | None: ...
+    ) -> RunEventProjectionV1 | None:
+        """Fold the visible run into its current public projection."""
 
 
 class SQLiteExecutionEventStore:
@@ -146,11 +151,7 @@ class SQLiteExecutionEventStore:
         limits: ExecutionEventLimits = DEFAULT_EXECUTION_EVENT_LIMITS,
     ) -> None:
         self.db_path = db_path
-        self._event_id_factory = event_id_factory or (
-            lambda: IdFactory().new_id("evt")
-        )
-        self._clock = clock or _now_iso
-        self._limits = limits
+        self._settings = event_store_settings(event_id_factory, clock, limits)
         self._init_db()
 
     def _init_db(self) -> None:
@@ -196,13 +197,13 @@ class SQLiteExecutionEventStore:
                 if existing is not None:
                     connection.commit()
                     return _event_from_row(existing)
-            occurred_at = self._clock()
+            occurred_at = self._settings.clock()
             coalesced = _coalesced_progress_event(
                 connection,
                 run_id,
                 intent,
                 occurred_at=occurred_at,
-                limits=self._limits,
+                limits=self._settings.limits,
             )
             if coalesced is not None:
                 connection.commit()
@@ -210,7 +211,7 @@ class SQLiteExecutionEventStore:
             pruned = _make_event_capacity(
                 connection,
                 run_id,
-                limits=self._limits,
+                limits=self._settings.limits,
             )
             row = connection.execute(
                 "SELECT MAX(high_water) + 1 FROM ("
@@ -224,7 +225,7 @@ class SQLiteExecutionEventStore:
             event = intent.materialize(
                 run_id=run_id,
                 seq=seq,
-                event_id=self._event_id_factory(),
+                event_id=self._settings.event_id_factory(),
                 occurred_at=occurred_at,
             )
             connection.execute(
@@ -334,7 +335,7 @@ class SQLiteExecutionEventStore:
                 _upsert_projection(
                     connection,
                     projection,
-                    updated_at=self._clock(),
+                    updated_at=self._settings.clock(),
                 )
             connection.commit()
             return projection
@@ -344,10 +345,6 @@ class SQLiteExecutionEventStore:
             raise
         finally:
             connection.close()
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _owned_run_exists(

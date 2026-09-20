@@ -35,6 +35,7 @@ def _doc(
 def test_compose_primary_query_preserves_original_scope_and_dimension() -> (
     None
 ):
+    """Verify compose primary query preserves original scope and dimension."""
     query = compose_review_retrieval_query(
         original_query=PLANT_SCRNA_QUERY,
         dimension="Cell type-specific transcriptional reprogramming",
@@ -45,6 +46,7 @@ def test_compose_primary_query_preserves_original_scope_and_dimension() -> (
 
 
 def test_compose_supplementary_query_preserves_all_three_scopes() -> None:
+    """Verify compose supplementary query preserves all three scopes."""
     query = compose_review_retrieval_query(
         original_query=PLANT_SCRNA_QUERY,
         dimension="Abiotic stress responses in crop roots",
@@ -59,6 +61,8 @@ def test_compose_supplementary_query_preserves_all_three_scopes() -> None:
 def test_selector_rejects_off_domain_docs_and_deduplicates_publications() -> (
     None
 ):
+    """Verify selector rejects off domain docs and deduplicates
+    publications."""
     docs = [
         _doc(
             "mouse-1",
@@ -109,6 +113,7 @@ def test_selector_rejects_off_domain_docs_and_deduplicates_publications() -> (
 def test_selector_deduplicates_the_same_publication_across_dimensions() -> (
     None
 ):
+    """Verify selector deduplicates the same publication across dimensions."""
     seen: set[str] = set()
     first = select_review_evidence(
         original_query=PLANT_SCRNA_QUERY,
@@ -138,10 +143,11 @@ def test_selector_deduplicates_the_same_publication_across_dimensions() -> (
     )
 
     assert [doc["chunk_id"] for doc in first] == ["root-1"]
-    assert second == []
+    assert not second
 
 
 def test_selector_does_not_invent_plant_scope_for_a_mouse_question() -> None:
+    """Verify selector does not invent plant scope for a mouse question."""
     query = (
         "How does single-cell RNA sequencing reveal heterogeneity in mouse "
         "embryonic stem cells?"

@@ -6,9 +6,26 @@
 
 from __future__ import annotations
 
-import hashlib
+from typing import NotRequired, TypedDict, Unpack
 
 import pytest
+from tests.support.execution_projection_v2 import execution_message_payload
+
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    parse_execution_event_v2,
+)
+from mcp_server_phytomni.runtime.execution_projection_v2 import (
+    apply_execution_event_v2,
+    empty_execution_projection_v2,
+    fold_execution_events_v2,
+)
+
+
+class _EventOptions(TypedDict):
+    """Optional fields accepted by the projection event factory."""
+
+    span_id: NotRequired[str]
+    target: NotRequired[dict[str, str] | None]
 
 
 def _event(
@@ -16,13 +33,8 @@ def _event(
     event_type: str,
     status: str,
     payload: dict[str, object],
-    *,
-    span_id: str = "span-root",
-    target: dict[str, str] | None = None,
+    **options: Unpack[_EventOptions],
 ):
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        parse_execution_event_v2,
-    )
 
     return parse_execution_event_v2(
         {
@@ -34,35 +46,16 @@ def _event(
             "status": status,
             "occurred_at": f"2026-08-19T00:00:{seq:02d}Z",
             "source": "runtime",
-            "span_id": span_id,
+            "span_id": options.get("span_id", "span-root"),
             "parent_span_id": None,
             "work_unit_id": None,
             "attempt": 1,
             "summary": {"key": f"activity.{seq}", "text": f"Fact {seq}"},
             "public_payload": payload,
-            "target": target,
+            "target": options.get("target"),
             "idempotency_key": f"projection:{seq}",
         }
     )
-
-
-def _message_payload(
-    text: str,
-    *,
-    output_revision: int,
-) -> dict[str, object]:
-    return {
-        "output_revision": output_revision,
-        "message_id": "msg-projection-assistant",
-        "source_message_id": "msg-projection-assistant",
-        "base_offset": 0,
-        "offset": len(text),
-        "total_length": len(text),
-        "chunk_index": 0,
-        "chunk_count": 1,
-        "content_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
-        "text": text,
-    }
 
 
 @pytest.mark.parametrize(
@@ -78,10 +71,7 @@ def _message_payload(
 def test_terminal_status_is_sticky_against_late_running_fact(
     event_type: str, status: str
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_projection_v2 import (
-        apply_execution_event_v2,
-        empty_execution_projection_v2,
-    )
+    """Verify terminal status is sticky against late running fact."""
 
     payload: dict[str, object] = {}
     if status in {"partial", "failed", "timed_out"}:
@@ -111,11 +101,7 @@ def test_terminal_status_is_sticky_against_late_running_fact(
 
 
 def test_rebuild_projects_activity_todo_results_output_and_tracking() -> None:
-    from mcp_server_phytomni.runtime.execution_projection_v2 import (
-        apply_execution_event_v2,
-        empty_execution_projection_v2,
-        fold_execution_events_v2,
-    )
+    """Verify rebuild projects activity todo results output and tracking."""
 
     events = (
         _event(1, "execution.admitted", "admitted", {}),
@@ -156,7 +142,11 @@ def test_rebuild_projects_activity_todo_results_output_and_tracking() -> None:
             5,
             "message.snapshot",
             "running",
-            _message_payload("Draft response", output_revision=2),
+            execution_message_payload(
+                "Draft response",
+                output_revision=2,
+                message_id="msg-projection-assistant",
+            ),
         ),
         _event(
             6,
@@ -184,7 +174,7 @@ def test_rebuild_projects_activity_todo_results_output_and_tracking() -> None:
 
     assert rebuilt == incrementally
     assert rebuilt.status.value == "succeeded"
-    assert rebuilt.active_span_ids == ()
+    assert not rebuilt.active_span_ids
     assert rebuilt.todo_declared is True
     assert [item.id for item in rebuilt.todos] == ["retrieve", "report"]
     assert [item.id for item in rebuilt.results] == ["evt-4"]
@@ -200,10 +190,7 @@ def test_rebuild_projects_activity_todo_results_output_and_tracking() -> None:
 def test_trace_target_is_discoverable_but_never_projected_as_a_result() -> (
     None
 ):
-    from mcp_server_phytomni.runtime.execution_projection_v2 import (
-        apply_execution_event_v2,
-        empty_execution_projection_v2,
-    )
+    """Verify trace target is discoverable but never projected as a result."""
 
     projected = apply_execution_event_v2(
         empty_execution_projection_v2("turn-projection"),
@@ -223,17 +210,14 @@ def test_trace_target_is_discoverable_but_never_projected_as_a_result() -> (
         ),
     )
 
-    assert projected.results == ()
+    assert not projected.results
     assert [
         (target.kind.value, target.id) for target in projected.targets
     ] == [("trace", "trc_A1b2C3d4E5f6G7h8")]
 
 
 def test_stale_output_and_non_monotonic_sequence_are_rejected() -> None:
-    from mcp_server_phytomni.runtime.execution_projection_v2 import (
-        apply_execution_event_v2,
-        empty_execution_projection_v2,
-    )
+    """Verify stale output and non monotonic sequence are rejected."""
 
     first = apply_execution_event_v2(
         empty_execution_projection_v2("turn-projection"),
@@ -241,7 +225,11 @@ def test_stale_output_and_non_monotonic_sequence_are_rejected() -> None:
             1,
             "message.snapshot",
             "running",
-            _message_payload("new", output_revision=2),
+            execution_message_payload(
+                "new",
+                output_revision=2,
+                message_id="msg-projection-assistant",
+            ),
         ),
     )
     stale = apply_execution_event_v2(
@@ -250,7 +238,11 @@ def test_stale_output_and_non_monotonic_sequence_are_rejected() -> None:
             2,
             "message.snapshot",
             "running",
-            _message_payload("old", output_revision=1),
+            execution_message_payload(
+                "old",
+                output_revision=1,
+                message_id="msg-projection-assistant",
+            ),
         ),
     )
     assert (stale.output_revision, stale.output_offset) == (2, 3)

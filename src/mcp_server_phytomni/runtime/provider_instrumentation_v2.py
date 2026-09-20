@@ -10,8 +10,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from contextvars import ContextVar
-from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal, Unpack
 
 from ..storage.path_policy import IdFactory
 from .execution_instrumentation_v2 import (
@@ -25,21 +24,40 @@ from .execution_journal_v2 import (
     parse_execution_event_intent_v2,
 )
 from .execution_trace_target_v2 import trace_target_for_operation
+from .execution_work_status_v2 import TERMINAL_WORK_UNIT_STATUSES
 from .execution_work_store_v2 import SpanSpec, WorkUnitRecord, WorkUnitSpec
 from .operation_instrumentation_v2 import record_provider_contact
-
-
-@dataclass(slots=True)
-class _ProviderAttempt:
-    boundary: ExecutionBoundary
-    provider_kind: str
-    operation_key: str
-    analysis_work_unit: WorkUnitRecord
-    analysis_span: Any
-    submission_work_unit: WorkUnitRecord
-    submission_span: Any
-    retry_count: int = 0
-
+from .provider_instrumentation_support_v2 import (
+    PROVIDER_OBSERVATION_SIGNATURE as _PROVIDER_OBSERVATION_SIGNATURE,
+)
+from .provider_instrumentation_support_v2 import (
+    PROVIDER_SUBMISSION_SIGNATURE as _PROVIDER_SUBMISSION_SIGNATURE,
+)
+from .provider_instrumentation_support_v2 import (
+    ProviderAttemptState as _ProviderAttempt,
+)
+from .provider_instrumentation_support_v2 import (
+    ProviderFactKwargs as _ProviderFactKwargs,
+)
+from .provider_instrumentation_support_v2 import (
+    ProviderObservationKwargs,
+    ProviderSubmissionOptions,
+)
+from .provider_instrumentation_support_v2 import (
+    ProviderObservationState as _ProviderObservation,
+)
+from .provider_instrumentation_support_v2 import (
+    ProviderWorkState as _ProviderWork,
+)
+from .provider_instrumentation_support_v2 import (
+    provider_observation_summary as _provider_observation_summary,
+)
+from .provider_instrumentation_support_v2 import (
+    safe_provider_code as _safe_code,
+)
+from .provider_instrumentation_support_v2 import (
+    work_status_for_observation as _work_status_for_observation,
+)
 
 _CURRENT_PROVIDER_ATTEMPT: ContextVar[_ProviderAttempt | None] = ContextVar(
     "provider_attempt_v2",
@@ -53,11 +71,16 @@ async def instrument_provider_submission[T](
     operation_key: str,
     call: Callable[[], Awaitable[T]],
     identity_from_result: Callable[[T], str],
-    call_with_idempotency: Callable[[str], Awaitable[T]] | None = None,
-    max_attempts: int = 1,
-    require_identity: bool = True,
+    **options: Unpack[ProviderSubmissionOptions],
 ) -> T:
     """Persist submission intent, then bind the private acknowledgement."""
+    _PROVIDER_SUBMISSION_SIGNATURE.bind(
+        provider_kind=provider_kind,
+        operation_key=operation_key,
+        call=call,
+        identity_from_result=identity_from_result,
+        **options,
+    )
     boundary = current_execution_boundary()
     if boundary is None:
         return await call()
@@ -65,7 +88,7 @@ async def instrument_provider_submission[T](
         boundary,
         provider_kind=provider_kind,
         operation_key=operation_key,
-        max_attempts=max_attempts,
+        max_attempts=options.get("max_attempts", 1),
     )
     nested = ExecutionBoundary(
         context=boundary.context.nested(
@@ -77,9 +100,10 @@ async def instrument_provider_submission[T](
     token = _CURRENT_PROVIDER_ATTEMPT.set(attempt)
     try:
         with bind_execution_boundary(nested.context, nested.services):
+            idempotent_call = options.get("call_with_idempotency")
             result = (
-                await call_with_idempotency(_provider_idempotency_key(attempt))
-                if call_with_idempotency is not None
+                await idempotent_call(_provider_idempotency_key(attempt))
+                if idempotent_call is not None
                 else await call()
             )
     except BaseException as exc:
@@ -93,7 +117,7 @@ async def instrument_provider_submission[T](
     provider_task_id = identity_from_result(result)
     if not isinstance(provider_task_id, str) or not provider_task_id.strip():
         _fail_provider_attempt(attempt, cancelled=False)
-        if require_identity:
+        if options.get("require_identity", True):
             raise ValueError("provider acknowledgement omitted identity")
         return result
     _acknowledge_provider_attempt(attempt, provider_task_id.strip())
@@ -163,18 +187,26 @@ def record_provider_observation(
     *,
     boundary: ExecutionBoundary,
     record: WorkUnitRecord,
-    provider_kind: str,
-    provider_task_id: str,
-    source_revision: int | None,
-    observed_status: str,
+    **kwargs: Unpack[ProviderObservationKwargs],
 ) -> bool:
     """CAS-fold one provider fact from callback or recovery polling."""
+    _PROVIDER_OBSERVATION_SIGNATURE.bind(
+        boundary=boundary,
+        record=record,
+        **kwargs,
+    )
+    observation = _ProviderObservation(
+        provider_kind=kwargs["provider_kind"],
+        provider_task_id=kwargs["provider_task_id"],
+        source_revision=kwargs["source_revision"],
+        observed_status=kwargs["observed_status"],
+    )
     context = boundary.context
     if (
         record.owner != context.owner_ref
         or record.execution_id != context.execution_id
-        or record.provider_kind != provider_kind
-        or record.provider_task_id != provider_task_id
+        or record.provider_kind != observation.provider_kind
+        or record.provider_task_id != observation.provider_task_id
     ):
         return False
     analysis_span = boundary.services.work.find_span_by_work_unit_id(
@@ -192,41 +224,34 @@ def record_provider_observation(
         if analysis_span is not None
         else context.parent_span_id
     )
-    normalized = observed_status.strip().lower()
+    normalized = observation.observed_status.strip().lower()
     target_status = _work_status_for_observation(normalized)
-    terminal = {
-        WorkUnitStatus.SUCCEEDED,
-        WorkUnitStatus.PARTIAL,
-        WorkUnitStatus.FAILED,
-        WorkUnitStatus.CANCELLED,
-        WorkUnitStatus.TIMED_OUT,
-    }
-    if record.status in terminal:
+    if record.status in TERMINAL_WORK_UNIT_STATUSES:
         return False
-    if source_revision is None:
+    if observation.source_revision is None:
         if target_status is not None and record.status is target_status:
             record_provider_contact(boundary, record)
             return False
-        source_revision = record.provider_revision + 1
-    elif source_revision <= record.provider_revision:
+        observation.source_revision = record.provider_revision + 1
+    elif observation.source_revision <= record.provider_revision:
         record_provider_contact(boundary, record)
         return False
     event_type, status, payload = _provider_observation_fact(
         normalized,
         record,
-        source_revision,
+        observation.source_revision,
     )
     semantic_changed = (
         target_status is not None and record.status is not target_status
     )
-    if source_revision > record.provider_revision:
+    if observation.source_revision > record.provider_revision:
         record = boundary.services.work.bind_provider(
             context.execution_id,
             record.work_unit_id,
             owner=context.owner_ref,
-            provider_kind=provider_kind,
-            provider_task_id=provider_task_id,
-            provider_revision=source_revision,
+            provider_kind=observation.provider_kind,
+            provider_task_id=observation.provider_task_id,
+            provider_revision=observation.source_revision,
             expected_revision=record.revision,
         )
     if target_status is not None and record.status is not target_status:
@@ -252,14 +277,15 @@ def record_provider_observation(
         summary_text=_provider_observation_summary(normalized),
         payload=payload,
         idempotency_key=(
-            f"provider:{record.work_unit_id}:revision:{source_revision}:"
+            f"provider:{record.work_unit_id}:revision:"
+            f"{observation.source_revision}:"
             f"{normalized or 'unknown'}"
         ),
     )
     if (
         analysis_span is not None
         and target_status is not None
-        and target_status in terminal
+        and target_status in TERMINAL_WORK_UNIT_STATUSES
     ):
         span_status = SpanStatus(target_status.value)
         boundary.services.work.update_span_status(
@@ -603,10 +629,8 @@ def _start_provider_attempt(
         boundary=boundary,
         provider_kind=provider_kind,
         operation_key=operation_key,
-        analysis_work_unit=analysis_work,
-        analysis_span=analysis_span,
-        submission_work_unit=submission_work,
-        submission_span=submission_span,
+        analysis=_ProviderWork(analysis_work, analysis_span),
+        submission=_ProviderWork(submission_work, submission_span),
     )
 
 
@@ -922,68 +946,41 @@ def _provider_observation_fact(
     )
 
 
-def _provider_observation_summary(status: str) -> str:
-    return {
-        "pending": "External analysis is queued",
-        "running": "External analysis is running",
-        "succeeded": "External analysis completed",
-        "failed": "External analysis failed",
-        "cancelled": "External analysis was cancelled",
-        "timed_out": "External analysis timed out",
-    }.get(status, "External analysis status updated")
-
-
-def _work_status_for_observation(status: str) -> WorkUnitStatus | None:
-    return {
-        "pending": WorkUnitStatus.ACKNOWLEDGED,
-        "running": WorkUnitStatus.RUNNING,
-        "succeeded": WorkUnitStatus.SUCCEEDED,
-        "failed": WorkUnitStatus.FAILED,
-        "cancelled": WorkUnitStatus.CANCELLED,
-        "timed_out": WorkUnitStatus.TIMED_OUT,
-    }.get(status)
-
-
-def _safe_code(code: str) -> str:
-    allowed = "".join(
-        character
-        for character in code.lower()
-        if character.isalnum() or character in {"_", "-"}
-    )
-    return allowed[:128] or "provider_retry"
-
-
 def _append_provider_fact(
     boundary: ExecutionBoundary,
-    *,
-    event_type: str,
-    status: str,
-    span_id: str,
-    parent_span_id: str | None,
-    work_unit_id: str,
-    attempt: int,
-    summary_key: str,
-    summary_text: str,
-    payload: dict[str, object],
-    idempotency_key: str,
-    target: dict[str, str] | None = None,
+    **fact: Unpack[_ProviderFactKwargs],
 ) -> None:
     raw: dict[str, object] = {
-        "type": event_type,
-        "status": status,
+        "type": fact["event_type"],
+        "status": fact["status"],
         "source": "provider",
-        "span_id": span_id,
-        "parent_span_id": parent_span_id,
-        "work_unit_id": work_unit_id,
-        "attempt": attempt,
-        "summary": {"key": summary_key, "text": summary_text},
-        "public_payload": payload,
-        "idempotency_key": idempotency_key,
+        "span_id": fact["span_id"],
+        "parent_span_id": fact["parent_span_id"],
+        "work_unit_id": fact["work_unit_id"],
+        "attempt": fact["attempt"],
+        "summary": {
+            "key": fact["summary_key"],
+            "text": fact["summary_text"],
+        },
+        "public_payload": fact["payload"],
+        "idempotency_key": fact["idempotency_key"],
     }
-    if target is not None:
+    if (target := fact.get("target")) is not None:
         raw["target"] = target
     boundary.services.journal.append(
         boundary.context.execution_id,
         owner=boundary.context.owner_ref,
         intent=parse_execution_event_intent_v2(raw),
     )
+
+
+setattr(
+    instrument_provider_submission,
+    "__signature__",
+    _PROVIDER_SUBMISSION_SIGNATURE,
+)
+setattr(
+    record_provider_observation,
+    "__signature__",
+    _PROVIDER_OBSERVATION_SIGNATURE,
+)

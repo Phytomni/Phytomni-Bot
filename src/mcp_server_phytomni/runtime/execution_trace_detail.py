@@ -436,17 +436,13 @@ def _sanitize_progress(
     completed = progress.get("completed")
     total = progress.get("total")
     unit = progress.get("unit")
-    if (
-        not isinstance(completed, int)
-        or isinstance(completed, bool)
-        or not isinstance(total, int)
-        or isinstance(total, bool)
-        or completed < 0
-        or total < 1
-        or completed > total
-        or not isinstance(unit, str)
-        or unit not in presenter.counter_units
-    ):
+    if isinstance(completed, bool) or not isinstance(completed, int):
+        return None
+    if isinstance(total, bool) or not isinstance(total, int):
+        return None
+    if completed < 0 or total < 1 or completed > total:
+        return None
+    if not isinstance(unit, str) or unit not in presenter.counter_units:
         return None
     return {"completed": completed, "total": total, "unit": unit}
 

@@ -12,9 +12,15 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.support.execution_dispatch_fixtures import (
+    canonical_dispatch_options,
+    canonical_test_identity,
+    install_native_agent_invoker,
+    invoke_dispatched_design,
+    reserve_test_execution,
+    succeeded_agent_http_response,
+)
 
-from mcp_server_phytomni.api import app as api_app
-from mcp_server_phytomni.api import factory
 from mcp_server_phytomni.runtime import execution_entrypoint_v2 as entrypoint
 from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
     CanonicalReservationIdentity,
@@ -86,6 +92,7 @@ def _routed_scope(
 
 
 def test_api_adapters_use_only_the_shared_routed_binding_helper() -> None:
+    """Verify API adapters use only the shared routed binding helper."""
     root = Path(__file__).resolve().parents[2]
     adapter_paths = (
         root / "src/mcp_server_phytomni/api/factory.py",
@@ -103,6 +110,7 @@ def test_api_adapters_use_only_the_shared_routed_binding_helper() -> None:
 async def test_first_routed_binding_starts_selected_runtime_once(
     tmp_path: Path,
 ) -> None:
+    """Verify first routed binding starts selected runtime once."""
     db_path = str(tmp_path / "first-routed-binding.db")
     fingerprint = "1" * 64
     repository, router_command = _reserve_router(
@@ -159,6 +167,7 @@ async def test_first_routed_binding_starts_selected_runtime_once(
 def test_matching_routed_binding_reuses_run_and_command_hash(
     tmp_path: Path,
 ) -> None:
+    """Verify matching routed binding reuses run and command hash."""
     db_path = str(tmp_path / "matching-routed-replay.db")
     fingerprint = "2" * 64
     repository, router_command = _reserve_router(
@@ -206,6 +215,7 @@ def test_routed_binding_rejects_changed_selected_command(
     tmp_path: Path,
     mismatch: str,
 ) -> None:
+    """Verify routed binding rejects changed selected command."""
     db_path = str(tmp_path / f"changed-routed-{mismatch}.db")
     fingerprint = "3" * 64
     repository, router_command = _reserve_router(
@@ -257,6 +267,7 @@ def test_routed_binding_rejects_outer_authority_mismatch(
     tmp_path: Path,
     mismatch: str,
 ) -> None:
+    """Verify routed binding rejects outer authority mismatch."""
     db_path = str(tmp_path / f"routed-authority-{mismatch}.db")
     fingerprint = "4" * 64
     _repository, router_command = _reserve_router(
@@ -291,6 +302,7 @@ def test_routed_binding_rejects_outer_authority_mismatch(
 async def test_routed_identity_scope_restores_outer_identity_after_exception(
     tmp_path: Path,
 ) -> None:
+    """Verify routed identity scope restores outer identity after exception."""
     db_path = str(tmp_path / "routed-scope-reset.db")
     fingerprint = "6" * 64
     _repository, router_command = _reserve_router(
@@ -346,6 +358,7 @@ async def test_routed_identity_scope_restores_outer_identity_after_exception(
 async def test_routed_identity_is_task_local_across_concurrent_executions(
     tmp_path: Path,
 ) -> None:
+    """Verify routed identity is task local across concurrent executions."""
     assert getattr(
         entrypoint, "bind_routed_reservation_identity", None
     ) is not (None), "routed identity handoff is not implemented"
@@ -416,17 +429,16 @@ async def test_direct_selected_agent_does_not_apply_routed_transition(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify direct selected agent does not apply routed transition."""
     db_path = str(tmp_path / "direct-selected.db")
     execution_id = "turn-direct-design"
     fingerprint = "a" * 64
     command = _selected_command("direct design")
-    repository = SQLiteExecutionReservationRepository(db_path)
-    repository.reserve(
-        owner="alice",
-        execution_id=execution_id,
-        fingerprint_version=2,
-        fingerprint=fingerprint,
-        command=command,
+    repository, _record = reserve_test_execution(
+        db_path,
+        execution_id,
+        fingerprint,
+        command,
     )
     route_binds = 0
     original_bind = SQLiteExecutionReservationRepository.bind_routed_agent
@@ -441,49 +453,26 @@ async def test_direct_selected_agent_does_not_apply_routed_transition(
     async def fake_invoke_agent_run(
         *, agent: str, arguments: dict[str, object], **options: object
     ) -> tuple[dict[str, object], int]:
-        from mcp_server_phytomni.api.lifecycle_contract import (
-            empty_agent_result,
-        )
 
-        await invoke_public_agent(
-            db_path=db_path,
-            owner="alice",
-            execution_id=str(options["execution_id"]),
-            agent_slug=agent,
-            arguments=arguments,
-            transport="service_dispatcher",
+        await invoke_dispatched_design(
+            db_path,
+            arguments,
+            canonical_dispatch_options(options, fingerprint),
             call=lambda: asyncio.sleep(0, result={"status": "succeeded"}),
-            fingerprint_version=2,
-            fingerprint=fingerprint,
         )
-        return {
-            "id": repository.get(
-                owner="alice", execution_id=execution_id
-            ).run_id,
-            "agent": agent,
-            "status": "succeeded",
-            "result": empty_agent_result(),
-        }, 200
+        return succeeded_agent_http_response(repository, execution_id, agent)
 
-    monkeypatch.setattr(factory, "_tasks_db_path", lambda: db_path)
-    monkeypatch.setattr(api_app, "current_request_user", lambda: "alice")
-    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke_agent_run)
     monkeypatch.setattr(
         SQLiteExecutionReservationRepository,
         "bind_routed_agent",
         counted_bind,
     )
-    app = factory.build_app()
-    invoke_agent_run = (
-        app.state.agent_route_dependencies.native.invoke_agent_run
+    invoke_agent_run = install_native_agent_invoker(
+        monkeypatch,
+        db_path,
+        fake_invoke_agent_run,
     )
-    identity = CanonicalReservationIdentity(
-        owner="alice",
-        execution_id=execution_id,
-        fingerprint_version=2,
-        fingerprint=fingerprint,
-        command=command,
-    )
+    identity = canonical_test_identity(execution_id, fingerprint, command)
 
     with bind_canonical_reservation_identity(identity):
         await invoke_agent_run(

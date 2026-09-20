@@ -9,19 +9,6 @@ import re
 from collections.abc import Mapping
 from urllib.parse import quote, unquote, urlsplit
 
-CITATION_RECORD_FIELDS: tuple[str, ...] = (
-    "au",
-    "ti",
-    "so",
-    "vl",
-    "bp",
-    "ep",
-    "ar",
-    "py",
-    "di",
-    "dl",
-    "pm",
-)
 CITATION_SOURCE_FIELDS: Mapping[str, str] = {
     "AU": "au",
     "TI": "ti",
@@ -34,6 +21,12 @@ CITATION_SOURCE_FIELDS: Mapping[str, str] = {
     "DI": "di",
     "PM": "pm",
 }
+_SOURCE_RECORD_FIELDS = tuple(CITATION_SOURCE_FIELDS.values())
+CITATION_RECORD_FIELDS: tuple[str, ...] = (
+    *_SOURCE_RECORD_FIELDS[:-1],
+    "dl",
+    _SOURCE_RECORD_FIELDS[-1],
+)
 CITATION_STATUS_KEY = "_citation_metadata_status"
 CITATION_STATUS_MATCHED = "matched"
 CITATION_STATUS_MISSING = "missing"

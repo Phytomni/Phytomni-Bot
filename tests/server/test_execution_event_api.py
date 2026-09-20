@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from tests.support.execution_v2_api import (
+    execution_user_headers,
+    one_shot_sleep_callback,
+)
 
 from mcp_server_phytomni.api.routes import runs as run_routes
 from mcp_server_phytomni.runtime.execution_event_sink import event_intent
@@ -46,8 +50,9 @@ async def test_event_page_detail_and_projection_are_resumable(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
+    """Verify event page detail and projection are resumable."""
     started, completed = _seed(tasks_db_path, "run-events-1", "u1")
-    headers = {"Authorization": f"Bearer {issued_api_key}"}
+    headers = execution_user_headers(issued_api_key)
 
     first = await api_client.get(
         "/v1/runs/run-events-1/events?limit=1",
@@ -86,6 +91,7 @@ async def test_event_page_resolves_public_execution_identity(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
+    """Verify event page resolves public execution identity."""
     execution_id = "turn-550e8400-e29b-41d4-a716-446655440000"
     registry = RunRegistry(tasks_db_path)
     registry.reserve_run(
@@ -101,7 +107,7 @@ async def test_event_page_resolves_public_execution_identity(
 
     response = await api_client.get(
         f"/v1/executions/{execution_id}/events",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
+        headers=execution_user_headers(issued_api_key),
     )
 
     assert response.status_code == 200
@@ -115,6 +121,7 @@ async def test_execution_identity_resolves_projection_detail_and_stream(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
+    """Verify execution identity resolves projection detail and stream."""
     execution_id = "turn-550e8400-e29b-41d4-a716-446655440001"
     registry = RunRegistry(tasks_db_path)
     registry.reserve_run(
@@ -131,7 +138,7 @@ async def test_execution_identity_resolves_projection_detail_and_stream(
         owner="u1",
         intent=event_intent("run.succeeded", status="succeeded"),
     )
-    headers = {"Authorization": f"Bearer {issued_api_key}"}
+    headers = execution_user_headers(issued_api_key)
 
     projection = await api_client.get(
         f"/v1/executions/{execution_id}/event-projection",
@@ -160,8 +167,9 @@ async def test_execution_stream_waits_for_delayed_execution_registration(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify execution stream waits for delayed execution registration."""
     execution_id = "turn-delayed-execution-registration"
     registry = RunRegistry(tasks_db_path)
     registered = False
@@ -188,7 +196,7 @@ async def test_execution_stream_waits_for_delayed_execution_registration(
 
     response = await api_client.get(
         f"/v1/executions/{execution_id}/events/stream",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
+        headers=execution_user_headers(issued_api_key),
     )
 
     assert registered is True
@@ -202,13 +210,14 @@ async def test_unknown_and_foreign_execution_ids_share_not_found(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
+    """Verify unknown and foreign execution IDs share not found."""
     registry = RunRegistry(tasks_db_path)
     registry.reserve_run(
         RunSpec("run-execution-foreign", "other-user", "chat", "api"),
         request_info=RunRequestInfo(execution_id="turn-foreign-execution"),
         result={},
     )
-    headers = {"Authorization": f"Bearer {issued_api_key}"}
+    headers = execution_user_headers(issued_api_key)
 
     foreign = await api_client.get(
         "/v1/executions/turn-foreign-execution/events",
@@ -230,8 +239,9 @@ async def test_unknown_and_foreign_event_runs_have_identical_not_found(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
+    """Verify unknown and foreign event runs have identical not found."""
     _seed(tasks_db_path, "run-events-foreign", "other-user")
-    headers = {"Authorization": f"Bearer {issued_api_key}"}
+    headers = execution_user_headers(issued_api_key)
 
     foreign = await api_client.get(
         "/v1/runs/run-events-foreign/events",
@@ -251,7 +261,8 @@ async def test_event_page_query_limits_are_enforced_by_openapi_validation(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
 ) -> None:
-    headers = {"Authorization": f"Bearer {issued_api_key}"}
+    """Verify event page query limits are enforced by OpenAPI validation."""
+    headers = execution_user_headers(issued_api_key)
     response = await api_client.get(
         "/v1/runs/anything/events?limit=201",
         headers=headers,
@@ -264,11 +275,9 @@ async def test_event_stream_drains_terminal_history_and_resumes_from_header(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
+    """Verify event stream drains terminal history and resumes from header."""
     _started, completed = _seed(tasks_db_path, "run-stream-1", "u1")
-    headers = {
-        "Authorization": f"Bearer {issued_api_key}",
-        "Last-Event-ID": "1",
-    }
+    headers = execution_user_headers(issued_api_key, last_event_id="1")
 
     response = await api_client.get(
         "/v1/runs/run-stream-1/events/stream",
@@ -288,13 +297,11 @@ async def test_event_stream_query_cursor_overrides_stale_resume_header(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
+    """Verify event stream query cursor overrides stale resume header."""
     started, completed = _seed(tasks_db_path, "run-stream-cursor", "u1")
     response = await api_client.get(
         "/v1/runs/run-stream-cursor/events/stream?after_seq=1",
-        headers={
-            "Authorization": f"Bearer {issued_api_key}",
-            "Last-Event-ID": "0",
-        },
+        headers=execution_user_headers(issued_api_key, last_event_id="0"),
     )
 
     assert response.status_code == 200
@@ -307,6 +314,7 @@ async def test_terminal_settlement_is_last_committed_stream_fact(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
+    """Verify terminal settlement is last committed stream fact."""
     registry = RunRegistry(tasks_db_path)
     registry.reserve_run(
         RunSpec("run-terminal-order", "u1", "chat", "api"),
@@ -323,7 +331,7 @@ async def test_terminal_settlement_is_last_committed_stream_fact(
 
     response = await api_client.get(
         "/v1/runs/run-terminal-order/events/stream",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
+        headers=execution_user_headers(issued_api_key),
     )
 
     assert response.status_code == 200
@@ -340,6 +348,7 @@ async def test_event_stream_reports_pruned_sequence_gap(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
+    """Verify event stream reports pruned sequence gap."""
     _seed(tasks_db_path, "run-stream-gap", "u1")
     with sqlite_transaction(tasks_db_path) as connection:
         connection.execute(
@@ -350,7 +359,7 @@ async def test_event_stream_reports_pruned_sequence_gap(
 
     response = await api_client.get(
         "/v1/runs/run-stream-gap/events/stream",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
+        headers=execution_user_headers(issued_api_key),
     )
 
     assert response.status_code == 200
@@ -363,30 +372,30 @@ async def test_event_stream_sends_heartbeat_while_a_run_is_idle(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify event stream sends heartbeat while a run is idle."""
     run_id = "run-stream-idle"
     RunRegistry(tasks_db_path).create_run(RunSpec(run_id, "u1", "chat", "api"))
     store = SQLiteExecutionEventStore(tasks_db_path)
     monkeypatch.setattr(run_routes, "EXECUTION_EVENT_HEARTBEAT_POLL_TICKS", 1)
-    settled = False
 
-    async def settle_after_heartbeat(_seconds: float) -> None:
-        nonlocal settled
-        if settled:
-            return
-        settled = True
+    def settle() -> None:
         store.append(
             run_id,
             owner="u1",
             intent=event_intent("run.succeeded", status="succeeded"),
         )
 
-    monkeypatch.setattr(run_routes.asyncio, "sleep", settle_after_heartbeat)
+    monkeypatch.setattr(
+        run_routes.asyncio,
+        "sleep",
+        one_shot_sleep_callback(settle),
+    )
 
     response = await api_client.get(
         f"/v1/runs/{run_id}/events/stream",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
+        headers=execution_user_headers(issued_api_key),
     )
 
     assert response.status_code == 200

@@ -7,23 +7,30 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from tests.support.execution_event_fixtures import (
+    EXECUTION_TRACE_DETAIL_V1_FIXTURES,
+)
 
-FIXTURES = (
-    Path(__file__).parents[2]
-    / "docs"
-    / "contracts"
-    / "execution-trace-detail"
-    / "v1"
-    / "fixtures.json"
+from mcp_server_phytomni.runtime.execution_liveness_v2 import (
+    ExecutionLivenessClocks,
+)
+from mcp_server_phytomni.runtime.execution_stage_v2 import (
+    ExecutionStage,
+    ExecutionStageSignal,
+    ExecutionStageState,
+    ExecutionStageTodo,
+    empty_execution_stage_state,
+    reduce_execution_stage,
 )
 
 
 def _stage_cases() -> dict[str, dict[str, object]]:
-    fixtures = json.loads(FIXTURES.read_text(encoding="utf-8"))
+    fixtures = json.loads(
+        EXECUTION_TRACE_DETAIL_V1_FIXTURES.read_text(encoding="utf-8")
+    )
     return {case["name"]: case for case in fixtures["stage_transition_cases"]}
 
 
@@ -32,14 +39,7 @@ def _public(state) -> dict[str, object]:
 
 
 def test_shared_stage_cases_reduce_to_one_todo_and_pending_surface() -> None:
-    from mcp_server_phytomni.runtime.execution_liveness_v2 import (
-        ExecutionLivenessClocks,
-    )
-    from mcp_server_phytomni.runtime.execution_stage_v2 import (
-        ExecutionStageSignal,
-        empty_execution_stage_state,
-        reduce_execution_stage,
-    )
+    """Verify shared stage cases reduce to one todo and pending surface."""
 
     cases = _stage_cases()
     state = empty_execution_stage_state(
@@ -95,11 +95,7 @@ def test_shared_stage_cases_reduce_to_one_todo_and_pending_surface() -> None:
 
 
 def test_stage_regression_and_premature_root_success_are_rejected() -> None:
-    from mcp_server_phytomni.runtime.execution_stage_v2 import (
-        ExecutionStageSignal,
-        empty_execution_stage_state,
-        reduce_execution_stage,
-    )
+    """Verify stage regression and premature root success are rejected."""
 
     state = reduce_execution_stage(
         empty_execution_stage_state(),
@@ -121,11 +117,7 @@ def test_stage_regression_and_premature_root_success_are_rejected() -> None:
 
 
 def test_todo_and_pending_status_cannot_disagree_with_stage() -> None:
-    from mcp_server_phytomni.runtime.execution_stage_v2 import (
-        ExecutionStage,
-        ExecutionStageState,
-        ExecutionStageTodo,
-    )
+    """Verify todo and pending status cannot disagree with stage."""
 
     with pytest.raises(ValidationError, match="todo_stage_mismatch"):
         ExecutionStageState(
@@ -152,11 +144,8 @@ def test_todo_and_pending_status_cannot_disagree_with_stage() -> None:
 def test_child_success_is_bounded_and_failure_terminalizes_current_todo() -> (
     None
 ):
-    from mcp_server_phytomni.runtime.execution_stage_v2 import (
-        ExecutionStageSignal,
-        empty_execution_stage_state,
-        reduce_execution_stage,
-    )
+    """Verify child success is bounded and failure terminalizes current
+    todo."""
 
     submitted = reduce_execution_stage(
         empty_execution_stage_state(),

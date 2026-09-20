@@ -135,35 +135,54 @@ async def list_artifact_objects_with_runtime(
     )
     objects: list[ListedArtifactObject] = []
     for item in listed:
-        safe_key = normalize_obs_object_key(item.key, bucket_name)
-        relative_path = _relative_output_path(safe_key, base_key)
-        if relative_path is None:
-            continue
-        size_bytes = item.size_bytes
-        if size_bytes is None:
-            size_bytes = await obs_runtime.run(
-                ObsProfileName.PRIMARY,
-                lambda client, safe_key=safe_key: object_size(
-                    bucket_name,
-                    safe_key,
-                    access=ObsAccessOptions(
-                        client=client,
-                        mount_root=mount_root,
-                    ),
-                ),
-            )
-        download_ref = obs_path_from_key(bucket_name, safe_key)
-        objects.append(
-            ListedArtifactObject(
-                relative_path=relative_path,
-                source_path=download_ref,
-                size_bytes=size_bytes,
-                download_ref=download_ref,
-            )
+        artifact = await _runtime_artifact_object(
+            item,
+            base_key=base_key,
+            bucket_name=bucket_name,
+            obs_runtime=obs_runtime,
+            mount_root=mount_root,
         )
+        if artifact is None:
+            continue
+        objects.append(artifact)
         if limit is not None and len(objects) >= limit:
             return objects
     return objects
+
+
+async def _runtime_artifact_object(
+    item: ObsListedObject,
+    *,
+    base_key: str,
+    bucket_name: str,
+    obs_runtime: Any,
+    mount_root: str,
+) -> ListedArtifactObject | None:
+    """Project one confined SDK listing, fetching size only when absent."""
+    safe_key = normalize_obs_object_key(item.key, bucket_name)
+    relative_path = _relative_output_path(safe_key, base_key)
+    if relative_path is None:
+        return None
+    size_bytes = item.size_bytes
+    if size_bytes is None:
+        size_bytes = await obs_runtime.run(
+            ObsProfileName.PRIMARY,
+            lambda client: object_size(
+                bucket_name,
+                safe_key,
+                access=ObsAccessOptions(
+                    client=client,
+                    mount_root=mount_root,
+                ),
+            ),
+        )
+    download_ref = obs_path_from_key(bucket_name, safe_key)
+    return ListedArtifactObject(
+        relative_path=relative_path,
+        source_path=download_ref,
+        size_bytes=size_bytes,
+        download_ref=download_ref,
+    )
 
 
 async def _list_sdk_object_metadata_with_runtime(
@@ -219,23 +238,16 @@ def _list_obsfs_objects(
     preferred: set[str] = set()
     for relative in preferred_relative_paths:
         path = dir_path / relative
-        if path.is_symlink() or not path.is_file():
-            continue
-        resolved_path = path.resolve()
-        try:
-            resolved_path.relative_to(resolved_dir_path)
-        except ValueError:
-            continue
-        object_key = f"{base_key}/{relative}" if base_key else relative
-        download_ref = obs_path_from_key(bucket_name, object_key)
-        objects.append(
-            ListedArtifactObject(
-                relative_path=relative,
-                source_path=str(path),
-                size_bytes=resolved_path.stat().st_size,
-                download_ref=download_ref,
-            )
+        artifact = _obsfs_artifact_object(
+            path,
+            directory=dir_path,
+            resolved_directory=resolved_dir_path,
+            base_key=base_key,
+            bucket_name=bucket_name,
         )
+        if artifact is None:
+            continue
+        objects.append(artifact)
         preferred.add(relative)
         if limit is not None and len(objects) >= limit:
             return objects
@@ -251,26 +263,46 @@ def _list_obsfs_objects(
         relative_path = path.relative_to(dir_path).as_posix()
         if relative_path in preferred:
             continue
-        resolved_path = path.resolve()
-        try:
-            resolved_path.relative_to(resolved_dir_path)
-        except ValueError:
+        artifact = _obsfs_artifact_object(
+            path,
+            directory=dir_path,
+            resolved_directory=resolved_dir_path,
+            base_key=base_key,
+            bucket_name=bucket_name,
+        )
+        if artifact is None:
             continue
-        object_key = (
-            f"{base_key}/{relative_path}" if base_key else relative_path
-        )
-        download_ref = obs_path_from_key(bucket_name, object_key)
-        objects.append(
-            ListedArtifactObject(
-                relative_path=relative_path,
-                source_path=str(path),
-                size_bytes=resolved_path.stat().st_size,
-                download_ref=download_ref,
-            )
-        )
+        objects.append(artifact)
         if limit is not None and len(objects) >= limit:
             break
     return objects
+
+
+def _obsfs_artifact_object(
+    path: Path,
+    *,
+    directory: Path,
+    resolved_directory: Path,
+    base_key: str,
+    bucket_name: str,
+) -> ListedArtifactObject | None:
+    """Project one confined regular file from the mounted bucket."""
+    if path.is_symlink() or not path.is_file():
+        return None
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(resolved_directory)
+    except ValueError:
+        return None
+    relative_path = path.relative_to(directory).as_posix()
+    object_key = f"{base_key}/{relative_path}" if base_key else relative_path
+    download_ref = obs_path_from_key(bucket_name, object_key)
+    return ListedArtifactObject(
+        relative_path=relative_path,
+        source_path=str(path),
+        size_bytes=resolved_path.stat().st_size,
+        download_ref=download_ref,
+    )
 
 
 def _iter_obsfs_files_bounded(directory: Path) -> Iterator[Path]:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, NotRequired, TypedDict, Unpack
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
@@ -127,18 +127,77 @@ class _ExpertContextDelegateRequest:
     context_request: ContextAgentRequest
 
 
+class _ExecuteExpertOptions(TypedDict):
+    """Compatible keyword controls for one Expert context execution."""
+
+    attachment_owner: str
+    helpers: ExpertContextHelpers
+    idempotency_key: NotRequired[str | None]
+    execution_id: NotRequired[str | None]
+    selected_arguments: NotRequired[Mapping[str, Any] | None]
+
+
+@dataclass(frozen=True, slots=True)
+class _ExpertContextCallbacks:
+    """Lifecycle callbacks bound to one prepared Expert context turn."""
+
+    payload: ExpertQueryRequest
+    dependencies: AgentRouteDependencies
+    prepared_by_tool: dict[str, PreparedExpertAttachments]
+    context_request: ContextAgentRequest
+    helpers: ExpertContextHelpers
+
+    async def invoke(
+        self,
+        selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        dispatch: ContextAgentInvocation,
+    ) -> AgentOutcome:
+        """Invoke one synchronously selected context Agent."""
+        attachments = self.prepared_by_tool.get(selected_agent_id)
+        if attachments is None:
+            raise ValueError("router selected an unprepared Expert tool")
+        return await _invoke_context_expert_agent(
+            _ExpertContextInvokeRequest(
+                selected_agent_id=selected_agent_id,
+                dispatch=dispatch,
+                payload=self.payload,
+                dependencies=self.dependencies,
+                attachments=attachments,
+                context_request=self.context_request,
+                helpers=self.helpers,
+            )
+        )
+
+    async def delegate_async(
+        self,
+        selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        arguments: dict[str, Any],
+    ) -> AsyncAgentAcceptance:
+        """Accept one asynchronously selected context Agent."""
+        attachments = self.prepared_by_tool.get(selected_agent_id)
+        if attachments is None:
+            raise ValueError("router selected an unprepared Expert tool")
+        return await _delegate_context_expert_async(
+            _ExpertContextDelegateRequest(
+                selected_agent_id=selected_agent_id,
+                arguments=arguments,
+                payload=self.payload,
+                dependencies=self.dependencies,
+                attachments=attachments,
+                context_request=self.context_request,
+            )
+        )
+
+
 __all__ = ["ExpertContextHelpers", "execute_context_expert"]
 
 
 async def execute_context_expert(
     payload: ExpertQueryRequest,
     dependencies: AgentRouteDependencies,
-    *,
-    attachment_owner: str,
-    helpers: ExpertContextHelpers,
-    idempotency_key: str | None = None,
-    execution_id: str | None = None,
-    selected_arguments: Mapping[str, Any] | None = None,
+    **options: Unpack[_ExecuteExpertOptions],
 ) -> JSONResponse:
     """Run constrained Expert V1 selection through the shared lifecycle."""
     envelope = payload.conversation
@@ -152,25 +211,14 @@ async def execute_context_expert(
         accept_language=None,
         latest_user_query=envelope.current_message.content,
     )
-    replay = await inspect_context_replay(
-        executor=dependencies.context.executor,
-        envelope=envelope,
-        selection_failure_detail=(
-            "router did not resolve one permitted agent"
-        ),
+    replay_response = await _expert_replay_response(
+        payload,
+        dependencies,
+        envelope,
+        options,
     )
-    if replay is not None:
-        _attach_research_replay_alias(
-            _ResearchReplayAliasRequest(
-                replay,
-                payload,
-                envelope,
-                attachment_owner,
-                idempotency_key,
-                dependencies.tasks_db_path(),
-            )
-        )
-        return context_response(replay, envelope)
+    if replay_response is not None:
+        return replay_response
     effective_forced_tool = envelope.requested_agent_id or payload.forced_tool
     payload = payload.model_copy(
         update={
@@ -186,7 +234,11 @@ async def execute_context_expert(
         }
     )
     payload, envelope, prepared_by_tool = _prepare_expert_context_inputs(
-        payload, dependencies, attachment_owner, envelope, idempotency_key
+        payload,
+        dependencies,
+        options["attachment_owner"],
+        envelope,
+        options.get("idempotency_key"),
     )
     request_json = safe_native_request_json(
         dialogue_id=payload.dialogue_id,
@@ -198,61 +250,58 @@ async def execute_context_expert(
         request_json=request_json,
         debug=dependencies.chat.projection.resolve_debug(None),
         obs_file_list=None,
-        execution_id=execution_id,
+        execution_id=options.get("execution_id"),
     )
-
-    async def invoke(
-        selected_agent_id: str,
-        _envelope: ConversationEnvelopeV1,
-        dispatch: ContextAgentInvocation,
-    ) -> AgentOutcome:
-        attachments = prepared_by_tool.get(selected_agent_id)
-        if attachments is None:
-            raise ValueError("router selected an unprepared Expert tool")
-        return await _invoke_context_expert_agent(
-            _ExpertContextInvokeRequest(
-                selected_agent_id=selected_agent_id,
-                dispatch=dispatch,
-                payload=payload,
-                dependencies=dependencies,
-                attachments=attachments,
-                context_request=context_request,
-                helpers=helpers,
-            )
-        )
-
-    async def delegate_async(
-        selected_agent_id: str,
-        _envelope: ConversationEnvelopeV1,
-        arguments: dict[str, Any],
-    ) -> AsyncAgentAcceptance:
-        attachments = prepared_by_tool.get(selected_agent_id)
-        if attachments is None:
-            raise ValueError("router selected an unprepared Expert tool")
-        return await _delegate_context_expert_async(
-            _ExpertContextDelegateRequest(
-                selected_agent_id=selected_agent_id,
-                arguments=arguments,
-                payload=payload,
-                dependencies=dependencies,
-                attachments=attachments,
-                context_request=context_request,
-            )
-        )
+    callbacks = _ExpertContextCallbacks(
+        payload=payload,
+        dependencies=dependencies,
+        prepared_by_tool=prepared_by_tool,
+        context_request=context_request,
+        helpers=options["helpers"],
+    )
 
     prepared = await execute_context_lifecycle_http(
         ContextLifecycleHttpRequest(
             envelope=envelope,
-            invoke=invoke,
+            invoke=callbacks.invoke,
             executor=dependencies.context.executor,
-            delegate_async=delegate_async,
-            selected_arguments=selected_arguments,
+            delegate_async=callbacks.delegate_async,
+            selected_arguments=options.get("selected_arguments"),
             selection_failure_detail=(
                 "router did not resolve one permitted agent"
             ),
         )
     )
     return context_response(prepared, envelope)
+
+
+async def _expert_replay_response(
+    payload: ExpertQueryRequest,
+    dependencies: AgentRouteDependencies,
+    envelope: ConversationEnvelopeV1,
+    options: _ExecuteExpertOptions,
+) -> JSONResponse | None:
+    """Return a durable replay response before resolving fresh attachments."""
+    replay = await inspect_context_replay(
+        executor=dependencies.context.executor,
+        envelope=envelope,
+        selection_failure_detail=(
+            "router did not resolve one permitted agent"
+        ),
+    )
+    if replay is None:
+        return None
+    _attach_research_replay_alias(
+        _ResearchReplayAliasRequest(
+            replay,
+            payload,
+            envelope,
+            options["attachment_owner"],
+            options.get("idempotency_key"),
+            dependencies.tasks_db_path(),
+        )
+    )
+    return context_response(replay, envelope)
 
 
 def _attach_research_replay_alias(

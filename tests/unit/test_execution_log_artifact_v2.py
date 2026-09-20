@@ -10,14 +10,46 @@ import asyncio
 import json
 from pathlib import Path
 
+from tests.support.execution_runtime_v2 import (
+    ExecutionRuntimeOverrides,
+    ExecutionStartRequest,
+    build_local_graph_runtime,
+    run_execution_start,
+)
+
+from mcp_server_phytomni.runtime.execution_event_flags import (
+    execution_event_production_enabled,
+    execution_log_artifact_enabled,
+)
+from mcp_server_phytomni.runtime.execution_event_limits import (
+    DEFAULT_EXECUTION_TRACE_DETAIL_LIMITS,
+)
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    parse_execution_event_v2,
+)
+from mcp_server_phytomni.runtime.execution_log_artifact_v2 import (
+    SQLiteExecutionLogArtifactStore,
+    build_execution_log_document,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    DriverOutcome,
+    TransportNeutralResult,
+)
+from mcp_server_phytomni.runtime.execution_target_store_v2 import (
+    SQLiteExecutionTargetStore,
+)
+from mcp_server_phytomni.runtime.operation_instrumentation_v2 import (
+    instrument_operation_invocation,
+)
+
 
 def test_execution_event_and_log_rollback_flags_are_independent(
     monkeypatch,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_event_flags import (
-        execution_event_production_enabled,
-        execution_log_artifact_enabled,
-    )
+    """Verify execution event and log rollback flags are independent."""
 
     monkeypatch.setenv("PHYTOMNI_EXECUTION_EVENTS_ENABLED", "false")
     monkeypatch.setenv("PHYTOMNI_EXECUTION_LOG_ENABLED", "true")
@@ -33,36 +65,7 @@ def test_execution_event_and_log_rollback_flags_are_independent(
 def test_terminal_runtime_publishes_owner_scoped_execution_log(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_log_artifact_v2 import (
-        SQLiteExecutionLogArtifactStore,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_target_store_v2 import (
-        SQLiteExecutionTargetStore,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
-    from mcp_server_phytomni.runtime.operation_instrumentation_v2 import (
-        instrument_operation_invocation,
-    )
+    """Verify terminal runtime publishes owner scoped execution log."""
 
     db_path = str(tmp_path / "execution-log.db")
     journal = SQLiteExecutionJournal(db_path)
@@ -83,29 +86,18 @@ def test_terminal_runtime_publishes_owner_scoped_execution_log(
             TransportNeutralResult(answer=private_answer)
         )
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(db_path),
-        journal=journal,
-        work=SQLiteExecutionWorkRepository(db_path),
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
-        target_store=target_store,
-        execution_log_store=log_store,
+    runtime = build_local_graph_runtime(
+        db_path,
+        start_handler,
+        journal,
+        overrides=ExecutionRuntimeOverrides(
+            target_store=target_store,
+            execution_log_store=log_store,
+        ),
     )
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-execution-log",
-            fingerprint_version=1,
-            fingerprint="9" * 64,
-            command=ExecutionCommand(
-                agent_slug="knowledge", arguments={"query": "rice"}
-            ),
-            transport="test",
-        )
+    outcome = run_execution_start(
+        runtime,
+        ExecutionStartRequest("turn-execution-log", "9" * 64),
     )
     assert outcome.status.value == "succeeded"
 
@@ -149,15 +141,7 @@ def test_terminal_runtime_publishes_owner_scoped_execution_log(
 
 
 def test_log_builder_is_bounded_and_ignores_non_operation_facts() -> None:
-    from mcp_server_phytomni.runtime.execution_event_limits import (
-        DEFAULT_EXECUTION_TRACE_DETAIL_LIMITS,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        parse_execution_event_v2,
-    )
-    from mcp_server_phytomni.runtime.execution_log_artifact_v2 import (
-        build_execution_log_document,
-    )
+    """Verify log builder is bounded and ignores non operation facts."""
 
     def event(seq: int, event_type: str, payload: dict[str, object]):
         return parse_execution_event_v2(
@@ -206,34 +190,8 @@ def test_log_builder_is_bounded_and_ignores_non_operation_facts() -> None:
 def test_public_operation_records_and_log_reject_private_adversarial_values(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_log_artifact_v2 import (
-        SQLiteExecutionLogArtifactStore,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        ExecutionCommand,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_target_store_v2 import (
-        SQLiteExecutionTargetStore,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
-    from mcp_server_phytomni.runtime.operation_instrumentation_v2 import (
-        instrument_operation_invocation,
-    )
+    """Verify public operation records and log reject private adversarial
+    values."""
 
     sentinels = {
         "prompt": "PROMPT_SECRET_91",
@@ -292,26 +250,21 @@ def test_public_operation_records_and_log_reject_private_adversarial_values(
         )
         raise AssertionError("unreachable")
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(db_path),
-        journal=journal,
-        work=SQLiteExecutionWorkRepository(db_path),
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
-        target_store=target_store,
-        execution_log_store=log_store,
+    runtime = build_local_graph_runtime(
+        db_path,
+        start_handler,
+        journal,
+        overrides=ExecutionRuntimeOverrides(
+            target_store=target_store,
+            execution_log_store=log_store,
+        ),
     )
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-adversarial-log",
-            fingerprint_version=1,
-            fingerprint="8" * 64,
-            command=ExecutionCommand(
-                agent_slug="knowledge",
+    assert (
+        run_execution_start(
+            runtime,
+            ExecutionStartRequest(
+                "turn-adversarial-log",
+                "8" * 64,
                 arguments={
                     "prompt": sentinels["prompt"],
                     "sql": sentinels["sql"],
@@ -321,10 +274,9 @@ def test_public_operation_records_and_log_reject_private_adversarial_values(
                     "tool_arguments": sentinels["tool_arguments"],
                 },
             ),
-            transport="test",
-        )
+        ).status.value
+        == "failed"
     )
-    assert outcome.status.value == "failed"
 
     page = journal.list_events(
         "turn-adversarial-log", owner="alice", limit=200

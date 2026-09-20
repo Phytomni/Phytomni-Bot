@@ -12,7 +12,6 @@ from typing import Any, NoReturn
 import httpx
 import pytest
 from fastapi import HTTPException
-from tests.support.asyncio_helpers import wait_until
 
 from mcp_server_phytomni.api import a2ui_runtime
 from mcp_server_phytomni.api import app as api_app_module
@@ -54,23 +53,20 @@ async def _post_native_review(
     )
 
 
-async def _wait_review_interrupt(
+async def _assert_review_interrupt(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
     response: httpx.Response,
 ) -> dict[str, Any]:
-    """Wait until a 202 Review POST settles to input_required."""
-    assert response.status_code == 202, response.text
+    """Verify the synchronous pause and its persisted projection."""
+    assert response.status_code == 200, response.text
     body = response.json()
-    assert body["status"] == "running"
+    assert body["status"] == "input_required"
     run_id = body["id"]
-
-    def paused() -> bool:
-        record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
-        return record is not None and record.status == "input_required"
-
-    await wait_until(paused)
+    assert body["run_id"] == run_id
+    assert body["interrupt"]["thread_id"] == run_id
+    assert RunRegistry(tasks_db_path).get_run(run_id, owner="u1") is not None
     got = await api_client.get(
         f"/v1/runs/{run_id}",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -78,6 +74,7 @@ async def _wait_review_interrupt(
     assert got.status_code == 200
     stored = got.json()
     assert stored["status"] == "input_required"
+    assert stored["result"]["interrupt"] == body["interrupt"]
     return stored
 
 
@@ -127,7 +124,7 @@ async def test_review_pause_flag_on_projects_a2ui(
     """Review pauses attach a confirm surface."""
     _patch_review_app(monkeypatch, review_app_factory())
     response = await _post_native_review(api_client, issued_api_key)
-    body = await _wait_review_interrupt(
+    body = await _assert_review_interrupt(
         api_client, issued_api_key, tasks_db_path, response
     )
     draft = body["result"]["interrupt"]["draft"]
@@ -277,13 +274,19 @@ async def test_review_projection_failure_persists_failed_run(
 
     response = await _post_native_review(api_client, issued_api_key)
 
-    assert response.status_code == 202, response.text
-
-    def failed() -> bool:
-        rows = RunRegistry(tasks_db_path).list_runs(owner="u1")
-        return any(row.status == "failed" for row in rows)
-
-    await wait_until(failed)
+    assert response.status_code == 500, response.text
+    assert response.json()["error"] == {
+        "code": "projection_failed",
+        "message": "review surface projection failed",
+        "request_id": response.headers["x-request-id"],
+        "stage": "projection",
+        "retryable": False,
+    }
+    assert "synthetic failure" not in response.text
+    assert any(
+        row.status == "failed"
+        for row in RunRegistry(tasks_db_path).list_runs(owner="u1")
+    )
     listing = await api_client.get(
         "/v1/runs?status=failed&agent=review",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -358,7 +361,7 @@ async def test_review_a2ui_action_approve_matches_resume_kernel(
     review_app = review_app_factory()
     _patch_review_app(monkeypatch, review_app)
     paused = await _post_native_review(api_client, issued_api_key)
-    body = await _wait_review_interrupt(
+    body = await _assert_review_interrupt(
         api_client, issued_api_key, tasks_db_path, paused
     )
     run_id = body["id"]
@@ -412,7 +415,7 @@ async def test_review_resume_includes_result_a2ui_when_projected(
     """Classic /resume also returns submitted a2ui when surface was open."""
     _patch_review_app(monkeypatch, review_app_factory())
     paused = await _post_native_review(api_client, issued_api_key)
-    body = await _wait_review_interrupt(
+    body = await _assert_review_interrupt(
         api_client, issued_api_key, tasks_db_path, paused
     )
     run_id = body["id"]
@@ -441,7 +444,7 @@ async def test_review_classic_first_blocks_late_a2ui_action(
     """Classic Review resume claims the surface before a Web uplink."""
     _patch_review_app(monkeypatch, review_app_factory())
     paused = await _post_native_review(api_client, issued_api_key)
-    body = await _wait_review_interrupt(
+    body = await _assert_review_interrupt(
         api_client, issued_api_key, tasks_db_path, paused
     )
     run_id = body["id"]
@@ -479,7 +482,7 @@ async def test_review_a2ui_then_resume_second_returns_409(
     """Dual-transport: first winner settles; second path 409."""
     _patch_review_app(monkeypatch, review_app_factory())
     paused = await _post_native_review(api_client, issued_api_key)
-    body = await _wait_review_interrupt(
+    body = await _assert_review_interrupt(
         api_client, issued_api_key, tasks_db_path, paused
     )
     run_id = body["id"]
@@ -518,7 +521,7 @@ async def test_review_reject_a2ui_mints_new_surface_on_reinterrupt(
     """Reject resume that re-interrupts projects a new surface_id."""
     _patch_review_app(monkeypatch, review_app_factory(reinterrupt=True))
     paused = await _post_native_review(api_client, issued_api_key)
-    body = await _wait_review_interrupt(
+    body = await _assert_review_interrupt(
         api_client, issued_api_key, tasks_db_path, paused
     )
     run_id = body["id"]

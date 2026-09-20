@@ -34,6 +34,59 @@ class FanoutJoinResult:
     pending: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _JoinState:
+    succeeded: tuple[str, ...]
+    failed: tuple[str, ...]
+    pending: tuple[str, ...]
+
+    @property
+    def branch_count(self) -> int:
+        """Return the number of normalized fan-out branches."""
+        return len(self.succeeded) + len(self.failed) + len(self.pending)
+
+
+def _quorum_outcome(
+    state: _JoinState,
+    quorum: int | None,
+) -> JoinOutcome:
+    """Return the deterministic outcome for a quorum join."""
+    required = quorum if quorum is not None else state.branch_count
+    if required < 1 or required > state.branch_count:
+        raise ValueError("invalid fanout quorum")
+    if len(state.succeeded) >= required:
+        return "succeeded" if not state.failed else "partial"
+    if len(state.succeeded) + len(state.pending) < required:
+        return "failed" if not state.succeeded else "partial"
+    return "waiting"
+
+
+def _settled_outcome(policy: JoinPolicy, state: _JoinState) -> JoinOutcome:
+    """Return the outcome for a join whose branches are all terminal."""
+    if policy == "all":
+        return "succeeded" if not state.failed else "failed"
+    if policy != "best_effort":
+        raise ValueError("unsupported fanout join policy")
+    if state.succeeded and state.failed:
+        return "partial"
+    return "succeeded" if state.succeeded else "failed"
+
+
+def _join_outcome(
+    policy: JoinPolicy,
+    state: _JoinState,
+    quorum: int | None,
+) -> JoinOutcome:
+    """Select an outcome once branch state has been normalized."""
+    if policy == "fail_fast" and state.failed:
+        return "failed"
+    if policy == "quorum":
+        return _quorum_outcome(state, quorum)
+    if state.pending:
+        return "waiting"
+    return _settled_outcome(policy, state)
+
+
 def reduce_fanout_join(
     units: Sequence[WorkUnitRecord],
     *,
@@ -63,31 +116,8 @@ def reduce_fanout_join(
         unit.work_unit_id for unit in ordered if unit.status not in _TERMINAL
     )
 
-    if policy == "fail_fast" and failed:
-        outcome: JoinOutcome = "failed"
-    elif policy == "quorum":
-        required = quorum if quorum is not None else len(ordered)
-        if required < 1 or required > len(ordered):
-            raise ValueError("invalid fanout quorum")
-        if len(succeeded) >= required:
-            outcome = "succeeded" if not failed else "partial"
-        elif len(succeeded) + len(pending) < required:
-            outcome = "failed" if not succeeded else "partial"
-        else:
-            outcome = "waiting"
-    elif pending:
-        outcome = "waiting"
-    elif policy == "all":
-        outcome = "succeeded" if not failed else "failed"
-    elif policy == "best_effort":
-        if succeeded and failed:
-            outcome = "partial"
-        elif succeeded:
-            outcome = "succeeded"
-        else:
-            outcome = "failed"
-    else:
-        raise ValueError("unsupported fanout join policy")
+    state = _JoinState(succeeded=succeeded, failed=failed, pending=pending)
+    outcome = _join_outcome(policy, state, quorum)
     return FanoutJoinResult(
         outcome=outcome,
         succeeded=succeeded,

@@ -21,6 +21,7 @@ def test_terminal_on_creation_run_persists_started_and_terminal_events(
     tmp_path,
     monkeypatch,
 ) -> None:
+    """Verify terminal on creation run persists started and terminal events."""
     monkeypatch.setenv("PHYTOMNI_EXECUTION_EVENTS_ENABLED", "true")
     db_path = str(tmp_path / "tasks.sqlite")
     registry = RunRegistry(db_path)
@@ -53,6 +54,8 @@ def test_terminal_on_creation_run_persists_started_and_terminal_events(
 def test_run_registry_resolves_owner_scoped_external_execution_identity(
     tmp_path,
 ) -> None:
+    """Verify run registry resolves owner scoped external execution
+    identity."""
     db_path = str(tmp_path / "tasks.sqlite")
     registry = RunRegistry(db_path)
     execution_id = "turn-550e8400-e29b-41d4-a716-446655440000"
@@ -74,6 +77,8 @@ def test_execution_identity_and_terminal_ledger_survive_process_restart(
     tmp_path,
     monkeypatch,
 ) -> None:
+    """Verify execution identity and terminal ledger survive process
+    restart."""
     monkeypatch.setenv("PHYTOMNI_EXECUTION_EVENTS_ENABLED", "true")
     db_path = str(tmp_path / "tasks.sqlite")
     execution_id = "turn-restart-550e8400-e29b-41d4-a716-446655440000"

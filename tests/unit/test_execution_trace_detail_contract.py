@@ -7,33 +7,29 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
-FIXTURES = (
-    Path(__file__).parents[2]
-    / "docs"
-    / "contracts"
-    / "execution-trace-detail"
-    / "v1"
-    / "fixtures.json"
+from tests.support.execution_event_fixtures import (
+    EXECUTION_RUNTIME_V2_FIXTURES,
+    EXECUTION_TRACE_DETAIL_V1_FIXTURES,
 )
-RUNTIME_FIXTURES = (
-    Path(__file__).parents[2]
-    / "docs"
-    / "contracts"
-    / "execution-runtime"
-    / "v2"
-    / "fixtures.json"
+
+from mcp_server_phytomni.api.agent_capabilities import (
+    serialize_execution_runtime_capability,
 )
 
 
 def _fixtures() -> dict[str, Any]:
-    assert FIXTURES.exists(), "shared execution trace fixture is missing"
-    return json.loads(FIXTURES.read_text(encoding="utf-8"))
+    assert (
+        EXECUTION_TRACE_DETAIL_V1_FIXTURES.exists()
+    ), "shared execution trace fixture is missing"
+    return json.loads(
+        EXECUTION_TRACE_DETAIL_V1_FIXTURES.read_text(encoding="utf-8")
+    )
 
 
 def test_shared_trace_detail_fixture_freezes_required_records() -> None:
+    """Verify shared trace detail fixture freezes required records."""
     fixtures = _fixtures()
 
     assert fixtures["schema_version"] == 1
@@ -69,6 +65,7 @@ def test_shared_trace_detail_fixture_freezes_required_records() -> None:
 def test_shared_trace_detail_redacted_record_contains_only_safe_fields() -> (
     None
 ):
+    """Verify shared trace detail redacted record contains only safe fields."""
     record = _fixtures()["redacted_record"]
 
     assert set(record["detail"]) == {"ordinal", "total"}
@@ -88,17 +85,18 @@ def test_shared_trace_detail_redacted_record_contains_only_safe_fields() -> (
 
 
 def test_runtime_fixture_matches_the_operation_record_capability() -> None:
-    from mcp_server_phytomni.api.agent_capabilities import (
-        serialize_execution_runtime_capability,
-    )
+    """Verify runtime fixture matches the operation record capability."""
 
-    runtime_fixture = json.loads(RUNTIME_FIXTURES.read_text(encoding="utf-8"))
+    runtime_fixture = json.loads(
+        EXECUTION_RUNTIME_V2_FIXTURES.read_text(encoding="utf-8")
+    )
     expected = serialize_execution_runtime_capability()["operation_records"]
 
     assert runtime_fixture["capabilities"]["operation_records"] == expected
 
 
 def test_stage_fixture_freezes_terminal_surface_and_clocks() -> None:
+    """Verify stage fixture freezes terminal surface and clocks."""
     fixtures = _fixtures()
     contract = fixtures["stage_contract"]
     cases = {case["name"]: case for case in fixtures["stage_transition_cases"]}
@@ -140,6 +138,7 @@ def test_stage_fixture_freezes_terminal_surface_and_clocks() -> None:
 def test_shared_stage_fixture_rejects_impossible_or_regressive_states() -> (
     None
 ):
+    """Verify shared stage fixture rejects impossible or regressive states."""
     fixtures = _fixtures()
 
     assert {case["reason"] for case in fixtures["invalid_stage_cases"]} == {

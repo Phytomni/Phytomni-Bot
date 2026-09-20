@@ -12,7 +12,19 @@ from pathlib import Path
 import pytest
 from tests.support.all_agent_runtime_cases import REAL_HANDLER_FIXTURES
 
+from mcp_server_phytomni.mcp import app as mcp_app
+from mcp_server_phytomni.mcp import handlers
 from mcp_server_phytomni.public_agent_catalog import PUBLIC_AGENT_CATALOG
+from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
+    invoke_public_agent,
+)
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.request_context import request_context
 
 
 @pytest.mark.parametrize(
@@ -43,15 +55,6 @@ async def test_real_canonical_handler_enters_runtime_for_every_public_view(
     catalog callback itself would only prove the wrapper and previously hid
     handler bypasses.
     """
-    from mcp_server_phytomni.mcp import app as mcp_app
-    from mcp_server_phytomni.mcp import handlers
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.request_context import request_context
 
     dependency, arguments, expected = REAL_HANDLER_FIXTURES[spec.slug]
     calls: list[dict[str, object]] = []
@@ -107,15 +110,8 @@ async def test_real_canonical_handler_enters_runtime_for_every_public_view(
 def test_every_public_agent_uses_runtime_reservation_driver_and_terminal(
     tmp_path: Path, spec
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
+    """Verify every public agent uses runtime reservation driver and
+    terminal."""
 
     calls = 0
 
@@ -171,15 +167,6 @@ def test_every_declared_agent_transport_uses_the_same_runtime_driver(
     tmp_path: Path, spec, transport: str
 ) -> None:
     """A catalog transport is a view, never a second Agent implementation."""
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
 
     execution_id = f"turn-{spec.slug}-{transport}"
     db_path = tmp_path / f"{spec.slug}-{transport}.db"

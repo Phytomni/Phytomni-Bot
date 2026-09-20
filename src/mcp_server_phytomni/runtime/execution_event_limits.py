@@ -17,17 +17,12 @@ class ExecutionEventLimitError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class ExecutionEventLimits:
-    """Finite resource limits shared by storage, transport, and decoders."""
+class _ExecutionPayloadLimits:
+    """Finite limits applied while validating public event payloads."""
 
     max_event_bytes: int
     max_summary_chars: int
     max_todo_items: int
-    default_page_size: int
-    max_page_size: int
-    max_events_per_run: int
-    max_live_backlog: int
-    progress_coalesce_ms: int
 
     def validate_summary(self, value: str) -> None:
         """Reject a user-visible summary over the character limit."""
@@ -43,6 +38,17 @@ class ExecutionEventLimits:
         """Reject invalid or excessive atomic Todo snapshots."""
         if count < 0 or count > self.max_todo_items:
             raise ExecutionEventLimitError("too_many_todo_items")
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionEventLimits(_ExecutionPayloadLimits):
+    """Finite resource limits shared by storage, transport, and decoders."""
+
+    default_page_size: int
+    max_page_size: int
+    max_events_per_run: int
+    max_live_backlog: int
+    progress_coalesce_ms: int
 
     def resolve_page_size(self, requested: int | None) -> int:
         """Resolve an optional bounded event-history page size."""

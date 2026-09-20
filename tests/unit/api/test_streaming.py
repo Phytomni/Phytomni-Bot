@@ -199,7 +199,7 @@ async def test_stream_runtime_uses_adapters_and_settles_answer() -> None:
     assert body.rstrip().endswith("data: [DONE]")
     terminal_result = cast(Any, response).runtime_terminal_result()
     assert terminal_result["formatted"]["answer"] == "adapter answer"
-    assert settlements == []
+    assert not settlements
 
 
 async def test_context_stream_inserts_bounded_custom_before_finish(

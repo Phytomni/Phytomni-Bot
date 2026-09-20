@@ -74,13 +74,9 @@ _PENDING_KEYS = {
     ExecutionStage.CONSOLIDATION: "execution.pending.consolidating",
     ExecutionStage.RESPONSE_SETTLEMENT: "execution.pending.settling",
 }
-_TERMINAL_ROOT_STATUSES = {
-    "succeeded",
-    "partial",
-    "failed",
-    "cancelled",
-    "timed_out",
-}
+_TERMINAL_ROOT_STATUSES = frozenset(
+    ("succeeded", "partial", "failed", "cancelled", "timed_out")
+)
 
 
 class ExecutionStageState(BaseModel):
@@ -142,6 +138,7 @@ class ExecutionStageState(BaseModel):
 
     @model_validator(mode="after")
     def validate_derived_surface(self) -> Self:
+        """Require todos and pending text to match the canonical stage."""
         expected_todos = self.derive_todos(self.stage, self.root_status)
         if self.todos != expected_todos:
             raise ValueError("todo_stage_mismatch")

@@ -23,6 +23,7 @@ from ..agents.shared.a2ui import select_chat_a2ui_widget
 from ..config.defaults import ApiConfig
 from ..mcp.result_formatting import AguiEvent
 from ..mcp.stream_lifecycle import PrimedAguiStream, StreamLifecycleState
+from ..runtime.execution_entrypoint_v2 import InvokePublicAgentOperationKwargs
 from ..runtime.run_registry import RunRecord
 from ..storage.path_policy import IdFactory
 from . import a2ui_runtime, run_lifecycle, streaming
@@ -199,12 +200,7 @@ async def _resume_a2ui_run(
     record = app.RunRegistry(path).get_run(run_id, owner=owner)
     if record is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-    execution_id = record.request_info.execution_id
-    if execution_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail="legacy A2UI execution is read-only",
-        )
+    execution_id = a2ui_runtime.require_a2ui_execution_id(record)
     if record.spec.agent not in {"chat", "review"}:
         raise HTTPException(
             status_code=400, detail="unsupported agent for a2ui"
@@ -220,18 +216,19 @@ async def _resume_a2ui_run(
             detail="execution runtime reservation is unavailable",
         ) from exc
     try:
-        return await app.invoke_public_agent_operation(
-            db_path=path,
-            owner=owner,
-            execution_id=execution_id,
-            agent_slug=record.spec.agent,
-            operation="resume",
-            action_id=body.action_id,
-            expected_revision=reservation.supervisor_revision,
-            arguments=body.model_dump(mode="json"),
-            transport="a2ui_resume",
-            call=resume_domain,
-        )
+        invocation: InvokePublicAgentOperationKwargs = {
+            "db_path": path,
+            "owner": owner,
+            "execution_id": execution_id,
+            "agent_slug": record.spec.agent,
+            "operation": "resume",
+            "action_id": body.action_id,
+            "expected_revision": reservation.supervisor_revision,
+            "arguments": body.model_dump(mode="json"),
+            "transport": "a2ui_resume",
+            "call": resume_domain,
+        }
+        return await app.invoke_public_agent_operation(**invocation)
     except app.ExecutionReservationConflictError as exc:
         if str(exc) == "execution_terminal":
             raise HTTPException(

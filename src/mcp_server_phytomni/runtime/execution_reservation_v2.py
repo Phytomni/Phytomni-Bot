@@ -6,38 +6,55 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from importlib import import_module
+from typing import Any, Unpack
 
-from ..config.defaults import ApiConfig
-from ..public_agent_catalog import Driver, public_agent_spec
+from ..public_agent_catalog import public_agent_spec
 from ..storage.path_policy import IdFactory
 from .conversation_context.models import ContextStageMetadata
 from .execution_journal_store_v2 import SQLiteExecutionJournal
-from .execution_journal_v2 import (
-    EventStatus,
-    ExecutionEventIntentV2,
-    ExecutionEventType,
-    ExecutionStatus,
-    parse_execution_event_intent_v2,
+from .execution_journal_v2 import ExecutionStatus
+from .execution_reservation_support_v2 import (
+    EXPERT_ROUTER_AGENT_SLUG,
+    OBSERVATION_SIGNATURE,
+    OPERATION_CLAIM_SIGNATURE,
+    RESERVE_SIGNATURE,
+    TERMINAL_EXECUTION_STATUSES,
+    ExecutionOperationClaim,
+    ExecutionReservationRecord,
+    ObservationKwargs,
+    OperationClaimKwargs,
+    OperationClaimRequest,
+    ReservationKwargs,
+    ReservationPlan,
+    TerminalPlan,
+    TerminalSnapshot,
+    append_event_locked,
+    execution_command_hash,
+    observation_request,
+    operation_claim_request,
+    reservation_plan,
+    reservation_record,
+    reservation_replay_matches,
+    reservation_request,
+    routed_binding_matches_command,
+    terminal_event_intents,
+    terminal_plan,
+    terminal_replay_result,
+    terminal_snapshot,
 )
 from .execution_runtime_contracts import (
-    CancellationOutcome,
     DriverOutcome,
     ExecutionCommand,
     ExecutionContext,
     TerminalSettlementAuthority,
 )
+from .execution_store_support_v2 import validate_provider_join_lease_token
 from .sqlite import sqlite_transaction
-
-# Private admission-only identity for autonomous Expert routing.  It is not a
-# public Agent and must never be exported by the canonical Agent catalog.
-EXPERT_ROUTER_AGENT_SLUG = "expert-router"
 
 
 class ExecutionReservationConflictError(RuntimeError):
@@ -46,42 +63,6 @@ class ExecutionReservationConflictError(RuntimeError):
 
 class ExecutionReservationNotFoundError(LookupError):
     """The owner-scoped execution binding does not exist."""
-
-
-@dataclass(frozen=True, slots=True)
-class ExecutionReservationRecord:
-    """Private Bot binding below the stable public execution identity."""
-
-    owner: str
-    execution_id: str
-    run_id: str
-    fingerprint_version: int
-    fingerprint: str
-    command_hash: str
-    agent_slug: str
-    driver: Driver
-    root_span_id: str
-    status: ExecutionStatus
-    deadline_at: str
-    supervisor_revision: int
-    next_attempt_at: str | None
-    tracking_health: str
-    cancellation_state: CancellationOutcome
-    context_stage_json: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class ExecutionOperationClaim:
-    """Durable idempotency claim for resume/recovery/control operations."""
-
-    operation_id: str
-    operation: str
-    expected_revision: int
-    command_hash: str
-    claimed: bool
-    state: str
-    outcome_json: str | None
-    supervisor_revision: int
 
 
 class SQLiteExecutionReservationRepository:
@@ -96,21 +77,17 @@ class SQLiteExecutionReservationRepository:
         clock: Callable[[], datetime] | None = None,
         expected_provider_join_lease_token: str | None = None,
     ) -> None:
-        from .run_registry import RunRegistry
-
         self.db_path = db_path
         self._run_id_factory = run_id_factory
         self._root_span_id_factory = root_span_id_factory
         self._clock = clock or (lambda: datetime.now(UTC))
-        if expected_provider_join_lease_token is not None and (
-            not expected_provider_join_lease_token
-            or len(expected_provider_join_lease_token) > 128
-        ):
-            raise ValueError("invalid provider join lease token")
         self._expected_provider_join_lease_token = (
-            expected_provider_join_lease_token
+            validate_provider_join_lease_token(
+                expected_provider_join_lease_token
+            )
         )
-        RunRegistry(db_path)
+        registry_module = import_module(".run_registry", __package__)
+        registry_module.RunRegistry(db_path)
         self._journal = SQLiteExecutionJournal(
             db_path,
             clock=lambda: self._clock().isoformat(),
@@ -121,120 +98,99 @@ class SQLiteExecutionReservationRepository:
 
     def reserve(
         self,
-        *,
-        owner: str,
-        execution_id: str,
-        fingerprint_version: int,
-        fingerprint: str,
-        command: ExecutionCommand,
-        durable_command: Mapping[str, Any] | None = None,
+        **kwargs: Unpack[ReservationKwargs],
     ) -> ExecutionReservationRecord:
         """Reserve once; exact retries return the original binding."""
-        if not owner or not execution_id or not fingerprint:
-            raise ValueError(
-                "owner, execution_id, and fingerprint are required"
-            )
-        if fingerprint_version < 1 or len(fingerprint) > 256:
-            raise ValueError("invalid fingerprint")
-        spec = public_agent_spec(command.agent_slug)
-        if spec is None and command.agent_slug != EXPERT_ROUTER_AGENT_SLUG:
-            raise ValueError("unknown public Agent")
-        reservation_slug = (
-            spec.slug if spec is not None else EXPERT_ROUTER_AGENT_SLUG
-        )
-        reservation_driver: Driver = (
-            spec.driver if spec is not None else "local_graph"
-        )
-        reservation_tool = spec.tool if spec is not None else "ExpertRouter"
-        reservation_model = spec.model if spec is not None else None
-        reservation_lifecycle = (
-            spec.lifecycle if spec is not None else "synchronous"
-        )
-        reservation_deadline_seconds = (
-            spec.deadline_seconds if spec is not None else 3600
-        )
-        command_hash = execution_command_hash(command)
-        durable_command_json = _durable_command_json(durable_command)
+        request = reservation_request(self, kwargs)
+        plan = reservation_plan(request)
         with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
-            existing = self._read(connection, owner, execution_id)
+            existing = self._read(
+                connection,
+                request.owner,
+                request.execution_id,
+            )
             if existing is not None:
-                if (
-                    existing.fingerprint_version != fingerprint_version
-                    or existing.fingerprint != fingerprint
-                    or existing.command_hash != command_hash
-                    or existing.agent_slug != reservation_slug
-                    or existing.driver != reservation_driver
-                ):
-                    raise ExecutionReservationConflictError(execution_id)
+                if not reservation_replay_matches(existing, plan):
+                    raise ExecutionReservationConflictError(
+                        request.execution_id
+                    )
                 self._persist_durable_command(
                     connection,
-                    owner=owner,
-                    execution_id=execution_id,
-                    command_json=durable_command_json,
+                    owner=request.owner,
+                    execution_id=request.execution_id,
+                    command_json=plan.durable_command_json,
                     created_at=self._clock().isoformat(),
                 )
                 connection.commit()
                 return existing
-            now = self._clock()
-            if now.utcoffset() is None:
-                raise ValueError("clock must return timezone-aware datetime")
-            run_id = (
-                self._run_id_factory()
-                if self._run_id_factory is not None
-                else IdFactory().new_id("run", reservation_slug)
-            )
-            root_span_id = (
-                self._root_span_id_factory()
-                if self._root_span_id_factory is not None
-                else IdFactory().new_id("span", reservation_slug)
-            )
-            deadline_at = (
-                now + timedelta(seconds=reservation_deadline_seconds)
-            ).isoformat()
-            connection.execute(
-                "INSERT INTO runs ("
-                "run_id, user_id, agent, origin, status, created_at, "
-                "updated_at, tool_name, model, external_execution_id, "
-                "execution_id, execution_fingerprint_version, "
-                "execution_fingerprint, execution_command_hash, "
-                "execution_driver, execution_deadline_at, "
-                "execution_supervisor_revision, execution_root_span_id, "
-                "revision) VALUES (?, ?, ?, ?, 'admitted', ?, ?, "
-                "?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)",
-                (
-                    run_id,
-                    owner,
-                    reservation_slug,
-                    (
-                        "remote"
-                        if reservation_lifecycle == "asynchronous"
-                        else "local"
-                    ),
-                    now.isoformat(),
-                    now.isoformat(),
-                    reservation_tool,
-                    reservation_model,
-                    execution_id,
-                    execution_id,
-                    fingerprint_version,
-                    fingerprint,
-                    command_hash,
-                    reservation_driver,
-                    deadline_at,
-                    root_span_id,
-                ),
-            )
-            self._persist_durable_command(
-                connection,
-                owner=owner,
-                execution_id=execution_id,
-                command_json=durable_command_json,
-                created_at=now.isoformat(),
-            )
+            self._insert_reservation(connection, plan)
             connection.commit()
-        return self.get(owner=owner, execution_id=execution_id)
+        return self.get(
+            owner=request.owner,
+            execution_id=request.execution_id,
+        )
+
+    def _insert_reservation(
+        self,
+        connection: sqlite3.Connection,
+        plan: ReservationPlan,
+    ) -> None:
+        request = plan.request
+        profile = plan.profile
+        now = self._clock()
+        if now.utcoffset() is None:
+            raise ValueError("clock must return timezone-aware datetime")
+        run_id = (
+            self._run_id_factory()
+            if self._run_id_factory is not None
+            else IdFactory().new_id("run", profile.slug)
+        )
+        root_span_id = (
+            self._root_span_id_factory()
+            if self._root_span_id_factory is not None
+            else IdFactory().new_id("span", profile.slug)
+        )
+        deadline_at = (
+            now + timedelta(seconds=profile.deadline_seconds)
+        ).isoformat()
+        connection.execute(
+            "INSERT INTO runs ("
+            "run_id, user_id, agent, origin, status, created_at, "
+            "updated_at, tool_name, model, external_execution_id, "
+            "execution_id, execution_fingerprint_version, "
+            "execution_fingerprint, execution_command_hash, "
+            "execution_driver, execution_deadline_at, "
+            "execution_supervisor_revision, execution_root_span_id, "
+            "revision) VALUES (?, ?, ?, ?, 'admitted', ?, ?, "
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)",
+            (
+                run_id,
+                request.owner,
+                profile.slug,
+                "remote" if profile.lifecycle == "asynchronous" else "local",
+                now.isoformat(),
+                now.isoformat(),
+                profile.tool,
+                profile.model,
+                request.execution_id,
+                request.execution_id,
+                request.fingerprint_version,
+                request.fingerprint,
+                plan.command_hash,
+                profile.driver,
+                deadline_at,
+                root_span_id,
+            ),
+        )
+        self._persist_durable_command(
+            connection,
+            owner=request.owner,
+            execution_id=request.execution_id,
+            command_json=plan.durable_command_json,
+            created_at=now.isoformat(),
+        )
 
     def bind_routed_agent(
         self,
@@ -391,6 +347,7 @@ class SQLiteExecutionReservationRepository:
     def get(
         self, *, owner: str, execution_id: str
     ) -> ExecutionReservationRecord:
+        """Read one live owner-scoped execution reservation."""
         with sqlite_transaction(self.db_path) as connection:
             record = self._read(connection, owner, execution_id)
         if record is None:
@@ -451,6 +408,7 @@ class SQLiteExecutionReservationRepository:
     def terminal_authority(
         self, context: ExecutionContext
     ) -> TerminalSettlementAuthority:
+        """Issue terminal authority from the current supervisor revision."""
         self.require_provider_join_lease(
             owner=context.owner_ref,
             execution_id=context.execution_id,
@@ -499,18 +457,11 @@ class SQLiteExecutionReservationRepository:
 
     def claim_operation(
         self,
-        *,
-        owner: str,
-        execution_id: str,
-        operation_id: str,
-        operation: str,
-        expected_revision: int,
-        command: ExecutionCommand,
+        **kwargs: Unpack[OperationClaimKwargs],
     ) -> ExecutionOperationClaim:
         """Claim a revision-checked operation or return its durable replay."""
-        if not operation_id or expected_revision < 0:
-            raise ValueError("operation identity and revision are required")
-        command_hash = execution_command_hash(command)
+        request = operation_claim_request(self, kwargs)
+        command_hash = execution_command_hash(request.command)
         now = self._clock().isoformat()
         with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
@@ -520,123 +471,171 @@ class SQLiteExecutionReservationRepository:
                 "outcome_json FROM execution_operations_v2 "
                 "WHERE owner_ref = ? AND execution_id = ? "
                 "AND operation_id = ?",
-                (owner, execution_id, operation_id),
+                (
+                    request.owner,
+                    request.execution_id,
+                    request.operation_id,
+                ),
             ).fetchone()
             if existing is not None:
-                if (
-                    existing[0] != operation
-                    or existing[1] != expected_revision
-                    or existing[2] != command_hash
-                ):
-                    raise ExecutionReservationConflictError(
-                        "operation_identity_conflict"
-                    )
-                revision = self._revision(connection, owner, execution_id)
-                connection.commit()
-                return ExecutionOperationClaim(
-                    operation_id=operation_id,
-                    operation=operation,
-                    expected_revision=expected_revision,
-                    command_hash=command_hash,
-                    claimed=False,
-                    state=existing[3],
-                    outcome_json=existing[4],
-                    supervisor_revision=revision,
-                )
-            record = self._read(connection, owner, execution_id)
-            if record is None:
-                raise ExecutionReservationNotFoundError(execution_id)
-            if record.supervisor_revision != expected_revision:
-                raise ExecutionReservationConflictError("stale_revision")
-            if record.status in _TERMINAL_EXECUTION_STATUSES:
-                terminal_row = connection.execute(
-                    "SELECT execution_terminal_outcome FROM runs "
-                    "WHERE user_id = ? AND execution_id = ?",
-                    (owner, execution_id),
-                ).fetchone()
-                runtime_terminal = (
-                    terminal_row is not None and terminal_row[0] is not None
-                )
-                if operation != "reconcile" or runtime_terminal:
-                    raise ExecutionReservationConflictError(
-                        "execution_terminal"
-                    )
-            if (
-                operation == "resume"
-                and record.status is not ExecutionStatus.WAITING_INPUT
-            ):
-                raise ExecutionReservationConflictError(
-                    "execution_not_waiting_input"
-                )
-            if operation == "resume":
-                active_resume = connection.execute(
-                    "SELECT operation_id FROM execution_operations_v2 "
-                    "WHERE owner_ref = ? AND execution_id = ? "
-                    "AND operation = 'resume' AND state = 'claimed' LIMIT 1",
-                    (owner, execution_id),
-                ).fetchone()
-                if active_resume is not None:
-                    raise ExecutionReservationConflictError(
-                        "resume_already_claimed"
-                    )
-            connection.execute(
-                "INSERT INTO execution_operations_v2 "
-                "(owner_ref, execution_id, operation_id, operation, "
-                "expected_revision, command_hash, state, created_at, "
-                "updated_at) VALUES (?, ?, ?, ?, ?, ?, 'claimed', ?, ?)",
-                (
-                    owner,
-                    execution_id,
-                    operation_id,
-                    operation,
-                    expected_revision,
+                replay = self._operation_replay(
+                    connection,
+                    request,
                     command_hash,
-                    now,
-                    now,
-                ),
-            )
-            fence_clause = (
-                " AND execution_provider_join_lease_owner = ? "
-                "AND execution_provider_join_lease_expires_at > ?"
-                if self._expected_provider_join_lease_token is not None
-                else ""
-            )
-            fence_parameters = (
-                (
-                    self._expected_provider_join_lease_token,
-                    self._clock().isoformat(),
+                    existing,
                 )
-                if self._expected_provider_join_lease_token is not None
-                else ()
+                connection.commit()
+                return replay
+            record = self._read(
+                connection,
+                request.owner,
+                request.execution_id,
             )
-            result = connection.execute(
-                "UPDATE runs SET status = ?, execution_supervisor_revision = "
-                "execution_supervisor_revision + 1, revision = revision + 1, "
-                "updated_at = ? WHERE user_id = ? AND execution_id = ? "
-                "AND execution_supervisor_revision = ? "
-                "AND execution_terminal_outcome IS NULL" + fence_clause,
-                (
-                    record.status.value,
-                    now,
-                    owner,
-                    execution_id,
-                    expected_revision,
-                    *fence_parameters,
-                ),
+            if record is None:
+                raise ExecutionReservationNotFoundError(request.execution_id)
+            self._validate_operation_claim(connection, request, record)
+            self._insert_operation_claim(
+                connection,
+                request,
+                command_hash,
+                now,
             )
-            if result.rowcount != 1:
-                raise ExecutionReservationConflictError("stale_revision")
+            self._advance_operation_revision(
+                connection,
+                request,
+                record.status,
+                now,
+            )
             connection.commit()
         return ExecutionOperationClaim(
-            operation_id=operation_id,
-            operation=operation,
-            expected_revision=expected_revision,
+            operation_id=request.operation_id,
+            operation=request.operation,
+            expected_revision=request.expected_revision,
             command_hash=command_hash,
             claimed=True,
             state="claimed",
             outcome_json=None,
-            supervisor_revision=expected_revision + 1,
+            supervisor_revision=request.expected_revision + 1,
         )
+
+    def _operation_replay(
+        self,
+        connection: sqlite3.Connection,
+        request: OperationClaimRequest,
+        command_hash: str,
+        existing: sqlite3.Row | tuple[Any, ...],
+    ) -> ExecutionOperationClaim:
+        if (
+            existing[0] != request.operation
+            or existing[1] != request.expected_revision
+            or existing[2] != command_hash
+        ):
+            raise ExecutionReservationConflictError(
+                "operation_identity_conflict"
+            )
+        revision = self._revision(
+            connection,
+            request.owner,
+            request.execution_id,
+        )
+        return ExecutionOperationClaim(
+            operation_id=request.operation_id,
+            operation=request.operation,
+            expected_revision=request.expected_revision,
+            command_hash=command_hash,
+            claimed=False,
+            state=str(existing[3]),
+            outcome_json=None if existing[4] is None else str(existing[4]),
+            supervisor_revision=revision,
+        )
+
+    @staticmethod
+    def _validate_operation_claim(
+        connection: sqlite3.Connection,
+        request: OperationClaimRequest,
+        record: ExecutionReservationRecord,
+    ) -> None:
+        if record.supervisor_revision != request.expected_revision:
+            raise ExecutionReservationConflictError("stale_revision")
+        if record.status in TERMINAL_EXECUTION_STATUSES:
+            terminal_row = connection.execute(
+                "SELECT execution_terminal_outcome FROM runs "
+                "WHERE user_id = ? AND execution_id = ?",
+                (request.owner, request.execution_id),
+            ).fetchone()
+            runtime_terminal = (
+                terminal_row is not None and terminal_row[0] is not None
+            )
+            if request.operation != "reconcile" or runtime_terminal:
+                raise ExecutionReservationConflictError("execution_terminal")
+        if (
+            request.operation == "resume"
+            and record.status is not ExecutionStatus.WAITING_INPUT
+        ):
+            raise ExecutionReservationConflictError(
+                "execution_not_waiting_input"
+            )
+        if request.operation == "resume":
+            active_resume = connection.execute(
+                "SELECT operation_id FROM execution_operations_v2 "
+                "WHERE owner_ref = ? AND execution_id = ? "
+                "AND operation = 'resume' AND state = 'claimed' LIMIT 1",
+                (request.owner, request.execution_id),
+            ).fetchone()
+            if active_resume is not None:
+                raise ExecutionReservationConflictError(
+                    "resume_already_claimed"
+                )
+
+    @staticmethod
+    def _insert_operation_claim(
+        connection: sqlite3.Connection,
+        request: OperationClaimRequest,
+        command_hash: str,
+        now: str,
+    ) -> None:
+        connection.execute(
+            "INSERT INTO execution_operations_v2 "
+            "(owner_ref, execution_id, operation_id, operation, "
+            "expected_revision, command_hash, state, created_at, "
+            "updated_at) VALUES (?, ?, ?, ?, ?, ?, 'claimed', ?, ?)",
+            (
+                request.owner,
+                request.execution_id,
+                request.operation_id,
+                request.operation,
+                request.expected_revision,
+                command_hash,
+                now,
+                now,
+            ),
+        )
+
+    def _advance_operation_revision(
+        self,
+        connection: sqlite3.Connection,
+        request: OperationClaimRequest,
+        status: ExecutionStatus,
+        now: str,
+    ) -> None:
+        fence_clause, fence_parameters = self._provider_join_fence()
+        result = connection.execute(
+            "UPDATE runs SET status = ?, execution_supervisor_revision = "
+            "execution_supervisor_revision + 1, revision = revision + 1, "
+            "updated_at = ? WHERE user_id = ? AND execution_id = ? "
+            "AND execution_supervisor_revision = ? "
+            "AND execution_terminal_outcome IS NULL" + fence_clause,
+            (
+                status.value,
+                now,
+                request.owner,
+                request.execution_id,
+                request.expected_revision,
+                *fence_parameters,
+            ),
+        )
+        if result.rowcount != 1:
+            raise ExecutionReservationConflictError("stale_revision")
 
     def complete_operation(
         self,
@@ -675,16 +674,11 @@ class SQLiteExecutionReservationRepository:
 
     def record_observation(
         self,
-        *,
-        owner: str,
-        execution_id: str,
-        status: ExecutionStatus,
-        tracking_health: str,
-        cancellation_state: str,
-        next_attempt_at: str | None,
+        **kwargs: Unpack[ObservationKwargs],
     ) -> bool:
         """Persist a non-terminal Runtime observation without polling."""
-        if status in _TERMINAL_EXECUTION_STATUSES:
+        request = observation_request(self, kwargs)
+        if request.status in TERMINAL_EXECUTION_STATUSES:
             raise ValueError("terminal observations use settle_terminal")
         fence_clause, fence_parameters = self._provider_join_fence()
         with sqlite_transaction(self.db_path) as connection:
@@ -697,13 +691,13 @@ class SQLiteExecutionReservationRepository:
                 "AND execution_id = ? AND execution_terminal_outcome IS NULL"
                 + fence_clause,
                 (
-                    status.value,
-                    tracking_health,
-                    cancellation_state,
-                    next_attempt_at,
+                    request.status.value,
+                    request.tracking_health,
+                    request.cancellation_state,
+                    request.next_attempt_at,
                     self._clock().isoformat(),
-                    owner,
-                    execution_id,
+                    request.owner,
+                    request.execution_id,
                     *fence_parameters,
                 ),
             )
@@ -738,134 +732,133 @@ class SQLiteExecutionReservationRepository:
             ).fetchone()
             if row is None:
                 raise ExecutionReservationNotFoundError(authority.execution_id)
-            projection = self._journal._load_or_rebuild_projection(
+            snapshot = terminal_snapshot(
+                self._journal,
                 connection,
-                authority.owner_ref,
-                authority.execution_id,
+                authority,
+                row,
             )
-            existing_terminal = row[1]
-            if existing_terminal is not None:
-                connection.commit()
-                return (
-                    str(existing_terminal) == outcome.status.value
-                    and projection.terminal is not None
-                    and projection.terminal.status == outcome.status.value
-                )
-            if int(row[5]) != authority.expected_revision:
-                connection.commit()
-                return False
-            if (
-                projection.terminal is not None
-                and projection.terminal.status != outcome.status.value
-            ):
-                connection.commit()
-                return False
-
-            root_span_id = str(row[3])
-            root_span = connection.execute(
-                "SELECT status FROM execution_spans WHERE owner_ref = ? "
-                "AND execution_id = ? AND span_id = ?",
-                (
-                    authority.owner_ref,
-                    authority.execution_id,
-                    root_span_id,
-                ),
-            ).fetchone()
-            desired_span_status = outcome.status.value
-            if (
-                root_span is not None
-                and str(root_span[0])
-                in {status.value for status in _TERMINAL_EXECUTION_STATUSES}
-                and str(root_span[0]) != desired_span_status
-            ):
-                connection.commit()
-                return False
-
-            cancellation_state: str | None = outcome.cancellation_outcome
-            if cancellation_state is None:
-                cancellation_state = (
-                    "confirmed"
-                    if outcome.status is ExecutionStatus.CANCELLED
-                    else str(row[2])
-                )
-            result_json = _public_result_json(outcome)
-            now = self._clock()
-            if now.utcoffset() is None:
-                raise ValueError("clock must return timezone-aware datetime")
-            fence_clause, fence_parameters = self._provider_join_fence(now=now)
-            result = connection.execute(
-                "UPDATE runs SET status = ?, execution_terminal_outcome = ?, "
-                "execution_cancellation_state = ?, "
-                "result_json = COALESCE(result_json, ?), "
-                "expires_at = ?, "
-                "execution_supervisor_revision = "
-                "execution_supervisor_revision + 1, "
-                "revision = revision + 1, updated_at = ? "
-                "WHERE user_id = ? AND execution_id = ? "
-                "AND execution_supervisor_revision = ? "
-                "AND execution_terminal_outcome IS NULL" + fence_clause,
-                (
-                    outcome.status.value,
-                    outcome.status.value,
-                    cancellation_state,
-                    result_json,
-                    _terminal_expiry(outcome.status, now),
-                    now.isoformat(),
-                    authority.owner_ref,
-                    authority.execution_id,
-                    authority.expected_revision,
-                    *fence_parameters,
-                ),
+            replay_result = terminal_replay_result(
+                snapshot,
+                authority,
+                outcome,
             )
-            if result.rowcount != 1:
+            if replay_result is not None:
+                connection.commit()
+                return replay_result
+            plan = terminal_plan(snapshot, outcome, self._clock)
+            if not self._settle_terminal_reservation(
+                connection,
+                authority,
+                plan,
+            ):
                 connection.commit()
                 return False
-
-            if (
-                root_span is not None
-                and str(root_span[0]) != desired_span_status
-            ):
-                connection.execute(
-                    "UPDATE execution_spans SET status = ?, "
-                    "last_activity_at = ?, ended_at = ?, "
-                    "revision = revision + 1 WHERE owner_ref = ? "
-                    "AND execution_id = ? AND span_id = ?",
-                    (
-                        desired_span_status,
-                        now.isoformat(),
-                        now.isoformat(),
-                        authority.owner_ref,
-                        authority.execution_id,
-                        root_span_id,
-                    ),
-                )
-
-            # A legacy append-before-settle record may already carry the same
-            # terminal projection.  Settle its reservation without duplicating
-            # that fact; new writes always append inside this transaction.
-            if projection.terminal is None:
-                span_intent, execution_intent = _terminal_event_intents(
-                    execution_id=authority.execution_id,
-                    root_span_id=root_span_id,
-                    agent_slug=str(row[4]),
-                    actor=authority.actor,
-                    outcome=outcome,
-                )
-                if root_span is not None:
-                    self._journal._append_locked(
-                        connection,
-                        execution_id=authority.execution_id,
-                        owner=authority.owner_ref,
-                        intent=span_intent,
-                    )
-                self._journal._append_locked(
-                    connection,
-                    execution_id=authority.execution_id,
-                    owner=authority.owner_ref,
-                    intent=execution_intent,
-                )
+            self._settle_root_span(connection, authority, snapshot, plan)
+            self._append_terminal_facts(
+                connection,
+                authority,
+                snapshot,
+                outcome,
+            )
             connection.commit()
             return True
+
+    def _settle_terminal_reservation(
+        self,
+        connection: sqlite3.Connection,
+        authority: TerminalSettlementAuthority,
+        plan: TerminalPlan,
+    ) -> bool:
+        fence_clause, fence_parameters = self._provider_join_fence(
+            now=plan.now
+        )
+        result = connection.execute(
+            "UPDATE runs SET status = ?, execution_terminal_outcome = ?, "
+            "execution_cancellation_state = ?, "
+            "result_json = COALESCE(result_json, ?), expires_at = ?, "
+            "execution_supervisor_revision = "
+            "execution_supervisor_revision + 1, "
+            "revision = revision + 1, updated_at = ? "
+            "WHERE user_id = ? AND execution_id = ? "
+            "AND execution_supervisor_revision = ? "
+            "AND execution_terminal_outcome IS NULL" + fence_clause,
+            (
+                plan.status.value,
+                plan.status.value,
+                plan.cancellation_state,
+                plan.result_json,
+                plan.expires_at,
+                plan.now.isoformat(),
+                authority.owner_ref,
+                authority.execution_id,
+                authority.expected_revision,
+                *fence_parameters,
+            ),
+        )
+        return result.rowcount == 1
+
+    @staticmethod
+    def _settle_root_span(
+        connection: sqlite3.Connection,
+        authority: TerminalSettlementAuthority,
+        snapshot: TerminalSnapshot,
+        plan: TerminalPlan,
+    ) -> None:
+        if (
+            snapshot.root_span_status is None
+            or snapshot.root_span_status == plan.status.value
+        ):
+            return
+        connection.execute(
+            "UPDATE execution_spans SET status = ?, "
+            "last_activity_at = ?, ended_at = ?, "
+            "revision = revision + 1 WHERE owner_ref = ? "
+            "AND execution_id = ? AND span_id = ?",
+            (
+                plan.status.value,
+                plan.now.isoformat(),
+                plan.now.isoformat(),
+                authority.owner_ref,
+                authority.execution_id,
+                snapshot.reservation.root_span_id,
+            ),
+        )
+
+    def _append_terminal_facts(
+        self,
+        connection: sqlite3.Connection,
+        authority: TerminalSettlementAuthority,
+        snapshot: TerminalSnapshot,
+        outcome: DriverOutcome,
+    ) -> None:
+        # A legacy append-before-settle record may already carry the same
+        # terminal projection.  Settle its reservation without duplicating
+        # that fact; new writes always append inside this transaction.
+        if snapshot.projection.terminal is not None:
+            return
+        span_intent, execution_intent = terminal_event_intents(
+            execution_id=authority.execution_id,
+            root_span_id=snapshot.reservation.root_span_id,
+            agent_slug=snapshot.reservation.agent_slug,
+            actor=authority.actor,
+            outcome=outcome,
+        )
+        if snapshot.root_span_status is not None:
+            append_event_locked(
+                self._journal,
+                connection,
+                authority.execution_id,
+                authority.owner_ref,
+                span_intent,
+            )
+        append_event_locked(
+            self._journal,
+            connection,
+            authority.execution_id,
+            authority.owner_ref,
+            execution_intent,
+        )
 
     def provider_join_lease_valid(
         self,
@@ -935,24 +928,7 @@ class SQLiteExecutionReservationRepository:
         ).fetchone()
         if row is None:
             return None
-        return ExecutionReservationRecord(
-            owner=row[0],
-            execution_id=row[1],
-            run_id=row[2],
-            fingerprint_version=row[3],
-            fingerprint=row[4],
-            command_hash=row[5],
-            agent_slug=row[6],
-            driver=cast(Driver, row[7]),
-            root_span_id=row[8],
-            status=ExecutionStatus(row[9]),
-            deadline_at=row[10],
-            supervisor_revision=row[11],
-            next_attempt_at=row[12],
-            tracking_health=row[13],
-            cancellation_state=row[14],
-            context_stage_json=row[15],
-        )
+        return reservation_record(row)
 
     @staticmethod
     def _revision(
@@ -971,225 +947,28 @@ class SQLiteExecutionReservationRepository:
         return int(row[0])
 
 
-def execution_command_hash(command: ExecutionCommand) -> str:
-    """Return the canonical durable hash used by reservation fences."""
-    try:
-        encoded = json.dumps(
-            {
-                "agent_slug": command.agent_slug,
-                "arguments": command.arguments,
-                "action_id": command.action_id,
-                "expected_revision": command.expected_revision,
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-    except (TypeError, UnicodeEncodeError) as exc:
-        raise ValueError("Agent command is not canonical JSON") from exc
-    return hashlib.sha256(encoded).hexdigest()
+for _public_value in (
+    ExecutionOperationClaim,
+    ExecutionReservationRecord,
+    execution_command_hash,
+    routed_binding_matches_command,
+):
+    setattr(_public_value, "__module__", __name__)
+del _public_value
 
-
-def routed_binding_matches_command(
-    durable_command: Mapping[str, object],
-    *,
-    owner: str,
-    execution_id: str,
-    reservation_agent: str,
-    reservation_command_hash: str,
-    fingerprint_version: object,
-    fingerprint: object,
-) -> bool:
-    """Validate the persisted selected binding below one router command."""
-    arguments = durable_command.get("arguments")
-    if (
-        durable_command.get("owner_ref") != owner
-        or durable_command.get("execution_id") != execution_id
-        or durable_command.get("agent") != EXPERT_ROUTER_AGENT_SLUG
-        or not isinstance(arguments, dict)
-        or durable_command.get("fingerprint_version") != fingerprint_version
-        or durable_command.get("fingerprint") != fingerprint
-        or reservation_agent == EXPERT_ROUTER_AGENT_SLUG
-        or len(reservation_command_hash) != 64
-        or any(
-            character not in "0123456789abcdef"
-            for character in reservation_command_hash
-        )
-    ):
-        return False
-    spec = public_agent_spec(reservation_agent)
-    if spec is None or spec.lifecycle != "asynchronous":
-        return False
-    allowed_tools = arguments.get("__allowed_tools")
-    if not isinstance(allowed_tools, list) or spec.tool not in allowed_tools:
-        return False
-    forced_tool = arguments.get("__forced_tool")
-    if isinstance(forced_tool, str) and forced_tool != spec.tool:
-        return False
-    conversation = arguments.get("__conversation")
-    if not isinstance(conversation, dict) or conversation.get("mode") != (
-        "expert"
-    ):
-        return False
-    try:
-        router_hash = execution_command_hash(
-            ExecutionCommand(
-                agent_slug=EXPERT_ROUTER_AGENT_SLUG,
-                arguments=arguments,
-            )
-        )
-    except (TypeError, ValueError):
-        return False
-    return reservation_command_hash != router_hash
-
-
-def _terminal_event_intents(
-    *,
-    execution_id: str,
-    root_span_id: str,
-    agent_slug: str,
-    actor: str,
-    outcome: DriverOutcome,
-) -> tuple[ExecutionEventIntentV2, ExecutionEventIntentV2]:
-    """Build the bounded public facts owned by terminal settlement."""
-    if outcome.status is ExecutionStatus.SUCCEEDED:
-        execution_type = ExecutionEventType.EXECUTION_SUCCEEDED
-        span_type = ExecutionEventType.SPAN_SUCCEEDED
-        payload: dict[str, object] = {}
-    elif outcome.status is ExecutionStatus.PARTIAL:
-        execution_type = ExecutionEventType.EXECUTION_PARTIAL
-        span_type = ExecutionEventType.SPAN_PARTIAL
-        payload = {"code": "partial_result", "retryable": False}
-    elif outcome.status is ExecutionStatus.FAILED:
-        assert outcome.failure is not None
-        execution_type = ExecutionEventType.EXECUTION_FAILED
-        span_type = ExecutionEventType.SPAN_FAILED
-        payload = {
-            "code": outcome.failure.code,
-            "retryable": outcome.failure.retryable,
-        }
-    elif outcome.status is ExecutionStatus.CANCELLED:
-        execution_type = ExecutionEventType.EXECUTION_CANCELLED
-        span_type = ExecutionEventType.SPAN_CANCELLED
-        payload = {"outcome": "best_effort"}
-    elif outcome.status is ExecutionStatus.TIMED_OUT:
-        execution_type = ExecutionEventType.EXECUTION_TIMED_OUT
-        span_type = ExecutionEventType.SPAN_TIMED_OUT
-        payload = {"code": "execution_timed_out", "retryable": False}
-    else:  # pragma: no cover - guarded by DriverOutcome.terminal
-        raise ValueError("terminal outcome required")
-
-    event_status = EventStatus(outcome.status.value)
-    readable_status = outcome.status.value.replace("_", " ")
-    span_payload = (
-        {"phase": agent_slug}
-        if span_type
-        in {
-            ExecutionEventType.SPAN_SUCCEEDED,
-            ExecutionEventType.SPAN_CANCELLED,
-        }
-        else payload
-    )
-    span_intent = parse_execution_event_intent_v2(
-        {
-            "type": span_type.value,
-            "status": event_status.value,
-            "source": actor,
-            "span_id": root_span_id,
-            "attempt": 1,
-            "summary": {
-                "key": f"agent.{agent_slug}.{outcome.status.value}",
-                "text": f"Agent {readable_status}",
-            },
-            "public_payload": span_payload,
-            "idempotency_key": f"terminal:{execution_id}:root-span",
-        }
-    )
-    execution_intent = parse_execution_event_intent_v2(
-        {
-            "type": execution_type.value,
-            "status": event_status.value,
-            "source": actor,
-            "span_id": root_span_id,
-            "attempt": 1,
-            "summary": {
-                "key": f"execution.{outcome.status.value}",
-                "text": f"Execution {readable_status}",
-            },
-            "public_payload": payload,
-            "idempotency_key": f"terminal:{execution_id}:execution",
-        }
-    )
-    return span_intent, execution_intent
-
-
-def _public_result_json(outcome: DriverOutcome) -> str | None:
-    """Serialize the public result, never private transport data."""
-    if outcome.result is None:
-        return None
-    result = outcome.result
-    public_result: dict[str, Any] = {
-        "answer": result.answer,
-        "follow_up_questions": list(result.follow_up_questions),
-        "references": [dict(reference) for reference in result.references],
-        "artifacts": [
-            {
-                "role": artifact.role,
-                "target_kind": str(artifact.target_kind),
-                "target_id": artifact.target_id,
-                "name": artifact.name,
-                "media_type": artifact.media_type,
-                "size_bytes": artifact.size_bytes,
-            }
-            for artifact in result.artifacts
-        ],
-        "metadata": dict(result.public_metadata or {}),
-    }
-    if result.tabular is not None:
-        public_result["tabular"] = result.tabular.to_public_dict()
-    return json.dumps(
-        public_result,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _terminal_expiry(status: ExecutionStatus, now: datetime) -> str:
-    """Apply the existing run-retention policy to V2 terminal settlement."""
-    config = ApiConfig()
-    delta = (
-        timedelta(hours=config.API_RUN_TTL_OK_HOURS)
-        if status is ExecutionStatus.SUCCEEDED
-        else timedelta(days=config.API_RUN_TTL_FAIL_DAYS)
-    )
-    return (now + delta).isoformat()
-
-
-def _durable_command_json(command: Mapping[str, Any] | None) -> str | None:
-    if command is None:
-        return None
-    try:
-        encoded = json.dumps(
-            command,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-    except (TypeError, UnicodeEncodeError) as exc:
-        raise ValueError("durable command is not canonical JSON") from exc
-    if len(encoded.encode("utf-8")) > 262_144:
-        raise ValueError("durable command exceeds size limit")
-    return encoded
-
-
-_TERMINAL_EXECUTION_STATUSES = {
-    ExecutionStatus.SUCCEEDED,
-    ExecutionStatus.PARTIAL,
-    ExecutionStatus.FAILED,
-    ExecutionStatus.CANCELLED,
-    ExecutionStatus.TIMED_OUT,
-}
+for _method, _signature in (
+    (SQLiteExecutionReservationRepository.reserve, RESERVE_SIGNATURE),
+    (
+        SQLiteExecutionReservationRepository.claim_operation,
+        OPERATION_CLAIM_SIGNATURE,
+    ),
+    (
+        SQLiteExecutionReservationRepository.record_observation,
+        OBSERVATION_SIGNATURE,
+    ),
+):
+    setattr(_method, "__signature__", _signature)
+del _method, _signature
 
 
 __all__ = [

@@ -15,6 +15,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from tests.support.attachment_fakes import EXPERT_ATTACHMENT_ALLOWED_TOOLS
+from tests.support.execution_event_fixtures import (
+    expected_trace_detail_limits,
+    expected_unknown_operation_presenter,
+)
+from tests.support.public_agent_catalog_expectations import (
+    EXPECTED_EXECUTION_DRIVERS,
+    EXPECTED_EXECUTION_RUNTIME_FEATURES,
+    EXPECTED_EXECUTION_TARGET_KINDS,
+    EXPECTED_PRESENTER_OPERATIONS,
+)
 
 from mcp_server_phytomni.agents.research.scientific_formats import (
     advertised_research_formats,
@@ -56,6 +66,11 @@ from mcp_server_phytomni.runtime.attachment_assets import (
     ResolvedAsset,
     ResolvedAttachmentBundle,
 )
+from mcp_server_phytomni.runtime.resumable_uploads import (
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_FILES,
+    MAX_UPLOAD_TOTAL_BYTES,
+)
 
 pytestmark = pytest.mark.server
 
@@ -81,8 +96,8 @@ _EXPECTED_ATTACHMENTS = {
     "research": (True, True, False),
     "brief_gene": (False, False, False),
     "deep_genome": (False, False, False),
-    "design": (True, False, False),
-    "network": (True, False, False),
+    "design": (False, False, False),
+    "network": (False, False, False),
 }
 
 _PUBLIC_CHANNEL_KEYS = {
@@ -132,15 +147,7 @@ def test_capability_descriptors_are_explicit_and_json_compatible() -> None:
         "major_version": 1,
         "resumable_history": True,
         "custom_event": "phyto.run_event",
-        "target_kinds": [
-            "event",
-            "artifact",
-            "report",
-            "todo",
-            "preview",
-            "download",
-            "trace",
-        ],
+        "target_kinds": list(EXPECTED_EXECUTION_TARGET_KINDS),
     }
 
     deep_genome = serialize_agent_capability("deep_genome")
@@ -172,29 +179,9 @@ def test_execution_runtime_capability_is_complete_and_bounded() -> None:
     capability.pop("operation_records")
 
     assert capability == {
-        "execution_runtime_major": 1,
-        "execution_journal_major": 2,
-        "stable_execution_identity": True,
-        "async_message_admission": True,
-        "content_resume": True,
-        "actions": True,
-        "cancellation": True,
-        "drivers": [
-            "local_graph",
-            "remote_task",
-            "remote_fanout",
-            "resumable_graph",
-            "hybrid",
-        ],
-        "target_kinds": [
-            "event",
-            "artifact",
-            "report",
-            "todo",
-            "preview",
-            "download",
-            "trace",
-        ],
+        **EXPECTED_EXECUTION_RUNTIME_FEATURES,
+        "drivers": list(EXPECTED_EXECUTION_DRIVERS),
+        "target_kinds": list(EXPECTED_EXECUTION_TARGET_KINDS),
         "limits": {
             "default_event_page": 50,
             "max_event_page": 200,
@@ -214,84 +201,30 @@ def test_execution_runtime_capability_is_complete_and_bounded() -> None:
 
 
 def test_execution_runtime_capability_advertises_operation_records() -> None:
+    """Verify execution runtime capability advertises operation records."""
     capability = serialize_execution_runtime_capability()["operation_records"]
 
     assert capability["major_version"] == 1
     assert capability["grouping_key"] == "work_unit_id"
     assert capability["attempt_history"] is True
-    assert capability["unknown_presenter"] == {
-        "operation_key": "operation.unknown",
-        "label_key": "execution.operation.generic",
-        "fallback_label": "Internal operation",
-        "semantic_kind": "operation",
-        "allowed_detail_fields": {},
-        "counter_units": [],
-        "target_kinds": [],
-    }
+    assert (
+        capability["unknown_presenter"]
+        == expected_unknown_operation_presenter()
+    )
     assert capability["execution_log_artifact_role"] == "execution_log"
     assert capability["liveness_clocks"] == [
         "last_execution_fact_at",
         "last_provider_contact_at",
         "last_stream_contact_at",
     ]
-    assert capability["limits"] == {
-        "max_operations_per_run": 256,
-        "max_attempt_history_per_operation": 8,
-        "max_detail_fields_per_operation": 16,
-        "liveness_coalesce_ms": 30_000,
-        "max_execution_log_bytes": 1_048_576,
-    }
+    assert capability["limits"] == expected_trace_detail_limits()
     assert {
         presenter["operation_key"] for presenter in capability["presenters"]
-    } == {
-        "analyst.collect_outputs",
-        "analyst.prepare_analysis",
-        "analyst.run_workflow",
-        "artifact.package",
-        "data.query",
-        "deep_genome.experiment_protocol",
-        "deep_genome.gather_context",
-        "deep_genome.prepare_plan",
-        "deep_genome.run_analysis_branches",
-        "deep_genome.synthesize_results",
-        "deep_genome.workflow",
-        "design.consolidate_candidates",
-        "design.package_outputs",
-        "design.run_branches",
-        "design.validate_target",
-        "gene_network.infer_network",
-        "gene_network.prepare_inputs",
-        "gene_network.rank_regulators",
-        "gene_network.synthesize_results",
-        "gene_network.validate_target",
-        "knowledge.search",
-        "model.generate",
-        "remote.analysis",
-        "remote.reconcile",
-        "remote.submit",
-        "research.collect_evidence",
-        "research.decompose_objectives",
-        "research.dispatch_work",
-        "research.package_outputs",
-        "research.synthesize_results",
-        "review.citation_check",
-        "review.draft_dimension",
-        "review.final_synthesis",
-        "review.retrieve_dimension",
-        "tool.analyst",
-        "tool.brief_gene",
-        "tool.chat",
-        "tool.data",
-        "tool.deep_genome",
-        "tool.design",
-        "tool.knowledge",
-        "tool.network",
-        "tool.research",
-        "tool.review",
-    }
+    } == EXPECTED_PRESENTER_OPERATIONS
 
 
 def test_agent_work_trace_capability_is_truthful_for_every_agent() -> None:
+    """Verify agent work trace capability is truthful for every agent."""
     network = serialize_agent_capability("network")["work_trace"]
     assert network == {
         "major_version": 1,
@@ -512,8 +445,6 @@ async def test_agent_catalog_keeps_generic_capabilities_config_independent(
                     "review",
                     "analyst",
                     "research",
-                    "design",
-                    "network",
                 }
             ),
         ),
@@ -568,14 +499,14 @@ def test_expert_attachment_filter_intersects_capability() -> None:
     assert filter_tools_for_expert_attachments(
         allowed_tools=allowed,
         requirement=ExpertAttachmentRequirement(managed_assets=True),
-    ) == ("DigitalDesignAgent", "AnalystAgent", "ChatAgent")
+    ) == ("AnalystAgent", "ChatAgent")
     assert filter_tools_for_expert_attachments(
         allowed_tools=("unknown-tool", *allowed),
         requirement=ExpertAttachmentRequirement(
             managed_assets=True,
             legacy_documents=True,
         ),
-    ) == ("DigitalDesignAgent", "AnalystAgent", "ChatAgent")
+    ) == ("AnalystAgent", "ChatAgent")
 
 
 def test_required_attachment_channels_follow_bundle_partitions() -> None:
@@ -638,7 +569,7 @@ def test_capability_golden_is_byte_stable() -> None:
     assert json.loads(golden) == actual
     assert golden == json.dumps(actual, ensure_ascii=False, indent=2) + "\n"
     assert hashlib.sha256(golden.encode("utf-8")).hexdigest() == (
-        "f3275947e386d16005acd89cfc227c18bee47ada57ab047325ba89b37152853d"
+        "723113e4394695f082fbb899ea3873b24743fda6b758ca58e6de6868d6deb4d5"
     )
 
 
@@ -647,20 +578,18 @@ def test_attachment_limits_are_public_and_exact() -> None:
     for slug, channel in (
         ("chat", "document_context"),
         ("analyst", "datasets"),
-        ("design", "document_context"),
-        ("network", "document_context"),
     ):
         limits = serialize_agent_capability(slug)["attachments"][channel]
-        assert limits["max_file_bytes"] == 26_214_400
-        assert limits["max_files"] == 10
-        assert limits["max_total_bytes"] == 52_428_800
+        assert limits["max_file_bytes"] == MAX_UPLOAD_BYTES
+        assert limits["max_files"] == MAX_UPLOAD_FILES
+        assert limits["max_total_bytes"] == MAX_UPLOAD_TOTAL_BYTES
 
 
 @pytest.mark.parametrize("slug", ["design", "network"])
-def test_design_and_network_accept_only_document_context(slug: str) -> None:
-    """The two added channels do not enable datasets or Expert forwarding."""
+def test_design_and_network_accept_no_attachment_channels(slug: str) -> None:
+    """Design and Network do not advertise document or dataset inputs."""
     attachments = serialize_agent_capability(slug)["attachments"]
-    assert attachments["document_context"] is not None
+    assert attachments["document_context"] is None
     assert attachments["datasets"] is None
     assert attachments["expert_forwarding"] is False
 

@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import pytest
@@ -20,6 +20,7 @@ from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 __all__ = [
     "assert_duplicate_attachment_response",
     "assert_degraded_tracking_response",
+    "build_conversation_context_envelope",
     "build_instant_chat_context_envelope",
     "expected_context_staged_value",
     "install_tool_handler",
@@ -56,31 +57,57 @@ def build_instant_chat_context_envelope(
     ledger_cursor: int = 1,
 ) -> dict[str, Any]:
     """Build the shared Instant Chat V1 envelope fixture."""
+    envelope = build_conversation_context_envelope(
+        turn_id,
+        mode="instant",
+        content="What is photosynthesis?",
+        requested_agent_id=None,
+        allowed_agent_ids=("ChatAgent",),
+    )
+    envelope.update(
+        {
+            "conversation_key": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7",
+            "dialogue_id": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8",
+            "ledger_cursor": ledger_cursor,
+            "history_delta": [
+                {
+                    "turn_id": turn_id,
+                    "role": "user",
+                    "content": "What is photosynthesis?",
+                }
+            ],
+            "artifact_refs": [],
+        }
+    )
+    return envelope
+
+
+def build_conversation_context_envelope(
+    turn_id: str,
+    *,
+    mode: Literal["instant", "expert"],
+    content: str,
+    requested_agent_id: str | None,
+    allowed_agent_ids: Sequence[str],
+) -> dict[str, Any]:
+    """Build the common required fields for a V1 conversation envelope."""
     return {
         "schema_version": 1,
-        "conversation_key": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7",
-        "dialogue_id": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8",
+        "conversation_key": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad6",
+        "dialogue_id": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7",
         "turn_id": turn_id,
         "request_id": f"request-{turn_id}",
         "operation": "append",
-        "mode": "instant",
+        "mode": mode,
         "current_message": {
-            "content": "What is photosynthesis?",
+            "content": content,
             "locale": "en-US",
         },
-        "requested_agent_id": None,
-        "allowed_agent_ids": ["ChatAgent"],
-        "ledger_cursor": ledger_cursor,
+        "requested_agent_id": requested_agent_id,
+        "allowed_agent_ids": list(allowed_agent_ids),
+        "ledger_cursor": 0,
         "ledger_version": "a" * 64,
         "base_business_context_version": 0,
-        "history_delta": [
-            {
-                "turn_id": turn_id,
-                "role": "user",
-                "content": "What is photosynthesis?",
-            }
-        ],
-        "artifact_refs": [],
     }
 
 

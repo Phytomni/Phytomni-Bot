@@ -39,6 +39,7 @@ from ..runtime.research_input_store import (
 )
 from ..runtime.task_reconcile import bind_research_relaunch_outbox
 from ..storage.path_policy import IdFactory
+from .research_http_input import ResearchHttpAdmissionInput
 from .research_launch import launch_worker
 from .research_root import bind_default_research_root_request_factory
 
@@ -301,33 +302,6 @@ class ResearchAdmissionOutcome:
     replay: bool
     worker_owner: bool
     status_code: Literal[200, 202]
-
-
-class ResearchHttpAdmissionInput:
-    """Opaque HTTP-owned input passed to Research admission.
-
-    Values stay in one immutable-shaped bag so the flat keyword contract is
-    preserved without duplicating projected legacy input fields.
-    """
-
-    __slots__ = ("_values",)
-
-    def __init__(self, **values: Any) -> None:
-        object.__setattr__(self, "_values", dict(values))
-
-    def __getattr__(self, name: str) -> Any:
-        try:
-            return self._values[name]
-        except KeyError as exc:
-            raise AttributeError(name) from exc
-
-    def as_dict(self) -> dict[str, Any]:
-        """Return a detached mapping for diagnostics and tests."""
-        return dict(self._values)
-
-    def get(self, name: str, default: Any = None) -> Any:
-        """Read one optional value without raising for malformed input."""
-        return self._values.get(name, default)
 
 
 class _ResearchPreflightContext:

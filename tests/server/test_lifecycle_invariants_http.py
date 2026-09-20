@@ -14,7 +14,10 @@ import httpx
 import pytest
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
-from tests.support.asyncio_helpers import wait_until
+from tests.support.http_execution_fixtures import (
+    install_terminal_settlement_failure,
+    reserve_running_execution,
+)
 from tests.support.http_fakes import (
     install_tool_handler,
     open_asgi_client,
@@ -35,13 +38,6 @@ from mcp_server_phytomni.runtime.checkpoint_backend import (
 from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
     SQLiteExecutionJournal,
 )
-from mcp_server_phytomni.runtime.execution_journal_v2 import ExecutionStatus
-from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-    SQLiteExecutionReservationRepository,
-)
-from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-    ExecutionCommand,
-)
 from mcp_server_phytomni.runtime.request_context import (
     request_context,
 )
@@ -53,36 +49,6 @@ from mcp_server_phytomni.runtime.submit_recorder import (
 )
 
 pytestmark = pytest.mark.server
-
-
-def _reserve_remote_fixture(
-    db_path: str,
-    *,
-    run_id: str,
-    owner: str,
-    agent: str = "analyst",
-) -> None:
-    """Reserve the one canonical Runtime row used by submit recording."""
-    execution_id = f"turn-{run_id}"
-    reservations = SQLiteExecutionReservationRepository(
-        db_path,
-        run_id_factory=lambda: run_id,
-    )
-    reservations.reserve(
-        owner=owner,
-        execution_id=execution_id,
-        fingerprint_version=1,
-        fingerprint=f"fixture:{execution_id}",
-        command=ExecutionCommand(agent_slug=agent, arguments={}),
-    )
-    assert reservations.record_observation(
-        owner=owner,
-        execution_id=execution_id,
-        status=ExecutionStatus.RUNNING,
-        tracking_health="healthy",
-        cancellation_state="unsupported",
-        next_attempt_at=None,
-    )
 
 
 @pytest.fixture(autouse=True)
@@ -362,20 +328,21 @@ async def _pause_restart_review(
         "review",
         {"user_query": "Review after restart.", "obs_file_list": []},
     )
-    assert paused.status_code == 202
-    run_id = paused.json()["id"]
-
-    def settled() -> bool:
-        record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
-        return record is not None and record.status == "input_required"
-
-    await wait_until(settled)
+    assert paused.status_code == 200, paused.text
+    paused_body = paused.json()
+    assert paused_body["status"] == "input_required"
+    run_id = paused_body["id"]
+    assert paused_body["run_id"] == run_id
+    assert paused_body["interrupt"]["thread_id"] == run_id
+    assert RunRegistry(tasks_db_path).get_run(run_id, owner="u1") is not None
     fetched = await client.get(
         f"/v1/runs/{run_id}",
         headers=_auth_headers(api_key),
     )
     assert fetched.status_code == 200
     body = fetched.json()
+    assert body["status"] == "input_required"
+    assert body["result"]["interrupt"] == paused_body["interrupt"]
     surface_id = body["result"]["interrupt"]["draft"]["a2ui"]["surface_id"]
     return run_id, surface_id
 
@@ -443,16 +410,10 @@ async def test_sync_persistence_failure_is_not_success(
     async def fake(_args: Any) -> dict[str, Any]:
         return {"answer": "ok", "doc_list": []}
 
-    def fail_terminal_settlement(*_args: Any, **_kwargs: Any) -> bool:
-        raise sqlite3.OperationalError("private database failure")
-
-    install_tool_handler(
-        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
-    )
-    monkeypatch.setattr(
-        SQLiteExecutionReservationRepository,
-        "settle_terminal",
-        fail_terminal_settlement,
+    install_terminal_settlement_failure(
+        monkeypatch,
+        fake,
+        private_detail="private database failure",
     )
 
     response = await post_native_run(
@@ -507,10 +468,11 @@ def test_resolve_remote_run_uses_durable_owner_scoped_row(
 ) -> None:
     """A durable owner row supplies the canonical run and task identities."""
     run_id = "run-owner-1"
-    _reserve_remote_fixture(
+    reserve_running_execution(
         tasks_db_path,
         run_id=run_id,
         owner="owner-1",
+        agent="analyst",
     )
     with request_context("owner-1", "request-1", run_id):
         record_submitted_task(
@@ -539,10 +501,11 @@ def test_resolve_remote_run_missing_row_degrades_without_leaking_owner(
 ) -> None:
     """A missing owner-scoped row retains only this request's accepted ids."""
     run_id = "run-owner-1-private"
-    _reserve_remote_fixture(
+    reserve_running_execution(
         tasks_db_path,
         run_id=run_id,
         owner="owner-1",
+        agent="analyst",
     )
     with request_context("owner-1", "request-1", run_id):
         record_submitted_task(

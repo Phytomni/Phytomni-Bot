@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal, NoReturn
+from importlib import import_module
+from typing import Annotated, Any, Literal, NoReturn
 
 from pydantic import (
     BaseModel,
@@ -32,11 +32,13 @@ from .execution_stage_v2 import (
 )
 from .public_execution_safety import (
     PublicExecutionDataError,
+    is_utc_timestamp,
     validate_public_execution_size,
     validate_public_execution_value,
 )
 
 _IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+_NonNegativeCounter = Annotated[int, Field(ge=0)]
 TerminalStatusV2 = Literal[
     "succeeded", "partial", "failed", "cancelled", "timed_out"
 ]
@@ -271,17 +273,18 @@ class ProgressPublicPayload(PhasePublicPayload):
             if self.observation is not None or self.elapsed_ms is not None:
                 raise ValueError("progress_observation_conflict")
             if self.unit is not None:
-                from .execution_trace_detail import (
-                    OPERATION_PRESENTER_REGISTRY,
+                presenter_module = import_module(
+                    ".execution_trace_detail", __package__
                 )
-
-                presented = OPERATION_PRESENTER_REGISTRY.present(
-                    self.phase,
-                    progress={
-                        "completed": self.completed,
-                        "total": self.total,
-                        "unit": self.unit,
-                    },
+                presented = (
+                    presenter_module.OPERATION_PRESENTER_REGISTRY.present(
+                        self.phase,
+                        progress={
+                            "completed": self.completed,
+                            "total": self.total,
+                            "unit": self.unit,
+                        },
+                    )
                 )
                 if presented.progress != {
                     "completed": self.completed,
@@ -337,9 +340,10 @@ class WorkUnitPublicPayload(_PublicModel):
         """Reject fields or values outside the operation's finite schema."""
         if self.detail is None:
             return self
-        from .execution_trace_detail import OPERATION_PRESENTER_REGISTRY
-
-        presented = OPERATION_PRESENTER_REGISTRY.present(
+        presenter_module = import_module(
+            ".execution_trace_detail", __package__
+        )
+        presented = presenter_module.OPERATION_PRESENTER_REGISTRY.present(
             self.operation_key,
             detail=self.detail,
         )
@@ -448,6 +452,7 @@ class MessagePublicPayload(_PublicModel):
 
     @model_validator(mode="after")
     def validate_contiguous_chunk(self) -> MessagePublicPayload:
+        """Require chunk offsets and indices to form a valid message slice."""
         if self.offset != self.base_offset + len(self.text):
             raise ValueError("message chunk offset mismatch")
         if self.offset > self.total_length:
@@ -533,21 +538,25 @@ _WORK_UNIT_TYPES = {
     ExecutionEventType.WORK_UNIT_SUCCEEDED,
     ExecutionEventType.WORK_UNIT_CANCELLED,
 }
-_CANCEL_PAYLOAD = CancellationPublicPayload
-
 _PAYLOAD_MODELS: dict[ExecutionEventType, type[BaseModel]] = {
     **{event_type: EmptyPublicPayload for event_type in _EMPTY_TYPES},
     **{event_type: PhasePublicPayload for event_type in _PHASE_TYPES},
     **{event_type: FailurePublicPayload for event_type in _FAILURE_TYPES},
     **{event_type: WorkUnitPublicPayload for event_type in _WORK_UNIT_TYPES},
-    ExecutionEventType.EXECUTION_CANCELLATION_REQUESTED: _CANCEL_PAYLOAD,
-    ExecutionEventType.EXECUTION_CANCELLED: _CANCEL_PAYLOAD,
+    ExecutionEventType.EXECUTION_CANCELLATION_REQUESTED: (
+        CancellationPublicPayload
+    ),
+    ExecutionEventType.EXECUTION_CANCELLED: CancellationPublicPayload,
     ExecutionEventType.SPAN_PROGRESS: ProgressPublicPayload,
     ExecutionEventType.SPAN_RETRY_SCHEDULED: RetryPublicPayload,
     ExecutionEventType.WORK_UNIT_PROGRESS: ProgressPublicPayload,
     ExecutionEventType.WORK_UNIT_RETRY_SCHEDULED: RetryPublicPayload,
-    ExecutionEventType.WORK_UNIT_CANCELLATION_REQUESTED: _CANCEL_PAYLOAD,
-    ExecutionEventType.WORK_UNIT_CANCELLATION_CONFIRMED: _CANCEL_PAYLOAD,
+    ExecutionEventType.WORK_UNIT_CANCELLATION_REQUESTED: (
+        CancellationPublicPayload
+    ),
+    ExecutionEventType.WORK_UNIT_CANCELLATION_CONFIRMED: (
+        CancellationPublicPayload
+    ),
     ExecutionEventType.TODO_SNAPSHOT: TodoSnapshotPublicPayload,
     ExecutionEventType.REASONING_SUMMARY: PublicTextPayload,
     ExecutionEventType.DECISION_NOTE: PublicTextPayload,
@@ -764,6 +773,7 @@ class PublicOperationProgressV2(_PublicModel):
 
     @model_validator(mode="after")
     def validate_progress(self) -> PublicOperationProgressV2:
+        """Reject progress whose completed count exceeds its total."""
         if self.completed > self.total:
             raise ValueError("progress_exceeds_total")
         return self
@@ -812,9 +822,9 @@ class ExecutionContextStageV2(_PublicModel):
     route_reason_code: str = Field(
         min_length=1, max_length=64, pattern=r"^[A-Z][A-Z0-9_]*$"
     )
-    base_business_context_version: int = Field(ge=0)
-    proposed_business_context_version: int = Field(ge=0)
-    last_applied_ledger_cursor: int = Field(ge=0)
+    base_business_context_version: _NonNegativeCounter
+    proposed_business_context_version: _NonNegativeCounter
+    last_applied_ledger_cursor: _NonNegativeCounter
     context_truncated: bool
     context_rebuilt: bool
 
@@ -873,14 +883,7 @@ def _fail(reason: str) -> NoReturn:
 
 
 def _validate_utc(value: object) -> None:
-    if not isinstance(value, str):
-        _fail("invalid_occurred_at")
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        _fail("invalid_occurred_at")
-    offset = parsed.utcoffset()
-    if offset is None or offset.total_seconds() != 0:
+    if not is_utc_timestamp(value):
         _fail("invalid_occurred_at")
 
 

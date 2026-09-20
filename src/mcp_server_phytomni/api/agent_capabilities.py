@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, TypedDict, Unpack
 
 from ..agents.research.scientific_formats import advertised_research_formats
 from ..config.api_limits import ApiLimitsConfig
@@ -211,6 +211,7 @@ class AgentWorkTraceCapabilityV1:
     trace_target: WorkTraceFeatureState = "unsupported"
 
     def to_public_dict(self) -> dict[str, Any]:
+        """Serialize the versioned work-trace capability for discovery."""
         payload: dict[str, Any] = {
             "major_version": 1,
             "state": self.state,
@@ -238,20 +239,123 @@ class ExpertAttachmentRequirement:
     legacy_documents: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
+class _AgentPresentationCapability:
+    """Report and artifact behavior grouped as one immutable value."""
+
+    report_states: tuple[str, ...] = ()
+    artifacts: bool = False
+    degraded_outcomes: bool = False
+
+
+class _AgentCapabilityOptions(TypedDict, total=False):
+    """Keyword-compatible construction options for ``AgentCapability``."""
+
+    streaming: bool
+    interactive: bool
+    report_states: tuple[str, ...]
+    artifacts: bool
+    degraded_outcomes: bool
+    attachments: AttachmentCapability
+    execution_events: ExecutionEventsCapabilityV1
+    work_trace: AgentWorkTraceCapabilityV1 | None
+
+
+_AGENT_CAPABILITY_FIELDS = (
+    "streaming",
+    "interactive",
+    "report_states",
+    "artifacts",
+    "degraded_outcomes",
+    "attachments",
+    "execution_events",
+    "work_trace",
+)
+
+
+def _agent_capability_options(
+    values: tuple[Any, ...],
+    options: _AgentCapabilityOptions,
+) -> dict[str, Any]:
+    """Resolve the dataclass's established positional and keyword inputs."""
+    if len(values) > len(_AGENT_CAPABILITY_FIELDS):
+        raise TypeError("too many positional AgentCapability values")
+    resolved: dict[str, Any] = dict(options)
+    unknown = set(resolved).difference(_AGENT_CAPABILITY_FIELDS)
+    if unknown:
+        raise TypeError(f"unexpected keyword argument '{sorted(unknown)[0]}'")
+    for name, value in zip(_AGENT_CAPABILITY_FIELDS, values, strict=False):
+        if name in resolved:
+            raise TypeError(f"multiple values for argument '{name}'")
+        resolved[name] = value
+    return resolved
+
+
+@dataclass(frozen=True, init=False)
 class AgentCapability:
     """Consumer-facing facts for one canonical agent slug."""
 
     streaming: bool = False
     interactive: bool = False
-    report_states: tuple[str, ...] = ()
-    artifacts: bool = False
-    degraded_outcomes: bool = False
+    _presentation: _AgentPresentationCapability = (
+        _AgentPresentationCapability()
+    )
     attachments: AttachmentCapability = AttachmentCapability()
     execution_events: ExecutionEventsCapabilityV1 = (
         EXECUTION_EVENTS_CAPABILITY_V1
     )
     work_trace: AgentWorkTraceCapabilityV1 | None = None
+
+    def __init__(
+        self,
+        *values: Any,
+        **options: Unpack[_AgentCapabilityOptions],
+    ) -> None:
+        """Build a descriptor while retaining the established keyword API."""
+        resolved = _agent_capability_options(values, options)
+        object.__setattr__(self, "streaming", resolved.get("streaming", False))
+        object.__setattr__(
+            self, "interactive", resolved.get("interactive", False)
+        )
+        object.__setattr__(
+            self,
+            "_presentation",
+            _AgentPresentationCapability(
+                report_states=resolved.get("report_states", ()),
+                artifacts=resolved.get("artifacts", False),
+                degraded_outcomes=resolved.get("degraded_outcomes", False),
+            ),
+        )
+        object.__setattr__(
+            self,
+            "attachments",
+            resolved.get("attachments", AttachmentCapability()),
+        )
+        object.__setattr__(
+            self,
+            "execution_events",
+            resolved.get("execution_events", EXECUTION_EVENTS_CAPABILITY_V1),
+        )
+        object.__setattr__(
+            self,
+            "work_trace",
+            resolved.get("work_trace"),
+        )
+
+    @property
+    def report_states(self) -> tuple[str, ...]:
+        """Return lifecycle states that expose report artifacts."""
+        return self._presentation.report_states
+
+    @property
+    def artifacts(self) -> bool:
+        """Return whether the Agent can publish downloadable artifacts."""
+        return self._presentation.artifacts
+
+    @property
+    def degraded_outcomes(self) -> bool:
+        """Return whether partial provider outcomes remain reportable."""
+        return self._presentation.degraded_outcomes
 
     def to_public_dict(self) -> dict[str, Any]:
         """Serialize with JSON-compatible deterministic values."""
@@ -355,14 +459,12 @@ _CAPABILITIES: dict[str, AgentCapability] = {
         report_states=("final",),
         artifacts=True,
         degraded_outcomes=True,
-        attachments=AttachmentCapability(_DOCUMENTS, None, False),
         work_trace=_PROVIDER_WORK_TRACE,
     ),
     "network": AgentCapability(
         report_states=("final",),
         artifacts=True,
         degraded_outcomes=True,
-        attachments=AttachmentCapability(_DOCUMENTS, None, False),
         work_trace=_GENE_NETWORK_WORK_TRACE,
     ),
 }

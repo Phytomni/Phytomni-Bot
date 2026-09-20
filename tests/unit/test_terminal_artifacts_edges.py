@@ -216,7 +216,9 @@ async def test_collect_set_caps_default_listing_while_walking(
         cap=2,
     )
 
-    assert seen["limit"] == getattr(terminal_artifacts, "_DEFAULT_PATH_CAP") + 1
+    assert seen["limit"] == (
+        getattr(terminal_artifacts, "_DEFAULT_PATH_CAP") + 1
+    )
     assert len(result.artifacts) == 2
     assert result.warnings[0].code == "artifact_listing_truncated"
 

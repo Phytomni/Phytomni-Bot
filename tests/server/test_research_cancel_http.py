@@ -137,24 +137,35 @@ async def test_cancel_research_run_cascades_after_sent(
         "deep_genome",
     ),
 )
-async def test_cancel_owner_run_accepts_every_agent(
+async def test_legacy_cancel_rejects_non_research_agent(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
     agent: str,
 ) -> None:
-    """Any owner-scoped running agent can be cancelled."""
+    """The legacy command cannot become a second lifecycle writer."""
     run_id = f"run-http-{agent}"
-    RunRegistry(tasks_db_path).create_run(
+    registry = RunRegistry(tasks_db_path)
+    registry.create_run(
         RunSpec(run_id, "u1", agent, "api"),
         outcome=RunOutcome(status="running"),
     )
+    before = registry.get_run(run_id, owner="u1")
+    assert before is not None
+    event_store = SQLiteExecutionEventStore(tasks_db_path)
+    before_events = event_store.list_events(run_id, owner="u1")
+    assert before_events is not None
+
     response = await api_client.post(
         f"/v1/runs/{run_id}/cancel",
         headers={"Authorization": f"Bearer {issued_api_key}"},
     )
-    assert response.status_code == 200
-    assert response.json()["status"] == "cancelled"
+
+    assert response.status_code == 409
+    assert registry.get_run(run_id, owner="u1") == before
+    after_events = event_store.list_events(run_id, owner="u1")
+    assert after_events is not None
+    assert before_events.items == after_events.items == ()
 
 
 async def test_cancel_owner_run_conflicts_after_success(

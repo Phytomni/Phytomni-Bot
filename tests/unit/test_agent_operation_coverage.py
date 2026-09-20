@@ -8,90 +8,31 @@ from __future__ import annotations
 
 from pathlib import Path
 
-EXPECTED_COVERAGE = {
-    "analyst": (
-        "analyst.prepare_analysis",
-        "analyst.run_workflow",
-        "analyst.collect_outputs",
-        "artifact.package",
-        "remote.analysis",
-        "remote.reconcile",
-        "tool.analyst",
-    ),
-    "brief_gene": ("model.generate", "tool.brief_gene"),
-    "chat": ("model.generate", "tool.chat"),
-    "data": ("data.query", "tool.data"),
-    "deep_genome": (
-        "deep_genome.prepare_plan",
-        "deep_genome.gather_context",
-        "deep_genome.run_analysis_branches",
-        "deep_genome.experiment_protocol",
-        "deep_genome.synthesize_results",
-        "artifact.package",
-        "deep_genome.workflow",
-        "model.generate",
-        "remote.analysis",
-        "remote.reconcile",
-        "tool.deep_genome",
-    ),
-    "design": (
-        "design.validate_target",
-        "design.run_branches",
-        "design.consolidate_candidates",
-        "design.package_outputs",
-        "artifact.package",
-        "remote.analysis",
-        "remote.reconcile",
-        "tool.design",
-    ),
-    "knowledge": ("knowledge.search", "model.generate", "tool.knowledge"),
-    "network": (
-        "artifact.package",
-        "gene_network.infer_network",
-        "gene_network.prepare_inputs",
-        "gene_network.rank_regulators",
-        "gene_network.synthesize_results",
-        "gene_network.validate_target",
-        "remote.analysis",
-        "remote.reconcile",
-        "tool.network",
-    ),
-    "research": (
-        "research.decompose_objectives",
-        "research.dispatch_work",
-        "research.collect_evidence",
-        "research.synthesize_results",
-        "research.package_outputs",
-        "artifact.package",
-        "model.generate",
-        "remote.analysis",
-        "remote.reconcile",
-        "tool.research",
-    ),
-    "review": (
-        "model.generate",
-        "review.citation_check",
-        "review.draft_dimension",
-        "review.final_synthesis",
-        "review.retrieve_dimension",
-        "tool.review",
-    ),
-}
+from tests.support.public_agent_catalog_expectations import (
+    EXPECTED_TRACE_OPERATIONS,
+)
+
+from mcp_server_phytomni.runtime.execution_stage_v2 import (
+    ExecutionStageSignal,
+    empty_execution_stage_state,
+    reduce_execution_stage,
+)
+from mcp_server_phytomni.runtime.execution_trace_detail import (
+    AGENT_OPERATION_COVERAGE,
+    OPERATION_PRESENTER_REGISTRY,
+    serialize_operation_record_capability,
+)
 
 
 def test_representative_agent_operation_coverage_is_finite_and_public() -> (
     None
 ):
-    from mcp_server_phytomni.runtime.execution_trace_detail import (
-        AGENT_OPERATION_COVERAGE,
-        OPERATION_PRESENTER_REGISTRY,
-        serialize_operation_record_capability,
-    )
+    """Verify representative agent operation coverage is finite and public."""
 
-    assert AGENT_OPERATION_COVERAGE == EXPECTED_COVERAGE
+    assert AGENT_OPERATION_COVERAGE == EXPECTED_TRACE_OPERATIONS
     assert serialize_operation_record_capability()["agent_coverage"] == {
         agent: list(operations)
-        for agent, operations in EXPECTED_COVERAGE.items()
+        for agent, operations in EXPECTED_TRACE_OPERATIONS.items()
     }
     for operations in AGENT_OPERATION_COVERAGE.values():
         assert all(
@@ -103,6 +44,7 @@ def test_representative_agent_operation_coverage_is_finite_and_public() -> (
 def test_coverage_uses_shared_seams_instead_of_changing_agent_results() -> (
     None
 ):
+    """Verify coverage uses shared seams instead of changing agent results."""
     root = Path(__file__).parents[2] / "src" / "mcp_server_phytomni" / "agents"
     sources = {
         "knowledge": (root / "knowledge" / "retrieval.py").read_text(),
@@ -122,11 +64,7 @@ def test_coverage_uses_shared_seams_instead_of_changing_agent_results() -> (
 
 
 def test_network_submission_and_terminal_events_are_distinct() -> None:
-    from mcp_server_phytomni.runtime.execution_stage_v2 import (
-        ExecutionStageSignal,
-        empty_execution_stage_state,
-        reduce_execution_stage,
-    )
+    """Verify network submission and terminal events are distinct."""
 
     state = empty_execution_stage_state()
     state = reduce_execution_stage(

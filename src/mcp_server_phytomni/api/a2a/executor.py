@@ -56,7 +56,7 @@ from ...runtime.run_registry import (
 )
 from ...storage.path_policy import IdFactory
 from .events import ArtifactUpdateOptions, build_artifact_update
-from .messages import map_a2a_message
+from .messages import A2AToolRequest, map_a2a_message
 from .progress import A2AProgressProjector
 from .status import build_task_status
 
@@ -210,6 +210,98 @@ class _ArtifactStreamState:
     emitted_text: bool = False
     pending_text: str | None = None
     structured: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class _A2AStreamSession:
+    """Mutable protocol projection state for one streaming request."""
+
+    task: Task
+    registration: A2ARegistration
+    projector: A2AProgressProjector
+    artifacts: _ArtifactStreamState = field(
+        default_factory=_ArtifactStreamState
+    )
+    submitted_status_skipped: bool = False
+    registered: bool = False
+
+
+def _build_stream_session(
+    params: SendMessageRequest,
+    request: A2AToolRequest,
+    agent: str,
+) -> _A2AStreamSession:
+    """Create task, persistence metadata, and projectors for one stream."""
+    task_id = params.message.task_id or _ID_FACTORY.new_id("task", "a2a")
+    context_id = params.message.context_id or _ID_FACTORY.new_id(
+        "context", "a2a"
+    )
+    task = Task(
+        id=task_id,
+        context_id=context_id,
+        status=build_task_status("submitted"),
+    )
+    task.history.append(params.message)
+    registration = A2ARegistration(
+        run_id=task_id,
+        agent=agent,
+        correlation=A2ACorrelation(
+            task_id=task_id,
+            context_id=context_id,
+            message_id=params.message.message_id or None,
+        ),
+        request_info=RunRequestInfo(
+            dialogue_id=context_id,
+            query=_query_from_arguments(request.arguments),
+            tool_name=request.tool_name,
+            request_json=json_format.MessageToJson(params),
+            execution_id=f"turn-a2a-{task_id}",
+        ),
+    )
+    return _A2AStreamSession(
+        task=task,
+        registration=registration,
+        projector=A2AProgressProjector(task_id, context_id),
+    )
+
+
+def _ensure_stream_registered(
+    session: _A2AStreamSession,
+    writer: A2ARegistrationWriter | None,
+) -> None:
+    """Persist a streaming registration at most once when configured."""
+    if session.registered or writer is None:
+        return
+    writer(session.registration)
+    session.registered = True
+
+
+async def _project_stream_events(
+    stream: AsyncIterator[AguiEvent],
+    session: _A2AStreamSession,
+    writer: A2ARegistrationWriter | None,
+) -> AsyncGenerator[Event, None]:
+    """Project AG-UI events and guarantee eventual A2A registration."""
+    try:
+        async for event in stream:
+            _ensure_stream_registered(session, writer)
+            for update in _artifact_updates_for_event(
+                session.task.id,
+                session.task.context_id,
+                event,
+                session.artifacts,
+            ):
+                yield update
+            status_events, session.submitted_status_skipped = (
+                _status_events_for_stream(
+                    session.projector.project(event),
+                    session.submitted_status_skipped,
+                )
+            )
+            for status_event in status_events:
+                yield status_event
+    finally:
+        _ensure_stream_registered(session, writer)
 
 
 def _artifact_updates_for_event(
@@ -593,64 +685,23 @@ class A2ARequestHandler(RequestHandler):
             raise InvalidParamsError(
                 message=f"no HTTP agent mapping for {request.tool_name}"
             )
+        session = _build_stream_session(
+            params,
+            request,
+            self._tool_to_agent[request.tool_name],
+        )
+        yield session.task
 
-        task_id = params.message.task_id or _ID_FACTORY.new_id("task", "a2a")
-        context_id = params.message.context_id or _ID_FACTORY.new_id(
-            "context", "a2a"
-        )
-        task = Task(
-            id=task_id,
-            context_id=context_id,
-            status=build_task_status("submitted"),
-        )
-        task.history.append(params.message)
-        registration = A2ARegistration(
-            run_id=task_id,
-            agent=self._tool_to_agent[request.tool_name],
-            correlation=A2ACorrelation(
-                task_id=task_id,
-                context_id=context_id,
-                message_id=params.message.message_id or None,
-            ),
-            request_info=RunRequestInfo(
-                dialogue_id=context_id,
-                query=_query_from_arguments(request.arguments),
-                tool_name=request.tool_name,
-                request_json=json_format.MessageToJson(params),
-                execution_id=f"turn-a2a-{task_id}",
-            ),
-        )
-        yield task
-
-        projector = A2AProgressProjector(task_id, context_id)
-        submitted_status_skipped = False
-        artifact_state = _ArtifactStreamState()
         stream = self._invoke_agent_stream(
             request.tool_name,
             request.arguments,
-            run_id=task_id,
-            dialogue_id=context_id,
+            run_id=session.task.id,
+            dialogue_id=session.task.context_id,
         )
-        registered = False
-        try:
-            async for event in stream:
-                if not registered and self._record_a2a is not None:
-                    self._record_a2a(registration)
-                    registered = True
-                for update in _artifact_updates_for_event(
-                    task_id, context_id, event, artifact_state
-                ):
-                    yield update
-                status_events, submitted_status_skipped = (
-                    _status_events_for_stream(
-                        projector.project(event), submitted_status_skipped
-                    )
-                )
-                for status_event in status_events:
-                    yield status_event
-        finally:
-            if not registered and self._record_a2a is not None:
-                self._record_a2a(registration)
+        async for event in _project_stream_events(
+            stream, session, self._record_a2a
+        ):
+            yield event
         del context
 
     async def on_create_task_push_notification_config(

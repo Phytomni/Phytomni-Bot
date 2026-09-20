@@ -6,11 +6,33 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Literal
 
 import pytest
+from tests.support.execution_dispatch_fixtures import run_migrated_agent
+
+from mcp_server_phytomni.config.models.agents import DigitalDesignConfig
+from mcp_server_phytomni.public_agent_catalog import (
+    PUBLIC_AGENT_CATALOG,
+    public_agent_spec,
+)
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import WorkUnitStatus
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SpanSpec,
+    SQLiteExecutionWorkRepository,
+    WorkUnitSpec,
+)
+from mcp_server_phytomni.runtime.fanout_join_v2 import reduce_fanout_join
 
 
 @pytest.mark.parametrize(
@@ -26,7 +48,7 @@ import pytest
 def test_remote_cohort_catalog_declares_canonical_driver_and_join(
     slug: str, driver: str, topology: str, join: str
 ) -> None:
-    from mcp_server_phytomni.public_agent_catalog import public_agent_spec
+    """Verify remote cohort catalog declares canonical driver and join."""
 
     spec = public_agent_spec(slug)
     assert spec is not None
@@ -38,8 +60,7 @@ def test_remote_cohort_catalog_declares_canonical_driver_and_join(
 def test_result_delivering_analysis_agents_cover_provider_job_timeout() -> (
     None
 ):
-    from mcp_server_phytomni.config.models.agents import DigitalDesignConfig
-    from mcp_server_phytomni.public_agent_catalog import PUBLIC_AGENT_CATALOG
+    """Verify result delivering analysis agents cover provider job timeout."""
 
     provider_timeout = int(DigitalDesignConfig().ANALYSIS_JOB_TIMEOUT)
     settlement_grace = 3600
@@ -68,15 +89,7 @@ def test_result_delivering_analysis_agents_cover_provider_job_timeout() -> (
 def test_remote_submission_is_admitted_once_and_replayed_from_journal(
     tmp_path: Path, slug: str
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
+    """Verify remote submission is admitted once and replayed from journal."""
 
     calls = 0
     envelope = {"task_id": f"private-{slug}-task", "status": "running"}
@@ -88,16 +101,12 @@ def test_remote_submission_is_admitted_once_and_replayed_from_journal(
 
     db_path = tmp_path / f"remote-{slug}.db"
     execution_id = f"turn-remote-{slug}"
-    result = asyncio.run(
-        invoke_public_agent(
-            db_path=str(db_path),
-            owner="alice",
-            execution_id=execution_id,
-            agent_slug=slug,
-            arguments={"query": "rice"},
-            transport="background",
-            call=submit,
-        )
+    result = run_migrated_agent(
+        db_path,
+        execution_id,
+        slug,
+        "background",
+        submit,
     )
     assert result == (envelope, 202)
     assert calls == 1
@@ -116,22 +125,8 @@ def test_remote_submission_is_admitted_once_and_replayed_from_journal(
 def test_fanout_join_is_order_independent_and_preserves_partial_results(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-        WorkUnitStatus,
-    )
-    from mcp_server_phytomni.runtime.fanout_join_v2 import reduce_fanout_join
+    """Verify fanout join is order independent and preserves partial
+    results."""
 
     db_path = str(tmp_path / "fanout.db")
     reservations = SQLiteExecutionReservationRepository(db_path)
@@ -187,6 +182,7 @@ def test_fanout_join_is_order_independent_and_preserves_partial_results(
 
 
 def test_remote_provider_side_effect_has_one_canonical_boundary() -> None:
+    """Verify remote provider side effect has one canonical boundary."""
     root = Path(__file__).parents[2] / "src/mcp_server_phytomni"
     occurrences: list[str] = []
     for source in (root / "agents").rglob("*.py"):
@@ -219,21 +215,7 @@ def test_remote_join_policies_are_finite(
     quorum: int | None,
     expected: str,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SpanSpec,
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-    )
-    from mcp_server_phytomni.runtime.fanout_join_v2 import reduce_fanout_join
+    """Verify remote join policies are finite."""
 
     db_path = str(tmp_path / f"join-{policy}-{expected}.db")
     reservations = SQLiteExecutionReservationRepository(db_path)

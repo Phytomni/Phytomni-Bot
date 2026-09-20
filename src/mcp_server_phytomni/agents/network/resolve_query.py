@@ -231,10 +231,9 @@ async def resolve_network_user_query(
     catalog_entries = load_to_ontology()
     catalog_text = format_to_ontology_for_prompt(catalog_entries)
     valid_to_ids = {entry.id for entry in catalog_entries}
-    bare_to_id = _resolve_bare_to_id(raw_query, valid_to_ids)
-    if bare_to_id is not None:
-        return bare_to_id
-    route_hint = resolve_network_route_hint(raw_query)
+    route_hint = _resolve_bare_to_id(raw_query, valid_to_ids)
+    if route_hint is None:
+        route_hint = resolve_network_route_hint(raw_query)
     if route_hint is not None:
         return route_hint
 

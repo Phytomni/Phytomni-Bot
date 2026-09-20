@@ -7,40 +7,58 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
+from importlib import import_module
 from pathlib import Path
+from typing import Literal, cast
 
 import pytest
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from tests.support.execution_dispatch_fixtures import (
+    canonical_dispatch_options,
+    canonical_test_identity,
+    install_native_agent_invoker,
+    invoke_dispatched_design,
+    reserve_test_execution,
+    succeeded_agent_http_response,
+)
+from tests.support.http_fakes import build_conversation_context_envelope
 
 from mcp_server_phytomni.api import app_support
 from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.runtime.execution_command_dispatcher_v2 import (
     InvokeCommand,
 )
+from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
+    bind_canonical_reservation_identity,
+    invoke_public_agent,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    EXPERT_ROUTER_AGENT_SLUG,
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
 
 pytestmark = pytest.mark.unit
 
 
-def _conversation(mode: str) -> dict[str, object]:
-    return {
-        "schema_version": 1,
-        "conversation_key": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad6",
-        "dialogue_id": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7",
-        "turn_id": "1",
-        "request_id": "request-1",
-        "operation": "append",
-        "mode": mode,
-        "current_message": {"content": "Reply with OK.", "locale": "en-US"},
-        "requested_agent_id": "ChatAgent",
-        "allowed_agent_ids": ["ChatAgent"],
-        "ledger_cursor": 0,
-        "ledger_version": "a" * 64,
-        "base_business_context_version": 0,
-    }
+def _conversation(
+    mode: Literal["instant", "expert"],
+) -> dict[str, object]:
+    return build_conversation_context_envelope(
+        "1",
+        mode=mode,
+        content="Reply with OK.",
+        requested_agent_id="ChatAgent",
+        allowed_agent_ids=("ChatAgent",),
+    )
 
 
 def test_detached_dispatch_routes_expert_envelope_context() -> None:
+    """Verify detached dispatch routes expert envelope context."""
     assert (
         app_support.execution_conversation_dispatch_kind(
             _conversation("expert")
@@ -59,6 +77,7 @@ def test_detached_dispatch_routes_expert_envelope_context() -> None:
 async def test_native_dispatch_keeps_durable_arguments_out_of_agent_schema(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify native dispatch keeps durable arguments out of agent schema."""
     captured: dict[str, object] = {}
 
     async def fake_handler(_arguments: object) -> dict[str, object]:
@@ -77,7 +96,7 @@ async def test_native_dispatch_keeps_durable_arguments_out_of_agent_schema(
         captured["arguments"] = kwargs["arguments"]
         call = kwargs["call"]
         assert callable(call)
-        raw = await call()
+        raw = await cast(Callable[[], Awaitable[object]], call)()
         mapper = kwargs["public_result_mapper"]
         assert callable(mapper)
         captured["projected"] = mapper(raw)
@@ -131,12 +150,6 @@ async def test_detached_expert_dispatch_preserves_selected_design_arguments(
         invoke: InvokeCommand,
         stop: asyncio.Event,
     ) -> None:
-        from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-            SQLiteExecutionReservationRepository,
-        )
-        from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-            ExecutionCommand,
-        )
 
         durable_arguments = {
             "__allowed_tools": ["DigitalDesignAgent"],
@@ -200,9 +213,6 @@ async def test_detached_expert_dispatch_preserves_selected_design_arguments(
         _dependencies: object,
         **kwargs: object,
     ) -> JSONResponse:
-        from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-            invoke_public_agent,
-        )
 
         selected_arguments = kwargs.get("selected_arguments")
         assert isinstance(selected_arguments, dict)
@@ -245,7 +255,9 @@ async def test_detached_expert_dispatch_preserves_selected_design_arguments(
         app_support, "run_execution_supervisor_service", supervisor
     )
 
-    from mcp_server_phytomni.api.routes import expert_context
+    expert_context = import_module(
+        "mcp_server_phytomni.api.routes.expert_context"
+    )
 
     monkeypatch.setattr(
         expert_context, "execute_context_expert", execute_context_expert
@@ -281,20 +293,6 @@ async def test_routed_expert_binds_selected_identity_before_runtime_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A routed async Agent starts below the existing router admission."""
-    from mcp_server_phytomni.api import app as api_app
-    from mcp_server_phytomni.api import factory
-    from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
-        CanonicalReservationIdentity,
-        bind_canonical_reservation_identity,
-        invoke_public_agent,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        EXPERT_ROUTER_AGENT_SLUG,
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
 
     db_path = str(tmp_path / "routed-expert-start.db")
     execution_id = "turn-routed-design"
@@ -308,61 +306,40 @@ async def test_routed_expert_binds_selected_identity_before_runtime_start(
         "obs_file_list": [],
         "resolve_gene_id": True,
     }
-    repository = SQLiteExecutionReservationRepository(db_path)
-    original = repository.reserve(
-        owner="alice",
-        execution_id=execution_id,
-        fingerprint_version=2,
-        fingerprint=fingerprint,
-        command=router_command,
+    repository, original = reserve_test_execution(
+        db_path,
+        execution_id,
+        fingerprint,
+        router_command,
     )
     provider_calls = 0
 
     async def fake_invoke_agent_run(
         *, agent: str, arguments: dict[str, object], **options: object
     ) -> tuple[dict[str, object], int]:
-        from mcp_server_phytomni.api.lifecycle_contract import (
-            empty_agent_result,
-        )
 
         async def provider_call() -> dict[str, str]:
             nonlocal provider_calls
             provider_calls += 1
             return {"status": "succeeded"}
 
-        await invoke_public_agent(
-            db_path=db_path,
-            owner="alice",
-            execution_id=str(options["execution_id"]),
-            agent_slug=agent,
-            arguments=arguments,
-            transport="service_dispatcher",
+        await invoke_dispatched_design(
+            db_path,
+            arguments,
+            canonical_dispatch_options(options, fingerprint),
             call=provider_call,
-            fingerprint_version=2,
-            fingerprint=fingerprint,
         )
-        return {
-            "id": repository.get(
-                owner="alice", execution_id=execution_id
-            ).run_id,
-            "agent": agent,
-            "status": "succeeded",
-            "result": empty_agent_result(),
-        }, 200
+        return succeeded_agent_http_response(repository, execution_id, agent)
 
-    monkeypatch.setattr(factory, "_tasks_db_path", lambda: db_path)
-    monkeypatch.setattr(api_app, "current_request_user", lambda: "alice")
-    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke_agent_run)
-    app = factory.build_app()
-    invoke_agent_run = (
-        app.state.agent_route_dependencies.native.invoke_agent_run
+    invoke_agent_run = install_native_agent_invoker(
+        monkeypatch,
+        db_path,
+        fake_invoke_agent_run,
     )
-    identity = CanonicalReservationIdentity(
-        owner="alice",
-        execution_id=execution_id,
-        fingerprint_version=2,
-        fingerprint=fingerprint,
-        command=router_command,
+    identity = canonical_test_identity(
+        execution_id,
+        fingerprint,
+        router_command,
     )
 
     with bind_canonical_reservation_identity(identity):

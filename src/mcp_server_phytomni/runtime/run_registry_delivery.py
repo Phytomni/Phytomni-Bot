@@ -12,6 +12,7 @@ import json
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
+from importlib import import_module
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from ..config.defaults import ServerConfig
@@ -40,6 +41,7 @@ __all__ = [
     "PrivateDeliveryState",
     "ResultArchivePublisher",
     "ResultDeliveryDependencies",
+    "RunningResultWrite",
     "begin_delivery_retry",
     "begin_delivery_reconcile",
     "claim_delivery_attempt",
@@ -557,16 +559,15 @@ def _emit_ready_delivery_events(
     archive: ResultArchiveDescriptor,
 ) -> None:
     """Publish only opaque, safe archive metadata after durable settlement."""
-    from .execution_event_sink import DurableExecutionEventSink, event_intent
-    from .execution_event_store import SQLiteExecutionEventStore
-
-    sink = DurableExecutionEventSink(
-        SQLiteExecutionEventStore(registry.db_path),
+    sink_module = import_module(".execution_event_sink", __package__)
+    store_module = import_module(".execution_event_store", __package__)
+    sink = sink_module.DurableExecutionEventSink(
+        store_module.SQLiteExecutionEventStore(registry.db_path),
         run_id=target.run_id,
         owner=target.owner,
     )
     sink.emit(
-        event_intent(
+        sink_module.event_intent(
             "artifact.published",
             status="succeeded",
             payload={
@@ -579,7 +580,7 @@ def _emit_ready_delivery_events(
         )
     )
     sink.emit(
-        event_intent(
+        sink_module.event_intent(
             "run.succeeded",
             status="succeeded",
             idempotency_key=f"delivery:{target.revision}:terminal",
@@ -667,43 +668,54 @@ def attach_public_delivery(
     return projected
 
 
+@dataclass(frozen=True, slots=True)
+class RunningResultWrite:
+    """Owner-scoped active-result write plus its optional fencing policy."""
+
+    run_id: str
+    owner: str
+    result: dict[str, Any]
+    statuses: tuple[str, ...] = ("running",)
+    expected_provider_join_lease_token: str | None = None
+
+
 def replace_running_result(
     conn: sqlite3.Connection,
-    *,
-    run_id: str,
-    owner: str,
-    result: dict[str, Any],
-    statuses: tuple[str, ...] = ("running",),
-    expected_provider_join_lease_token: str | None = None,
+    request: RunningResultWrite,
 ) -> bool:
     """Write one running-row projection while carrying required delivery."""
-    if not statuses or any(
+    if not request.statuses or any(
         status not in {"running", "input_required", "waiting_input"}
-        for status in statuses
+        for status in request.statuses
     ):
         raise ValueError("invalid active projection status")
-    placeholders = ",".join("?" for _status in statuses)
+    placeholders = ",".join("?" for _status in request.statuses)
     fence_clause = (
         " AND execution_provider_join_lease_owner = ? "
         "AND execution_provider_join_lease_expires_at > ?"
-        if expected_provider_join_lease_token is not None
+        if request.expected_provider_join_lease_token is not None
         else ""
     )
     fence_parameters = (
-        (expected_provider_join_lease_token, _now_iso())
-        if expected_provider_join_lease_token is not None
+        (request.expected_provider_join_lease_token, _now_iso())
+        if request.expected_provider_join_lease_token is not None
         else ()
     )
     row = conn.execute(
         "SELECT result_json FROM runs "
         f"WHERE run_id = ? AND user_id = ? AND status IN ({placeholders})"
         + fence_clause,
-        (run_id, owner, *statuses, *fence_parameters),
+        (
+            request.run_id,
+            request.owner,
+            *request.statuses,
+            *fence_parameters,
+        ),
     ).fetchone()
     if row is None:
         return False
     stored = json.loads(row[0]) if row[0] else None
-    merged = carry_required_delivery(stored, result)
+    merged = carry_required_delivery(stored, request.result)
     merged = carry_execution_tasks(stored, merged)
     cursor = conn.execute(
         "UPDATE runs SET result_json = ?, updated_at = ? "
@@ -712,9 +724,9 @@ def replace_running_result(
         (
             json.dumps(merged),
             _now_iso(),
-            run_id,
-            owner,
-            *statuses,
+            request.run_id,
+            request.owner,
+            *request.statuses,
             *fence_parameters,
         ),
     )

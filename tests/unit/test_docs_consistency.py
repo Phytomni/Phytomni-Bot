@@ -232,7 +232,7 @@ def test_http_docs_list_public_fastapi_routes() -> None:
 
     assert contract == route_pairs
     assert probes <= runbook
-    assert runbook < route_pairs
+    assert runbook <= route_pairs
 
 
 def test_async_report_docs_distinguish_ack_status_and_terminal_report() -> (

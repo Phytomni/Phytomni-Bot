@@ -76,6 +76,7 @@ def generated_artifact_inventory(repo: Path) -> dict[str, Any]:
 
 
 def generated_artifact_violations(repo: Path) -> list[str]:
+    """Return tracked or unignored generated artifacts that violate policy."""
     inventory = generated_artifact_inventory(repo)
     return [
         *(
@@ -90,6 +91,7 @@ def generated_artifact_violations(repo: Path) -> list[str]:
 
 
 def main() -> int:
+    """Print the generated-artifact inventory and enforce it on request."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--check", action="store_true")

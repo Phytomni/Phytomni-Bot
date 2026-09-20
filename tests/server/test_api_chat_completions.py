@@ -122,6 +122,7 @@ async def test_review_chat_forwards_execution_identity_into_run_metadata(
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify review chat forwards execution identity into run metadata."""
     execution_id = "turn-review-550e8400-e29b-41d4-a716-446655440098"
     captured: dict[str, Any] = {}
 
@@ -878,6 +879,7 @@ async def test_chat_completion_reserves_public_execution_before_handler(
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
+    """Verify chat completion reserves public execution before handler."""
     execution_id = "turn-chat-550e8400-e29b-41d4-a716-446655440004"
     observed: dict[str, str] = {}
 

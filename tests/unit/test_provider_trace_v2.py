@@ -9,11 +9,19 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from mcp_server_phytomni.runtime.provider_trace_v2 import (
+    FullSnapshotProviderTraceAdapter,
+    ProviderTraceAdapterResult,
+    ProviderTraceCheckpoint,
+    ProviderTraceDiagnostics,
+    ProviderTraceObservation,
+    ProviderTraceRecord,
+    ProviderTraceRejection,
+    StructuredDeltaProviderTraceAdapter,
+)
+
 
 def _record(**updates):
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        ProviderTraceRecord,
-    )
 
     payload = {
         "source_identity": "record-1",
@@ -30,9 +38,8 @@ def _record(**updates):
 def test_provider_trace_contract_accepts_only_finite_normalized_records() -> (
     None
 ):
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        ProviderTraceObservation,
-    )
+    """Verify provider trace contract accepts only finite normalized
+    records."""
 
     observation = ProviderTraceObservation(
         schema_version=1,
@@ -68,6 +75,7 @@ def test_provider_trace_contract_accepts_only_finite_normalized_records() -> (
 
 
 def test_public_summary_requires_explicit_public_marker() -> None:
+    """Verify public summary requires explicit public marker."""
     with pytest.raises(ValidationError):
         _record(
             record_class="public_summary",
@@ -89,12 +97,7 @@ def test_public_summary_requires_explicit_public_marker() -> None:
 def test_adapter_diagnostics_are_bounded_and_never_retain_raw_payloads() -> (
     None
 ):
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        ProviderTraceAdapterResult,
-        ProviderTraceDiagnostics,
-        ProviderTraceObservation,
-        ProviderTraceRejection,
-    )
+    """Verify adapter diagnostics are bounded and never retain raw payloads."""
 
     result = ProviderTraceAdapterResult(
         observation=ProviderTraceObservation(
@@ -125,11 +128,7 @@ def test_adapter_diagnostics_are_bounded_and_never_retain_raw_payloads() -> (
 def test_full_snapshot_adapter_deduplicates_append_repeat_and_rotation() -> (
     None
 ):
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        FullSnapshotProviderTraceAdapter,
-        ProviderTraceCheckpoint,
-        ProviderTraceRecord,
-    )
+    """Verify full snapshot adapter deduplicates append repeat and rotation."""
 
     def normalize(raw, source_identity, index):
         del index
@@ -196,9 +195,7 @@ def test_full_snapshot_adapter_deduplicates_append_repeat_and_rotation() -> (
 
 
 def test_structured_delta_adapter_preserves_stable_record_identity() -> None:
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        StructuredDeltaProviderTraceAdapter,
-    )
+    """Verify structured delta adapter preserves stable record identity."""
 
     result = StructuredDeltaProviderTraceAdapter(
         adapter_version="analysis-delta-v1"
@@ -229,12 +226,7 @@ def test_structured_delta_adapter_preserves_stable_record_identity() -> None:
 
 
 def test_adapter_version_change_resets_private_cursor_and_overlap() -> None:
-    from mcp_server_phytomni.runtime.provider_trace_v2 import (
-        FullSnapshotProviderTraceAdapter,
-        ProviderTraceCheckpoint,
-        ProviderTraceRecord,
-        StructuredDeltaProviderTraceAdapter,
-    )
+    """Verify adapter version change resets private cursor and overlap."""
 
     def normalize(raw, source_identity, index):
         del raw, index

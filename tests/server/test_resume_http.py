@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -16,23 +16,9 @@ from tests.support.a2ui_contract_fakes import (
     chat_terminal_state,
     confirm_surface,
 )
-from tests.support.asyncio_helpers import wait_until
+from tests.support.http_execution_fixtures import seed_waiting_execution
 
 from mcp_server_phytomni.api import app as api_app_module
-from mcp_server_phytomni.runtime.execution_journal_v2 import (
-    ExecutionStatus,
-    SpanStatus,
-)
-from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-    SQLiteExecutionReservationRepository,
-)
-from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-    ExecutionCommand,
-)
-from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-    SpanSpec,
-    SQLiteExecutionWorkRepository,
-)
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
@@ -41,6 +27,12 @@ from mcp_server_phytomni.runtime.run_registry import (
 from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 pytestmark = pytest.mark.server
+
+
+def _ok_json(response: httpx.Response) -> dict[str, Any]:
+    """Require a successful response and return its JSON object body."""
+    assert response.status_code == 200, response.text
+    return cast(dict[str, Any], response.json())
 
 
 def _install_a2ui_race_seams(
@@ -102,47 +94,11 @@ def _seed_run(
             outcome=RunOutcome(status=status, result=result),
         )
         return run_id
-    execution_id = f"turn-{run_id}"
-    reservations = SQLiteExecutionReservationRepository(
+    seed_waiting_execution(
         tasks_db_path,
-        run_id_factory=lambda: run_id,
-        root_span_id_factory=lambda: f"span-{run_id}",
-    )
-    reservation = reservations.reserve(
+        run_id=run_id,
         owner=owner,
-        execution_id=execution_id,
-        fingerprint_version=2,
-        fingerprint=f"fixture:{run_id}",
-        command=ExecutionCommand(agent_slug=agent, arguments={}),
-    )
-    work = SQLiteExecutionWorkRepository(tasks_db_path)
-    root = work.create_span(
-        SpanSpec(
-            owner=owner,
-            execution_id=execution_id,
-            span_id=reservation.root_span_id,
-            kind="agent",
-            label_key=f"agent.{agent}",
-        )
-    )
-    work.update_span_status(
-        execution_id,
-        reservation.root_span_id,
-        owner=owner,
-        status=SpanStatus.WAITING_INPUT,
-        expected_revision=root.revision,
-    )
-    assert reservations.record_observation(
-        owner=owner,
-        execution_id=execution_id,
-        status=ExecutionStatus.WAITING_INPUT,
-        tracking_health="healthy",
-        cancellation_state="none",
-        next_attempt_at=None,
-    )
-    assert RunRegistry(tasks_db_path).update_active_result(
-        run_id,
-        owner=owner,
+        agent=agent,
         result=result or {},
     )
     return run_id
@@ -367,46 +323,44 @@ async def test_review_run_interrupt_then_resume_finishes(
         lambda _args: {"seed": "review"},
     )
 
-    first = await api_client.post(
-        "/v1/agents/review/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "user_query": "Review photosynthesis papers.",
-                "obs_file_list": [],
-            }
-        },
+    first_body = _ok_json(
+        await api_client.post(
+            "/v1/agents/review/runs",
+            headers={"Authorization": f"Bearer {issued_api_key}"},
+            json={
+                "arguments": {
+                    "user_query": "Review photosynthesis papers.",
+                    "obs_file_list": [],
+                }
+            },
+        )
     )
-
-    assert first.status_code == 202
-    run_id = first.json()["id"]
-
-    def paused() -> bool:
-        record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
-        return record is not None and record.status == "input_required"
-
-    await wait_until(paused)
-    fetched = await api_client.get(
-        f"/v1/runs/{run_id}",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
+    assert first_body["status"] == "input_required"
+    run_id = first_body["id"]
+    assert first_body["run_id"] == run_id
+    assert first_body["interrupt"]["thread_id"] == run_id
+    assert first_body["interrupt"]["draft"]["summary"] == "draft review"
+    interrupted = _ok_json(
+        await api_client.get(
+            f"/v1/runs/{run_id}",
+            headers={"Authorization": f"Bearer {issued_api_key}"},
+        )
     )
-    assert fetched.status_code == 200
-    interrupted = fetched.json()
     assert interrupted["id"] == run_id
     assert interrupted["run_id"] == run_id
     assert interrupted["status"] == "input_required"
+    assert interrupted["result"]["interrupt"] == first_body["interrupt"]
     assert interrupted["result"]["interrupt"]["draft"]["summary"] == (
         "draft review"
     )
 
-    resumed = await api_client.post(
-        f"/v1/runs/{run_id}/resume",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={"approved": True, "edits": "ship it"},
+    body = _ok_json(
+        await api_client.post(
+            f"/v1/runs/{run_id}/resume",
+            headers={"Authorization": f"Bearer {issued_api_key}"},
+            json={"approved": True, "edits": "ship it"},
+        )
     )
-
-    assert resumed.status_code == 200
-    body = resumed.json()
     assert body["id"] == run_id
     assert body["run_id"] == run_id
     assert body["status"] == "succeeded"

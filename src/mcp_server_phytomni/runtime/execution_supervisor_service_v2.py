@@ -10,7 +10,8 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from typing import Any, Protocol
+from dataclasses import dataclass
+from typing import Any, NotRequired, TypedDict, Unpack, cast
 
 from ..agents.analyst.agent import task_log
 from ..public_agent_catalog import (
@@ -57,15 +58,39 @@ _TERMINAL_RUN_STATUS = {
     "cancelled": ExecutionStatus.CANCELLED,
     "timed_out": ExecutionStatus.TIMED_OUT,
 }
+_SUPERVISOR_FAILURES: tuple[type[Exception], ...] = (Exception,)
 
-
-class _RunOnce(Protocol):
-    async def run_once(self) -> Any: ...
-
-
+type _RunOnce = Callable[[], Awaitable[Any]]
 SettleExecution = Callable[[str, str, str], Awaitable[None]]
 _PROVIDER_JOIN_LEASE_SECONDS = 900
 _PROVIDER_JOIN_RENEWAL_SECONDS = 60.0
+
+
+class _ReadyProviderJoinFields(TypedDict):
+    reservations: SQLiteExecutionReservationRepository
+    journal: ExecutionJournal
+    work: SQLiteExecutionWorkRepository
+    settle: SettleExecution
+    worker_id: str
+    lease_seconds: NotRequired[int]
+    renewal_interval_seconds: NotRequired[float]
+    limit: NotRequired[int]
+
+
+@dataclass(frozen=True, slots=True)
+class _ReadyProviderJoinServices:
+    reservations: SQLiteExecutionReservationRepository
+    journal: ExecutionJournal
+    work: SQLiteExecutionWorkRepository
+    settle: SettleExecution
+
+
+@dataclass(frozen=True, slots=True)
+class _ReadyProviderJoinPolicy:
+    worker_id: str
+    lease_seconds: int
+    renewal_interval_seconds: float
+    limit: int
 
 
 async def poll_analysis_task_platform(
@@ -127,50 +152,60 @@ async def poll_analysis_task_platform_trace(
 class ReadyProviderJoinReconciler:
     """Retry the terminal-child/root-settlement crash window."""
 
-    def __init__(
-        self,
-        *,
-        reservations: SQLiteExecutionReservationRepository,
-        journal: ExecutionJournal,
-        work: SQLiteExecutionWorkRepository,
-        settle: SettleExecution,
-        worker_id: str,
-        lease_seconds: int = _PROVIDER_JOIN_LEASE_SECONDS,
-        renewal_interval_seconds: float = _PROVIDER_JOIN_RENEWAL_SECONDS,
-        limit: int = 100,
-    ) -> None:
-        self._reservations = reservations
-        self._journal = journal
-        self._work = work
-        self._settle = settle
-        self._worker_id = worker_id
-        self._lease_seconds = lease_seconds
-        self._renewal_interval_seconds = renewal_interval_seconds
-        self._limit = limit
+    def __init__(self, **fields: Unpack[_ReadyProviderJoinFields]) -> None:
+        lease_seconds = fields.get(
+            "lease_seconds", _PROVIDER_JOIN_LEASE_SECONDS
+        )
+        renewal_interval_seconds = fields.get(
+            "renewal_interval_seconds", _PROVIDER_JOIN_RENEWAL_SECONDS
+        )
         if lease_seconds < 1 or lease_seconds > 3600:
             raise ValueError("lease_seconds must be between 1 and 3600")
         if not 0 < renewal_interval_seconds < lease_seconds:
             raise ValueError("renewal interval must be below lease duration")
+        self._services = _ReadyProviderJoinServices(
+            reservations=fields["reservations"],
+            journal=fields["journal"],
+            work=fields["work"],
+            settle=fields["settle"],
+        )
+        self._policy = _ReadyProviderJoinPolicy(
+            worker_id=fields["worker_id"],
+            lease_seconds=lease_seconds,
+            renewal_interval_seconds=renewal_interval_seconds,
+            limit=fields.get("limit", 100),
+        )
+
+    @property
+    def worker_id(self) -> str:
+        """Return the bounded provider-join lease owner."""
+        return self._policy.worker_id
 
     async def run_once(self) -> int:
         """Attempt every ready join; failures remain discoverable next scan."""
         settled = 0
-        for owner, execution_id in self._work.list_ready_provider_joins(
-            limit=self._limit
+        for (
+            owner,
+            execution_id,
+        ) in self._services.work.list_ready_provider_joins(
+            limit=self._policy.limit
         ):
             try:
                 # The reservation is the authorization boundary.  The event
                 # projection can legitimately be absent during startup crash
                 # recovery, so it must not prevent a durable join retry.
-                self._reservations.get(owner=owner, execution_id=execution_id)
-                lease_token = IdFactory().new_id(
-                    "provider-join-lease", self._worker_id
+                self._services.reservations.get(
+                    owner=owner,
+                    execution_id=execution_id,
                 )
-                if not self._work.claim_provider_join_lease(
+                lease_token = IdFactory().new_id(
+                    "provider-join-lease", self._policy.worker_id
+                )
+                if not self._services.work.claim_provider_join_lease(
                     execution_id,
                     owner=owner,
                     lease_token=lease_token,
-                    lease_seconds=self._lease_seconds,
+                    lease_seconds=self._policy.lease_seconds,
                 ):
                     continue
                 try:
@@ -178,12 +213,12 @@ class ReadyProviderJoinReconciler:
                         owner, execution_id, lease_token
                     )
                 finally:
-                    self._work.release_provider_join_lease(
+                    self._services.work.release_provider_join_lease(
                         execution_id,
                         owner=owner,
                         lease_token=lease_token,
                     )
-            except Exception as exc:  # retried by the next bounded scan
+            except _SUPERVISOR_FAILURES as exc:
                 _LOGGER.warning(
                     "Execution provider join reconciliation failed",
                     extra={
@@ -209,21 +244,21 @@ class ReadyProviderJoinReconciler:
                 try:
                     await asyncio.wait_for(
                         stop_renewal.wait(),
-                        timeout=self._renewal_interval_seconds,
+                        timeout=self._policy.renewal_interval_seconds,
                     )
                 except TimeoutError:
-                    if not self._work.renew_provider_join_lease(
+                    if not self._services.work.renew_provider_join_lease(
                         execution_id,
                         owner=owner,
                         lease_token=lease_token,
-                        lease_seconds=self._lease_seconds,
+                        lease_seconds=self._policy.lease_seconds,
                     ):
                         raise RuntimeError(
                             "provider_join_lease_lost"
                         ) from None
 
         async def settle_once() -> None:
-            await self._settle(owner, execution_id, lease_token)
+            await self._services.settle(owner, execution_id, lease_token)
 
         settle_task: asyncio.Task[None] = asyncio.create_task(settle_once())
         renewal_task = asyncio.create_task(renew())
@@ -261,7 +296,13 @@ class DomainTerminalReconciler:
         self._work = work
         self._limit = limit
 
+    @property
+    def limit(self) -> int:
+        """Return the maximum recoverable terminals projected per scan."""
+        return self._limit
+
     async def run_once(self) -> int:
+        """Project recoverable domain terminals into the V2 journal."""
         projected = 0
         for record in self._reservations.list_recoverable(limit=self._limit):
             outcome = _domain_terminal_outcome(record.status)
@@ -363,42 +404,55 @@ async def settle_ready_provider_execution(
 
 async def run_execution_supervisor_loop(
     *,
-    supervisor: _RunOnce,
-    joins: _RunOnce,
-    terminals: _RunOnce | None = None,
+    supervisor: object,
+    joins: object,
+    terminals: object | None = None,
     stop: asyncio.Event,
     poll_seconds: float = 5.0,
 ) -> None:
     """Poll on a bounded cadence; stream/read traffic is never the trigger."""
     if poll_seconds <= 0 or poll_seconds > 300:
         raise ValueError("invalid supervisor poll interval")
+    supervisor_run = _run_once_callable(supervisor)
+    join_run = _run_once_callable(joins)
+    terminal_run = (
+        _run_once_callable(terminals) if terminals is not None else None
+    )
     while not stop.is_set():
         with suppress(TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=poll_seconds)
         if stop.is_set():
             return
-        try:
-            await supervisor.run_once()
-        except Exception as exc:
-            _LOGGER.warning(
-                "Execution work supervisor scan failed",
-                extra={"error_type": type(exc).__name__},
+        await _run_reconciler(
+            supervisor_run,
+            "Execution work supervisor scan failed",
+        )
+        await _run_reconciler(
+            join_run,
+            "Execution join supervisor scan failed",
+        )
+        if terminal_run is not None:
+            await _run_reconciler(
+                terminal_run,
+                "Execution domain terminal projection failed",
             )
-        try:
-            await joins.run_once()
-        except Exception as exc:
-            _LOGGER.warning(
-                "Execution join supervisor scan failed",
-                extra={"error_type": type(exc).__name__},
-            )
-        if terminals is not None:
-            try:
-                await terminals.run_once()
-            except Exception as exc:
-                _LOGGER.warning(
-                    "Execution domain terminal projection failed",
-                    extra={"error_type": type(exc).__name__},
-                )
+
+
+def _run_once_callable(service: object) -> _RunOnce:
+    run_once = getattr(service, "run_once", None)
+    if not callable(run_once):
+        raise TypeError("supervisor service must expose run_once")
+    return cast(_RunOnce, run_once)
+
+
+async def _run_reconciler(run_once: _RunOnce, failure_message: str) -> None:
+    try:
+        await run_once()
+    except _SUPERVISOR_FAILURES as exc:
+        _LOGGER.warning(
+            failure_message,
+            extra={"error_type": type(exc).__name__},
+        )
 
 
 async def run_execution_supervisor_service(

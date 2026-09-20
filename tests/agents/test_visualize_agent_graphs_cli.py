@@ -213,6 +213,7 @@ def test_knowledge_xray2_keeps_single_chat_untouched(
 
 
 def test_check_manifest_detects_committed_drift(tmp_path: Path) -> None:
+    """Verify manifest checking rejects drift from the committed export."""
     viz = _load_script()
     assert viz.main(["--agent", "chat", "--manifest", str(tmp_path)]) == 0
     assert (

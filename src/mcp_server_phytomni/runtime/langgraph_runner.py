@@ -10,13 +10,12 @@ Functions: ensure_thread_id, build_runnable_config, ensure_checkpointer,
 """
 
 import asyncio
-import inspect
 import json
 import os
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import nullcontext, suppress
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NotRequired, TypedDict, Unpack
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -24,14 +23,20 @@ from langgraph.checkpoint.memory import MemorySaver
 from pydantic import SecretStr
 
 from ..storage.path_policy import IdFactory
+from .async_iterator_v2 import close_async_iterator
 from .checkpoint_backend import build_default_checkpointer
 from .execution_instrumentation_v2 import (
     ExecutionBoundary,
     bind_execution_boundary,
     current_execution_boundary,
 )
-from .execution_journal_v2 import SpanStatus, parse_execution_event_intent_v2
-from .execution_work_store_v2 import SpanSpec
+from .execution_journal_v2 import SpanStatus
+from .execution_observation_store_v2 import (
+    append_span_observation_fact,
+    create_observed_span,
+    transition_span,
+)
+from .instrumentation_contracts_v2 import keyword_signature
 from .memory import (
     MemoryAccessor,
     current_memory_accessor,
@@ -77,6 +82,33 @@ _PUBLIC_GRAPH_PHASE_BY_AGENT = {
     "network": "agent.network.workflow",
 }
 _PRIVATE_GRAPH_FALLBACK_PHASE = "agent.workflow"
+
+
+class StreamGraphOptions(TypedDict):
+    """Optional arguments forwarded to a LangGraph stream."""
+
+    subgraphs: NotRequired[bool]
+    config: NotRequired[Any | None]
+    context: NotRequired[Any | None]
+
+
+class _GraphFactKwargs(TypedDict):
+    """Presented fields for one graph span fact."""
+
+    event_type: str
+    status: str
+    payload: NotRequired[dict[str, object] | None]
+
+
+_STREAM_GRAPH_SIGNATURE = keyword_signature(
+    (("stream_mode", Any),),
+    (
+        ("subgraphs", bool, False),
+        ("config", Any | None, None),
+        ("context", Any | None, None),
+    ),
+    positional=(("app", Any), ("initial_state", Any)),
+)
 
 
 def ensure_thread_id(thread_id: str | None = None) -> str:
@@ -236,18 +268,22 @@ async def stream_graph(
     initial_state: Any,
     *,
     stream_mode: Any,
-    subgraphs: bool = False,
-    config: Any | None = None,
-    context: Any | None = None,
+    **options: Unpack[StreamGraphOptions],
 ):
     """Stream every LangGraph through the same instrumented boundary."""
+    _STREAM_GRAPH_SIGNATURE.bind(
+        app,
+        initial_state,
+        stream_mode=stream_mode,
+        **options,
+    )
     kwargs: dict[str, Any] = {
         "stream_mode": stream_mode,
-        "subgraphs": subgraphs,
+        "subgraphs": options.get("subgraphs", False),
     }
-    if config is not None:
+    if (config := options.get("config")) is not None:
         kwargs["config"] = config
-    if context is not None:
+    if (context := options.get("context")) is not None:
         kwargs["context"] = context
     boundary = current_execution_boundary()
     graph_span = _start_graph_span(boundary)
@@ -282,13 +318,12 @@ async def stream_graph(
         _finish_graph_span(boundary, graph_span, succeeded=False)
         raise
     finally:
-        closer = getattr(iterator, "aclose", None)
-        if callable(closer):
-            close_result = closer()
-            if inspect.isawaitable(close_result):
-                await close_result
+        await close_async_iterator(iterator)
     if completed:
         _finish_graph_span(boundary, graph_span, succeeded=True)
+
+
+setattr(stream_graph, "__signature__", _STREAM_GRAPH_SIGNATURE)
 
 
 def _start_graph_span(boundary: ExecutionBoundary | None) -> Any | None:
@@ -299,56 +334,43 @@ def _start_graph_span(boundary: ExecutionBoundary | None) -> Any | None:
         context.agent.slug, _PRIVATE_GRAPH_FALLBACK_PHASE
     )
     span_id = IdFactory().new_id("span")
-    try:
-        span = boundary.services.work.create_span(
-            SpanSpec(
-                owner=context.owner_ref,
-                execution_id=context.execution_id,
-                span_id=span_id,
-                parent_span_id=context.current_span_id,
-                kind="graph",
-                label_key=phase,
-                join_policy=None,
-            )
+    observed_span = None
+    with suppress(Exception):
+        span = create_observed_span(
+            boundary,
+            {
+                "span_id": span_id,
+                "kind": "graph",
+                "label_key": phase,
+                "join_policy": None,
+            },
         )
         _append_graph_fact(
             boundary,
-            span_id=span_id,
-            parent_span_id=context.current_span_id,
+            span=span,
             phase=phase,
             event_type="span.created",
             status="pending",
         )
-        span = boundary.services.work.update_span_status(
-            context.execution_id,
-            span_id,
-            owner=context.owner_ref,
-            status=SpanStatus.RUNNING,
-            expected_revision=span.revision,
-        )
+        span = transition_span(boundary, span, SpanStatus.RUNNING)
         _append_graph_fact(
             boundary,
-            span_id=span_id,
-            parent_span_id=context.current_span_id,
+            span=span,
             phase=phase,
             event_type="span.started",
             status="running",
         )
-        return span
-    except Exception:
-        return None
+        observed_span = span
+    return observed_span
 
 
 def _nested_graph_boundary(
     boundary: ExecutionBoundary,
     span: Any,
 ) -> ExecutionBoundary:
-    return ExecutionBoundary(
-        context=boundary.context.nested(
-            agent=boundary.context.agent,
-            span_id=span.span_id,
-        ),
-        services=boundary.services,
+    return boundary.nested(
+        agent=boundary.context.agent,
+        span_id=span.span_id,
     )
 
 
@@ -372,17 +394,10 @@ def _finish_graph_span(
         }
     )
     with suppress(Exception):
-        boundary.services.work.update_span_status(
-            boundary.context.execution_id,
-            span.span_id,
-            owner=boundary.context.owner_ref,
-            status=status,
-            expected_revision=span.revision,
-        )
+        transition_span(boundary, span, status)
         _append_graph_fact(
             boundary,
-            span_id=span.span_id,
-            parent_span_id=span.parent_span_id,
+            span=span,
             phase=phase,
             event_type=event_type,
             status=status.value,
@@ -393,31 +408,22 @@ def _finish_graph_span(
 def _append_graph_fact(
     boundary: ExecutionBoundary,
     *,
-    span_id: str,
-    parent_span_id: str | None,
+    span: Any,
     phase: str,
-    event_type: str,
-    status: str,
-    payload: dict[str, object] | None = None,
+    **fact: Unpack[_GraphFactKwargs],
 ) -> None:
-    boundary.services.journal.append(
-        boundary.context.execution_id,
-        owner=boundary.context.owner_ref,
-        intent=parse_execution_event_intent_v2(
-            {
-                "type": event_type,
-                "status": status,
-                "source": "graph",
-                "span_id": span_id,
-                "parent_span_id": parent_span_id,
-                "attempt": 1,
-                "summary": {
-                    "key": f"{phase}.{event_type.rsplit('.', 1)[-1]}",
-                    "text": f"Graph {event_type.rsplit('.', 1)[-1]}",
-                },
-                "public_payload": payload or {"phase": phase},
-            }
-        ),
+    suffix = fact["event_type"].rsplit(".", 1)[-1]
+    append_span_observation_fact(
+        boundary,
+        span,
+        {
+            "event_type": fact["event_type"],
+            "status": fact["status"],
+            "source": "graph",
+            "summary_key": f"{phase}.{suffix}",
+            "text": f"Graph {suffix}",
+            "public_payload": fact.get("payload") or {"phase": phase},
+        },
     )
 
 

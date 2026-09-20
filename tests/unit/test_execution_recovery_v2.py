@@ -7,31 +7,37 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from pathlib import Path
+
+from tests.support.execution_supervisor_v2 import bind_acknowledged_provider
+
+from mcp_server_phytomni.runtime.execution_drivers_v2 import RemoteTaskDriver
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    parse_execution_event_intent_v2,
+)
+from mcp_server_phytomni.runtime.execution_recovery_v2 import (
+    ExecutionRecoveryCoordinator,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    DriverOperation,
+    DriverOutcome,
+    ExecutionCommand,
+)
+from mcp_server_phytomni.runtime.execution_runtime_v2 import ExecutionRuntime
+from mcp_server_phytomni.runtime.execution_work_store_v2 import (
+    SQLiteExecutionWorkRepository,
+    WorkUnitSpec,
+)
 
 
 def _runtime_fixture(db_path: Path):
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        RemoteTaskDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-        WorkUnitSpec,
-    )
 
     path = str(db_path)
     reservations = SQLiteExecutionReservationRepository(path)
@@ -88,16 +94,19 @@ def _runtime_fixture(db_path: Path):
 def test_pending_submission_checkpoint_and_join_delegate_to_driver_recovery(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_recovery_v2 import (
-        ExecutionRecoveryCoordinator,
-    )
+    """Verify pending submission checkpoint and join delegate to driver
+    recovery."""
 
     runtime, reservations, journal, _work, unit, calls = _runtime_fixture(
         tmp_path / "driver-orphans.db"
     )
 
+    @dataclass(eq=False)
     class Providers:
+        """Provider bundle that delegates checkpoint and join recovery."""
+
         async def reconcile(self, current):
+            """Reconcile the configured provider state."""
             raise AssertionError(current)
 
     recovery = ExecutionRecoveryCoordinator(
@@ -114,36 +123,24 @@ def test_pending_submission_checkpoint_and_join_delegate_to_driver_recovery(
 def test_acknowledged_remote_work_delegates_to_provider_reconciler(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_recovery_v2 import (
-        ExecutionRecoveryCoordinator,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        WorkUnitStatus,
-    )
+    """Verify acknowledged remote work delegates to provider reconciler."""
 
     runtime, reservations, journal, work, unit, calls = _runtime_fixture(
         tmp_path / "remote-orphan.db"
     )
-    unit = work.bind_provider(
-        unit.execution_id,
-        unit.work_unit_id,
-        owner=unit.owner,
-        provider_kind="analysis",
+    unit = bind_acknowledged_provider(
+        work,
+        unit,
         provider_task_id="task-private",
-        provider_revision=0,
-        expected_revision=unit.revision,
-    )
-    unit = work.update_work_unit_status(
-        unit.execution_id,
-        unit.work_unit_id,
-        owner=unit.owner,
-        status=WorkUnitStatus.ACKNOWLEDGED,
-        expected_revision=unit.revision,
     )
     reconciled: list[str] = []
 
+    @dataclass(eq=False)
     class Providers:
+        """Provider bundle for acknowledged-work reconciliation."""
+
         async def reconcile(self, current):
+            """Reconcile the configured provider state."""
             reconciled.append(current.work_unit_id)
             return True
 
@@ -162,12 +159,7 @@ def test_acknowledged_remote_work_delegates_to_provider_reconciler(
 def test_terminal_journal_crash_window_settles_without_rerunning_agent(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        parse_execution_event_intent_v2,
-    )
-    from mcp_server_phytomni.runtime.execution_recovery_v2 import (
-        ExecutionRecoveryCoordinator,
-    )
+    """Verify terminal journal crash window settles without rerunning agent."""
 
     runtime, reservations, journal, _work, unit, calls = _runtime_fixture(
         tmp_path / "terminal-orphan.db"
@@ -192,8 +184,12 @@ def test_terminal_journal_crash_window_settles_without_rerunning_agent(
         ),
     )
 
+    @dataclass(eq=False)
     class Providers:
+        """Provider bundle used to recover a terminal journal checkpoint."""
+
         async def reconcile(self, current):
+            """Reconcile the configured provider state."""
             raise AssertionError(current)
 
     recovery = ExecutionRecoveryCoordinator(

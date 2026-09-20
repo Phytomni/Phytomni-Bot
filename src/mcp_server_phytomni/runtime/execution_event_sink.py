@@ -6,40 +6,34 @@
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
-from typing import Any, Protocol
+from importlib import import_module
+from typing import Any, NotRequired, TypedDict, Unpack, cast
 
 from .execution_event_flags import execution_event_production_enabled
 from .execution_event_observability import observe_execution_event
+from .execution_event_store import ExecutionEventStore
 from .execution_events import (
     ExecutionEventIntent,
     ExecutionEventV1,
     parse_execution_event_intent,
 )
 
-
-class ExecutionEventSink(Protocol):
-    """Minimal production boundary used by shared runtime code."""
-
-    def emit(self, intent: ExecutionEventIntent) -> ExecutionEventV1 | None:
-        """Commit one event intent and return its durable representation."""
-        raise NotImplementedError
+type ExecutionEventEmitter = Callable[
+    [ExecutionEventIntent],
+    ExecutionEventV1 | None,
+]
 
 
-class _AppendStore(Protocol):
-    """Append-only persistence boundary required by the durable sink."""
-
-    def append(
-        self,
-        run_id: str,
-        *,
-        owner: str,
-        intent: ExecutionEventIntent,
-    ) -> ExecutionEventV1:
-        """Append one intent to the event stream for a run."""
-        raise NotImplementedError
+def _sink_emitter(sink: object) -> ExecutionEventEmitter:
+    """Resolve the small structural sink boundary at bind time."""
+    emitter = getattr(sink, "emit", None)
+    if not callable(emitter):
+        raise TypeError("execution event sink must expose emit")
+    return cast(ExecutionEventEmitter, emitter)
 
 
 class NoOpExecutionEventSink:
@@ -49,55 +43,65 @@ class NoOpExecutionEventSink:
         """Discard one event intent for compatibility-only execution paths."""
         del intent
 
+    @property
+    def degraded(self) -> bool:
+        """Return the fixed healthy state of a no-op sink."""
+        return False
+
 
 class PublishingExecutionEventSink:
     """Publish only events that the delegated durable sink committed."""
 
     def __init__(
         self,
-        delegate: ExecutionEventSink,
+        delegate: object,
         publish: Callable[[ExecutionEventV1], None],
     ) -> None:
-        self._delegate = delegate
+        self._delegate = _sink_emitter(delegate)
+        self._delegate_sink = delegate
         self._publish = publish
+
+    @property
+    def degraded(self) -> bool:
+        """Mirror the delegate's optional degradation state."""
+        return bool(getattr(self._delegate_sink, "degraded", False))
 
     def emit(self, intent: ExecutionEventIntent) -> ExecutionEventV1 | None:
         """Publish an event only after the delegate durably commits it."""
-        event = self._delegate.emit(intent)
+        event = self._delegate(intent)
         if event is not None:
             self._publish(event)
         return event
 
 
-_CURRENT_SINK: ContextVar[ExecutionEventSink | None] = ContextVar(
+_CURRENT_SINK: ContextVar[ExecutionEventEmitter | None] = ContextVar(
     "execution_event_sink",
     default=None,
 )
 
 
 @contextmanager
-def bind_execution_event_sink(sink: ExecutionEventSink) -> Iterator[None]:
+def bind_execution_event_sink(sink: object) -> Iterator[None]:
     """Bind one sink to the current asynchronous request/run context."""
-    token = _CURRENT_SINK.set(sink)
+    token = _CURRENT_SINK.set(_sink_emitter(sink))
     try:
         yield
     finally:
         _CURRENT_SINK.reset(token)
 
 
-def current_execution_event_sink() -> ExecutionEventSink:
-    """Return the bound sink or the stateless compatibility no-op."""
-    return _CURRENT_SINK.get() or NoOpExecutionEventSink()
+def current_execution_event_sink() -> ExecutionEventEmitter:
+    """Return the bound emitter or the stateless compatibility no-op."""
+    return _CURRENT_SINK.get() or NoOpExecutionEventSink().emit
 
 
 def emit_execution_event(
     intent: ExecutionEventIntent,
 ) -> ExecutionEventV1 | None:
     """Emit through the active sink without coupling producers to storage."""
-    from .legacy_event_adapter_v2 import adapt_legacy_event_intent_to_v2
-
-    adapt_legacy_event_intent_to_v2(intent)
-    return current_execution_event_sink().emit(intent)
+    adapter = import_module(".legacy_event_adapter_v2", __package__)
+    adapter.adapt_legacy_event_intent_to_v2(intent)
+    return current_execution_event_sink()(intent)
 
 
 def set_todos(items: Sequence[Mapping[str, Any]]) -> ExecutionEventV1 | None:
@@ -152,36 +156,40 @@ def emit_decision_note(
     )
 
 
+class _EventIntentFields(TypedDict):
+    status: str
+    summary_key: NotRequired[str | None]
+    summary_text: NotRequired[str | None]
+    payload: NotRequired[Mapping[str, Any] | None]
+    target: NotRequired[Mapping[str, Any] | None]
+    task_id: NotRequired[str | None]
+    parent_event_id: NotRequired[str | None]
+    idempotency_key: NotRequired[str | None]
+
+
 def event_intent(
     kind: str,
-    *,
-    status: str,
-    summary_key: str | None = None,
-    summary_text: str | None = None,
-    payload: Mapping[str, Any] | None = None,
-    target: Mapping[str, Any] | None = None,
-    task_id: str | None = None,
-    parent_event_id: str | None = None,
-    idempotency_key: str | None = None,
+    **fields: Unpack[_EventIntentFields],
 ) -> ExecutionEventIntent:
     """Build a validated public intent from bounded semantic fields."""
-    resolved_payload = dict(payload or {})
+    summary_text = fields.get("summary_text")
+    resolved_payload = dict(fields.get("payload") or {})
     if kind in {"decision.note", "reasoning.summary"} and not resolved_payload:
         resolved_payload = {"text": summary_text or kind}
     raw: dict[str, Any] = {
         "kind": kind,
-        "status": status,
+        "status": fields["status"],
         "summary": {
-            "key": summary_key or f"activity.{kind}",
+            "key": fields.get("summary_key") or f"activity.{kind}",
             "text": summary_text or kind,
         },
         "payload": resolved_payload,
     }
     for key, value in (
-        ("target", target),
-        ("task_id", task_id),
-        ("parent_event_id", parent_event_id),
-        ("idempotency_key", idempotency_key),
+        ("target", fields.get("target")),
+        ("task_id", fields.get("task_id")),
+        ("parent_event_id", fields.get("parent_event_id")),
+        ("idempotency_key", fields.get("idempotency_key")),
     ):
         if value is not None:
             raw[key] = value
@@ -207,7 +215,7 @@ class DurableExecutionEventSink:
 
     def __init__(
         self,
-        store: _AppendStore,
+        store: ExecutionEventStore,
         *,
         run_id: str,
         owner: str,
@@ -236,7 +244,13 @@ class DurableExecutionEventSink:
                     owner=self.owner,
                     intent=_tracking_degraded_intent(),
                 )
-            except Exception:
+            except (
+                LookupError,
+                OSError,
+                RuntimeError,
+                ValueError,
+                sqlite3.Error,
+            ):
                 observe_execution_event("append_failed")
                 return None
             self._pending_degradation = False
@@ -249,7 +263,7 @@ class DurableExecutionEventSink:
             )
             observe_execution_event("append_committed")
             return event
-        except Exception:
+        except (LookupError, OSError, RuntimeError, ValueError, sqlite3.Error):
             observe_execution_event("append_failed")
             self._pending_degradation = True
             if self._on_degraded is not None:

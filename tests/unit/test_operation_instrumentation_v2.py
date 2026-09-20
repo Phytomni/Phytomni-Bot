@@ -6,41 +6,34 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.support.execution_runtime_v2 import (
+    ExecutionStartRequest,
+    build_local_graph_runtime,
+    run_execution_start,
+)
+
+from mcp_server_phytomni.agents.knowledge import retrieval
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    DriverOutcome,
+    TransportNeutralResult,
+)
+from mcp_server_phytomni.runtime.operation_instrumentation_v2 import (
+    instrument_operation_invocation,
+)
 
 
 def test_safe_operation_boundary_publishes_only_presenter_fields(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_drivers_v2 import (
-        LocalGraphDriver,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionCommand,
-        TransportNeutralResult,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_v2 import (
-        ExecutionRuntime,
-    )
-    from mcp_server_phytomni.runtime.execution_work_store_v2 import (
-        SQLiteExecutionWorkRepository,
-    )
-    from mcp_server_phytomni.runtime.operation_instrumentation_v2 import (
-        instrument_operation_invocation,
-    )
+    """Verify safe operation boundary publishes only presenter fields."""
 
     db_path = str(tmp_path / "safe-operation.db")
     journal = SQLiteExecutionJournal(db_path)
@@ -74,27 +67,10 @@ def test_safe_operation_boundary_publishes_only_presenter_fields(
         assert len(result["doc_list"]) == 1
         return DriverOutcome.succeeded(TransportNeutralResult(answer="ok"))
 
-    runtime = ExecutionRuntime(
-        reservations=SQLiteExecutionReservationRepository(db_path),
-        journal=journal,
-        work=SQLiteExecutionWorkRepository(db_path),
-        drivers={
-            "local_graph": LocalGraphDriver(
-                {DriverOperation.START: start_handler}
-            )
-        },
-    )
-    outcome = asyncio.run(
-        runtime.start(
-            owner="alice",
-            execution_id="turn-knowledge-operation",
-            fingerprint_version=1,
-            fingerprint="9" * 64,
-            command=ExecutionCommand(
-                agent_slug="knowledge", arguments={"query": "rice"}
-            ),
-            transport="test",
-        )
+    runtime = build_local_graph_runtime(db_path, start_handler, journal)
+    outcome = run_execution_start(
+        runtime,
+        ExecutionStartRequest("turn-knowledge-operation", "9" * 64),
     )
     assert outcome.status.value == "succeeded"
 
@@ -129,7 +105,7 @@ def test_safe_operation_boundary_publishes_only_presenter_fields(
 async def test_knowledge_retrieve_uses_safe_operation_counts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mcp_server_phytomni.agents.knowledge import retrieval
+    """Verify knowledge retrieve uses safe operation counts."""
 
     captured: dict[str, Any] = {}
 
@@ -182,6 +158,7 @@ async def test_knowledge_retrieve_uses_safe_operation_counts(
 async def test_data_request_uses_safe_operation_counts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify data request uses safe operation counts."""
     nl2sql = importlib.import_module("mcp_server_phytomni.agents.data.nl2sql")
 
     captured: dict[str, Any] = {}
@@ -227,6 +204,7 @@ async def test_data_request_uses_safe_operation_counts(
 
 
 def test_remote_and_artifact_boundaries_use_registered_operations() -> None:
+    """Verify remote and artifact boundaries use registered operations."""
     source_root = Path(__file__).parents[2] / "src" / "mcp_server_phytomni"
     analyst = (source_root / "agents" / "analyst" / "graph.py").read_text(
         encoding="utf-8"

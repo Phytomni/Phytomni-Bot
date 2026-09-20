@@ -6,33 +6,38 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import cast
 
 import pytest
 
+from mcp_server_phytomni.agents.network.public_trace import (
+    publish_gene_network_target_validation,
+    publish_gene_network_workflow_selection,
+)
+from mcp_server_phytomni.runtime.execution_event_sink import (
+    bind_execution_event_sink,
+)
 from mcp_server_phytomni.runtime.execution_events import (
     ExecutionEventIntent,
     PublicTextPayload,
 )
 
 
+@dataclass
 class _RecordingSink:
-    def __init__(self) -> None:
-        self.intents: list[ExecutionEventIntent] = []
+    """Collect execution-event intents emitted by the public helpers."""
 
-    def emit(self, intent: ExecutionEventIntent):
+    intents: list[ExecutionEventIntent] = field(default_factory=list)
+
+    def emit(self, intent: ExecutionEventIntent) -> None:
+        """Record an execution-event intent for later assertions."""
         self.intents.append(intent)
-        return None
 
 
 def test_gene_network_public_narrative_is_fixed_and_domain_validated() -> None:
-    from mcp_server_phytomni.agents.network.public_trace import (
-        publish_gene_network_target_validation,
-        publish_gene_network_workflow_selection,
-    )
-    from mcp_server_phytomni.runtime.execution_event_sink import (
-        bind_execution_event_sink,
-    )
+    """Verify gene network public narrative is fixed and domain validated."""
 
     recorder = _RecordingSink()
     with bind_execution_event_sink(recorder):
@@ -69,7 +74,7 @@ def test_gene_network_public_narrative_is_fixed_and_domain_validated() -> None:
 
 
 def test_gene_network_agent_calls_only_the_public_boundary_helpers() -> None:
-    from pathlib import Path
+    """Verify gene network agent calls only the public boundary helpers."""
 
     source = (
         Path(__file__).parents[2]

@@ -100,7 +100,7 @@ class ExecutionContentStreamV2:
         output_revision: int,
         delta: str,
     ) -> ExecutionContentDeltaV2:
-        """Append one fragment and allocate its UTF-8 end offset atomically."""
+        """Append one fragment and allocate its Unicode-scalar end offset."""
         key = (owner, execution_id)
         with self._lock:
             frames = self._frames[key]
@@ -113,7 +113,11 @@ class ExecutionContentStreamV2:
                 owner=owner,
                 execution_id=execution_id,
                 output_revision=output_revision,
-                offset=prior_offset + len(delta.encode("utf-8")),
+                # Durable message snapshots, Go's rune counts, and the Web
+                # client all define output offsets in Unicode scalar values.
+                # Keep the byte limit above for transport safety, but never
+                # mix that byte count into the resumable content cursor.
+                offset=prior_offset + len(delta),
                 delta=delta,
             )
 

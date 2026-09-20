@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -26,36 +27,85 @@ from mcp_server_phytomni.runtime.execution_reservation_v2 import (
 pytestmark = pytest.mark.server
 
 
+@dataclass(frozen=True)
+class _HttpStorage:
+    """Per-test credentials and storage paths for HTTP acceptance tests."""
+
+    api_key: str
+    db_path: str
+    scratch_root: Path
+
+
+@dataclass(frozen=True)
+class _HttpRuntime:
+    """Resolved HTTP fixtures used by one parametrized agent case."""
+
+    client: httpx.AsyncClient
+    monkeypatch: pytest.MonkeyPatch
+    review_app_factory: Any
+    storage: _HttpStorage
+
+
+@dataclass(frozen=True)
+class _HandlerCase:
+    """Provider dependency, request arguments, and deterministic response."""
+
+    dependency: str
+    arguments: dict[str, object]
+    expected: dict[str, object]
+
+
+@pytest.fixture(name="http_storage")
+def _http_storage_fixture(
+    issued_api_key: str,
+    tasks_db_path: str,
+    tmp_path: Path,
+) -> _HttpStorage:
+    """Bundle HTTP credentials and storage paths for compact test inputs."""
+    return _HttpStorage(issued_api_key, tasks_db_path, tmp_path)
+
+
+@pytest.fixture(name="http_runtime")
+def _http_runtime_fixture(
+    api_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
+    http_storage: _HttpStorage,
+) -> _HttpRuntime:
+    """Bundle resolved runtime fixtures for one HTTP request."""
+    return _HttpRuntime(
+        api_client,
+        monkeypatch,
+        review_app_factory,
+        http_storage,
+    )
+
+
 @pytest.mark.parametrize(
     "spec", PUBLIC_AGENT_CATALOG, ids=lambda item: item.slug
 )
 async def test_real_http_handler_reserves_drives_and_journals_once(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    tasks_db_path: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    review_app_factory: Any,
+    http_runtime: _HttpRuntime,
     spec,
 ) -> None:
     """Fake the provider edge while exercising the production route."""
-    dependency, arguments, expected = REAL_HANDLER_FIXTURES[spec.slug]
+    case = _HandlerCase(*REAL_HANDLER_FIXTURES[spec.slug])
     calls: list[dict[str, object]] = []
 
     async def deterministic_provider(**kwargs: object) -> dict[str, object]:
         calls.append(kwargs)
-        return expected
+        return case.expected
 
     expected_status = (
         "running" if spec.lifecycle == "asynchronous" else "succeeded"
     )
     observed_calls: list[dict[str, object]] | list[object] = calls
     if spec.slug == "review":
-        review_app = review_app_factory()
-        monkeypatch.setattr(
+        review_app = http_runtime.review_app_factory()
+        http_runtime.monkeypatch.setattr(
             api_app_module, "_review_stream_app", lambda: review_app
         )
-        monkeypatch.setattr(
+        http_runtime.monkeypatch.setattr(
             api_app_module,
             "_review_initial_state",
             lambda _args: {"seed": "review"},
@@ -63,36 +113,39 @@ async def test_real_http_handler_reserves_drives_and_journals_once(
         observed_calls = review_app.calls
         expected_status = "waiting_input"
     else:
-        monkeypatch.setattr(handlers, dependency, deterministic_provider)
-    monkeypatch.setattr(
+        http_runtime.monkeypatch.setattr(
+            handlers, case.dependency, deterministic_provider
+        )
+    http_runtime.monkeypatch.setattr(
         handlers,
         "scratch_server_dir",
-        lambda _config, scope: str(tmp_path / scope),
+        lambda _config, scope: str(http_runtime.storage.scratch_root / scope),
     )
     execution_id = f"turn-http-real-{spec.slug}"
     headers = {
-        "Authorization": f"Bearer {issued_api_key}",
+        "Authorization": f"Bearer {http_runtime.storage.api_key}",
         "X-Phyto-Execution-Id": execution_id,
     }
     if spec.slug == "research":
         headers["Idempotency-Key"] = f"idempotency-{spec.slug}"
 
-    response = await api_client.post(
+    response = await http_runtime.client.post(
         f"/v1/agents/{spec.slug}/runs",
         headers=headers,
-        json={"arguments": arguments},
+        json={"arguments": case.arguments},
     )
 
-    assert response.status_code in {200, 202}, response.text
-    expected_side_effects = 0 if spec.slug == "research" else 1
-    assert len(observed_calls) == expected_side_effects
-    reservation = SQLiteExecutionReservationRepository(tasks_db_path).get(
-        owner="u1", execution_id=execution_id
-    )
+    assert response.status_code == (
+        202 if spec.lifecycle == "asynchronous" else 200
+    ), response.text
+    assert len(observed_calls) == (0 if spec.slug == "research" else 1)
+    reservation = SQLiteExecutionReservationRepository(
+        http_runtime.storage.db_path
+    ).get(owner="u1", execution_id=execution_id)
     assert reservation.agent_slug == spec.slug
     assert reservation.driver == spec.driver
     assert reservation.status.value == expected_status
-    page = SQLiteExecutionJournal(tasks_db_path).list_events(
+    page = SQLiteExecutionJournal(http_runtime.storage.db_path).list_events(
         execution_id, owner="u1", limit=200
     )
     assert page is not None

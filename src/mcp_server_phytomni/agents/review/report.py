@@ -20,7 +20,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
@@ -89,7 +89,98 @@ def _partition_add_query_results(
     return normalized, failure_count
 
 
-@dataclass(frozen=True)
+def _citation_document_lookup(
+    raw_doc_list: list[dict[str, Any]],
+    add_doc_list: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Index available citation text by its stable document identifier."""
+    return {
+        str(doc["doc_id"]): _doc_content(doc)
+        for doc in [*raw_doc_list, *add_doc_list]
+        if doc.get("doc_id")
+    }
+
+
+def _citation_batches(
+    content: str,
+    document_lookup: dict[str, str],
+    max_tokens: int,
+) -> list[dict[str, str]]:
+    """Group cited source text into prompt-sized audit batches."""
+    batches: list[dict[str, str]] = []
+    current_docs: dict[str, str] = {}
+    current_length = 0
+    for tag in set(re.findall(CITATION_PATTERN, content)):
+        raw_id = _normalize_citation_id(tag.strip("[]"))
+        if raw_id not in document_lookup:
+            continue
+        doc_content = document_lookup[raw_id]
+        if len(doc_content) > 3000:
+            doc_content = f"{doc_content[:3000]}..."
+        added_length = len(json.dumps({tag: doc_content}, ensure_ascii=False))
+        if len(content) + current_length + added_length > max_tokens:
+            if current_docs:
+                batches.append(current_docs)
+            current_docs = {}
+            current_length = 0
+        current_docs[tag] = doc_content
+        current_length += added_length
+    if current_docs:
+        batches.append(current_docs)
+    return batches
+
+
+@dataclass(frozen=True, slots=True)
+class _SupplementaryEvidenceScope:
+    """Review scope used to rank and filter supplementary evidence."""
+
+    original_query: str = ""
+    subtopic: str = ""
+    seen_identities: set[str] | None = None
+    query_terms: tuple[str, ...] = ()
+
+
+class _SupplementaryScopeOptions(TypedDict, total=False):
+    """Optional scope accepted by ``SupplementaryResultContext``."""
+
+    original_query: str
+    subtopic: str
+    seen_identities: set[str] | None
+    query_terms: tuple[str, ...]
+
+
+_SUPPLEMENTARY_SCOPE_FIELDS = (
+    "original_query",
+    "subtopic",
+    "seen_identities",
+    "query_terms",
+)
+
+
+def _supplementary_evidence_scope(
+    values: tuple[Any, ...],
+    options: _SupplementaryScopeOptions,
+) -> _SupplementaryEvidenceScope:
+    """Resolve legacy positional and typed keyword scope values."""
+    if len(values) > len(_SUPPLEMENTARY_SCOPE_FIELDS):
+        raise TypeError("too many positional scope values")
+    resolved: dict[str, Any] = dict(options)
+    unknown = set(resolved).difference(_SUPPLEMENTARY_SCOPE_FIELDS)
+    if unknown:
+        raise TypeError(f"unexpected keyword argument '{sorted(unknown)[0]}'")
+    for name, value in zip(_SUPPLEMENTARY_SCOPE_FIELDS, values, strict=False):
+        if name in resolved:
+            raise TypeError(f"multiple values for argument '{name}'")
+        resolved[name] = value
+    return _SupplementaryEvidenceScope(
+        original_query=resolved.get("original_query", ""),
+        subtopic=resolved.get("subtopic", ""),
+        seen_identities=resolved.get("seen_identities"),
+        query_terms=resolved.get("query_terms", ()),
+    )
+
+
+@dataclass(frozen=True, init=False)
 class SupplementaryResultContext:
     """Context used to format supplementary retrieval snippets.
 
@@ -107,10 +198,68 @@ class SupplementaryResultContext:
     add_query_results: list[Any]
     add_doc_list: list[dict[str, Any]]
     draft_content: str
+    _scope: _SupplementaryEvidenceScope = _SupplementaryEvidenceScope()
+
+    def __init__(
+        self,
+        subtopic_idx: int,
+        add_queries: list[Any],
+        add_query_results: list[Any],
+        add_doc_list: list[dict[str, Any]],
+        draft_content: str,
+        *scope_values: Any,
+        **scope_options: Unpack[_SupplementaryScopeOptions],
+    ) -> None:
+        """Build formatting context with a compact evidence-scope value."""
+        object.__setattr__(self, "subtopic_idx", subtopic_idx)
+        object.__setattr__(self, "add_queries", add_queries)
+        object.__setattr__(self, "add_query_results", add_query_results)
+        object.__setattr__(self, "add_doc_list", add_doc_list)
+        object.__setattr__(self, "draft_content", draft_content)
+        object.__setattr__(
+            self,
+            "_scope",
+            _supplementary_evidence_scope(scope_values, scope_options),
+        )
+
+    @property
+    def original_query(self) -> str:
+        """Return the parent research question for relevance ranking."""
+        return self._scope.original_query
+
+    @property
+    def subtopic(self) -> str:
+        """Return the research dimension being revised."""
+        return self._scope.subtopic
+
+    @property
+    def seen_identities(self) -> set[str] | None:
+        """Return evidence identities already present in the draft."""
+        return self._scope.seen_identities
+
+    @property
+    def query_terms(self) -> tuple[str, ...]:
+        """Return domain terms that supplementary evidence must respect."""
+        return self._scope.query_terms
+
+
+class _FeedbackScopeOptions(TypedDict, total=False):
+    """Optional research scope for the compatible feedback entrypoints."""
+
+    original_query: str
+    subtopic: str
+
+
+@dataclass(frozen=True, slots=True)
+class _FeedbackRequest:
+    """Complete immutable input to one evidence-feedback pass."""
+
+    subtopic_idx: int
+    draft_content: str
+    review_content: str
+    raw_doc_list: list[dict[str, Any]]
     original_query: str = ""
     subtopic: str = ""
-    seen_identities: set[str] | None = None
-    query_terms: tuple[str, ...] = ()
 
 
 @dataclass
@@ -150,9 +299,7 @@ class ReviewReportMixin:
         draft_content: str,
         review_content: str,
         raw_doc_list: list[dict[str, Any]],
-        *,
-        original_query: str = "",
-        subtopic: str = "",
+        **scope_options: Unpack[_FeedbackScopeOptions],
     ) -> dict[str, Any]:
         """Run evidence feedback through the Review report seam."""
         return await self._feedback_rag(
@@ -160,8 +307,7 @@ class ReviewReportMixin:
             draft_content,
             review_content,
             raw_doc_list,
-            original_query=original_query,
-            subtopic=subtopic,
+            **scope_options,
         )
 
     def format_supplementary_results(
@@ -177,9 +323,7 @@ class ReviewReportMixin:
         draft_content: str,
         review_content: str,
         raw_doc_list: list[dict[str, Any]],
-        *,
-        original_query: str = "",
-        subtopic: str = "",
+        **scope_options: Unpack[_FeedbackScopeOptions],
     ) -> dict[str, Any]:
         """Retrieve additional evidence, revise, and audit citations.
 
@@ -188,83 +332,116 @@ class ReviewReportMixin:
         continuation; when no reliable evidence remains the fixed retrieval
         error is raised. Cancellation-class results propagate.
         """
-        review_json = _extract_json_object(review_content)
+        unknown = set(scope_options).difference({"original_query", "subtopic"})
+        if unknown:
+            raise TypeError(
+                f"unexpected keyword argument '{sorted(unknown)[0]}'"
+            )
+        return await self._feedback_from_request(
+            _FeedbackRequest(
+                subtopic_idx=subtopic_idx,
+                draft_content=draft_content,
+                review_content=review_content,
+                raw_doc_list=raw_doc_list,
+                original_query=scope_options.get("original_query", ""),
+                subtopic=scope_options.get("subtopic", ""),
+            )
+        )
+
+    async def _feedback_from_request(
+        self: Any,
+        request: _FeedbackRequest,
+    ) -> dict[str, Any]:
+        """Apply review gaps, supplementary retrieval, and citation audit."""
+        review_json = _extract_json_object(request.review_content)
         add_queries = review_json.get("search_queries", [])
         if not isinstance(add_queries, list):
             add_queries = []
 
         add_doc_list: list[dict[str, Any]] = []
-        content_to_check = draft_content
+        content_to_check = request.draft_content
 
         if (
             review_json.get("has_critical_gaps", False)
             and not review_json.get("off_topic", False)
             and add_queries
         ):
-            scoped_add_queries = [
-                compose_review_retrieval_query(
-                    original_query=original_query,
-                    dimension=subtopic,
-                    supplementary_query=str(query),
-                )
-                for query in add_queries[:3]
-            ]
-            add_query_results = await asyncio.gather(
-                *[
-                    self.ka.arun(
-                        user_query=query,
-                        is_generate=False,
-                        is_follow_up=False,
-                    )
-                    for query in scoped_add_queries
-                ],
-                return_exceptions=True,
+            content_to_check = await self._supplement_draft(
+                request,
+                add_queries,
+                add_doc_list,
             )
-            normalized_results, failure_count = _partition_add_query_results(
-                add_query_results
-            )
-            new_knowledge_str = self._format_supplementary_results(
-                SupplementaryResultContext(
-                    subtopic_idx=subtopic_idx,
-                    add_queries=add_queries,
-                    add_query_results=normalized_results,
-                    add_doc_list=add_doc_list,
-                    draft_content=draft_content,
-                    original_query=original_query,
-                    subtopic=subtopic,
-                    seen_identities={
-                        identity
-                        for document in raw_doc_list
-                        if (identity := review_evidence_identity(document))
-                    },
-                )
-            )
-            if failure_count and not raw_doc_list and not add_doc_list:
-                raise retrieval_unavailable_error()
-            if new_knowledge_str.strip():
-                feedback_response = await self._chat(
-                    get_prompt(
-                        self.review_config.PROMPT_FILE,
-                        "user/deep_research_feedback",
-                        {
-                            "existing_draft": draft_content,
-                            "new_snippets": new_knowledge_str,
-                        },
-                    )
-                )
-                feedback_content = message_content(feedback_response)
-                if feedback_content:
-                    content_to_check = feedback_content
 
         content_to_check = await self._audit_citations(
             content_to_check=content_to_check,
-            raw_doc_list=raw_doc_list,
+            raw_doc_list=request.raw_doc_list,
             add_doc_list=add_doc_list,
         )
         return {
             "revised_content": content_to_check,
             "add_doc_list": add_doc_list,
         }
+
+    async def _supplement_draft(
+        self: Any,
+        request: _FeedbackRequest,
+        add_queries: list[Any],
+        add_doc_list: list[dict[str, Any]],
+    ) -> str:
+        """Retrieve review-scoped evidence and revise the draft when useful."""
+        scoped_queries = [
+            compose_review_retrieval_query(
+                original_query=request.original_query,
+                dimension=request.subtopic,
+                supplementary_query=str(query),
+            )
+            for query in add_queries[:3]
+        ]
+        query_results = await asyncio.gather(
+            *[
+                self.ka.arun(
+                    user_query=query,
+                    is_generate=False,
+                    is_follow_up=False,
+                )
+                for query in scoped_queries
+            ],
+            return_exceptions=True,
+        )
+        normalized_results, failure_count = _partition_add_query_results(
+            query_results
+        )
+        new_knowledge = self._format_supplementary_results(
+            SupplementaryResultContext(
+                subtopic_idx=request.subtopic_idx,
+                add_queries=add_queries,
+                add_query_results=normalized_results,
+                add_doc_list=add_doc_list,
+                draft_content=request.draft_content,
+                original_query=request.original_query,
+                subtopic=request.subtopic,
+                seen_identities={
+                    identity
+                    for document in request.raw_doc_list
+                    if (identity := review_evidence_identity(document))
+                },
+            )
+        )
+        if failure_count and not request.raw_doc_list and not add_doc_list:
+            raise retrieval_unavailable_error()
+        if not new_knowledge.strip():
+            return request.draft_content
+        feedback_response = await self._chat(
+            get_prompt(
+                self.review_config.PROMPT_FILE,
+                "user/deep_research_feedback",
+                {
+                    "existing_draft": request.draft_content,
+                    "new_snippets": new_knowledge,
+                },
+            )
+        )
+        return message_content(feedback_response) or request.draft_content
 
     def _format_supplementary_results(
         self: Any,
@@ -366,75 +543,47 @@ class ReviewReportMixin:
         add_doc_list: list[dict[str, Any]],
     ) -> str:
         """Ask the model to remove unsupported citations."""
-        all_doc_lookup = {
-            str(doc["doc_id"]): _doc_content(doc)
-            for doc in [*raw_doc_list, *add_doc_list]
-            if doc.get("doc_id")
-        }
-        current_batch_docs: dict[str, str] = {}
-        current_batch_doc_len = 0
-
-        async def run_citation_check(
-            batch_docs: dict[str, str],
-            *,
-            ordinal: int,
-            total: int,
-        ) -> None:
-            nonlocal content_to_check
-            if not batch_docs:
-                return
-
-            async def check_batch() -> Any:
-                return await self._chat(
-                    get_prompt(
-                        self.review_config.PROMPT_FILE,
-                        "user/deep_research_check",
-                        {
-                            "input_text": content_to_check,
-                            "source_docs_json": json.dumps(
-                                batch_docs, ensure_ascii=False
-                            ),
-                        },
-                    )
-                )
-
-            check_response = await instrument_operation_invocation(
-                "review.citation_check",
-                check_batch,
-                detail={"ordinal": ordinal, "total": total},
-            )
-            checked_text = message_content(check_response).strip()
-            if checked_text:
-                content_to_check = checked_text
-
-        citation_batches: list[dict[str, str]] = []
-        for tag in set(re.findall(CITATION_PATTERN, content_to_check)):
-            raw_id = _normalize_citation_id(tag.strip("[]"))
-            if raw_id not in all_doc_lookup:
-                continue
-            doc_content = all_doc_lookup[raw_id]
-            if len(doc_content) > 3000:
-                doc_content = f"{doc_content[:3000]}..."
-            doc_json_str = json.dumps({tag: doc_content}, ensure_ascii=False)
-            added_len = len(doc_json_str)
-            if (
-                len(content_to_check) + current_batch_doc_len + added_len
-                > self.review_config.MAX_TOKENS
-            ):
-                if current_batch_docs:
-                    citation_batches.append(current_batch_docs)
-                current_batch_docs = {}
-                current_batch_doc_len = 0
-            current_batch_docs[tag] = doc_content
-            current_batch_doc_len += added_len
-
-        if current_batch_docs:
-            citation_batches.append(current_batch_docs)
-        total = len(citation_batches)
-        for index, batch_docs in enumerate(citation_batches):
-            await run_citation_check(
+        batches = _citation_batches(
+            content_to_check,
+            _citation_document_lookup(raw_doc_list, add_doc_list),
+            self.review_config.MAX_TOKENS,
+        )
+        for index, batch_docs in enumerate(batches):
+            content_to_check = await self._check_citation_batch(
+                content_to_check,
                 batch_docs,
                 ordinal=index + 1,
-                total=total,
+                total=len(batches),
             )
         return content_to_check
+
+    async def _check_citation_batch(
+        self: Any,
+        content: str,
+        batch_docs: dict[str, str],
+        *,
+        ordinal: int,
+        total: int,
+    ) -> str:
+        """Apply one instrumented citation audit batch to report content."""
+
+        async def check_batch() -> Any:
+            return await self._chat(
+                get_prompt(
+                    self.review_config.PROMPT_FILE,
+                    "user/deep_research_check",
+                    {
+                        "input_text": content,
+                        "source_docs_json": json.dumps(
+                            batch_docs, ensure_ascii=False
+                        ),
+                    },
+                )
+            )
+
+        check_response = await instrument_operation_invocation(
+            "review.citation_check",
+            check_batch,
+            detail={"ordinal": ordinal, "total": total},
+        )
+        return message_content(check_response).strip() or content

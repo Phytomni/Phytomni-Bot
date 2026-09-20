@@ -9,6 +9,12 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from tests.support.execution_contract_fixtures import create_legacy_runs_table
+
+from mcp_server_phytomni.runtime.execution_journal_schema import (
+    migrate_execution_journal_v2,
+)
+from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
@@ -21,17 +27,11 @@ def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
 def test_v2_migration_preserves_legacy_runs_tasks_and_v1_events(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_schema import (
-        migrate_execution_journal_v2,
-    )
+    """Verify V2 migration preserves legacy runs tasks and V1 events."""
 
     db_path = tmp_path / "legacy.db"
     with sqlite_transaction(db_path) as connection:
-        connection.execute(
-            "CREATE TABLE runs ("
-            "run_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, "
-            "agent TEXT NOT NULL, origin TEXT NOT NULL, status TEXT NOT NULL)"
-        )
+        create_legacy_runs_table(connection)
         connection.execute(
             "CREATE TABLE tasks (task_id TEXT PRIMARY KEY, run_id TEXT)"
         )
@@ -89,7 +89,7 @@ def test_v2_migration_preserves_legacy_runs_tasks_and_v1_events(
 
 
 def test_run_registry_applies_v2_schema_idempotently(tmp_path: Path) -> None:
-    from mcp_server_phytomni.runtime.run_registry import RunRegistry
+    """Verify run registry applies V2 schema idempotently."""
 
     db_path = tmp_path / "registry.db"
     RunRegistry(str(db_path))
@@ -160,10 +160,7 @@ def test_run_registry_applies_v2_schema_idempotently(tmp_path: Path) -> None:
 def test_v2_migration_adds_dispatch_integrity_fields_to_existing_queue(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_journal_schema import (
-        migrate_execution_journal_v2,
-    )
-    from mcp_server_phytomni.runtime.run_registry import RunRegistry
+    """Verify V2 migration adds dispatch integrity fields to existing queue."""
 
     db_path = tmp_path / "legacy-command-queue.db"
     RunRegistry(str(db_path))

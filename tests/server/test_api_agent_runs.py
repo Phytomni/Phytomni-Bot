@@ -12,7 +12,6 @@ chokepoint-minted ``origin="remote"`` run_id read back via
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
@@ -20,6 +19,9 @@ from typing import Any
 import httpx
 import pytest
 from tests.support.handler_fakes import review_success_result
+from tests.support.http_execution_fixtures import (
+    install_terminal_settlement_failure,
+)
 from tests.support.http_fakes import (
     assert_duplicate_attachment_response,
     install_rejection_handler,
@@ -45,9 +47,6 @@ from mcp_server_phytomni.mcp.schemas import (
 )
 from mcp_server_phytomni.runtime.execution_event_sink import (
     emit_decision_note,
-)
-from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-    SQLiteExecutionReservationRepository,
 )
 from mcp_server_phytomni.runtime.execution_v1_projection_v2 import (
     V1ExecutionCompatibilityReader,
@@ -396,6 +395,7 @@ async def test_reserved_sync_agent_settles_failed_when_tool_raises(
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
+    """Verify reserved sync agent settles failed when tool raises."""
     execution_id = "turn-550e8400-e29b-41d4-a716-446655440003"
 
     async def fail(_args: Any) -> dict[str, Any]:
@@ -461,17 +461,10 @@ async def test_agent_run_sync_persistence_failure_returns_safe_500(
 
     fake = minimal_tool_handler("ok")
 
-    def fail_terminal_settlement(*_args: Any, **_kwargs: Any) -> bool:
-        """Raise at the canonical Runtime persistence authority."""
-        raise sqlite3.OperationalError("private persistence detail")
-
-    install_tool_handler(
-        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
-    )
-    monkeypatch.setattr(
-        SQLiteExecutionReservationRepository,
-        "settle_terminal",
-        fail_terminal_settlement,
+    install_terminal_settlement_failure(
+        monkeypatch,
+        fake,
+        private_detail="private persistence detail",
     )
 
     response = await post_native_run(

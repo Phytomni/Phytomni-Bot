@@ -269,6 +269,85 @@ _RETIRED_EXECUTION_MODULES = {
     "src/mcp_server_phytomni/api/a2ui_review_persistence.py",
     "src/mcp_server_phytomni/runtime/background_submission.py",
 }
+_EXECUTION_CONVERGENCE_PATH_FIELDS = (
+    "direct_graph_invocation_paths",
+    "durable_create_task_paths",
+    "hardcoded_runtime_policy_paths",
+    "direct_lifecycle_event_paths",
+    "legacy_execution_identity_paths",
+    "legacy_sync_run_writer_paths",
+    "legacy_stream_run_writer_paths",
+    "secondary_runtime_writer_paths",
+    "terminal_event_writer_paths",
+    "retired_execution_module_paths",
+)
+
+
+def _execution_convergence_path_fields(
+    relative: str,
+    source: str,
+) -> tuple[str, ...]:
+    """Return every convergence category observed in one source file."""
+    fields: list[str] = []
+    if _has_direct_graph_call(source) and relative != (
+        "src/mcp_server_phytomni/runtime/langgraph_runner.py"
+    ):
+        fields.append("direct_graph_invocation_paths")
+    if _has_durable_task_call(source) and (
+        "/agents/" in f"/{relative}"
+        or relative.endswith("/runtime/background_submission.py")
+    ):
+        fields.append("durable_create_task_paths")
+    if _HARDCODED_BACKGROUND_POLICY.search(source):
+        fields.append("hardcoded_runtime_policy_paths")
+    if "/agents/" in f"/{relative}" and _DIRECT_LIFECYCLE_EVENT.search(source):
+        fields.append("direct_lifecycle_event_paths")
+    if _LEGACY_EXECUTION_ID_MINT.search(source):
+        fields.append("legacy_execution_identity_paths")
+    if (
+        relative != "src/mcp_server_phytomni/api/run_lifecycle.py"
+        and _has_legacy_sync_run_writer(source)
+    ):
+        fields.append("legacy_sync_run_writer_paths")
+    if _has_legacy_stream_run_writer(source):
+        fields.append("legacy_stream_run_writer_paths")
+    if (
+        relative not in _SECONDARY_RUNTIME_WRITER_OWNERS
+        and _has_secondary_runtime_writer(source)
+    ):
+        fields.append("secondary_runtime_writer_paths")
+    if (
+        relative
+        != "src/mcp_server_phytomni/runtime/execution_reservation_v2.py"
+        and _has_terminal_journal_append(source)
+    ):
+        fields.append("terminal_event_writer_paths")
+    if relative in _RETIRED_EXECUTION_MODULES:
+        fields.append("retired_execution_module_paths")
+    return tuple(fields)
+
+
+def _unreachable_public_fact_producers(root: Path) -> list[str]:
+    """Return advertised public facts with no reachable Runtime producer."""
+    runtime_path = (
+        root / "src/mcp_server_phytomni/runtime/execution_runtime_v2.py"
+    )
+    if not runtime_path.exists():
+        return []
+    runtime_source = runtime_path.read_text(encoding="utf-8")
+    unreachable: list[str] = []
+    if any(item.todo_phases for item in PUBLIC_AGENT_CATALOG) and (
+        '"todo.snapshot"' not in runtime_source
+        and "'todo.snapshot'" not in runtime_source
+    ):
+        unreachable.append("todo.snapshot")
+    if any(
+        not _agent_has_reachable_public_summary(root, item.slug)
+        for item in PUBLIC_AGENT_CATALOG
+        if item.public_summary == "explicit"
+    ):
+        unreachable.append("public_summary")
+    return unreachable
 
 
 def architecture_inventory() -> dict[str, Any]:
@@ -305,94 +384,27 @@ def execution_convergence_inventory(root: Path = ROOT) -> dict[str, Any]:
     """Return execution responsibilities outside shared runtime owners."""
 
     source_root = root / "src/mcp_server_phytomni"
-    graph_calls: set[str] = set()
-    durable_task_calls: set[str] = set()
-    hardcoded_policies: set[str] = set()
-    direct_lifecycle_events: set[str] = set()
-    legacy_execution_id_mints: set[str] = set()
-    legacy_sync_run_writers: set[str] = set()
-    legacy_stream_run_writers: set[str] = set()
-    secondary_runtime_writers: set[str] = set()
-    terminal_event_writers: set[str] = set()
-    retired_execution_modules: set[str] = set()
+    paths_by_field: dict[str, set[str]] = {
+        field: set() for field in _EXECUTION_CONVERGENCE_PATH_FIELDS
+    }
     public_execution_uuid_mints: list[str] = []
     for path in sorted(source_root.rglob("*.py")):
         relative = path.relative_to(root).as_posix()
         source = path.read_text(encoding="utf-8")
-        if (
-            _has_direct_graph_call(source)
-            and relative
-            != "src/mcp_server_phytomni/runtime/langgraph_runner.py"
-        ):
-            graph_calls.add(relative)
-        if _has_durable_task_call(source) and (
-            "/agents/" in f"/{relative}"
-            or relative.endswith("/runtime/background_submission.py")
-        ):
-            durable_task_calls.add(relative)
-        if _HARDCODED_BACKGROUND_POLICY.search(source):
-            hardcoded_policies.add(relative)
-        if "/agents/" in f"/{relative}" and _DIRECT_LIFECYCLE_EVENT.search(
-            source
-        ):
-            direct_lifecycle_events.add(relative)
-        if _LEGACY_EXECUTION_ID_MINT.search(source):
-            legacy_execution_id_mints.add(relative)
-        if (
-            relative != "src/mcp_server_phytomni/api/run_lifecycle.py"
-            and _has_legacy_sync_run_writer(source)
-        ):
-            legacy_sync_run_writers.add(relative)
-        if _has_legacy_stream_run_writer(source):
-            legacy_stream_run_writers.add(relative)
-        if (
-            relative not in _SECONDARY_RUNTIME_WRITER_OWNERS
-            and _has_secondary_runtime_writer(source)
-        ):
-            secondary_runtime_writers.add(relative)
-        if (
-            relative
-            != "src/mcp_server_phytomni/runtime/execution_reservation_v2.py"
-            and _has_terminal_journal_append(source)
-        ):
-            terminal_event_writers.add(relative)
-        if relative in _RETIRED_EXECUTION_MODULES:
-            retired_execution_modules.add(relative)
+        for field in _execution_convergence_path_fields(relative, source):
+            paths_by_field[field].add(relative)
         public_execution_uuid_mints.extend(
             relative for _ in _PUBLIC_EXECUTION_UUID_MINT.finditer(source)
         )
-    unreachable_public_fact_producers: list[str] = []
-    runtime_path = (
-        root / "src/mcp_server_phytomni/runtime/execution_runtime_v2.py"
-    )
-    if runtime_path.exists():
-        runtime_source = runtime_path.read_text(encoding="utf-8")
-        if any(item.todo_phases for item in PUBLIC_AGENT_CATALOG) and (
-            '"todo.snapshot"' not in runtime_source
-            and "'todo.snapshot'" not in runtime_source
-        ):
-            unreachable_public_fact_producers.append("todo.snapshot")
-        if any(
-            not _agent_has_reachable_public_summary(root, item.slug)
-            for item in PUBLIC_AGENT_CATALOG
-            if item.public_summary == "explicit"
-        ):
-            unreachable_public_fact_producers.append("public_summary")
     return {
         "schema_version": 1,
-        "direct_graph_invocation_paths": sorted(graph_calls),
-        "durable_create_task_paths": sorted(durable_task_calls),
-        "hardcoded_runtime_policy_paths": sorted(hardcoded_policies),
-        "direct_lifecycle_event_paths": sorted(direct_lifecycle_events),
-        "legacy_execution_identity_paths": sorted(legacy_execution_id_mints),
-        "legacy_sync_run_writer_paths": sorted(legacy_sync_run_writers),
-        "legacy_stream_run_writer_paths": sorted(legacy_stream_run_writers),
-        "secondary_runtime_writer_paths": sorted(secondary_runtime_writers),
-        "terminal_event_writer_paths": sorted(terminal_event_writers),
-        "retired_execution_module_paths": sorted(retired_execution_modules),
+        **{
+            field: sorted(paths_by_field[field])
+            for field in _EXECUTION_CONVERGENCE_PATH_FIELDS
+        },
         "public_execution_identity_mints": public_execution_uuid_mints,
         "unreachable_public_fact_producers": (
-            unreachable_public_fact_producers
+            _unreachable_public_fact_producers(root)
         ),
     }
 

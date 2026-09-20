@@ -1,16 +1,14 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
-"""Durable local-wait and stream-family Expert route tests."""
+"""Durable local Expert route tests."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from types import SimpleNamespace
+from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock
 
-from fastapi.responses import StreamingResponse
 from tests.server.test_query_route import (
     RunRegistry,
     ToolSelection,
@@ -21,69 +19,72 @@ from tests.server.test_query_route import (
     pytest,
     server,
 )
-from tests.support.asyncio_helpers import wait_until
-from tests.support.handler_fakes import review_success_result
+from tests.support.execution_contract_fixtures import install_successful_review
 
-from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
-from mcp_server_phytomni.mcp.formatting.agui import (
-    run_finished,
-    run_started,
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
 )
 
 pytestmark = pytest.mark.server
 
-_LOCAL_WAIT_CASES = (
+_LOCAL_SYNC_CASES = (
     pytest.param(
         ("DataAgent", "data", {"user_query": "q"}),
-        id="data-local-wait",
+        id="data-sync",
     ),
     pytest.param(
         ("ReviewAgent", "review", {"user_query": "q"}),
-        id="review-local-wait",
+        id="review-sync",
     ),
 )
-_STREAM_EXPERT_CASES = (
+
+
+@dataclass(frozen=True)
+class _RouteCase:
+    """One synchronous expert-route selection and its provider arguments."""
+
+    tool_name: str
+    slug: str
+    arguments: dict[str, Any]
+
+
+_SYNC_EXPERT_CASES = (
     pytest.param(
-        ("ChatAgent", "chat", {"user_query": "routed question"}),
-        id="chat-stream",
+        _RouteCase("ChatAgent", "chat", {"user_query": "routed question"}),
+        id="chat-sync",
     ),
     pytest.param(
-        (
+        _RouteCase(
             "KnowledgeAgent",
             "knowledge",
             {"user_query": "routed question", "obs_file_list": []},
         ),
-        id="knowledge-stream",
+        id="knowledge-sync",
     ),
     pytest.param(
-        ("BriefGeneAgent", "brief_gene", {"user_query": "AT1G01010"}),
-        id="brief-gene-stream",
+        _RouteCase(
+            "BriefGeneAgent", "brief_gene", {"user_query": "AT1G01010"}
+        ),
+        id="brief-gene-sync",
     ),
 )
 
 
-@pytest.mark.parametrize("case", _LOCAL_WAIT_CASES)
-async def test_expert_local_wait_selection_uses_background_launcher(
+@pytest.mark.parametrize("case", _LOCAL_SYNC_CASES)
+async def test_expert_local_selection_returns_synchronous_run(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
     case: tuple[str, str, dict[str, Any]],
 ) -> None:
-    """Expert Data and Review expose one durable local-wait run."""
+    """Expert Data and Review return one persisted synchronous run."""
     tool_name, slug, arguments = case
     if slug == "review":
-
-        async def fake_review(**kwargs: Any) -> Any:
-            del kwargs
-            return SimpleNamespace(
-                status="succeeded",
-                result=review_success_result(),
-            )
-
-        monkeypatch.setattr(
-            api_app, "_execute_review_with_run_id", fake_review
-        )
+        install_successful_review(monkeypatch, run_id=None)
     else:
         _stub_tool_handler(
             monkeypatch,
@@ -99,127 +100,88 @@ async def test_expert_local_wait_selection_uses_background_launcher(
         payload,
     )
 
-    assert response.status_code == 202, response.text
+    assert response.status_code == 200, response.text
     selector.assert_awaited_once()
     body = response.json()
     assert body["agent"] == slug
-    assert body["status"] == "running"
+    assert body["status"] == "succeeded"
+    assert body["id"] == body["run_id"]
+    assert body["task_ids"] == []
+    record = RunRegistry(tasks_db_path).get_run(body["run_id"], owner="u1")
+    assert record is not None
+    assert record.status == "succeeded"
 
-    def completed() -> bool:
-        record = RunRegistry(tasks_db_path).get_run(body["run_id"], owner="u1")
-        return record is not None and record.status == "succeeded"
 
-    await wait_until(completed)
-
-
-@pytest.mark.parametrize("case", _STREAM_EXPERT_CASES)
-async def test_route_stream_selection_returns_persisted_stream_run(
+@pytest.mark.parametrize("case", _SYNC_EXPERT_CASES)
+async def test_route_sync_selection_runs_and_settles_in_runtime(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
-    case: tuple[str, str, dict[str, Any]],
+    case: _RouteCase,
 ) -> None:
-    """Expert stream families return the real persisted stream identity."""
-    tool_name, slug, arguments = case
-    started: list[dict[str, Any]] = []
+    """Expert local selections invoke once and persist a terminal identity."""
+    invoked: list[Any] = []
 
-    async def prepared_stream(
-        selected_tool: str,
-        selected_arguments: dict[str, Any],
-        *,
-        run_id: str,
-        dialogue_id: str | None,
-        **_kwargs: Any,
-    ) -> AsyncIterator[Any]:
-        started.append(
-            {
-                "tool_name": selected_tool,
-                "arguments": selected_arguments,
-                "run_id": run_id,
-            }
-        )
-        yield run_started(run_id, dialogue_id)
-        yield run_finished(run_id)
+    async def provider(args: Any) -> dict[str, Any]:
+        invoked.append(args)
+        return {"answer": "ok", "doc_list": []}
 
-    async def forbidden_invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
-        raise AssertionError("routed stream must not use blocking invoke")
+    async def forbidden_stream(**_kwargs: Any) -> None:
+        raise AssertionError("Expert local runs must not open an SSE stream")
 
-    selector = AsyncMock(return_value=ToolSelection(tool_name, arguments))
+    selector = AsyncMock(
+        return_value=ToolSelection(case.tool_name, case.arguments)
+    )
     monkeypatch.setattr(api_app, "select_agent_tool", selector)
-    monkeypatch.setattr(api_app, "prepare_tool_stream", prepared_stream)
-    monkeypatch.setattr(api_app, "_invoke_agent_run", forbidden_invoke)
-
-    response = await _post_query_route(
-        api_client,
-        issued_api_key,
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
         {
+            "chat": server.PhytomniAgents.CHAT_AGENT.value,
+            "knowledge": server.PhytomniAgents.KNOWLEDGE_AGENT.value,
+            "brief_gene": server.PhytomniAgents.BRIEF_GENE_AGENT.value,
+        }[case.slug],
+        provider,
+    )
+    monkeypatch.setattr(api_app, "_stream_chat_response", forbidden_stream)
+
+    execution_id = f"turn-expert-sync-{case.slug}"
+    response = await api_client.post(
+        "/v1/query/route",
+        headers={
+            "Authorization": f"Bearer {issued_api_key}",
+            "X-Phyto-Execution-Id": execution_id,
+        },
+        json={
             "user_query": "routed question",
-            "allowed_tools": [tool_name],
+            "allowed_tools": [case.tool_name],
         },
     )
 
-    assert response.status_code == 202, response.text
+    assert response.status_code == 200, response.text
     selector.assert_awaited_once()
-    assert len(started) == 1
-    run_id = started[0]["run_id"]
-    assert response.json() == {
-        "id": run_id,
-        "object": "agent.run",
-        "agent": slug,
-        "status": "running",
-        "task_ids": [],
-        "result": empty_agent_result(),
-        "run_id": run_id,
-    }
-    record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
+    assert len(invoked) == 1
+    body = response.json()
+    assert body["agent"] == case.slug
+    assert body["status"] == "succeeded"
+    assert body["id"] == body["run_id"]
+    record = RunRegistry(tasks_db_path).get_run(body["run_id"], owner="u1")
     assert record is not None
-    assert record.spec.agent == slug
-
-
-@pytest.mark.parametrize("case", _STREAM_EXPERT_CASES)
-async def test_route_stream_selection_rejects_missing_run_id(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    case: tuple[str, str, dict[str, Any]],
-) -> None:
-    """A malformed stream without its run identity fails safely."""
-    tool_name, _slug, arguments = case
-    streamed: list[dict[str, Any]] = []
-
-    async def missing_run_id() -> AsyncIterator[str]:
-        yield (
-            "event: RunStarted\n"
-            'data: {"type":"RunStarted","dialogue_id":null}\n\n'
-        )
-
-    async def fake_stream(**kwargs: Any) -> StreamingResponse:
-        streamed.append(kwargs)
-        return StreamingResponse(
-            missing_run_id(),
-            media_type="text/event-stream",
-        )
-
-    async def forbidden_invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
-        raise AssertionError("routed stream must not use blocking invoke")
-
-    selector = AsyncMock(return_value=ToolSelection(tool_name, arguments))
-    monkeypatch.setattr(api_app, "select_agent_tool", selector)
-    monkeypatch.setattr(api_app, "_stream_chat_completion", fake_stream)
-    monkeypatch.setattr(api_app, "_invoke_agent_run", forbidden_invoke)
-
-    response = await _post_query_route(
-        api_client,
-        issued_api_key,
-        {
-            "user_query": "routed question",
-            "allowed_tools": [tool_name],
-        },
+    assert record.spec.agent == case.slug
+    assert record.status == "succeeded"
+    assert record.request_info.execution_id == execution_id
+    reservation = SQLiteExecutionReservationRepository(tasks_db_path).get(
+        owner="u1",
+        execution_id=execution_id,
     )
-
-    assert response.status_code == 500
-    assert response.json()["error"]["code"] == "internal_invariant_failed"
-    assert "run_id" not in response.text
-    selector.assert_awaited_once()
-    assert len(streamed) == 1
+    assert reservation.run_id == body["run_id"]
+    assert reservation.status.value == "succeeded"
+    page = SQLiteExecutionJournal(tasks_db_path).list_events(
+        execution_id,
+        owner="u1",
+        limit=100,
+    )
+    assert page is not None
+    assert [event.type.value for event in page.items].count(
+        "execution.succeeded"
+    ) == 1

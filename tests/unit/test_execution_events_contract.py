@@ -11,6 +11,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
+
+from mcp_server_phytomni.runtime.execution_events import (
+    PUBLIC_EVENT_KINDS,
+    ExecutionEventIntent,
+    ExecutionEventValidationError,
+    parse_execution_event,
+    parse_execution_event_intent,
+    parse_run_event_projection,
+)
 
 FIXTURES = (
     Path(__file__).parents[2]
@@ -38,9 +48,7 @@ def _event(
 
 
 def test_shared_fixture_covers_the_finite_public_vocabulary() -> None:
-    from mcp_server_phytomni.runtime.execution_events import (
-        PUBLIC_EVENT_KINDS,
-    )
+    """Verify shared fixture covers the finite public vocabulary."""
 
     fixtures = _fixtures()
     contract = fixtures["contract"]
@@ -53,6 +61,7 @@ def test_shared_fixture_covers_the_finite_public_vocabulary() -> None:
 
 
 def test_shared_fixture_freezes_the_single_public_execution_identity() -> None:
+    """Verify shared fixture freezes the single public execution identity."""
     identity = _fixtures()["contract"]["execution_identity"]
     assert identity == {
         "source_field": "client_turn_id",
@@ -66,9 +75,7 @@ def test_shared_fixture_freezes_the_single_public_execution_identity() -> None:
 
 
 def test_every_valid_fixture_decodes_and_round_trips() -> None:
-    from mcp_server_phytomni.runtime.execution_events import (
-        parse_execution_event,
-    )
+    """Verify every valid fixture decodes and round trips."""
 
     fixtures = _fixtures()
     cases = fixtures["valid_events"]
@@ -80,9 +87,7 @@ def test_every_valid_fixture_decodes_and_round_trips() -> None:
 
 
 def test_ignorable_unknown_fixture_preserves_sequence_and_cursor() -> None:
-    from mcp_server_phytomni.runtime.execution_events import (
-        parse_execution_event,
-    )
+    """Verify ignorable unknown fixture preserves sequence and cursor."""
 
     fixtures = _fixtures()
     raw = _event(fixtures, fixtures["ignorable_extension"], 22)
@@ -93,9 +98,7 @@ def test_ignorable_unknown_fixture_preserves_sequence_and_cursor() -> None:
 
 
 def test_projection_fixture_decodes_and_round_trips() -> None:
-    from mcp_server_phytomni.runtime.execution_events import (
-        parse_run_event_projection,
-    )
+    """Verify projection fixture decodes and round trips."""
 
     raw = _fixtures()["projection"]
     decoded = parse_run_event_projection(raw)
@@ -104,10 +107,7 @@ def test_projection_fixture_decodes_and_round_trips() -> None:
 
 @pytest.mark.parametrize("case", _fixtures()["invalid_events"])
 def test_invalid_public_fixture_fails_closed(case: dict[str, Any]) -> None:
-    from mcp_server_phytomni.runtime.execution_events import (
-        ExecutionEventValidationError,
-        parse_execution_event,
-    )
+    """Verify invalid public fixture fails closed."""
 
     fixtures = _fixtures()
     raw = _event(fixtures, case["event"])
@@ -116,7 +116,7 @@ def test_invalid_public_fixture_fails_closed(case: dict[str, Any]) -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "override", "reason"),
+    ("_name", "override", "reason"),
     [
         (
             "credential value",
@@ -187,12 +187,9 @@ def test_invalid_public_fixture_fails_closed(case: dict[str, Any]) -> None:
     ],
 )
 def test_sensitive_values_cannot_hide_in_allowed_fields(
-    name: str, override: dict[str, object], reason: str
+    _name: str, override: dict[str, object], reason: str
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_events import (
-        ExecutionEventValidationError,
-        parse_execution_event,
-    )
+    """Verify sensitive values cannot hide in allowed fields."""
 
     fixtures = _fixtures()
     raw = _event(fixtures, override)
@@ -201,11 +198,7 @@ def test_sensitive_values_cannot_hide_in_allowed_fields(
 
 
 def test_known_event_payloads_decode_to_finite_public_types() -> None:
-    from pydantic import BaseModel
-
-    from mcp_server_phytomni.runtime.execution_events import (
-        parse_execution_event,
-    )
+    """Verify known event payloads decode to finite public types."""
 
     fixtures = _fixtures()
     cases = fixtures["valid_events"]
@@ -217,10 +210,7 @@ def test_known_event_payloads_decode_to_finite_public_types() -> None:
 
 
 def test_event_intent_materializes_a_valid_ordered_event() -> None:
-    from mcp_server_phytomni.runtime.execution_events import (
-        ExecutionEventIntent,
-        parse_execution_event_intent,
-    )
+    """Verify event intent materializes a valid ordered event."""
 
     intent = parse_execution_event_intent(
         {
@@ -255,10 +245,7 @@ def test_event_intent_materializes_a_valid_ordered_event() -> None:
 
 
 def test_event_intent_rejects_unknown_or_private_payloads() -> None:
-    from mcp_server_phytomni.runtime.execution_events import (
-        ExecutionEventValidationError,
-        parse_execution_event_intent,
-    )
+    """Verify event intent rejects unknown or private payloads."""
 
     base = {
         "status": "running",

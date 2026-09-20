@@ -12,6 +12,10 @@ from typing import Any
 
 import pytest
 
+from mcp_server_phytomni.contracts.deep_genome import (
+    DEEP_GENOME_PROGRESS_FIELDS,
+)
+
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -90,19 +94,7 @@ def assert_public_deep_genome_payload(payload: Any) -> None:
     assert isinstance(result["report_revision"], int)
     assert result["report_revision"] >= 0
     assert isinstance(result["progress"], dict)
-    assert {
-        "planning_complete",
-        "brief_gene_status",
-        "total",
-        "planned",
-        "submitted",
-        "pending",
-        "running",
-        "succeeded",
-        "failed",
-        "cancelled",
-        "timed_out",
-    } <= set(result["progress"])
+    assert set(DEEP_GENOME_PROGRESS_FIELDS) <= set(result["progress"])
     assert isinstance(result["failures"], list)
     for failure in result["failures"]:
         assert set(failure) == {"work_item_key", "status", "message"}

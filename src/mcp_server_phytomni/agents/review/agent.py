@@ -52,9 +52,6 @@ from ...runtime.langgraph_runner import (
     invoke_graph,
 )
 from ...runtime.locale import SupportedLocale
-from ...runtime.operation_instrumentation_v2 import (
-    instrument_operation_invocation,
-)
 from ...runtime.resume import aresume_graph, detect_interrupt
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
@@ -71,6 +68,7 @@ from .conversation import (
     ReviewConversationAdapter,
     review_clarification_result,
 )
+from .draft_instrumentation import invoke_draft_dimension
 from .graph_wiring import wire_review_graph
 from .helpers import build_review_chat_kwargs
 from .planning import ReviewPlanningMixin
@@ -304,33 +302,19 @@ class DeepResearchAgent(
     async def draft_worker_node(
         self, state: DeepResearchState
     ) -> dict[str, Any]:
-        """Per-dimension draft worker invoked via ``Send``.
+        """Draft one dimension and retain its ordered failure state.
 
-        Awaits the module-level :data:`CHAT_APP` so LangGraph's
-        ``find_subgraph_pregel`` walker discovers the compiled chat
-        subgraph through the closure's ``__globals__`` lookup and
-        expands it under ``draft_worker_node:<child>`` in xray.
-
-        On success writes a single ``(task_index, content)`` tuple
-        into ``draft_indexed_results`` via ``operator.add``. On
-        exception writes BOTH an empty-string sentinel AND a
-        ``FailureRecord`` into the shared failures channel
-        (``draft_reduce_node`` still iterates a string per dimension;
-        per-task failure detail surfaces in ``raw.phytomni_state``).
+        The module-level ``CHAT_APP`` keeps the subgraph visible to LangGraph
+        xray. Failures emit an empty indexed result plus a ``FailureRecord``.
         """
         task_index = int(state.get("task_index") or 0)
         chat_app = CHAT_APP
         try:
-            chat_output = await instrument_operation_invocation(
-                "review.draft_dimension",
-                lambda: invoke_graph(chat_app, state["chat_payload"]),
-                detail={
-                    "ordinal": task_index + 1,
-                    "total": max(
-                        1,
-                        int(state.get("dimension_total") or task_index + 1),
-                    ),
-                },
+            chat_output = await invoke_draft_dimension(
+                chat_app,
+                state["chat_payload"],
+                task_index,
+                int(state.get("dimension_total") or task_index + 1),
             )
             content = message_content(extract_chat_response(chat_output))
             return {

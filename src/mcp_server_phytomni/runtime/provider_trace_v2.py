@@ -15,8 +15,8 @@ import hashlib
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import Any, Final, Literal, get_args
 
 from pydantic import (
     BaseModel,
@@ -26,6 +26,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+from .execution_store_support_v2 import validate_optional_aware_iso8601
 
 ProviderTraceRecordClass = Literal[
     "semantic_phase",
@@ -42,6 +44,9 @@ ProviderTraceStatus = Literal[
     "cancelled",
     "timed_out",
 ]
+PROVIDER_TRACE_STATUSES: Final[frozenset[str]] = frozenset(
+    get_args(ProviderTraceStatus)
+)
 ProviderTraceHealth = Literal["healthy", "degraded", "unavailable"]
 ProviderTraceSummaryKind = Literal["reasoning_summary", "decision"]
 ProviderTraceRejectionCode = Literal[
@@ -86,15 +91,10 @@ class ProviderTraceRecord(_PrivateFrozenModel):
     @classmethod
     def validate_occurred_at(cls, value: str | None) -> str | None:
         """Require timezone-aware ISO-8601 timestamps when one is supplied."""
-        if value is None:
-            return None
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise ValueError("occurred_at must be ISO-8601") from exc
-        if parsed.utcoffset() is None:
-            raise ValueError("occurred_at must include a timezone")
-        return value
+        return validate_optional_aware_iso8601(
+            value,
+            field_name="occurred_at",
+        )
 
     @model_validator(mode="after")
     def validate_finite_shape(self) -> ProviderTraceRecord:
@@ -222,7 +222,46 @@ ProviderTraceNormalizer = Callable[
 ]
 
 
-class FullSnapshotProviderTraceAdapter:
+@dataclass(frozen=True, slots=True)
+class _PreparedProviderSnapshot:
+    identities: tuple[str, ...]
+    valid_raw: tuple[tuple[int, object, str], ...]
+    rejections: tuple[ProviderTraceRejection, ...]
+    rejected_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _NormalizedProviderSnapshot:
+    records: tuple[ProviderTraceRecord, ...]
+    rejections: tuple[ProviderTraceRejection, ...]
+    rejected_count: int
+
+
+class _VersionedProviderTraceAdapter:
+    """Common version checkpoint behavior for provider trace adapters."""
+
+    adapter_version: str
+
+    @property
+    def version(self) -> str:
+        """Return the stable adapter version persisted with checkpoints."""
+        return self.adapter_version
+
+    def compatible_checkpoint(
+        self,
+        checkpoint: ProviderTraceCheckpoint | None,
+    ) -> ProviderTraceCheckpoint:
+        """Reset a checkpoint produced by another adapter version."""
+        prior = checkpoint or ProviderTraceCheckpoint()
+        if (
+            prior.adapter_version is not None
+            and prior.adapter_version != self.adapter_version
+        ):
+            return ProviderTraceCheckpoint()
+        return prior
+
+
+class FullSnapshotProviderTraceAdapter(_VersionedProviderTraceAdapter):
     """Convert a bounded full snapshot into only newly observed records."""
 
     def __init__(
@@ -256,12 +295,44 @@ class FullSnapshotProviderTraceAdapter:
         """Normalize and validate one bounded full provider snapshot."""
         if isinstance(snapshot, (str, bytes, bytearray)):
             raise ValueError("snapshot must be a record sequence")
-        prior = checkpoint or ProviderTraceCheckpoint()
-        if (
-            prior.adapter_version is not None
-            and prior.adapter_version != self.adapter_version
-        ):
-            prior = ProviderTraceCheckpoint()
+        prior = self.compatible_checkpoint(checkpoint)
+        prepared = self._prepare_snapshot(snapshot)
+        start = _snapshot_new_start(prepared.identities, prior)
+        normalized = self._normalize_new_records(prepared.valid_raw, start)
+        rejections = (*prepared.rejections, *normalized.rejections)[:64]
+        rejected_count = prepared.rejected_count + normalized.rejected_count
+        revision = prior.source_revision + 1
+        health: ProviderTraceHealth = (
+            "degraded"
+            if any(
+                rejection.code
+                in {"invalid_record", "record_limit", "snapshot_limit"}
+                for rejection in rejections
+            )
+            else "healthy"
+        )
+        overlap = prepared.identities[slice(-self.overlap_size, None)]
+        return ProviderTraceAdapterResult(
+            observation=ProviderTraceObservation(
+                schema_version=1,
+                adapter_version=self.adapter_version,
+                source_revision=revision,
+                next_cursor=f"full:{len(prepared.identities)}",
+                snapshot_complete=True,
+                health=health,
+                records=normalized.records,
+            ),
+            diagnostics=ProviderTraceDiagnostics(
+                rejected_records=rejected_count,
+                rejections=rejections,
+            ),
+            overlap_identities=overlap,
+        )
+
+    def _prepare_snapshot(
+        self,
+        snapshot: Sequence[object],
+    ) -> _PreparedProviderSnapshot:
         raw_records = tuple(snapshot)
         rejections: list[ProviderTraceRejection] = []
         rejected_count = 0
@@ -271,7 +342,6 @@ class FullSnapshotProviderTraceAdapter:
                 ProviderTraceRejection(index=0, code="snapshot_limit")
             )
             raw_records = raw_records[slice(-self.max_snapshot_records, None)]
-
         identities: list[str] = []
         valid_raw: list[tuple[int, object, str]] = []
         for index, raw in enumerate(raw_records):
@@ -281,16 +351,29 @@ class FullSnapshotProviderTraceAdapter:
                 if len(rejections) < 64:
                     rejections.append(
                         ProviderTraceRejection(
-                            index=index, code="invalid_record"
+                            index=index,
+                            code="invalid_record",
                         )
                     )
                 identity = f"invalid:{index}"
             else:
                 valid_raw.append((index, raw, identity))
             identities.append(identity)
+        return _PreparedProviderSnapshot(
+            identities=tuple(identities),
+            valid_raw=tuple(valid_raw),
+            rejections=tuple(rejections),
+            rejected_count=rejected_count,
+        )
 
-        start = _snapshot_new_start(tuple(identities), prior)
+    def _normalize_new_records(
+        self,
+        valid_raw: tuple[tuple[int, object, str], ...],
+        start: int,
+    ) -> _NormalizedProviderSnapshot:
         normalized: list[ProviderTraceRecord] = []
+        rejections: list[ProviderTraceRejection] = []
+        rejected_count = 0
         for index, raw, identity in valid_raw:
             if index < start:
                 continue
@@ -303,7 +386,8 @@ class FullSnapshotProviderTraceAdapter:
                 if len(rejections) < 64:
                     rejections.append(
                         ProviderTraceRejection(
-                            index=index, code="unknown_record"
+                            index=index,
+                            code="unknown_record",
                         )
                     )
                 continue
@@ -316,37 +400,15 @@ class FullSnapshotProviderTraceAdapter:
                 if len(rejections) < 64 and remaining:
                     rejections.append(
                         ProviderTraceRejection(
-                            index=index + 1, code="record_limit"
+                            index=index + 1,
+                            code="record_limit",
                         )
                     )
                 break
-
-        revision = prior.source_revision + 1
-        health: ProviderTraceHealth = (
-            "degraded"
-            if any(
-                rejection.code
-                in {"invalid_record", "record_limit", "snapshot_limit"}
-                for rejection in rejections
-            )
-            else "healthy"
-        )
-        overlap = tuple(identities[slice(-self.overlap_size, None)])
-        return ProviderTraceAdapterResult(
-            observation=ProviderTraceObservation(
-                schema_version=1,
-                adapter_version=self.adapter_version,
-                source_revision=revision,
-                next_cursor=f"full:{len(identities)}",
-                snapshot_complete=True,
-                health=health,
-                records=tuple(normalized),
-            ),
-            diagnostics=ProviderTraceDiagnostics(
-                rejected_records=rejected_count,
-                rejections=tuple(rejections),
-            ),
-            overlap_identities=overlap,
+        return _NormalizedProviderSnapshot(
+            records=tuple(normalized),
+            rejections=tuple(rejections),
+            rejected_count=rejected_count,
         )
 
     def _record_identity(self, raw: object) -> str | None:
@@ -373,7 +435,7 @@ class FullSnapshotProviderTraceAdapter:
         return f"snapshot:{digest}"
 
 
-class StructuredDeltaProviderTraceAdapter:
+class StructuredDeltaProviderTraceAdapter(_VersionedProviderTraceAdapter):
     """Validate an already-structured provider delta without raw fallback."""
 
     def __init__(self, *, adapter_version: str) -> None:
@@ -390,12 +452,7 @@ class StructuredDeltaProviderTraceAdapter:
         observation = ProviderTraceObservation.model_validate(payload)
         if observation.adapter_version != self.adapter_version:
             raise ValueError("provider trace adapter version mismatch")
-        prior = checkpoint or ProviderTraceCheckpoint()
-        if (
-            prior.adapter_version is not None
-            and prior.adapter_version != self.adapter_version
-        ):
-            prior = ProviderTraceCheckpoint()
+        prior = self.compatible_checkpoint(checkpoint)
         if (
             prior.adapter_version == self.adapter_version
             and observation.source_revision is not None
@@ -458,6 +515,7 @@ def _validate_adapter_version(value: str) -> None:
 
 
 __all__ = [
+    "PROVIDER_TRACE_STATUSES",
     "ProviderTraceAdapterResult",
     "ProviderTraceCheckpoint",
     "ProviderTraceDiagnostics",

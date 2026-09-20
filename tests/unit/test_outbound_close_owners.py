@@ -255,8 +255,11 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
             "DeepGenomeTransitionMixin.publish_final_report": 1,
         }
     ),
+    "mcp_server_phytomni/runtime/async_iterator_v2.py": Counter(
+        {"close_async_iterator": 1}
+    ),
     "mcp_server_phytomni/runtime/execution_entrypoint_v2.py": Counter(
-        {"wrapped": 1}
+        {"_StreamLifecycle._wrapped": 1}
     ),
     "mcp_server_phytomni/runtime/execution_event_store.py": Counter(
         {
@@ -305,9 +308,6 @@ _EXPECTED_CLOSE_OWNERS: dict[str, Counter[str]] = {
     ),
     "mcp_server_phytomni/runtime/outbound/registry.py": Counter(
         {"OutboundPoolRegistry._acquire": 2}
-    ),
-    "mcp_server_phytomni/runtime/run_registry.py": Counter(
-        {"RunRegistry._init_db": 1}
     ),
     "mcp_server_phytomni/runtime/run_registry_views.py": Counter(
         {"RunRegistryViewsMixin.claim_a2ui_action": 1}
@@ -374,6 +374,9 @@ _EXPECTED_CLOSE_PATH_DISPOSITIONS: dict[str, _CloseDisposition] = {
     "mcp_server_phytomni/interop/runtime.py": "server_outbound_owner",
     "mcp_server_phytomni/mcp/app.py": "lifecycle_entrypoint",
     "mcp_server_phytomni/runtime/checkpoint_backend.py": "local_not_outbound",
+    "mcp_server_phytomni/runtime/async_iterator_v2.py": (
+        "downstream_iterator"
+    ),
     "mcp_server_phytomni/runtime/conversation_context/review_lock.py": (
         "local_not_outbound"
     ),
@@ -398,7 +401,6 @@ _EXPECTED_CLOSE_PATH_DISPOSITIONS: dict[str, _CloseDisposition] = {
     "mcp_server_phytomni/runtime/outbound/registry.py": (
         "server_outbound_owner"
     ),
-    "mcp_server_phytomni/runtime/run_registry.py": "local_not_outbound",
     "mcp_server_phytomni/runtime/run_registry_views.py": "local_not_outbound",
     "mcp_server_phytomni/runtime/sqlite.py": "local_not_outbound",
     "mcp_server_phytomni/runtime/task_manager.py": "local_not_outbound",

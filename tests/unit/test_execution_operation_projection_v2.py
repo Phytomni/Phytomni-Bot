@@ -6,10 +6,43 @@
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, NotRequired, TypedDict, Unpack
+
+from tests.support.execution_projection_v2 import execution_message_payload
+
+from mcp_server_phytomni.runtime.execution_event_limits import (
+    DEFAULT_EXECUTION_EVENT_LIMITS,
+)
+from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
+    SQLiteExecutionJournal,
+)
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    parse_execution_event_intent_v2,
+    parse_execution_event_v2,
+)
+from mcp_server_phytomni.runtime.execution_projection_v2 import (
+    apply_execution_event_v2,
+    empty_execution_projection_v2,
+    fold_execution_events_v2,
+)
+from mcp_server_phytomni.runtime.execution_reservation_v2 import (
+    SQLiteExecutionReservationRepository,
+)
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    ExecutionCommand,
+)
+from mcp_server_phytomni.runtime.execution_trace_detail import (
+    OPERATION_PRESENTER_REGISTRY,
+)
+
+
+class _EventOptions(TypedDict):
+    """Optional fields accepted by the operation event factory."""
+
+    attempt: NotRequired[int]
+    operation_key: NotRequired[str]
 
 
 def _event(
@@ -17,13 +50,10 @@ def _event(
     event_type: str,
     status: str,
     payload: dict[str, object],
-    *,
-    attempt: int = 1,
-    operation_key: str = "review.retrieve_dimension",
+    **options: Unpack[_EventOptions],
 ):
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        parse_execution_event_v2,
-    )
+    attempt = options.get("attempt", 1)
+    operation_key = options.get("operation_key", "review.retrieve_dimension")
 
     return parse_execution_event_v2(
         {
@@ -121,9 +151,7 @@ def _lifecycle_events() -> list[Any]:
 
 
 def test_projection_groups_attempt_retry_progress_and_terminal_facts() -> None:
-    from mcp_server_phytomni.runtime.execution_projection_v2 import (
-        fold_execution_events_v2,
-    )
+    """Verify projection groups attempt retry progress and terminal facts."""
 
     projection = fold_execution_events_v2(
         "turn-operation-projection", _lifecycle_events()
@@ -157,11 +185,7 @@ def test_projection_groups_attempt_retry_progress_and_terminal_facts() -> None:
 
 
 def test_incremental_and_history_operation_projection_are_identical() -> None:
-    from mcp_server_phytomni.runtime.execution_projection_v2 import (
-        apply_execution_event_v2,
-        empty_execution_projection_v2,
-        fold_execution_events_v2,
-    )
+    """Verify incremental and history operation projection are identical."""
 
     events = _lifecycle_events()
     incremental = empty_execution_projection_v2("turn-operation-projection")
@@ -181,9 +205,7 @@ def test_incremental_and_history_operation_projection_are_identical() -> None:
 
 
 def test_gene_network_presenters_are_semantic_and_fail_closed() -> None:
-    from mcp_server_phytomni.runtime.execution_trace_detail import (
-        OPERATION_PRESENTER_REGISTRY,
-    )
+    """Verify gene network presenters are semantic and fail closed."""
 
     presenter = OPERATION_PRESENTER_REGISTRY.resolve(
         "gene_network.infer_network"
@@ -213,18 +235,14 @@ def test_gene_network_presenters_are_semantic_and_fail_closed() -> None:
         "gene_network.infer_network",
         detail={"gene_count": 1_000_001},
     )
-    assert oversized.detail == {}
+    assert not oversized.detail
 
 
 def test_stage_todos_pending_and_liveness_clocks_share_projection_rules() -> (
     None
 ):
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        parse_execution_event_v2,
-    )
-    from mcp_server_phytomni.runtime.execution_projection_v2 import (
-        fold_execution_events_v2,
-    )
+    """Verify stage todos pending and liveness clocks share projection
+    rules."""
 
     def fact(
         seq: int,
@@ -236,18 +254,11 @@ def test_stage_todos_pending_and_liveness_clocks_share_projection_rules() -> (
     ):
         if event_type.startswith("message."):
             text = "done"
-            payload = {
-                "output_revision": 1,
-                "message_id": "message-stage",
-                "source_message_id": "message-stage",
-                "base_offset": 0,
-                "offset": len(text),
-                "total_length": len(text),
-                "chunk_index": 0,
-                "chunk_count": 1,
-                "content_sha256": hashlib.sha256(text.encode()).hexdigest(),
-                "text": text,
-            }
+            payload = execution_message_payload(
+                text,
+                output_revision=1,
+                message_id="message-stage",
+            )
         return parse_execution_event_v2(
             {
                 "schema_version": 2,
@@ -323,24 +334,8 @@ def test_stage_todos_pending_and_liveness_clocks_share_projection_rules() -> (
 def test_pruning_restart_and_tracking_degradation_preserve_grouped_state(
     tmp_path: Path,
 ) -> None:
-    from mcp_server_phytomni.runtime.execution_event_limits import (
-        DEFAULT_EXECUTION_EVENT_LIMITS,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
-        SQLiteExecutionJournal,
-    )
-    from mcp_server_phytomni.runtime.execution_journal_v2 import (
-        parse_execution_event_intent_v2,
-    )
-    from mcp_server_phytomni.runtime.execution_projection_v2 import (
-        fold_execution_events_v2,
-    )
-    from mcp_server_phytomni.runtime.execution_reservation_v2 import (
-        SQLiteExecutionReservationRepository,
-    )
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionCommand,
-    )
+    """Verify pruning restart and tracking degradation preserve grouped
+    state."""
 
     db_path = str(tmp_path / "operation-restart.db")
     execution_id = "turn-operation-restart"

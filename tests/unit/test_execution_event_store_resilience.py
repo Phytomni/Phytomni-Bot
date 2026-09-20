@@ -19,6 +19,9 @@ from mcp_server_phytomni.runtime.execution_event_limits import (
 from mcp_server_phytomni.runtime.execution_event_projection import (
     fold_execution_events,
 )
+from mcp_server_phytomni.runtime.execution_event_store import (
+    SQLiteExecutionEventStore,
+)
 from mcp_server_phytomni.runtime.execution_events import (
     parse_execution_event_intent,
 )
@@ -48,9 +51,6 @@ def _intent(kind: str, *, idempotency_key: str | None = None):
 
 
 def _store(tmp_path: Path, *, max_events: int = 10_000):
-    from mcp_server_phytomni.runtime.execution_event_store import (
-        SQLiteExecutionEventStore,
-    )
 
     db_path = tmp_path / "resilience.db"
     registry = RunRegistry(str(db_path))
@@ -69,6 +69,7 @@ def _store(tmp_path: Path, *, max_events: int = 10_000):
 def test_concurrent_writers_allocate_one_dense_run_local_sequence(
     tmp_path: Path,
 ) -> None:
+    """Verify concurrent writers allocate one dense run local sequence."""
     store = _store(tmp_path)
 
     def append(index: int):
@@ -94,6 +95,7 @@ def test_projection_failure_rolls_back_ledger_and_retry_commits_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify projection failure rolls back ledger and retry commits once."""
     store = _store(tmp_path)
     real_apply = store_module.apply_execution_event
 
@@ -106,7 +108,7 @@ def test_projection_failure_rolls_back_ledger_and_retry_commits_once(
         store.append("run-1", owner="alice", intent=intent)
     empty_page = store.list_events("run-1", owner="alice")
     assert empty_page is not None
-    assert empty_page.items == ()
+    assert not empty_page.items
 
     monkeypatch.setattr(store_module, "apply_execution_event", real_apply)
     committed = store.append("run-1", owner="alice", intent=intent)
@@ -118,6 +120,7 @@ def test_projection_failure_rolls_back_ledger_and_retry_commits_once(
 
 
 def test_pruned_ledger_replays_to_the_same_projection(tmp_path: Path) -> None:
+    """Verify pruned ledger replays to the same projection."""
     store = _store(tmp_path, max_events=3)
     store.append("run-1", owner="alice", intent=_intent("run.started"))
     store.append("run-1", owner="alice", intent=_intent("phase.progress"))

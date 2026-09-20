@@ -257,7 +257,6 @@ async def _wait_for_background_record(
 
 def _assert_background_resolver_success(
     observation: NativeResolverObservation,
-    record: RunRecord,
 ) -> None:
     """Assert a successful background resolver projection."""
     if observation.scenario == "resolved":
@@ -303,7 +302,7 @@ async def _assert_background_resolver_observation(
     assert observation.response.status_code == 202
     record = await _wait_for_background_record(observation)
     if observation.scenario in {"resolved", "passthrough"}:
-        _assert_background_resolver_success(observation, record)
+        _assert_background_resolver_success(observation)
     else:
         _assert_background_resolver_failure(observation, record)
 

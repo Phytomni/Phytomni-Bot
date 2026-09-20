@@ -18,6 +18,9 @@ from tests.server.test_query_route import (
     _post_context_route,
     _post_query_route,
 )
+from tests.support.execution_contract_fixtures import (
+    assert_failed_execution_projection,
+)
 from tests.support.resolver_fakes import register_gene_capture
 
 import mcp_server_phytomni.api.app as api_app
@@ -26,9 +29,6 @@ from mcp_server_phytomni.agents.deep_genome.resolve_query import (
     DeepGenomeResolveError,
 )
 from mcp_server_phytomni.agents.expert import router as expert_router
-from mcp_server_phytomni.api.agent_run_support import (
-    running_agent_run_response,
-)
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
@@ -59,17 +59,7 @@ def _capture_invoke(
             status_code,
         )
 
-    async def fake_stream(**kwargs: Any) -> tuple[dict[str, Any], int]:
-        captured.update(
-            {"agent": kwargs["slug"], "arguments": kwargs["arguments"]}
-        )
-        return running_agent_run_response(
-            run_id="run-stream",
-            agent=kwargs["slug"],
-        )
-
     monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
-    monkeypatch.setattr(api_app, "_start_routed_expert_stream", fake_stream)
     return captured
 
 
@@ -167,7 +157,7 @@ async def test_route_brief_gene_does_not_open_resolver(
         },
     )
 
-    assert response.status_code == 202
+    assert response.status_code == 200
     assert captured["agent"] == "brief_gene"
     assert captured["arguments"]["user_query"] == "rice CAB1 function"
     assert "resolve_gene_id" not in captured["arguments"]
@@ -249,12 +239,13 @@ async def test_route_missing_deep_genome_ids_resolve_then_dispatch(
     assert RunRegistry(tasks_db_path).list_runs(owner="u1")
 
 
-async def test_route_deep_genome_resolver_failure_is_native_400(
+async def test_route_deep_genome_resolver_failure_settles_failed_run(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
-    """A resolver failure uses the native sanitized 400 envelope."""
+    """A selected async Agent keeps one sanitized failed execution."""
 
     async def fail_resolve(raw_query: str, **_kwargs: Any) -> Any:
         del raw_query
@@ -277,6 +268,17 @@ async def test_route_deep_genome_resolver_failure_is_native_400(
         },
     )
 
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == "invalid_argument"
-    assert response.json()["error"]["message"] == "invalid request"
+    assert response.status_code == 202
+    body = response.json()
+    assert body["agent"] == "deep_genome"
+    assert body["status"] == "failed"
+    assert body["task_ids"] == []
+    assert "no valid candidate" not in response.text
+
+    records = RunRegistry(tasks_db_path).list_runs(owner="u1")
+    assert len(records) == 1
+    record = records[0]
+    assert record.spec.run_id == body["run_id"]
+    assert record.status == "failed"
+    assert record.task_ids == ()
+    assert_failed_execution_projection(tasks_db_path, record)

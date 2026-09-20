@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import ClassVar, Protocol
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
+from typing import ClassVar
 
 from ..public_agent_catalog import Driver
 from .execution_runtime_contracts import (
@@ -19,18 +20,13 @@ from .execution_runtime_contracts import (
     ExecutionServices,
 )
 
-
-class DriverOperationHandler(Protocol):
-    """One injected business operation; Drivers do not copy its decisions."""
-
-    async def __call__(
-        self,
-        context: ExecutionContext,
-        command: ExecutionCommand,
-        services: ExecutionServices,
-    ) -> DriverOutcome: ...
+type DriverOperationHandler = Callable[
+    [ExecutionContext, ExecutionCommand, ExecutionServices],
+    Awaitable[DriverOutcome],
+]
 
 
+@dataclass(init=False, repr=False, eq=False, match_args=False)
 class DelegatingExecutionDriver:
     """Common validation and operation dispatch for every Driver topology."""
 
@@ -42,6 +38,10 @@ class DelegatingExecutionDriver:
     ) -> None:
         self._handlers = dict(handlers)
 
+    def supports(self, operation: DriverOperation) -> bool:
+        """Return whether this Driver has a handler for the operation."""
+        return operation in self._handlers
+
     async def execute(
         self,
         operation: DriverOperation,
@@ -49,11 +49,12 @@ class DelegatingExecutionDriver:
         command: ExecutionCommand,
         services: ExecutionServices,
     ) -> DriverOutcome:
+        """Validate the driver and dispatch one registered operation."""
         if context.agent.driver != self.driver_kind:
             raise ExecutionRuntimeError("driver_agent_mismatch")
-        handler = self._handlers.get(operation)
-        if handler is None:
+        if not self.supports(operation):
             raise ExecutionRuntimeError("driver_operation_unavailable")
+        handler = self._handlers[operation]
         outcome = await handler(context, command, services)
         if not isinstance(outcome, DriverOutcome):
             raise ExecutionRuntimeError("invalid_driver_outcome")

@@ -132,7 +132,7 @@ async def test_strict_router_prefers_unambiguous_network_domain_hint(
         "GeneNetworkAgent",
         {"species_code": "osa", "to_id": "TO:0000011"},
     )
-    assert captured == {}
+    assert not captured
 
 
 async def test_strict_router_keeps_forced_tool_over_network_domain_hint(

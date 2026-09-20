@@ -6,29 +6,38 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pytest
+from tests.support.execution_dispatch_fixtures import (
+    execution_context_fixture,
+)
+
+from mcp_server_phytomni.public_agent_catalog import PUBLIC_AGENT_CATALOG
+from mcp_server_phytomni.runtime.execution_runtime_contracts import (
+    DriverOperation,
+    DriverOutcome,
+    ExecutionArtifactRef,
+    ExecutionContext,
+    ExecutionDriver,
+    ExecutionServices,
+    TerminalSettlementAuthority,
+    TransportNeutralResult,
+)
 
 
 def test_context_keeps_identity_across_nested_invocation() -> None:
-    from mcp_server_phytomni.public_agent_catalog import PUBLIC_AGENT_CATALOG
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        ExecutionContext,
-    )
+    """Verify context keeps identity across nested invocation."""
 
     spec = next(
         item for item in PUBLIC_AGENT_CATALOG if item.slug == "research"
     )
-    root = ExecutionContext(
-        owner_ref="owner-1",
-        execution_id="turn-1",
-        fingerprint_version=1,
-        fingerprint="a" * 64,
-        agent=spec,
-        root_span_id="span-root",
-        current_span_id="span-root",
-        transport="http",
+    root = execution_context_fixture(
+        spec,
+        "owner-1",
+        "turn-1",
+        "http",
     )
     nested = root.nested(
         agent=next(
@@ -47,11 +56,7 @@ def test_context_keeps_identity_across_nested_invocation() -> None:
 
 
 def test_driver_outcome_and_result_contract_are_finite() -> None:
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOutcome,
-        ExecutionArtifactRef,
-        TransportNeutralResult,
-    )
+    """Verify driver outcome and result contract are finite."""
 
     result = TransportNeutralResult(
         answer="bounded answer",
@@ -73,15 +78,12 @@ def test_driver_outcome_and_result_contract_are_finite() -> None:
 
 
 def test_driver_protocol_normalizes_operations_and_services() -> None:
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        DriverOperation,
-        DriverOutcome,
-        ExecutionContext,
-        ExecutionDriver,
-        ExecutionServices,
-    )
+    """Verify driver protocol normalizes operations and services."""
 
+    @dataclass(eq=False)
     class FakeDriver:
+        """Driver double that accepts every normalized operation."""
+
         async def execute(
             self,
             operation,
@@ -89,6 +91,7 @@ def test_driver_protocol_normalizes_operations_and_services() -> None:
             command,
             services: ExecutionServices,
         ) -> DriverOutcome:
+            """Return this test driver's configured outcome."""
             del operation, context, command, services
             return DriverOutcome.running()
 
@@ -103,9 +106,7 @@ def test_driver_protocol_normalizes_operations_and_services() -> None:
 
 
 def test_terminal_settlement_authority_is_revision_bound() -> None:
-    from mcp_server_phytomni.runtime.execution_runtime_contracts import (
-        TerminalSettlementAuthority,
-    )
+    """Verify terminal settlement authority is revision bound."""
 
     authority = TerminalSettlementAuthority(
         owner_ref="owner-1",

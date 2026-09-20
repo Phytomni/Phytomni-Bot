@@ -9,8 +9,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from tests.support.public_agent_catalog_expectations import (
+    EXPECTED_EXECUTION_DRIVERS,
+    EXPECTED_EXECUTION_TARGET_KINDS,
+    EXPECTED_TRACE_OPERATIONS,
+    EXPECTED_TRACE_TARGET_AGENT_SLUGS,
+)
+
 from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api.openai_mapping import MODEL_TO_TOOL
+from mcp_server_phytomni.graphs.architecture import GRAPH_ARCHITECTURE
 from mcp_server_phytomni.mcp.app import TOOL_ARGUMENT_MODELS, TOOL_HANDLERS
 from mcp_server_phytomni.public_agent_catalog import (
     PUBLIC_AGENT_CATALOG,
@@ -20,82 +28,17 @@ from mcp_server_phytomni.public_agent_catalog import (
     result_delivery_agent_slugs,
     validate_runtime_catalog,
 )
+from mcp_server_phytomni.runtime import (
+    execution_drivers_v2,
+    execution_entrypoint_v2,
+)
 from mcp_server_phytomni.runtime.result_run_layout import (
     RESULT_DELIVERY_AGENTS,
 )
 
-EXPECTED_TRACE_OPERATIONS = {
-    "chat": ("model.generate", "tool.chat"),
-    "knowledge": ("knowledge.search", "model.generate", "tool.knowledge"),
-    "data": ("data.query", "tool.data"),
-    "analyst": (
-        "analyst.prepare_analysis",
-        "analyst.run_workflow",
-        "analyst.collect_outputs",
-        "artifact.package",
-        "remote.analysis",
-        "remote.reconcile",
-        "tool.analyst",
-    ),
-    "review": (
-        "model.generate",
-        "review.citation_check",
-        "review.draft_dimension",
-        "review.final_synthesis",
-        "review.retrieve_dimension",
-        "tool.review",
-    ),
-    "brief_gene": ("model.generate", "tool.brief_gene"),
-    "deep_genome": (
-        "deep_genome.prepare_plan",
-        "deep_genome.gather_context",
-        "deep_genome.run_analysis_branches",
-        "deep_genome.experiment_protocol",
-        "deep_genome.synthesize_results",
-        "artifact.package",
-        "deep_genome.workflow",
-        "model.generate",
-        "remote.analysis",
-        "remote.reconcile",
-        "tool.deep_genome",
-    ),
-    "research": (
-        "research.decompose_objectives",
-        "research.dispatch_work",
-        "research.collect_evidence",
-        "research.synthesize_results",
-        "research.package_outputs",
-        "artifact.package",
-        "model.generate",
-        "remote.analysis",
-        "remote.reconcile",
-        "tool.research",
-    ),
-    "design": (
-        "design.validate_target",
-        "design.run_branches",
-        "design.consolidate_candidates",
-        "design.package_outputs",
-        "artifact.package",
-        "remote.analysis",
-        "remote.reconcile",
-        "tool.design",
-    ),
-    "network": (
-        "artifact.package",
-        "gene_network.infer_network",
-        "gene_network.prepare_inputs",
-        "gene_network.rank_regulators",
-        "gene_network.synthesize_results",
-        "gene_network.validate_target",
-        "remote.analysis",
-        "remote.reconcile",
-        "tool.network",
-    ),
-}
-
 
 def test_catalog_defines_exactly_ten_unique_public_agents() -> None:
+    """Verify catalog defines exactly ten unique public agents."""
     assert len(PUBLIC_AGENT_CATALOG) == 10
     assert len({item.tool for item in PUBLIC_AGENT_CATALOG}) == 10
     assert len({item.slug for item in PUBLIC_AGENT_CATALOG}) == 10
@@ -119,6 +62,7 @@ def test_catalog_defines_exactly_ten_unique_public_agents() -> None:
 
 
 def test_every_agent_declares_complete_runtime_policy_metadata() -> None:
+    """Verify every agent declares complete runtime policy metadata."""
     for item in PUBLIC_AGENT_CATALOG:
         assert item.topology in {"serial", "conditional", "parallel", "hybrid"}
         assert item.checkpoint in {"none", "graph", "coordinator"}
@@ -162,6 +106,7 @@ def test_every_agent_declares_complete_runtime_policy_metadata() -> None:
 
 
 def test_catalog_truthfully_declares_reachable_public_presenters() -> None:
+    """Verify catalog truthfully declares reachable public presenters."""
     plans = {item.slug: item.todo_phases for item in PUBLIC_AGENT_CATALOG}
     assert set(plans) == {
         "chat",
@@ -199,13 +144,7 @@ def test_catalog_truthfully_declares_reachable_public_presenters() -> None:
         if item.trace_target_operations
     } == {
         slug: ("remote.analysis",)
-        for slug in (
-            "analyst",
-            "deep_genome",
-            "research",
-            "design",
-            "network",
-        )
+        for slug in EXPECTED_TRACE_TARGET_AGENT_SLUGS
     }
     # Network has two reachable, explicitly authored bounded summaries. Other
     # Agents must not imply access to raw chain-of-thought.
@@ -218,19 +157,20 @@ def test_catalog_truthfully_declares_reachable_public_presenters() -> None:
 
 
 def test_runtime_registrations_match_canonical_catalog() -> None:
+    """Verify runtime registrations match canonical catalog."""
     snapshot = RuntimeCatalogSnapshot(
         TOOL_ARGUMENT_MODELS,
         TOOL_HANDLERS,
-        api_app._AGENT_SLUG_TO_TOOL,
+        getattr(api_app, "_AGENT_SLUG_TO_TOOL"),
         MODEL_TO_TOOL,
-        api_app._REMOTE_AGENT_SLUGS,
-        api_app._LEGACY_ALIASES,
+        getattr(api_app, "_REMOTE_AGENT_SLUGS"),
+        getattr(api_app, "_LEGACY_ALIASES"),
     )
-    assert validate_runtime_catalog(snapshot) == ()
+    assert not validate_runtime_catalog(snapshot)
 
 
 def test_runtime_policy_and_graph_metadata_are_catalog_derived() -> None:
-    from mcp_server_phytomni.graphs.architecture import GRAPH_ARCHITECTURE
+    """Verify runtime policy and graph metadata are catalog derived."""
 
     assert result_delivery_agent_slugs() == RESULT_DELIVERY_AGENTS
     for graph_id, expected in graph_runtime_metadata().items():
@@ -247,6 +187,7 @@ def test_runtime_policy_and_graph_metadata_are_catalog_derived() -> None:
 
 
 def test_catalog_export_is_stable_and_machine_readable() -> None:
+    """Verify catalog export is stable and machine readable."""
     payload = export_public_agent_catalog()
     assert payload["schema_version"] == 1
     assert len(payload["agents"]) == 10
@@ -257,31 +198,18 @@ def test_catalog_export_is_stable_and_machine_readable() -> None:
 
 
 def test_catalog_advertises_execution_event_replay_contract() -> None:
+    """Verify catalog advertises execution event replay contract."""
     payload = export_public_agent_catalog()
     capability = payload["capabilities"]["execution_events"]
     assert capability["major_version"] == 1
     assert capability["resumable_history"] is True
     assert capability["custom_event"] == "phyto.run_event"
-    assert capability["target_kinds"] == [
-        "event",
-        "artifact",
-        "report",
-        "todo",
-        "preview",
-        "download",
-        "trace",
-    ]
+    assert capability["target_kinds"] == list(EXPECTED_EXECUTION_TARGET_KINDS)
     runtime = payload["capabilities"]["execution_runtime"]
     assert runtime == {
         "major_version": 1,
         "journal_major_version": 2,
-        "drivers": [
-            "hybrid",
-            "local_graph",
-            "remote_fanout",
-            "remote_task",
-            "resumable_graph",
-        ],
+        "drivers": sorted(EXPECTED_EXECUTION_DRIVERS),
     }
 
 
@@ -289,10 +217,6 @@ def test_domain_handlers_remain_canonical_and_runtime_adapters_stay_thin() -> (
     None
 ):
     """Runtime owns lifecycle only; MCP domain handlers own business rules."""
-    from mcp_server_phytomni.runtime import (
-        execution_drivers_v2,
-        execution_entrypoint_v2,
-    )
 
     assert {
         item.tool: TOOL_HANDLERS[item.tool].__name__

@@ -28,9 +28,9 @@ from ...runtime.execution_identity_v2 import new_execution_id
 from ...runtime.execution_reservation_v2 import (
     SQLiteExecutionReservationRepository,
 )
-from ...runtime.locale import SupportedLocale, current_effective_locale
+from ...runtime.locale import current_effective_locale
 from ...runtime.request_context import current_request_id
-from ...runtime.run_registry import RunRegistry, RunRequestInfo
+from ...runtime.run_registry import RunRegistry
 from ...runtime.stage_trace import DataStage, trace_data_stage
 from .. import research_capabilities
 from ..advertised_protocols import serialize_protocols
@@ -38,10 +38,7 @@ from ..advertised_protocols import (
     serialize_research_input_descriptor as research_descriptor,
 )
 from ..agent_runs import execute_native_research_http
-from ..app_support import (
-    build_safe_chat_request_info,
-    resolve_http_locale,
-)
+from ..app_support import resolve_http_locale
 from ..attachments import (
     redact_managed_attachment_values,
     redact_streaming_attachment_response,
@@ -66,6 +63,13 @@ from .attachment_inputs import (
     resolve_attachment_input,
     resolve_attachment_owner,
     restrict_expert_payload_for_research,
+)
+from .chat_projection import (
+    chat_run_request_info,
+    finalize_ordinary_chat_response,
+    formatted_with_metadata,
+    ordinary_chat_private_context,
+    request_info_for_execution,
 )
 from .context_helpers import (
     clarification_agent_run as _clarification_agent_run,
@@ -198,15 +202,8 @@ def _register_chat_route(
             resolved_input=resolved_input,
         )
         if payload.stream:
-            conversation_messages = (
-                prepared["conversation_messages"]
-                if tool_name in {"ChatAgent", "KnowledgeAgent"}
-                else ()
-            )
-            private_agent_state = (
-                {"retrieval_query": prepared["user_query"]}
-                if tool_name == "KnowledgeAgent"
-                else None
+            conversation_messages, private_agent_state = (
+                ordinary_chat_private_context(tool_name, prepared)
             )
             response = (
                 await dependencies.chat.execution.stream_chat_completion(
@@ -231,7 +228,7 @@ def _register_chat_route(
                 attachment_evidence=prepared["evidence"],
                 execution_id=_execution_id_from_request(request),
             )
-        return await _finalize_ordinary_chat_response(
+        return await finalize_ordinary_chat_response(
             payload,
             dependencies,
             tool_name=tool_name,
@@ -292,88 +289,6 @@ async def _prepare_ordinary_chat_request(
         "arguments": arguments,
         "evidence": attachment_context.evidence,
     }
-
-
-async def _finalize_ordinary_chat_response(
-    payload: ChatCompletionRequest,
-    dependencies: AgentRouteDependencies,
-    *,
-    tool_name: str,
-    prepared: Mapping[str, Any],
-    execution_id: str,
-) -> JSONResponse:
-    """Invoke one ordinary chat agent and project its redacted completion."""
-    conversation_messages = (
-        prepared["conversation_messages"]
-        if tool_name in {"ChatAgent", "KnowledgeAgent"}
-        else ()
-    )
-    private_agent_state = (
-        {"retrieval_query": prepared["user_query"]}
-        if tool_name == "KnowledgeAgent"
-        else None
-    )
-    agent_slug = dependencies.catalog.model_to_agent_slug.get(payload.model)
-    owner = dependencies.chat.projection.current_user() or "anonymous"
-    request_info = _chat_run_request_info(
-        payload,
-        prepared["user_query"],
-        tool_name,
-        current_effective_locale(),
-    )
-    request_info = _request_info_for_execution(request_info, execution_id)
-    envelope = await dependencies.chat.execution.invoke_tool_enveloped(
-        tool_name,
-        prepared["arguments"],
-        conversation_messages=conversation_messages,
-        private_agent_state=private_agent_state,
-        execution_id=execution_id,
-        transport="openai_blocking",
-        db_path=dependencies.tasks_db_path(),
-    )
-    formatted_dict = _formatted_with_metadata(
-        envelope, prepared["resolve_meta"]
-    )
-    envelope_dict = {
-        "formatted": formatted_dict,
-        "execution": asdict(envelope.execution),
-        "raw": envelope.raw,
-    }
-    evidence = prepared["evidence"]
-    if evidence is not None:
-        envelope_dict = redact_managed_attachment_values(
-            envelope_dict, evidence
-        )
-        formatted_dict = envelope_dict["formatted"]
-    if agent_slug is None:
-        raise HTTPException(
-            status_code=404, detail="agent model is not public"
-        )
-    repository = SQLiteExecutionReservationRepository(
-        dependencies.tasks_db_path()
-    )
-    chat_run_id = repository.get(owner=owner, execution_id=execution_id).run_id
-    RunRegistry(dependencies.tasks_db_path()).update_request_info(
-        chat_run_id,
-        owner=owner,
-        request_info=request_info,
-    )
-    completion = dependencies.chat.projection.to_chat_completion(
-        formatted_dict,
-        envelope_dict.get("raw"),
-        payload.model,
-        envelope_dict["execution"],
-    )
-    if evidence is not None:
-        completion = redact_managed_attachment_values(completion, evidence)
-    completion["run_id"] = chat_run_id
-    if envelope_dict["execution"]["tracking"].get("degraded") is True:
-        completion["degraded_tracking"] = True
-    if not dependencies.chat.projection.resolve_debug(payload.debug):
-        completion = dependencies.chat.projection.strip_chat_completion(
-            completion
-        )
-    return JSONResponse(completion)
 
 
 async def _execute_context_chat(
@@ -476,7 +391,7 @@ async def _execute_context_chat(
                 db_path=dependencies.tasks_db_path(),
             )
         )
-        formatted_dict = _formatted_with_metadata(tool_envelope, resolve_meta)
+        formatted_dict = formatted_with_metadata(tool_envelope, resolve_meta)
         envelope_dict = {
             "formatted": formatted_dict,
             "execution": asdict(tool_envelope.execution),
@@ -488,13 +403,13 @@ async def _execute_context_chat(
             )
             formatted_dict = envelope_dict["formatted"]
         chat_run_id: str | None
-        request_info = _chat_run_request_info(
+        request_info = chat_run_request_info(
             payload,
             user_query,
             "ChatAgent",
             current_effective_locale(),
         )
-        request_info = _request_info_for_execution(request_info, execution_id)
+        request_info = request_info_for_execution(request_info, execution_id)
         chat_run_id = (
             SQLiteExecutionReservationRepository(dependencies.tasks_db_path())
             .get(owner=owner, execution_id=execution_id)
@@ -540,55 +455,6 @@ async def _execute_context_chat(
         delegate_async=delegate_async,
     )
     return _context_response(prepared, envelope)
-
-
-def _formatted_with_metadata(
-    envelope: Any,
-    resolve_meta: dict[str, Any],
-) -> dict[str, Any]:
-    """Project one tool envelope and merge resolver metadata."""
-    formatted_dict = asdict(envelope.formatted)
-    if not resolve_meta:
-        return formatted_dict
-    existing_meta = formatted_dict.get("metadata")
-    if isinstance(existing_meta, dict):
-        existing_meta.update(resolve_meta)
-    else:
-        formatted_dict["metadata"] = dict(resolve_meta)
-    return formatted_dict
-
-
-def _chat_run_request_info(
-    payload: ChatCompletionRequest,
-    user_query: str,
-    tool_name: str,
-    locale: SupportedLocale,
-) -> Any:
-    """Build the run-registry request record without app-layer imports."""
-    return build_safe_chat_request_info(
-        payload,
-        user_query,
-        tool_name=tool_name,
-        locale=locale,
-    )
-
-
-def _request_info_for_execution(
-    request_info: RunRequestInfo,
-    execution_id: str,
-) -> RunRequestInfo:
-    """Attach the canonical execution id without losing legacy correlations."""
-    return RunRequestInfo(
-        dialogue_id=request_info.dialogue_id,
-        request_id=request_info.request_id,
-        query=request_info.query,
-        tool_name=request_info.tool_name,
-        model=request_info.model,
-        request_json=request_info.request_json,
-        locale=request_info.locale,
-        a2a=request_info.a2a,
-        execution_id=execution_id,
-    )
 
 
 def _latest_argument_query(arguments: Mapping[str, Any]) -> str:

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager
-from typing import Any
+from typing import Any, TypedDict, Unpack
 
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -33,6 +33,13 @@ type ChatInvokeContextFactory = Callable[[], AbstractAsyncContextManager[None]]
 type ChatOperationResolver = Callable[
     [Any], tuple[str, Mapping[str, Any]] | None
 ]
+
+
+class _ChatMountRuntimeOptions(TypedDict, total=False):
+    """Optional invocation behavior accepted by :func:`mount_chat_node`."""
+
+    invoke_context_factory: ChatInvokeContextFactory | None
+    operation_resolver: ChatOperationResolver | None
 
 
 def _default_chat_input(state: Any) -> dict[str, Any]:
@@ -114,8 +121,7 @@ def mount_chat_node(
     build_input_fn: Callable[[Any], dict[str, Any]] = _default_chat_input,
     extract_output_fn: Callable[[dict[str, Any]], Any] = _default_chat_output,
     response_key: str = "chat_response",
-    invoke_context_factory: ChatInvokeContextFactory | None = None,
-    operation_resolver: ChatOperationResolver | None = None,
+    **runtime_options: Unpack[_ChatMountRuntimeOptions],
 ) -> None:
     """Register the shared ``chat`` wrapper on a consumer workflow.
 
@@ -133,15 +139,24 @@ def mount_chat_node(
             Defaults to ``chat_response``.
         invoke_context_factory: Optional async context factory wrapping the
             shared chat invocation. Defaults to no additional context.
+        operation_resolver: Optional projection of consumer state into an
+            instrumented operation name and detail mapping.
     """
+    unknown = set(runtime_options).difference(
+        {"invoke_context_factory", "operation_resolver"}
+    )
+    if unknown:
+        raise TypeError(f"unexpected keyword argument '{sorted(unknown)[0]}'")
     workflow.add_node(
         "chat",
         make_chat_node_wrapper(
             build_input_fn=build_input_fn,
             extract_output_fn=extract_output_fn,
             response_key=response_key,
-            invoke_context_factory=invoke_context_factory,
-            operation_resolver=operation_resolver,
+            invoke_context_factory=runtime_options.get(
+                "invoke_context_factory"
+            ),
+            operation_resolver=runtime_options.get("operation_resolver"),
         ),
     )
 
