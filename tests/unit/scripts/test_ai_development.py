@@ -224,8 +224,10 @@ def test_legacy_stream_run_writer_is_always_rejected(tmp_path: Path) -> None:
     source.parent.mkdir(parents=True)
     source.write_text(
         "def project(persistence, run_id, owner, result):\n"
-        "    persistence.create_running_stream_run(run_id, 'chat', owner, {})\n"
-        "    persistence.update_running_stream_result(run_id, owner, result)\n",
+        "    persistence.create_running_stream_run("
+        "run_id, 'chat', owner, {})\n"
+        "    persistence.update_running_stream_result("
+        "run_id, owner, result)\n",
         encoding="utf-8",
     )
 

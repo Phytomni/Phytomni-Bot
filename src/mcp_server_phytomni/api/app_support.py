@@ -403,7 +403,7 @@ def _execution_conversation_runtime(
     )
 
 
-def _execution_conversation_dispatch_kind(value: object) -> str:
+def execution_conversation_dispatch_kind(value: object) -> str:
     """Select the existing context entrypoint without changing Agent logic."""
     envelope = ConversationEnvelopeV1.model_validate(value)
     return "expert" if envelope.mode == "expert" else "native"
@@ -562,7 +562,7 @@ async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
                 forced_tool = private_arguments.pop("__forced_tool", None)
                 locale = private_arguments.pop("locale", "en-US")
                 if (
-                    _execution_conversation_dispatch_kind(conversation_value)
+                    execution_conversation_dispatch_kind(conversation_value)
                     == "expert"
                 ):
                     if not isinstance(query, str) or not isinstance(
@@ -644,10 +644,13 @@ async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
                             stage=stage,
                         )
                         if not stage_recorded:
+                            projection_message = (
+                                "execution context projection is pending"
+                            )
                             raise SafeApiError(
                                 status_code=503,
                                 code="context_stage_projection_pending",
-                                message="execution context projection is pending",
+                                message=projection_message,
                                 stage="execution_context",
                                 retryable=True,
                             )

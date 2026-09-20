@@ -822,7 +822,7 @@ async def _invoke_agent_run_request(
             arguments=arguments,
             preflight=preflight,
         )
-        return await _dispatch_agent_run_request(request, preflight, prepared)
+        return await _dispatch_agent_run_request(request, prepared)
 
     execution_identity = _existing_execution_identity(
         db_path=_app_attr("resolve_tasks_db_path")(),
@@ -900,7 +900,7 @@ def _failed_remote_runtime_response(
 def _existing_execution_identity(
     *, db_path: str, owner: str, execution_id: str
 ) -> tuple[int, str] | None:
-    """Reuse the outer admission identity after Expert routing binds an Agent."""
+    """Reuse the admission identity after Expert routing binds an Agent."""
     try:
         record = SQLiteExecutionReservationRepository(db_path).get(
             owner=owner,
@@ -913,7 +913,6 @@ def _existing_execution_identity(
 
 async def _dispatch_agent_run_request(
     request: Mapping[str, Any],
-    preflight: _AgentRunPreflight,
     prepared: _AgentRunPreparation,
 ) -> tuple[dict[str, Any], int]:
     """Delegate to established business preparation and response shaping."""

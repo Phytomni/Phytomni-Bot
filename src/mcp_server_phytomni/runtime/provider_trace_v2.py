@@ -85,6 +85,7 @@ class ProviderTraceRecord(_PrivateFrozenModel):
     @field_validator("occurred_at")
     @classmethod
     def validate_occurred_at(cls, value: str | None) -> str | None:
+        """Require timezone-aware ISO-8601 timestamps when one is supplied."""
         if value is None:
             return None
         try:
@@ -97,6 +98,7 @@ class ProviderTraceRecord(_PrivateFrozenModel):
 
     @model_validator(mode="after")
     def validate_finite_shape(self) -> ProviderTraceRecord:
+        """Validate progress bounds and record-class-specific fields."""
         if (
             self.completed is not None
             and self.total is not None
@@ -142,6 +144,7 @@ class ProviderTraceObservation(_PrivateFrozenModel):
 
     @model_validator(mode="after")
     def validate_record_identities(self) -> ProviderTraceObservation:
+        """Reject duplicate source identities within one observation."""
         identities = tuple(record.source_identity for record in self.records)
         if len(set(identities)) != len(identities):
             raise ValueError("duplicate source identity in observation")
@@ -165,6 +168,7 @@ class ProviderTraceDiagnostics(_PrivateFrozenModel):
 
     @model_validator(mode="after")
     def validate_rejection_count(self) -> ProviderTraceDiagnostics:
+        """Keep the aggregate rejection count consistent with details."""
         if self.rejected_records < len(self.rejections):
             raise ValueError("rejected record count is inconsistent")
         return self
@@ -184,6 +188,7 @@ class ProviderTraceAdapterResult(_PrivateFrozenModel):
     @field_validator("overlap_identities")
     @classmethod
     def validate_overlap(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        """Validate bounded identities retained for overlap detection."""
         if any(not identity or len(identity) > 128 for identity in value):
             raise ValueError("invalid overlap identity")
         return value
@@ -203,6 +208,7 @@ class ProviderTraceCheckpoint(_PrivateFrozenModel):
     def from_result(
         cls, result: ProviderTraceAdapterResult
     ) -> ProviderTraceCheckpoint:
+        """Create the next persisted checkpoint from an adapter result."""
         return cls(
             adapter_version=result.observation.adapter_version,
             cursor=result.observation.next_cursor,
@@ -247,6 +253,7 @@ class FullSnapshotProviderTraceAdapter:
         *,
         checkpoint: ProviderTraceCheckpoint | None = None,
     ) -> ProviderTraceAdapterResult:
+        """Normalize and validate one bounded full provider snapshot."""
         if isinstance(snapshot, (str, bytes, bytearray)):
             raise ValueError("snapshot must be a record sequence")
         prior = checkpoint or ProviderTraceCheckpoint()
@@ -263,12 +270,12 @@ class FullSnapshotProviderTraceAdapter:
             rejections.append(
                 ProviderTraceRejection(index=0, code="snapshot_limit")
             )
-            raw_records = raw_records[-self.max_snapshot_records :]
+            raw_records = raw_records[slice(-self.max_snapshot_records, None)]
 
         identities: list[str] = []
         valid_raw: list[tuple[int, object, str]] = []
         for index, raw in enumerate(raw_records):
-            identity = self._record_identity(raw, index)
+            identity = self._record_identity(raw)
             if identity is None:
                 rejected_count += 1
                 if len(rejections) < 64:
@@ -324,7 +331,7 @@ class FullSnapshotProviderTraceAdapter:
             )
             else "healthy"
         )
-        overlap = tuple(identities[-self.overlap_size :])
+        overlap = tuple(identities[slice(-self.overlap_size, None)])
         return ProviderTraceAdapterResult(
             observation=ProviderTraceObservation(
                 schema_version=1,
@@ -342,7 +349,7 @@ class FullSnapshotProviderTraceAdapter:
             overlap_identities=overlap,
         )
 
-    def _record_identity(self, raw: object, index: int) -> str | None:
+    def _record_identity(self, raw: object) -> str | None:
         if isinstance(raw, Mapping):
             stable = raw.get("id")
             if (
@@ -379,6 +386,7 @@ class StructuredDeltaProviderTraceAdapter:
         *,
         checkpoint: ProviderTraceCheckpoint | None = None,
     ) -> ProviderTraceAdapterResult:
+        """Validate one structured provider delta against its checkpoint."""
         observation = ProviderTraceObservation.model_validate(payload)
         if observation.adapter_version != self.adapter_version:
             raise ValueError("provider trace adapter version mismatch")
@@ -425,7 +433,7 @@ def _snapshot_new_start(
     for size in range(min(len(overlap), len(identities)), 0, -1):
         needle = overlap[-size:]
         for start in range(len(identities) - size, -1, -1):
-            if identities[start : start + size] == needle:
+            if identities[slice(start, start + size)] == needle:
                 return start + size
     return 0
 

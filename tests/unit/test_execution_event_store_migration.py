@@ -9,9 +9,11 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
+
 
 def _schema(db_path: Path, kind: str) -> set[str]:
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         return {
             row[0]
             for row in connection.execute(
@@ -21,7 +23,7 @@ def _schema(db_path: Path, kind: str) -> set[str]:
 
 
 def _columns(db_path: Path, table: str) -> tuple[str, ...]:
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         return tuple(
             row[1] for row in connection.execute(f"PRAGMA table_info({table})")
         )
@@ -73,7 +75,7 @@ def test_store_migrates_legacy_run_database_without_rewriting_rows(
     )
 
     db_path = tmp_path / "legacy.db"
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "CREATE TABLE runs ("
             "run_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, "
@@ -87,7 +89,7 @@ def test_store_migrates_legacy_run_database_without_rewriting_rows(
 
     SQLiteExecutionEventStore(str(db_path))
 
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         assert connection.execute(
             "SELECT * FROM runs WHERE run_id = 'run-legacy'"
         ).fetchone() == (
@@ -141,7 +143,7 @@ def test_schema_enforces_sequence_event_and_idempotency_identity(
         "2026-08-18T00:00:00Z",
     )
     placeholders = ",".join("?" for _ in row)
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             f"INSERT INTO run_events VALUES ({placeholders})", row
         )

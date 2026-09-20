@@ -193,8 +193,6 @@ def test_provider_submit_poll_retry_cancel_and_terminal_are_observed(
 def test_analysis_submission_ack_does_not_complete_remote_analysis(
     tmp_path: Path,
 ) -> None:
-    import sqlite3
-
     from mcp_server_phytomni.runtime.execution_drivers_v2 import (
         LocalGraphDriver,
     )
@@ -219,6 +217,7 @@ def test_analysis_submission_ack_does_not_complete_remote_analysis(
     from mcp_server_phytomni.runtime.provider_instrumentation_v2 import (
         instrument_provider_submission,
     )
+    from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
     db_path = str(tmp_path / "analysis-submission-boundary.db")
     journal = SQLiteExecutionJournal(db_path)
@@ -260,7 +259,7 @@ def test_analysis_submission_ack_does_not_complete_remote_analysis(
     )
     assert outcome.status.value == "succeeded"
 
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         rows = connection.execute(
             "SELECT work_unit_id, operation_key, status, provider_task_id "
             "FROM execution_work_units ORDER BY operation_key"
@@ -506,8 +505,6 @@ def test_provider_cancellation_preserves_best_effort_and_unsupported_work(
 def test_lost_provider_ack_binding_keeps_durable_submitted_intent(
     tmp_path: Path, monkeypatch
 ) -> None:
-    import sqlite3
-
     from mcp_server_phytomni.runtime.execution_drivers_v2 import (
         LocalGraphDriver,
     )
@@ -532,6 +529,7 @@ def test_lost_provider_ack_binding_keeps_durable_submitted_intent(
     from mcp_server_phytomni.runtime.provider_instrumentation_v2 import (
         instrument_provider_submission,
     )
+    from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
     db_path = str(tmp_path / "lost-ack.db")
     work = SQLiteExecutionWorkRepository(db_path)
@@ -583,7 +581,7 @@ def test_lost_provider_ack_binding_keeps_durable_submitted_intent(
     )
     assert outcome.status.value == "failed"
     assert len(calls) == 1
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         row = connection.execute(
             "SELECT status, provider_task_id FROM execution_work_units"
         ).fetchone()

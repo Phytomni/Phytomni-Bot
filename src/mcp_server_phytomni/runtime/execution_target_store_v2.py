@@ -6,12 +6,12 @@
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
 from .execution_journal_schema import migrate_execution_journal_v2
+from .sqlite import sqlite_transaction
 
 
 class ExecutionTargetBindingConflictError(RuntimeError):
@@ -54,7 +54,7 @@ class ExecutionTargetStore(Protocol):
 
 
 class SQLiteExecutionTargetStore:
-    """SQLite implementation co-located with the canonical execution journal."""
+    """SQLite target store beside the canonical execution journal."""
 
     def __init__(
         self,
@@ -77,14 +77,14 @@ class SQLiteExecutionTargetStore:
         from .run_registry import RunRegistry
 
         RunRegistry(self.db_path)
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             migrate_execution_journal_v2(connection)
             connection.commit()
 
     def put(self, binding: ExecutionTargetBindingV2) -> None:
         """Persist once; a target id can never be rebound to another object."""
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             token = self._expected_provider_join_lease_token
@@ -164,8 +164,8 @@ class SQLiteExecutionTargetStore:
         kind: str,
         target_id: str,
     ) -> ExecutionTargetBindingV2 | None:
-        """Return an owner-authorized live binding with unknown/foreign parity."""
-        with sqlite3.connect(self.db_path) as connection:
+        """Return an authorized binding with unknown/foreign parity."""
+        with sqlite_transaction(self.db_path) as connection:
             row = connection.execute(
                 "SELECT b.role, b.name, b.media_type, b.size_bytes, "
                 "b.delivery_ref FROM execution_target_bindings_v2 b "

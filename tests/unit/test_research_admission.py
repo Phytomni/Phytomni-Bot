@@ -46,6 +46,7 @@ from mcp_server_phytomni.runtime.research_input_store_support import (
     AdmissionLaunchFailure,
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 pytestmark = pytest.mark.unit
 
@@ -273,7 +274,7 @@ def test_research_domain_adopts_the_runtime_root_without_second_run(
     )
 
     assert admitted.run_id == reserved.run_id
-    with sqlite3.connect(database) as connection:
+    with sqlite_transaction(database) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM runs WHERE run_id = ?",
             (reserved.run_id,),

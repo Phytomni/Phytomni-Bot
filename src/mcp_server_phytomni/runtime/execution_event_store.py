@@ -84,7 +84,7 @@ _EVENT_SELECT = (
 )
 
 
-class ExecutionEventRunNotFound(LookupError):  # noqa: N818
+class ExecutionEventRunNotFoundError(LookupError):
     """The requested run is unknown or not owned by the caller."""
 
 
@@ -186,7 +186,7 @@ class SQLiteExecutionEventStore:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             if not _owned_run_exists(connection, run_id, owner):
-                raise ExecutionEventRunNotFound(run_id)
+                raise ExecutionEventRunNotFoundError(run_id)
             if intent.idempotency_key is not None:
                 existing = connection.execute(
                     f"SELECT {_EVENT_SELECT} FROM run_events "
@@ -232,7 +232,8 @@ class SQLiteExecutionEventStore:
                 "run_id, seq, event_id, idempotency_key, schema_version, "
                 "occurred_at, kind, status, task_id, parent_event_id, "
                 "ignorable, summary_json, public_payload_json, target_json, "
-                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, ?, ?)",
                 _event_row(event, created_at=occurred_at),
             )
             projection = (
@@ -322,7 +323,8 @@ class SQLiteExecutionEventStore:
                 connection.commit()
                 return None
             latest_row = connection.execute(
-                "SELECT COALESCE(MAX(seq), 0) FROM run_events WHERE run_id = ?",
+                "SELECT COALESCE(MAX(seq), 0) FROM run_events "
+                "WHERE run_id = ?",
                 (run_id,),
             ).fetchone()
             latest_seq = int(latest_row[0])
@@ -485,7 +487,8 @@ def _upsert_projection(
 ) -> None:
     connection.execute(
         "INSERT INTO run_event_projection "
-        "(run_id, latest_seq, projection_json, updated_at) VALUES (?, ?, ?, ?) "
+        "(run_id, latest_seq, projection_json, updated_at) "
+        "VALUES (?, ?, ?, ?) "
         "ON CONFLICT(run_id) DO UPDATE SET "
         "latest_seq = excluded.latest_seq, "
         "projection_json = excluded.projection_json, "

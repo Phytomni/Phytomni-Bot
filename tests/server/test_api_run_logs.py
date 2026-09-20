@@ -200,7 +200,7 @@ async def test_get_orphan_run_logs_are_finite_and_status_is_terminal(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
-    """An orphaned detached run yields finite logs without read-side mutation."""
+    """An orphaned run yields finite logs without read-side mutation."""
     registry = RunRegistry(tasks_db_path)
     registry.reserve_run(
         RunSpec("run-orphan-logs", "u1", "analyst", "remote"),

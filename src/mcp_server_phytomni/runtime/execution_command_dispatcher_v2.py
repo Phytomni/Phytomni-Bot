@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 import re
-import sqlite3
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -36,10 +35,23 @@ from .execution_runtime_contracts import (
     TerminalSettlementAuthority,
 )
 from .request_context import request_context
+from .sqlite import sqlite_transaction
 
 InvokeCommand = Callable[..., Awaitable[Any]]
 _SAFE_ERROR_CODE = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,63}$")
 _LOGGER = logging.getLogger(__name__)
+_UNSTARTED_EVIDENCE_QUERIES = (
+    "SELECT COUNT(*) FROM execution_events_v2 WHERE owner_ref = ? "
+    "AND execution_id = ?",
+    "SELECT COUNT(*) FROM execution_spans WHERE owner_ref = ? "
+    "AND execution_id = ?",
+    "SELECT COUNT(*) FROM execution_work_units WHERE owner_ref = ? "
+    "AND execution_id = ?",
+    "SELECT COUNT(*) FROM execution_target_bindings_v2 WHERE owner_ref = ? "
+    "AND execution_id = ?",
+    "SELECT COUNT(*) FROM execution_operations_v2 WHERE owner_ref = ? "
+    "AND execution_id = ?",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,11 +113,12 @@ class SQLiteExecutionCommandQueueV2:
         now = self._clock()
         now_text = now.isoformat()
         lease_text = (now + timedelta(seconds=lease_seconds)).isoformat()
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT owner_ref, execution_id, command_json, attempt, revision "
+                "SELECT owner_ref, execution_id, command_json, "
+                "attempt, revision "
                 "FROM execution_commands_v2 WHERE "
                 "((state IN ('pending','retry') AND "
                 "(next_attempt_at IS NULL OR next_attempt_at <= ?)) OR "
@@ -118,7 +131,8 @@ class SQLiteExecutionCommandQueueV2:
                 return None
             result = connection.execute(
                 "UPDATE execution_commands_v2 SET state = 'processing', "
-                "attempt = attempt + 1, lease_owner = ?, lease_expires_at = ?, "
+                "attempt = attempt + 1, lease_owner = ?, "
+                "lease_expires_at = ?, "
                 "updated_at = ?, revision = revision + 1 "
                 "WHERE owner_ref = ? AND execution_id = ? AND revision = ?",
                 (worker_id, lease_text, now_text, row[0], row[1], row[4]),
@@ -145,7 +159,7 @@ class SQLiteExecutionCommandQueueV2:
         now = self._clock()
         now_text = now.isoformat()
         lease_text = (now + timedelta(seconds=lease_seconds)).isoformat()
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
@@ -225,7 +239,7 @@ class SQLiteExecutionCommandQueueV2:
 
     def redispatch_reconcile(self, claim: ClaimedReconcileCommand) -> bool:
         """Schedule the single allowed safe replay of an unstarted command."""
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             result = connection.execute(
                 "UPDATE execution_commands_v2 SET state = 'retry', "
                 "next_attempt_at = ?, next_reconcile_at = NULL, "
@@ -280,7 +294,7 @@ class SQLiteExecutionCommandQueueV2:
             ExecutionCommand(agent_slug=agent, arguments=arguments)
         )
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             reservation = connection.execute(
@@ -336,17 +350,9 @@ class SQLiteExecutionCommandQueueV2:
             ):
                 connection.rollback()
                 return False
-            tables = (
-                "execution_events_v2",
-                "execution_spans",
-                "execution_work_units",
-                "execution_target_bindings_v2",
-                "execution_operations_v2",
-            )
-            for table in tables:
+            for query in _UNSTARTED_EVIDENCE_QUERIES:
                 count = connection.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE owner_ref = ? "  # noqa: S608
-                    "AND execution_id = ?",
+                    query,
                     (claim.owner_ref, claim.execution_id),
                 ).fetchone()[0]
                 if count:
@@ -396,7 +402,7 @@ class SQLiteExecutionCommandQueueV2:
         code: str,
         next_reconcile_at: str | None,
     ) -> bool:
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             result = connection.execute(
                 "UPDATE execution_commands_v2 SET state = ?, "
                 "next_reconcile_at = ?, lease_owner = NULL, "
@@ -502,16 +508,18 @@ class SQLiteExecutionCommandQueueV2:
         next_attempt_at: str | None = None,
         next_reconcile_at: str | None = None,
     ) -> bool:
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             result = connection.execute(
-                "UPDATE execution_commands_v2 SET state = ?, next_attempt_at = ?, "
+                "UPDATE execution_commands_v2 SET state = ?, "
+                "next_attempt_at = ?, "
                 "next_reconcile_at = ?, lease_owner = NULL, "
                 "lease_expires_at = NULL, classification = ?, "
                 "boundary_state = ?, "
                 "first_error_code = COALESCE(first_error_code, ?), "
                 "last_error_code = COALESCE(?, last_error_code), "
                 "updated_at = ?, revision = revision + 1 WHERE owner_ref = ? "
-                "AND execution_id = ? AND state = 'processing' AND revision = ?",
+                "AND execution_id = ? AND state = 'processing' "
+                "AND revision = ?",
                 (
                     state,
                     next_attempt_at,

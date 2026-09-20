@@ -96,9 +96,7 @@ def test_recognized_provider_tool_becomes_opaque_analysis_child() -> None:
         assert private_value not in public
 
 
-def test_unknown_or_semantically_mismatched_provider_records_stay_private() -> (
-    None
-):
+def test_unknown_or_mismatched_provider_records_stay_private() -> None:
     from mcp_server_phytomni.runtime.gene_network_provider_trace_v2 import (
         present_gene_network_provider_record,
     )

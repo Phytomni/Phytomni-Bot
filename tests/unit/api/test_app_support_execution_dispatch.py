@@ -15,6 +15,9 @@ from fastapi.responses import JSONResponse
 
 from mcp_server_phytomni.api import app_support
 from mcp_server_phytomni.mcp import app as mcp_app
+from mcp_server_phytomni.runtime.execution_command_dispatcher_v2 import (
+    InvokeCommand,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -37,17 +40,15 @@ def _conversation(mode: str) -> dict[str, object]:
     }
 
 
-def test_detached_dispatch_routes_only_expert_envelopes_to_expert_context() -> (
-    None
-):
+def test_detached_dispatch_routes_expert_envelope_context() -> None:
     assert (
-        app_support._execution_conversation_dispatch_kind(  # noqa: SLF001
+        app_support.execution_conversation_dispatch_kind(
             _conversation("expert")
         )
         == "expert"
     )
     assert (
-        app_support._execution_conversation_dispatch_kind(  # noqa: SLF001
+        app_support.execution_conversation_dispatch_kind(
             _conversation("instant")
         )
         == "native"
@@ -74,8 +75,12 @@ async def test_native_dispatch_keeps_durable_arguments_out_of_agent_schema(
 
     async def fake_runtime(**kwargs: object) -> object:
         captured["arguments"] = kwargs["arguments"]
-        raw = await kwargs["call"]()  # type: ignore[operator]
-        captured["projected"] = kwargs["public_result_mapper"](raw)  # type: ignore[operator]
+        call = kwargs["call"]
+        assert callable(call)
+        raw = await call()
+        mapper = kwargs["public_result_mapper"]
+        assert callable(mapper)
+        captured["projected"] = mapper(raw)
         return raw
 
     monkeypatch.setitem(mcp_app.TOOL_HANDLERS, "ChatAgent", fake_handler)
@@ -123,7 +128,7 @@ async def test_detached_expert_dispatch_preserves_selected_design_arguments(
     async def dispatcher(
         *,
         db_path: str,
-        invoke: object,
+        invoke: InvokeCommand,
         stop: asyncio.Event,
     ) -> None:
         from mcp_server_phytomni.runtime.execution_reservation_v2 import (
@@ -175,7 +180,7 @@ async def test_detached_expert_dispatch_preserves_selected_design_arguments(
                 agent_slug="design", arguments=durable_arguments
             ),
         )
-        captured["result"] = await invoke(  # type: ignore[operator]
+        captured["result"] = await invoke(
             "DigitalDesignAgent",
             durable_arguments,
             execution_id="turn-design-context",
@@ -276,6 +281,7 @@ async def test_routed_expert_binds_selected_identity_before_runtime_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A routed async Agent starts below the existing router admission."""
+    from mcp_server_phytomni.api import app as api_app
     from mcp_server_phytomni.api import factory
     from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
         CanonicalReservationIdentity,
@@ -344,18 +350,12 @@ async def test_routed_expert_binds_selected_identity_before_runtime_start(
             "result": empty_agent_result(),
         }, 200
 
-    app_attributes: dict[str, object] = {
-        "current_request_user": lambda: "alice",
-        "_invoke_agent_run": fake_invoke_agent_run,
-    }
     monkeypatch.setattr(factory, "_tasks_db_path", lambda: db_path)
-    monkeypatch.setattr(
-        factory, "_app_attr", lambda name: app_attributes[name]
-    )
-    adapters = factory._RouteAdapters(  # noqa: SLF001
-        runtime=factory._RuntimeState(  # noqa: SLF001
-            rate_limit=lambda _key, _limit: None
-        )
+    monkeypatch.setattr(api_app, "current_request_user", lambda: "alice")
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke_agent_run)
+    app = factory.build_app()
+    invoke_agent_run = (
+        app.state.agent_route_dependencies.native.invoke_agent_run
     )
     identity = CanonicalReservationIdentity(
         owner="alice",
@@ -366,7 +366,7 @@ async def test_routed_expert_binds_selected_identity_before_runtime_start(
     )
 
     with bind_canonical_reservation_identity(identity):
-        await adapters.invoke_agent_run(
+        await invoke_agent_run(
             agent="design",
             arguments=selected_arguments,
             execution_id=execution_id,

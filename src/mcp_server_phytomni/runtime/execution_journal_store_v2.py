@@ -31,6 +31,7 @@ from .execution_projection_v2 import (
     empty_execution_projection_v2,
     fold_execution_events_v2,
 )
+from .sqlite import sqlite_transaction
 
 _EVENT_SELECT = (
     "execution_id, seq, event_id, source_idempotency_key, schema_version, "
@@ -134,7 +135,7 @@ class SQLiteExecutionJournal:
         from .run_registry import RunRegistry
 
         RunRegistry(self.db_path)
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
@@ -149,7 +150,7 @@ class SQLiteExecutionJournal:
         intent: ExecutionEventIntentV2,
     ) -> ExecutionEventV2:
         """Atomically allocate a sequence and commit one safe event."""
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             self._authorize(connection, owner, execution_id)
@@ -192,7 +193,7 @@ class SQLiteExecutionJournal:
         overlap_json = json.dumps(
             overlap_identities, ensure_ascii=True, separators=(",", ":")
         )
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             self._authorize(connection, owner, execution_id)
@@ -332,7 +333,7 @@ class SQLiteExecutionJournal:
         if after_seq < 0:
             raise ValueError("after_seq must be non-negative")
         page_size = self._limits.resolve_page_size(limit)
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             self._authorize(connection, owner, execution_id)
             rows = connection.execute(
                 f"SELECT {_EVENT_SELECT} FROM execution_events_v2 "
@@ -369,7 +370,7 @@ class SQLiteExecutionJournal:
         owner: str,
     ) -> ExecutionEventV2 | None:
         """Read one owned event by opaque stable identity."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             self._authorize(connection, owner, execution_id)
             row = connection.execute(
                 f"SELECT {_EVENT_SELECT} FROM execution_events_v2 "
@@ -385,7 +386,7 @@ class SQLiteExecutionJournal:
         owner: str,
     ) -> ExecutionProjectionV2:
         """Return a valid cache or rebuild in memory from retained facts."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             self._authorize(connection, owner, execution_id)
             return self._load_or_rebuild_projection(
                 connection, owner, execution_id
@@ -393,7 +394,7 @@ class SQLiteExecutionJournal:
 
     def tombstone_execution(self, execution_id: str, *, owner: str) -> None:
         """Make V2 data inaccessible and purge it without touching V1 rows."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._authorize(connection, owner, execution_id)
             now = self._clock()
@@ -511,10 +512,12 @@ class SQLiteExecutionJournal:
             "INSERT INTO execution_projection_v2 ("
             "owner_ref, execution_id, latest_seq, first_available_seq, "
             "projection_json, projection_revision, updated_at) "
-            "VALUES (?, ?, ?, 1, ?, 1, ?) ON CONFLICT(owner_ref, execution_id) "
+            "VALUES (?, ?, ?, 1, ?, 1, ?) "
+            "ON CONFLICT(owner_ref, execution_id) "
             "DO UPDATE SET latest_seq = excluded.latest_seq, "
             "projection_json = excluded.projection_json, "
-            "projection_revision = execution_projection_v2.projection_revision + 1, "
+            "projection_revision = "
+            "execution_projection_v2.projection_revision + 1, "
             "updated_at = excluded.updated_at",
             (
                 owner,

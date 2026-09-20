@@ -12,6 +12,7 @@ their independent failure contracts.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 from collections.abc import Generator
@@ -56,7 +57,7 @@ def sqlite_connection(
 
 @contextmanager
 def sqlite_transaction(
-    db_path: str,
+    db_path: str | os.PathLike[str],
     *,
     timeout: float | None = None,
 ) -> Generator[sqlite3.Connection, None, None]:

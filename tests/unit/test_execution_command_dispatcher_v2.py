@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -37,6 +36,7 @@ from mcp_server_phytomni.runtime.execution_runtime_contracts import (
     TerminalSettlementAuthority,
     TransportNeutralResult,
 )
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
 def test_selected_agent_reuses_outer_admission_fingerprint(tmp_path) -> None:
@@ -96,9 +96,10 @@ def _reserve(db_path: str, execution_id: str = "turn-dispatcher") -> None:
 def _command_state(
     db_path: str, execution_id: str = "turn-dispatcher"
 ) -> tuple[str, int]:
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         row = connection.execute(
-            "SELECT state, attempt FROM execution_commands_v2 WHERE execution_id = ?",
+            "SELECT state, attempt FROM execution_commands_v2 "
+            "WHERE execution_id = ?",
             (execution_id,),
         ).fetchone()
     assert row is not None
@@ -128,7 +129,7 @@ async def test_background_dispatcher_bootstraps_a_fresh_database(
     assert task.done() is False
     stop.set()
     await task
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         table = connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name='execution_commands_v2'"
@@ -227,9 +228,10 @@ async def test_poison_command_rejects_without_invocation(
 ) -> None:
     db_path = str(tmp_path / "tasks.db")
     _reserve(db_path)
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
-            "UPDATE execution_commands_v2 SET command_json = '{}' WHERE execution_id = 'turn-dispatcher'"
+            "UPDATE execution_commands_v2 SET command_json = '{}' "
+            "WHERE execution_id = 'turn-dispatcher'"
         )
         connection.commit()
     invoked = False
@@ -265,7 +267,7 @@ async def test_dispatcher_terminal_cas_loser_publishes_no_failed_fact(
     """A concurrent Runtime success must fence out every dispatcher fact."""
     db_path = str(tmp_path / "terminal-race.db")
     _reserve(db_path)
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE execution_commands_v2 SET command_json = '{}' "
             "WHERE execution_id = 'turn-dispatcher'"
@@ -350,7 +352,7 @@ async def test_transient_failure_retries_without_leaking_exception_text(
         invoke=invoke,
     )
     assert _command_state(db_path) == ("retry", 1)
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         error_code = connection.execute(
             "SELECT last_error_code FROM execution_commands_v2"
         ).fetchone()[0]
@@ -420,7 +422,7 @@ async def test_dispatch_failure_uses_finite_three_way_taxonomy(
         db_path=db_path,
         invoke=invoke,
     )
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         row = connection.execute(
             "SELECT state, last_error_code FROM execution_commands_v2 "
             "WHERE execution_id = 'turn-dispatcher'"
@@ -457,7 +459,7 @@ async def test_nonretryable_safe_failure_terminalizes_without_retries(
         owner="alice", execution_id="turn-dispatcher"
     )
     assert record.status is ExecutionStatus.FAILED
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         error_code = connection.execute(
             "SELECT last_error_code FROM execution_commands_v2"
         ).fetchone()[0]
@@ -465,7 +467,7 @@ async def test_nonretryable_safe_failure_terminalizes_without_retries(
 
 
 @pytest.mark.asyncio
-async def test_started_execution_is_acknowledged_when_response_projection_fails(
+async def test_started_execution_acknowledged_if_projection_fails(
     tmp_path,
 ) -> None:
     db_path = str(tmp_path / "started.db")
@@ -495,7 +497,7 @@ async def test_retry_exhaustion_reconciles_without_terminalizing_execution(
     """Ambiguous delivery exhaustion remains reconcilable and non-terminal."""
     db_path = str(tmp_path / "exhausted.db")
     _reserve(db_path)
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE execution_commands_v2 SET attempt = 4 "
             "WHERE execution_id = 'turn-dispatcher'"
@@ -589,7 +591,7 @@ async def test_design_context_replay_enters_reconcile_without_reinvocation(
         invoke=invoke,
     )
     assert calls == 1
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         row = connection.execute(
             "SELECT state, classification, boundary_state, "
             "first_error_code, last_error_code FROM execution_commands_v2 "
@@ -707,24 +709,35 @@ async def test_reported_preclaim_conflict_persists_complete_stall_signature(
         repository.get(owner="alice", execution_id=execution_id).status
         is ExecutionStatus.ADMITTED
     )
-    assert context.load_turn(conversation_key, "60").state == "failed"  # type: ignore[union-attr]
-    with sqlite3.connect(db_path) as connection:
+    turn = context.load_turn(conversation_key, "60")
+    assert turn is not None
+    assert turn.state == "failed"
+    with sqlite_transaction(db_path) as connection:
         command = connection.execute(
             "SELECT state, classification FROM execution_commands_v2 "
             "WHERE owner_ref = ? AND execution_id = ?",
             ("alice", execution_id),
         ).fetchone()
+        count_queries = {
+            "execution_events_v2": (
+                "SELECT COUNT(*) FROM execution_events_v2 "
+                "WHERE execution_id = ?"
+            ),
+            "execution_spans": (
+                "SELECT COUNT(*) FROM execution_spans WHERE execution_id = ?"
+            ),
+            "execution_work_units": (
+                "SELECT COUNT(*) FROM execution_work_units "
+                "WHERE execution_id = ?"
+            ),
+            "execution_target_bindings_v2": (
+                "SELECT COUNT(*) FROM execution_target_bindings_v2 "
+                "WHERE execution_id = ?"
+            ),
+        }
         counts = {
-            table: connection.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE execution_id = ?",  # noqa: S608
-                (execution_id,),
-            ).fetchone()[0]
-            for table in (
-                "execution_events_v2",
-                "execution_spans",
-                "execution_work_units",
-                "execution_target_bindings_v2",
-            )
+            table: connection.execute(query, (execution_id,)).fetchone()[0]
+            for table, query in count_queries.items()
         }
     assert command == ("reconcile", "reconcile")
     assert counts == {

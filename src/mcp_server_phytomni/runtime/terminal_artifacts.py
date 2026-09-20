@@ -114,6 +114,7 @@ async def _default_artifact_object_lister(
     limit: int | None = None,
 ) -> list[ListedArtifactObject]:
     """List output objects and actual sizes off the event loop."""
+    del limit
     config = ServerConfig()
     return await list_artifact_objects_with_runtime(
         output_dir,

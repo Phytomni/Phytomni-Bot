@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -18,6 +17,7 @@ from .execution_event_limits import DEFAULT_EXECUTION_TRACE_DETAIL_LIMITS
 from .execution_journal_schema import migrate_execution_journal_v2
 from .execution_journal_v2 import ExecutionEventV2
 from .execution_trace_detail import OPERATION_PRESENTER_REGISTRY
+from .sqlite import sqlite_transaction
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +153,7 @@ class SQLiteExecutionLogArtifactStore:
         from .run_registry import RunRegistry
 
         RunRegistry(self.db_path)
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             migrate_execution_journal_v2(connection)
             connection.commit()
@@ -171,7 +171,7 @@ class SQLiteExecutionLogArtifactStore:
         )
         digest = hashlib.sha256(payload).hexdigest()
         target_id = f"log-{digest[:32]}"
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             authorized = connection.execute(
@@ -224,7 +224,7 @@ class SQLiteExecutionLogArtifactStore:
         target_id: str,
     ) -> bytes | None:
         """Return bytes only for a live execution owned by the caller."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             row = connection.execute(
                 "SELECT a.content_blob FROM execution_log_artifacts_v2 a "
                 "JOIN runs r ON r.user_id = a.owner_ref "

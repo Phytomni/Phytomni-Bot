@@ -30,7 +30,7 @@ def _append(
     target: Mapping[str, str] | None = None,
     task_id: str | None = None,
 ) -> None:
-    """Append one validated fact without allowing observability to break work."""
+    """Append a validated fact without letting observability break work."""
     if not execution_event_production_enabled():
         observe_execution_event("production_disabled")
         return
@@ -167,7 +167,7 @@ def emit_remote_progress(
     revision: int,
     task_rows: Sequence[Mapping[str, Any]],
 ) -> None:
-    """Translate one remote reconciliation observation into a safe progress fact."""
+    """Translate remote reconciliation into a safe progress fact."""
     statuses = tuple(str(row.get("status", "")).lower() for row in task_rows)
     completed = sum(
         status
@@ -198,7 +198,7 @@ def emit_remote_artifacts(
     revision: int,
     artifacts: Sequence[Mapping[str, Any]],
 ) -> None:
-    """Translate remote artifact paths into bounded names and opaque targets."""
+    """Translate remote artifact paths to names and opaque targets."""
     for group in artifacts:
         task_id = str(group.get("task_id") or "") or None
         paths = group.get("paths")

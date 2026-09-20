@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sqlite3
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.responses import StreamingResponse
+
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
 def test_entrypoint_projects_downloadable_artifact_to_opaque_target(
@@ -60,7 +61,7 @@ def test_entrypoint_projects_downloadable_artifact_to_opaque_target(
     )
 
     store = SQLiteExecutionTargetStore(db_path)
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         target_id = connection.execute(
             "SELECT target_id FROM execution_target_bindings_v2 "
             "WHERE owner_ref = ? AND execution_id = ?",
@@ -165,7 +166,7 @@ def test_network_ready_result_projects_report_table_image_and_archive_targets(
         )
     )
 
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         rows = connection.execute(
             "SELECT target_kind, target_id, role, name, delivery_ref "
             "FROM execution_target_bindings_v2 "
@@ -343,10 +344,11 @@ def test_reported_design_preparation_conflicts_before_runtime_claim(
         repository.get(owner="alice", execution_id=execution_id).status.value
         == "admitted"
     )
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         assert (
             connection.execute(
-                "SELECT COUNT(*) FROM execution_events_v2 WHERE execution_id = ?",
+                "SELECT COUNT(*) FROM execution_events_v2 "
+                "WHERE execution_id = ?",
                 (execution_id,),
             ).fetchone()[0]
             == 0
@@ -360,7 +362,8 @@ def test_reported_design_preparation_conflicts_before_runtime_claim(
         )
         assert (
             connection.execute(
-                "SELECT COUNT(*) FROM execution_work_units WHERE execution_id = ?",
+                "SELECT COUNT(*) FROM execution_work_units "
+                "WHERE execution_id = ?",
                 (execution_id,),
             ).fetchone()[0]
             == 0
@@ -485,30 +488,34 @@ def test_canonical_identity_rejects_true_mismatch_before_business_start(
         fingerprint="a" * 64,
         command=original_command,
     )
-    values: dict[str, object] = {
-        "owner": "alice",
-        "execution_id": "turn-identity-mismatch",
-        "fingerprint_version": 2,
-        "fingerprint": "a" * 64,
-        "command": original_command,
-    }
+    identity_owner = "alice"
+    identity_execution_id = "turn-identity-mismatch"
+    identity_fingerprint_version = 2
+    identity_fingerprint = "a" * 64
+    identity_command = original_command
     if mismatch == "owner":
-        values["owner"] = "mallory"
+        identity_owner = "mallory"
     elif mismatch == "execution_id":
-        values["execution_id"] = "turn-other"
+        identity_execution_id = "turn-other"
     elif mismatch == "agent":
-        values["command"] = ExecutionCommand(
+        identity_command = ExecutionCommand(
             agent_slug="chat", arguments={"user_query": "Os01g0177400"}
         )
     elif mismatch == "fingerprint_version":
-        values["fingerprint_version"] = 3
+        identity_fingerprint_version = 3
     elif mismatch == "fingerprint":
-        values["fingerprint"] = "b" * 64
+        identity_fingerprint = "b" * 64
     else:
-        values["command"] = ExecutionCommand(
+        identity_command = ExecutionCommand(
             agent_slug="design", arguments={"user_query": "different"}
         )
-    identity = CanonicalReservationIdentity(**values)  # type: ignore[arg-type]
+    identity = CanonicalReservationIdentity(
+        owner=identity_owner,
+        execution_id=identity_execution_id,
+        fingerprint_version=identity_fingerprint_version,
+        fingerprint=identity_fingerprint,
+        command=identity_command,
+    )
     calls = 0
 
     async def business_call() -> dict[str, str]:
@@ -869,7 +876,7 @@ def test_data_result_publishes_the_complete_table_as_message_content(
         '{"headers":["transcript_id_1"],"rows":[["Os01t0177400-01"]]}'
     )
 
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         result_json = connection.execute(
             "SELECT result_json FROM runs WHERE execution_id = ?",
             ("turn-data-result",),
@@ -931,7 +938,7 @@ def test_data_result_chunks_unicode_table_without_losing_cells(
 def test_private_path_answer_is_returned_but_omitted_from_public_journal(
     tmp_path: Path,
 ) -> None:
-    """Runtime projection cannot make transport redaction a write prerequisite."""
+    """Projection cannot make transport redaction a write prerequisite."""
     from mcp_server_phytomni.runtime.execution_entrypoint_v2 import (
         invoke_public_agent,
     )

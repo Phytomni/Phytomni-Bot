@@ -256,7 +256,7 @@ async def stream_graph(
         if boundary is not None and graph_span is not None
         else None
     )
-    iterator = app.astream(initial_state, **kwargs).__aiter__()
+    iterator = aiter(app.astream(initial_state, **kwargs))
     completed = False
     try:
         while True:
@@ -270,7 +270,7 @@ async def stream_graph(
             )
             try:
                 with manager:
-                    item = await iterator.__anext__()
+                    item = await anext(iterator)
             except StopAsyncIteration:
                 completed = True
                 break

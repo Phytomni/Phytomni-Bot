@@ -57,7 +57,7 @@ async def instrument_operation_invocation[T](
     detail: Mapping[str, Any] | None = None,
     detail_from_result: Callable[[T], Mapping[str, Any]] | None = None,
 ) -> T:
-    """Record one finite operation without copying its input, result, or error."""
+    """Record an operation without copying its input, result, or error."""
     boundary = current_execution_boundary()
     if boundary is None:
         return await call()
@@ -112,7 +112,7 @@ def record_current_operation_liveness(
     *,
     observed_at: datetime | None = None,
 ) -> bool:
-    """Append a coalesced no-percentage observation for the active operation."""
+    """Append a coalesced observation for the active operation."""
     observation = _CURRENT_OPERATION.get()
     if observation is None:
         return False

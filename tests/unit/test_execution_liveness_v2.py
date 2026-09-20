@@ -203,7 +203,8 @@ def test_sse_heartbeat_is_transport_only_and_never_appended() -> None:
         / "executions_v2.py"
     ).read_text(encoding="utf-8")
 
-    heartbeat_block = route[route.index('yield ": heartbeat\\n\\n"') - 180 :]
+    heartbeat_start = route.index('yield ": heartbeat\\n\\n"') - 180
+    heartbeat_block = route[slice(heartbeat_start, None)]
     heartbeat_block = heartbeat_block[:400]
     assert "journal.append" not in heartbeat_block
     assert "store.append" not in heartbeat_block

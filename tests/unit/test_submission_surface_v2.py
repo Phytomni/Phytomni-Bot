@@ -127,7 +127,8 @@ def test_task_identifier_is_redacted_without_dropping_a_real_report(
             "result": {
                 "formatted": {
                     "answer": (
-                        "# Network report\n\nThe analysis completed successfully. "
+                        "# Network report\n\n"
+                        "The analysis completed successfully. "
                         f"Internal task: {provider_task_id}."
                     ),
                     "metadata": {"task_id": provider_task_id},

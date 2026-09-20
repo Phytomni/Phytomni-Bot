@@ -98,9 +98,7 @@ def test_runtime_fixture_matches_the_operation_record_capability() -> None:
     assert runtime_fixture["capabilities"]["operation_records"] == expected
 
 
-def test_shared_stage_fixture_freezes_terminal_surface_and_clock_semantics() -> (
-    None
-):
+def test_stage_fixture_freezes_terminal_surface_and_clocks() -> None:
     fixtures = _fixtures()
     contract = fixtures["stage_contract"]
     cases = {case["name"]: case for case in fixtures["stage_transition_cases"]}

@@ -33,6 +33,7 @@ from .execution_runtime_contracts import (
     ExecutionContext,
     TerminalSettlementAuthority,
 )
+from .sqlite import sqlite_transaction
 
 # Private admission-only identity for autonomous Expert routing.  It is not a
 # public Agent and must never be exported by the canonical Agent catalog.
@@ -154,7 +155,7 @@ class SQLiteExecutionReservationRepository:
         )
         command_hash = execution_command_hash(command)
         durable_command_json = _durable_command_json(durable_command)
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             existing = self._read(connection, owner, execution_id)
@@ -242,7 +243,7 @@ class SQLiteExecutionReservationRepository:
         execution_id: str,
         command: ExecutionCommand,
     ) -> ExecutionReservationRecord:
-        """Atomically replace the private Expert placeholder with its selection.
+        """Replace the private Expert placeholder with its selection.
 
         The selector remains the sole routing authority.  Rebinding happens
         before any selected Agent business code starts and preserves the
@@ -258,7 +259,7 @@ class SQLiteExecutionReservationRepository:
         deadline_at = (
             now + timedelta(seconds=spec.deadline_seconds)
         ).isoformat()
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             current = self._read(connection, owner, execution_id)
@@ -280,11 +281,14 @@ class SQLiteExecutionReservationRepository:
                     "routing_already_started"
                 )
             result = connection.execute(
-                "UPDATE runs SET agent = ?, origin = ?, tool_name = ?, model = ?, "
+                "UPDATE runs SET agent = ?, origin = ?, "
+                "tool_name = ?, model = ?, "
                 "execution_command_hash = ?, execution_driver = ?, "
-                "execution_deadline_at = ?, revision = revision + 1, updated_at = ? "
+                "execution_deadline_at = ?, revision = revision + 1, "
+                "updated_at = ? "
                 "WHERE user_id = ? AND execution_id = ? AND agent = ? "
-                "AND status = 'admitted' AND execution_terminal_outcome IS NULL",
+                "AND status = 'admitted' "
+                "AND execution_terminal_outcome IS NULL",
                 (
                     spec.slug,
                     "remote" if spec.lifecycle == "asynchronous" else "local",
@@ -341,7 +345,7 @@ class SQLiteExecutionReservationRepository:
         )
         if len(encoded.encode("utf-8")) > 4096:
             raise ValueError("context stage exceeds size limit")
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             result = connection.execute(
                 "UPDATE runs SET execution_context_stage_json = ?, "
                 "revision = revision + 1, updated_at = ? WHERE user_id = ? "
@@ -365,7 +369,7 @@ class SQLiteExecutionReservationRepository:
         command_json: str | None,
         created_at: str,
     ) -> None:
-        """Persist a private detached command in the reservation transaction."""
+        """Persist a detached command in the reservation transaction."""
         if command_json is None:
             return
         existing = connection.execute(
@@ -387,7 +391,7 @@ class SQLiteExecutionReservationRepository:
     def get(
         self, *, owner: str, execution_id: str
     ) -> ExecutionReservationRecord:
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             record = self._read(connection, owner, execution_id)
         if record is None:
             raise ExecutionReservationNotFoundError(execution_id)
@@ -403,7 +407,7 @@ class SQLiteExecutionReservationRepository:
         Web before dispatch.  Only this finite identity is exposed to Runtime;
         the remaining private admission arguments stay inside the queue.
         """
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             row = connection.execute(
                 "SELECT command_json FROM execution_commands_v2 "
                 "WHERE owner_ref = ? AND execution_id = ?",
@@ -429,7 +433,7 @@ class SQLiteExecutionReservationRepository:
         """List a bounded deterministic cohort lacking terminal settlement."""
         if limit < 1 or limit > 1000:
             raise ValueError("limit must be between 1 and 1000")
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             rows = connection.execute(
                 "SELECT user_id, execution_id FROM runs "
                 "WHERE execution_id IS NOT NULL "
@@ -465,11 +469,12 @@ class SQLiteExecutionReservationRepository:
 
     def claim_start(self, *, owner: str, execution_id: str) -> bool:
         """Atomically grant exactly one Runtime caller Driver dispatch."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             result = connection.execute(
                 "UPDATE runs SET status = 'dispatching', "
-                "execution_supervisor_revision = execution_supervisor_revision + 1, "
+                "execution_supervisor_revision = "
+                "execution_supervisor_revision + 1, "
                 "revision = revision + 1, updated_at = ? WHERE user_id = ? "
                 "AND execution_id = ? AND status = 'admitted' "
                 "AND execution_terminal_outcome IS NULL",
@@ -480,7 +485,7 @@ class SQLiteExecutionReservationRepository:
 
     def mark_running(self, *, owner: str, execution_id: str) -> bool:
         """Move the dispatch winner to running without reopening terminals."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             result = connection.execute(
                 "UPDATE runs SET status = 'running', revision = revision + 1, "
@@ -507,13 +512,14 @@ class SQLiteExecutionReservationRepository:
             raise ValueError("operation identity and revision are required")
         command_hash = execution_command_hash(command)
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
                 "SELECT operation, expected_revision, command_hash, state, "
                 "outcome_json FROM execution_operations_v2 "
-                "WHERE owner_ref = ? AND execution_id = ? AND operation_id = ?",
+                "WHERE owner_ref = ? AND execution_id = ? "
+                "AND operation_id = ?",
                 (owner, execution_id, operation_id),
             ).fetchone()
             if existing is not None:
@@ -574,9 +580,10 @@ class SQLiteExecutionReservationRepository:
                         "resume_already_claimed"
                     )
             connection.execute(
-                "INSERT INTO execution_operations_v2 (owner_ref, execution_id, "
-                "operation_id, operation, expected_revision, command_hash, state, "
-                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'claimed', ?, ?)",
+                "INSERT INTO execution_operations_v2 "
+                "(owner_ref, execution_id, operation_id, operation, "
+                "expected_revision, command_hash, state, created_at, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, 'claimed', ?, ?)",
                 (
                     owner,
                     execution_id,
@@ -643,7 +650,7 @@ class SQLiteExecutionReservationRepository:
         fence_clause, fence_parameters = self._provider_join_fence(
             runs_alias="r"
         )
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             result = connection.execute(
                 "UPDATE execution_operations_v2 SET state = 'completed', "
@@ -676,15 +683,16 @@ class SQLiteExecutionReservationRepository:
         cancellation_state: str,
         next_attempt_at: str | None,
     ) -> bool:
-        """Persist the latest non-terminal Runtime observation without polling."""
+        """Persist a non-terminal Runtime observation without polling."""
         if status in _TERMINAL_EXECUTION_STATUSES:
             raise ValueError("terminal observations use settle_terminal")
         fence_clause, fence_parameters = self._provider_join_fence()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             result = connection.execute(
                 "UPDATE runs SET status = ?, execution_tracking_health = ?, "
-                "execution_cancellation_state = ?, execution_next_attempt_at = ?, "
+                "execution_cancellation_state = ?, "
+                "execution_next_attempt_at = ?, "
                 "revision = revision + 1, updated_at = ? WHERE user_id = ? "
                 "AND execution_id = ? AND execution_terminal_outcome IS NULL"
                 + fence_clause,
@@ -717,7 +725,7 @@ class SQLiteExecutionReservationRepository:
         """
         if not outcome.terminal:
             raise ValueError("terminal outcome required")
-        with sqlite3.connect(self.db_path, timeout=10) as connection:
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
@@ -790,7 +798,8 @@ class SQLiteExecutionReservationRepository:
                 "execution_cancellation_state = ?, "
                 "result_json = COALESCE(result_json, ?), "
                 "expires_at = ?, "
-                "execution_supervisor_revision = execution_supervisor_revision + 1, "
+                "execution_supervisor_revision = "
+                "execution_supervisor_revision + 1, "
                 "revision = revision + 1, updated_at = ? "
                 "WHERE user_id = ? AND execution_id = ? "
                 "AND execution_supervisor_revision = ? "
@@ -868,7 +877,7 @@ class SQLiteExecutionReservationRepository:
         token = self._expected_provider_join_lease_token
         if token is None:
             return True
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             row = connection.execute(
                 "SELECT 1 FROM runs WHERE user_id = ? AND execution_id = ? "
                 "AND execution_provider_join_lease_owner = ? "
@@ -1115,7 +1124,7 @@ def _terminal_event_intents(
 
 
 def _public_result_json(outcome: DriverOutcome) -> str | None:
-    """Serialize only the canonical public result, never private transport data."""
+    """Serialize the public result, never private transport data."""
     if outcome.result is None:
         return None
     result = outcome.result

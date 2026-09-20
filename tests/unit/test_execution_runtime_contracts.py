@@ -11,9 +11,7 @@ from datetime import UTC, datetime
 import pytest
 
 
-def test_execution_context_keeps_public_identity_across_nested_invocation() -> (
-    None
-):
+def test_context_keeps_identity_across_nested_invocation() -> None:
     from mcp_server_phytomni.public_agent_catalog import PUBLIC_AGENT_CATALOG
     from mcp_server_phytomni.runtime.execution_runtime_contracts import (
         ExecutionContext,

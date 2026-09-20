@@ -167,7 +167,7 @@ TabularCell = str | int | float | bool | None
 
 @dataclass(frozen=True, slots=True)
 class TransportNeutralTabular:
-    """Finite scalar table whose compact JSON is the DataAgent display value."""
+    """Finite scalar table serialized for the DataAgent display."""
 
     headers: tuple[str, ...]
     rows: tuple[tuple[TabularCell, ...], ...]

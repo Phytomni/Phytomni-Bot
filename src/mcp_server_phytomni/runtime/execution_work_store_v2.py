@@ -15,6 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .execution_journal_v2 import SpanStatus, WorkUnitStatus
+from .sqlite import sqlite_transaction
 
 Identifier = str
 JoinPolicy = Literal["all", "fail_fast", "best_effort", "quorum"]
@@ -177,7 +178,7 @@ class SQLiteExecutionWorkRepository:
 
     def create_span(self, spec: SpanSpec) -> SpanRecord:
         """Create one stable span or return the identical existing row."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._authorize(connection, spec.owner, spec.execution_id)
             existing = self._read_span(
@@ -230,7 +231,7 @@ class SQLiteExecutionWorkRepository:
         *,
         owner: str,
     ) -> SpanRecord:
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             self._authorize(connection, owner, execution_id)
             record = self._read_span(connection, owner, execution_id, span_id)
         if record is None:
@@ -245,7 +246,7 @@ class SQLiteExecutionWorkRepository:
         owner: str,
     ) -> SpanRecord | None:
         """Resolve the latest attempt span owned by one logical work unit."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             self._authorize(connection, owner, execution_id)
             row = connection.execute(
                 "SELECT span_id FROM execution_spans WHERE owner_ref = ? "
@@ -276,7 +277,7 @@ class SQLiteExecutionWorkRepository:
             SpanStatus.TIMED_OUT,
             SpanStatus.SKIPPED,
         }
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._authorize(connection, owner, execution_id)
             result = connection.execute(
@@ -315,7 +316,7 @@ class SQLiteExecutionWorkRepository:
     def create_work_unit(self, spec: WorkUnitSpec) -> WorkUnitRecord:
         """Create an idempotent logical unit under an existing parent span."""
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._authorize(connection, spec.owner, spec.execution_id)
             existing = self._read_work_unit(
@@ -375,7 +376,7 @@ class SQLiteExecutionWorkRepository:
         *,
         owner: str,
     ) -> WorkUnitRecord:
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             self._authorize(connection, owner, execution_id)
             record = self._read_work_unit(
                 connection, owner, execution_id, work_unit_id
@@ -393,7 +394,7 @@ class SQLiteExecutionWorkRepository:
         provider_kind: str,
     ) -> WorkUnitRecord | None:
         """Resolve a private provider identity within one owned execution."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             self._authorize(connection, owner, execution_id)
             row = connection.execute(
                 "SELECT work_unit_id FROM execution_work_units "
@@ -455,7 +456,7 @@ class SQLiteExecutionWorkRepository:
             if provider_bound_only
             else ""
         )
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             rows = connection.execute(
                 "SELECT w.owner_ref, w.execution_id, w.work_unit_id "
                 "FROM execution_work_units w JOIN runs r "
@@ -498,7 +499,7 @@ class SQLiteExecutionWorkRepository:
             WorkUnitStatus.TIMED_OUT.value,
         )
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             rows = connection.execute(
                 "SELECT r.user_id, r.execution_id FROM runs r "
                 "WHERE r.execution_id IS NOT NULL "
@@ -536,7 +537,7 @@ class SQLiteExecutionWorkRepository:
             raise ValueError("lease_seconds must be between 1 and 3600")
         now = self._clock()
         expires = (now + timedelta(seconds=lease_seconds)).isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._authorize(connection, owner, execution_id)
             result = connection.execute(
@@ -575,7 +576,7 @@ class SQLiteExecutionWorkRepository:
         expires = (
             self._clock() + timedelta(seconds=lease_seconds)
         ).isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             result = connection.execute(
                 "UPDATE runs SET execution_provider_join_lease_expires_at = ? "
@@ -602,7 +603,7 @@ class SQLiteExecutionWorkRepository:
     ) -> bool:
         """Check the exact unexpired token before the Runtime commit."""
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             row = connection.execute(
                 "SELECT 1 FROM runs WHERE user_id = ? AND execution_id = ? "
                 "AND execution_provider_join_lease_owner = ? "
@@ -621,7 +622,7 @@ class SQLiteExecutionWorkRepository:
         lease_token: str,
     ) -> bool:
         """Release only the provider join lease owned by this supervisor."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             result = connection.execute(
                 "UPDATE runs SET execution_provider_join_lease_owner = NULL, "
@@ -640,7 +641,7 @@ class SQLiteExecutionWorkRepository:
         owner: str,
     ) -> datetime:
         """Return the durable execution deadline without advancing state."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             row = connection.execute(
                 "SELECT execution_deadline_at FROM runs WHERE user_id = ? "
                 "AND execution_id = ? AND execution_tombstoned_at IS NULL",
@@ -665,7 +666,7 @@ class SQLiteExecutionWorkRepository:
         """CAS-update the current state of one logical work unit."""
         status = WorkUnitStatus(status)
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._authorize(connection, owner, execution_id)
             self._update_work_unit(
@@ -694,7 +695,7 @@ class SQLiteExecutionWorkRepository:
             raise ValueError("lease_seconds must be positive")
         now = self._clock()
         expires = (now + timedelta(seconds=lease_seconds)).isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._authorize(connection, owner, execution_id)
             current = self._read_work_unit(
@@ -729,12 +730,13 @@ class SQLiteExecutionWorkRepository:
     ) -> WorkUnitRecord:
         """Release only a lease currently owned at the expected revision."""
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             result = connection.execute(
                 "UPDATE execution_work_units SET lease_owner = NULL, "
-                "lease_expires_at = NULL, updated_at = ?, revision = revision + 1 "
-                "WHERE owner_ref = ? AND execution_id = ? AND work_unit_id = ? "
+                "lease_expires_at = NULL, updated_at = ?, "
+                "revision = revision + 1 WHERE owner_ref = ? "
+                "AND execution_id = ? AND work_unit_id = ? "
                 "AND lease_owner = ? AND revision = ?",
                 (
                     now,
@@ -772,14 +774,15 @@ class SQLiteExecutionWorkRepository:
         if not error_code or len(error_code) > 128:
             raise ValueError("bounded error_code is required")
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             result = connection.execute(
                 "UPDATE execution_work_units SET status = ?, "
                 "next_attempt_at = ?, last_error_code = ?, "
                 "lease_owner = NULL, lease_expires_at = NULL, "
                 "updated_at = ?, revision = revision + 1 "
-                "WHERE owner_ref = ? AND execution_id = ? AND work_unit_id = ? "
+                "WHERE owner_ref = ? AND execution_id = ? "
+                "AND work_unit_id = ? "
                 "AND lease_owner = ? AND revision = ?",
                 (
                     WorkUnitStatus.RETRY_SCHEDULED.value,
@@ -814,7 +817,7 @@ class SQLiteExecutionWorkRepository:
         expected_revision: int,
     ) -> WorkUnitRecord:
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             current = self._read_work_unit(
                 connection, owner, execution_id, work_unit_id
@@ -853,7 +856,7 @@ class SQLiteExecutionWorkRepository:
         if provider_revision < 0:
             raise ValueError("provider_revision must be non-negative")
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             current = self._read_work_unit(
                 connection, owner, execution_id, work_unit_id
@@ -893,7 +896,7 @@ class SQLiteExecutionWorkRepository:
         expected_revision: int,
     ) -> WorkUnitRecord:
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._update_work_unit(
                 connection,
@@ -921,7 +924,7 @@ class SQLiteExecutionWorkRepository:
         health: ProviderTraceHealth,
         expected_revision: int,
     ) -> WorkUnitRecord:
-        """Atomically commit bounded private provider-trace checkpoint state."""
+        """Commit bounded private provider-trace checkpoint state."""
         candidate = WorkUnitRecord.model_validate(
             {
                 **self.get_work_unit(
@@ -936,7 +939,7 @@ class SQLiteExecutionWorkRepository:
             }
         )
         now = self._clock().isoformat()
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             current = self._read_work_unit(
                 connection, owner, execution_id, work_unit_id
@@ -993,7 +996,7 @@ class SQLiteExecutionWorkRepository:
     ) -> bool:
         """Refresh private provider liveness without claiming work revision."""
         candidate = _parse_contact_at(observed_at)
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._authorize(connection, owner, execution_id)
             row = connection.execute(
@@ -1008,7 +1011,8 @@ class SQLiteExecutionWorkRepository:
                 connection.commit()
                 return False
             connection.execute(
-                "UPDATE execution_work_units SET provider_trace_contact_at = ? "
+                "UPDATE execution_work_units SET "
+                "provider_trace_contact_at = ? "
                 "WHERE owner_ref = ? AND execution_id = ? "
                 "AND work_unit_id = ?",
                 (observed_at, owner, execution_id, work_unit_id),
@@ -1023,7 +1027,7 @@ class SQLiteExecutionWorkRepository:
         owner: str,
     ) -> str | None:
         """Return the newest private contact clock for one owned execution."""
-        with sqlite3.connect(self.db_path) as connection:
+        with sqlite_transaction(self.db_path) as connection:
             self._authorize(connection, owner, execution_id)
             rows = connection.execute(
                 "SELECT provider_trace_contact_at FROM execution_work_units "

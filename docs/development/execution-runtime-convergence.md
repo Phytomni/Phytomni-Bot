@@ -31,9 +31,9 @@ The executable gates are:
 - catalog/runtime: `tests/unit/test_public_agent_catalog.py` and
   `tests/unit/test_all_agent_runtime_acceptance_v2.py`
 
-Both scanners must report empty responsibility arrays and `violations: []`.
-The Bot scanner also rejects secondary runtime writers in transport adapters
-and prevents retired A2UI/background lifecycle modules from being restored.
+Both scanners must report empty responsibility arrays and `violations: []`. The
+Bot scanner also rejects secondary runtime writers in transport adapters and
+prevents retired A2UI/background lifecycle modules from being restored.
 
 ## Canonical public-Agent matrix
 
@@ -41,44 +41,171 @@ All rows use `dispatch_adapter=execution_runtime` and
 `event_contract=execution_journal_v2`. The handler named below remains the one
 business implementation; Drivers wrap it and do not copy its decisions.
 
-| Agent/tool | Canonical handler | Driver | Topology / join | Resume | Primary side-effect owner |
-|---|---|---|---|---|---|
-| Chat / `ChatAgent` | `handle_chat_agent` | `resumable_graph` | conditional / n/a | action + recovery | checkpoint Driver + Bot supervisor |
-| Knowledge / `KnowledgeAgent` | `handle_knowledge_agent` | `local_graph` | conditional / n/a | none | instrumented local graph Driver |
-| Data / `DataAgent` | `handle_data_agent` | `local_graph` | serial / n/a | none | instrumented local graph Driver |
-| Analyst / `AnalystAgent` | `handle_analyst_agent` | `remote_task` | serial / n/a | none | remote work unit + Bot supervisor |
-| Review / `ReviewAgent` | `handle_review_agent` | `resumable_graph` | parallel / all | action + recovery | checkpoint Driver + Bot supervisor |
-| BriefGene / `BriefGeneAgent` | `handle_brief_gene_agent` | `local_graph` | hybrid / best effort | none | instrumented local graph Driver |
-| DeepGenome / `DeepGenomeAgent` | `handle_deep_genome_agent` | `hybrid` | hybrid / best effort | recovery | hybrid work units + Bot supervisor |
-| Research / `InSilicoResearchAgent` | `handle_in_silico_research_agent` | `hybrid` | hybrid / best effort | recovery | hybrid work units + Bot supervisor |
-| Design / `DigitalDesignAgent` | `handle_digital_design_agent` | `remote_fanout` | parallel / best effort | none | fan-out work units + Bot supervisor |
-| Network / `GeneNetworkAgent` | `handle_gene_network_agent` | `remote_fanout` | parallel / best effort | none | fan-out work units + Bot supervisor |
+- **Agent/tool:** Chat / `ChatAgent`
+  - **Canonical handler:** `handle_chat_agent`
+  - **Driver:** `resumable_graph`
+  - **Topology / join:** conditional / n/a
+  - **Resume:** action + recovery
+  - **Primary side-effect owner:** checkpoint Driver + Bot supervisor
+- **Agent/tool:** Knowledge / `KnowledgeAgent`
+  - **Canonical handler:** `handle_knowledge_agent`
+  - **Driver:** `local_graph`
+  - **Topology / join:** conditional / n/a
+  - **Resume:** none
+  - **Primary side-effect owner:** instrumented local graph Driver
+- **Agent/tool:** Data / `DataAgent`
+  - **Canonical handler:** `handle_data_agent`
+  - **Driver:** `local_graph`
+  - **Topology / join:** serial / n/a
+  - **Resume:** none
+  - **Primary side-effect owner:** instrumented local graph Driver
+- **Agent/tool:** Analyst / `AnalystAgent`
+  - **Canonical handler:** `handle_analyst_agent`
+  - **Driver:** `remote_task`
+  - **Topology / join:** serial / n/a
+  - **Resume:** none
+  - **Primary side-effect owner:** remote work unit + Bot supervisor
+- **Agent/tool:** Review / `ReviewAgent`
+  - **Canonical handler:** `handle_review_agent`
+  - **Driver:** `resumable_graph`
+  - **Topology / join:** parallel / all
+  - **Resume:** action + recovery
+  - **Primary side-effect owner:** checkpoint Driver + Bot supervisor
+- **Agent/tool:** BriefGene / `BriefGeneAgent`
+  - **Canonical handler:** `handle_brief_gene_agent`
+  - **Driver:** `local_graph`
+  - **Topology / join:** hybrid / best effort
+  - **Resume:** none
+  - **Primary side-effect owner:** instrumented local graph Driver
+- **Agent/tool:** DeepGenome / `DeepGenomeAgent`
+  - **Canonical handler:** `handle_deep_genome_agent`
+  - **Driver:** `hybrid`
+  - **Topology / join:** hybrid / best effort
+  - **Resume:** recovery
+  - **Primary side-effect owner:** hybrid work units + Bot supervisor
+- **Agent/tool:** Research / `InSilicoResearchAgent`
+  - **Canonical handler:** `handle_in_silico_research_agent`
+  - **Driver:** `hybrid`
+  - **Topology / join:** hybrid / best effort
+  - **Resume:** recovery
+  - **Primary side-effect owner:** hybrid work units + Bot supervisor
+- **Agent/tool:** Design / `DigitalDesignAgent`
+  - **Canonical handler:** `handle_digital_design_agent`
+  - **Driver:** `remote_fanout`
+  - **Topology / join:** parallel / best effort
+  - **Resume:** none
+  - **Primary side-effect owner:** fan-out work units + Bot supervisor
+- **Agent/tool:** Network / `GeneNetworkAgent`
+  - **Canonical handler:** `handle_gene_network_agent`
+  - **Driver:** `remote_fanout`
+  - **Topology / join:** parallel / best effort
+  - **Resume:** none
+  - **Primary side-effect owner:** fan-out work units + Bot supervisor
 
-The source of truth is `src/mcp_server_phytomni/public_agent_catalog.py`.
-MCP handler/schema maps, HTTP Agent maps, Expert aliases, OpenAI model maps,
-remote policy sets, graph metadata, capabilities, and result-delivery sets are
-derived from or drift-checked against that catalog.
+The source of truth is `src/mcp_server_phytomni/public_agent_catalog.py`. MCP
+handler/schema maps, HTTP Agent maps, Expert aliases, OpenAI model maps, remote
+policy sets, graph metadata, capabilities, and result-delivery sets are derived
+from or drift-checked against that catalog.
 
 ## Entry-point and execution-route matrix
 
-| Caller/route | Concrete entry point | Canonical path | Allowed responsibility | Evidence |
-|---|---|---|---|---|
-| Web async message | Web transaction + execution outbox | Bot `/executions` admission -> `ExecutionRuntime.start` | admit, dispatch intent, format `202` | Web convergence gate; cross-service admission tests |
-| Authenticated Bot HTTP | `api/agent_runs.py` | `invoke_public_agent` | transport decode/encode only | runtime entrypoint routing tests |
-| Expert routing | canonical handler selected from catalog-backed maps | `invoke_public_agent` | Agent selection before the single runtime boundary | catalog drift and all-Agent tests |
-| MCP blocking/progress | `mcp/app.py` | `invoke_public_agent` | wait/progress presentation | MCP runtime tests |
-| OpenAI blocking | `api/app.py` | `invoke_public_agent` | OpenAI response formatting | transport parity tests |
-| OpenAI/MCP stream | `api/app.py`, `mcp/app.py` | `invoke_public_agent_stream_response` | token/progress view; iterator completion settles same execution | stream-boundary tests |
-| V2 action/resume/cancel | `api/routes/executions_v2.py` | `ExecutionRuntime.resume/cancel` | authorize and submit revisioned command | action/cancel API tests |
-| Legacy Chat/Review action | `api/compat.py` | `invoke_public_agent_operation` | authorize and translate the pre-V2 envelope; no legacy lifecycle write | V2 operation/idempotency tests; old rows are read-only |
-| A2UI Chat/Review stream | `api/a2ui_runtime.py` | `invoke_public_agent` / `invoke_public_agent_stream_response` | A2UI presentation over the same Runtime boundary | A2UI stream/runtime tests; no A2UI audit-row writer |
-| A2A blocking/stream | `api/a2a/executor.py`, `mcp/app.py` | `invoke_public_agent` / `invoke_public_agent_stream_response` | task/status presentation over one stable execution id | A2A executor/runtime/HTTP tests |
-| A2A action/resume | `api/a2a/runtime.py`, `api/app.py` | `invoke_public_agent_operation` | translate the action onto the existing execution; no task-owned terminal writer | A2A operation tests; legacy tasks are read-only |
-| Remote submission result | `runtime/submit_recorder.py` | current execution boundary -> `record_reserved_submissions` | attach provider child ids/output roots to the reserved Runtime row | submit-recorder all-Agent tests; missing boundary degrades and never mints a run |
-| Supervisor recovery | `runtime/execution_supervisor_service_v2.py` | `ExecutionRuntime.recover/reconcile` | leased recovery and terminal settlement | supervisor contention/restart tests |
-| Provider callback/poll | provider instrumentation/reconciler | durable work-unit revision -> supervisor/runtime | record one provider observation; no GET-triggered polling | provider reconciliation tests |
-| Nested public Agent | shared nested-Agent instrumentation | child span in current execution | delegate to canonical child handler; no new user execution | instrumentation tests |
-| Artifact/result publish | shared artifact boundary | journal target -> private owner binding -> Bot projection -> Web projector | publish only an opaque typed target; reauthorize at click time and stream the private object through the authenticated same-origin content route | target/projection/content-delivery tests |
+- **Caller/route:** Web async message
+  - **Concrete entry point:** Web transaction + execution outbox
+  - **Canonical path:** Bot `/executions` admission -> `ExecutionRuntime.start`
+  - **Allowed responsibility:** admit, dispatch intent, format `202`
+  - **Evidence:** Web convergence gate; cross-service admission tests
+- **Caller/route:** Authenticated Bot HTTP
+  - **Concrete entry point:** `api/agent_runs.py`
+  - **Canonical path:** `invoke_public_agent`
+  - **Allowed responsibility:** transport decode/encode only
+  - **Evidence:** runtime entrypoint routing tests
+- **Caller/route:** Expert routing
+  - **Concrete entry point:** canonical handler selected from catalog-backed
+    maps
+  - **Canonical path:** `invoke_public_agent`
+  - **Allowed responsibility:** Agent selection before the single runtime
+    boundary
+  - **Evidence:** catalog drift and all-Agent tests
+- **Caller/route:** MCP blocking/progress
+  - **Concrete entry point:** `mcp/app.py`
+  - **Canonical path:** `invoke_public_agent`
+  - **Allowed responsibility:** wait/progress presentation
+  - **Evidence:** MCP runtime tests
+- **Caller/route:** OpenAI blocking
+  - **Concrete entry point:** `api/app.py`
+  - **Canonical path:** `invoke_public_agent`
+  - **Allowed responsibility:** OpenAI response formatting
+  - **Evidence:** transport parity tests
+- **Caller/route:** OpenAI/MCP stream
+  - **Concrete entry point:** `api/app.py`, `mcp/app.py`
+  - **Canonical path:** `invoke_public_agent_stream_response`
+  - **Allowed responsibility:** token/progress view; iterator completion
+    settles same execution
+  - **Evidence:** stream-boundary tests
+- **Caller/route:** V2 action/resume/cancel
+  - **Concrete entry point:** `api/routes/executions_v2.py`
+  - **Canonical path:** `ExecutionRuntime.resume/cancel`
+  - **Allowed responsibility:** authorize and submit revisioned command
+  - **Evidence:** action/cancel API tests
+- **Caller/route:** Legacy Chat/Review action
+  - **Concrete entry point:** `api/compat.py`
+  - **Canonical path:** `invoke_public_agent_operation`
+  - **Allowed responsibility:** authorize and translate the pre-V2 envelope; no
+    legacy lifecycle write
+  - **Evidence:** V2 operation/idempotency tests; old rows are read-only
+- **Caller/route:** A2UI Chat/Review stream
+  - **Concrete entry point:** `api/a2ui_runtime.py`
+  - **Canonical path:** `invoke_public_agent` /
+    `invoke_public_agent_stream_response`
+  - **Allowed responsibility:** A2UI presentation over the same Runtime
+    boundary
+  - **Evidence:** A2UI stream/runtime tests; no A2UI audit-row writer
+- **Caller/route:** A2A blocking/stream
+  - **Concrete entry point:** `api/a2a/executor.py`, `mcp/app.py`
+  - **Canonical path:** `invoke_public_agent` /
+    `invoke_public_agent_stream_response`
+  - **Allowed responsibility:** task/status presentation over one stable
+    execution id
+  - **Evidence:** A2A executor/runtime/HTTP tests
+- **Caller/route:** A2A action/resume
+  - **Concrete entry point:** `api/a2a/runtime.py`, `api/app.py`
+  - **Canonical path:** `invoke_public_agent_operation`
+  - **Allowed responsibility:** translate the action onto the existing
+    execution; no task-owned terminal writer
+  - **Evidence:** A2A operation tests; legacy tasks are read-only
+- **Caller/route:** Remote submission result
+  - **Concrete entry point:** `runtime/submit_recorder.py`
+  - **Canonical path:** current execution boundary ->
+    `record_reserved_submissions`
+  - **Allowed responsibility:** attach provider child ids/output roots to the
+    reserved Runtime row
+  - **Evidence:** submit-recorder all-Agent tests; missing boundary degrades
+    and never mints a run
+- **Caller/route:** Supervisor recovery
+  - **Concrete entry point:** `runtime/execution_supervisor_service_v2.py`
+  - **Canonical path:** `ExecutionRuntime.recover/reconcile`
+  - **Allowed responsibility:** leased recovery and terminal settlement
+  - **Evidence:** supervisor contention/restart tests
+- **Caller/route:** Provider callback/poll
+  - **Concrete entry point:** provider instrumentation/reconciler
+  - **Canonical path:** durable work-unit revision -> supervisor/runtime
+  - **Allowed responsibility:** record one provider observation; no
+    GET-triggered polling
+  - **Evidence:** provider reconciliation tests
+- **Caller/route:** Nested public Agent
+  - **Concrete entry point:** shared nested-Agent instrumentation
+  - **Canonical path:** child span in current execution
+  - **Allowed responsibility:** delegate to canonical child handler; no new
+    user execution
+  - **Evidence:** instrumentation tests
+- **Caller/route:** Artifact/result publish
+  - **Concrete entry point:** shared artifact boundary
+  - **Canonical path:** journal target -> private owner binding -> Bot
+    projection -> Web projector
+  - **Allowed responsibility:** publish only an opaque typed target;
+    reauthorize at click time and stream the private object through the
+    authenticated same-origin content route
+  - **Evidence:** target/projection/content-delivery tests
 
 ### Agent-by-route audit
 
@@ -87,18 +214,76 @@ derived from or drift-checked against that catalog.
 that same execution. A dash means the catalog does not advertise that
 transport; adding it requires updating the catalog and its drift tests first.
 
-| Agent | HTTP/Expert | MCP | OpenAI block/stream | A2UI resume | A2A block/stream/resume | Async provider/supervisor |
-|---|---|---|---|---|---|---|
-| Chat | Runtime | Runtime | Runtime | Runtime operation | Runtime/View | n/a |
-| Knowledge | Runtime | Runtime | Runtime | n/a | Runtime/View | n/a |
-| Data | Runtime | Runtime | — | n/a | Runtime/View | n/a |
-| Analyst | Runtime | Runtime | — | n/a | Runtime/View | Runtime work unit |
-| Review | Runtime | Runtime | Runtime | Runtime operation | Runtime/View | checkpoint recovery |
-| BriefGene | Runtime | Runtime | Runtime | n/a | Runtime/View | n/a |
-| DeepGenome | Runtime | Runtime | — | n/a | Runtime/View | Runtime work units |
-| Research | Runtime | Runtime | — | n/a | Runtime operation/View | Runtime work units |
-| Design | Runtime | Runtime | — | n/a | Runtime/View | Runtime fan-out |
-| Network | Runtime | Runtime | — | n/a | Runtime/View | Runtime fan-out |
+- **Agent:** Chat
+  - **HTTP/Expert:** Runtime
+  - **MCP:** Runtime
+  - **OpenAI block/stream:** Runtime
+  - **A2UI resume:** Runtime operation
+  - **A2A block/stream/resume:** Runtime/View
+  - **Async provider/supervisor:** n/a
+- **Agent:** Knowledge
+  - **HTTP/Expert:** Runtime
+  - **MCP:** Runtime
+  - **OpenAI block/stream:** Runtime
+  - **A2UI resume:** n/a
+  - **A2A block/stream/resume:** Runtime/View
+  - **Async provider/supervisor:** n/a
+- **Agent:** Data
+  - **HTTP/Expert:** Runtime
+  - **MCP:** Runtime
+  - **OpenAI block/stream:** —
+  - **A2UI resume:** n/a
+  - **A2A block/stream/resume:** Runtime/View
+  - **Async provider/supervisor:** n/a
+- **Agent:** Analyst
+  - **HTTP/Expert:** Runtime
+  - **MCP:** Runtime
+  - **OpenAI block/stream:** —
+  - **A2UI resume:** n/a
+  - **A2A block/stream/resume:** Runtime/View
+  - **Async provider/supervisor:** Runtime work unit
+- **Agent:** Review
+  - **HTTP/Expert:** Runtime
+  - **MCP:** Runtime
+  - **OpenAI block/stream:** Runtime
+  - **A2UI resume:** Runtime operation
+  - **A2A block/stream/resume:** Runtime/View
+  - **Async provider/supervisor:** checkpoint recovery
+- **Agent:** BriefGene
+  - **HTTP/Expert:** Runtime
+  - **MCP:** Runtime
+  - **OpenAI block/stream:** Runtime
+  - **A2UI resume:** n/a
+  - **A2A block/stream/resume:** Runtime/View
+  - **Async provider/supervisor:** n/a
+- **Agent:** DeepGenome
+  - **HTTP/Expert:** Runtime
+  - **MCP:** Runtime
+  - **OpenAI block/stream:** —
+  - **A2UI resume:** n/a
+  - **A2A block/stream/resume:** Runtime/View
+  - **Async provider/supervisor:** Runtime work units
+- **Agent:** Research
+  - **HTTP/Expert:** Runtime
+  - **MCP:** Runtime
+  - **OpenAI block/stream:** —
+  - **A2UI resume:** n/a
+  - **A2A block/stream/resume:** Runtime operation/View
+  - **Async provider/supervisor:** Runtime work units
+- **Agent:** Design
+  - **HTTP/Expert:** Runtime
+  - **MCP:** Runtime
+  - **OpenAI block/stream:** —
+  - **A2UI resume:** n/a
+  - **A2A block/stream/resume:** Runtime/View
+  - **Async provider/supervisor:** Runtime fan-out
+- **Agent:** Network
+  - **HTTP/Expert:** Runtime
+  - **MCP:** Runtime
+  - **OpenAI block/stream:** —
+  - **A2UI resume:** n/a
+  - **A2A block/stream/resume:** Runtime/View
+  - **Async provider/supervisor:** Runtime fan-out
 
 All streaming variants receive the boundary from the entrypoint and settle it
 only when iteration completes, fails, waits for input, or is explicitly
@@ -114,51 +299,178 @@ only live SSE key, and retained when a temporary conversation is replaced by
 its durable `dialogue_id`. Moving a subscription between those conversation
 containers never opens a second stream.
 
-| Browser surface | Public Agent(s) | Command route | Live progress route |
-|---|---|---|---|
-| Chat instant/expert/forced Agent | Chat, Knowledge, Data, Review, BriefGene, DeepGenome and all forced selections | `POST /api/v1/conversations/:id/messages` | `GET /api/v1/executions/:execution_id/events/stream` |
-| Analysis product | Analyst | `POST /api/v1/agent-products/AnalystAgent/runs` | same execution-id SSE |
-| Research product | Research | `POST /api/v1/agent-products/InSilicoResearchAgent/runs` | same execution-id SSE |
-| Digital Design product | Design | `POST /api/v1/agent-products/DigitalDesignAgent/runs` | same execution-id SSE |
-| Gene Network product | Network | `POST /api/v1/agent-products/GeneNetworkAgent/runs` | same execution-id SSE |
+- **Browser surface:** Chat instant/expert/forced Agent
+  - **Public Agent(s):** Chat, Knowledge, Data, Review, BriefGene, DeepGenome
+    and all forced selections
+  - **Command route:** `POST /api/v1/conversations/:id/messages`
+  - **Live progress route:**
+    `GET /api/v1/executions/:execution_id/events/stream`
+- **Browser surface:** Analysis product
+  - **Public Agent(s):** Analyst
+  - **Command route:** `POST /api/v1/agent-products/AnalystAgent/runs`
+  - **Live progress route:** same execution-id SSE
+- **Browser surface:** Research product
+  - **Public Agent(s):** Research
+  - **Command route:** `POST /api/v1/agent-products/InSilicoResearchAgent/runs`
+  - **Live progress route:** same execution-id SSE
+- **Browser surface:** Digital Design product
+  - **Public Agent(s):** Design
+  - **Command route:** `POST /api/v1/agent-products/DigitalDesignAgent/runs`
+  - **Live progress route:** same execution-id SSE
+- **Browser surface:** Gene Network product
+  - **Public Agent(s):** Network
+  - **Command route:** `POST /api/v1/agent-products/GeneNetworkAgent/runs`
+  - **Live progress route:** same execution-id SSE
 
-The four product routes and the Chat route share the same Web `Query`
-admission transaction, outbox, dispatcher, Bot runtime, journal and projector.
-They differ only in route-owned input validation and presentation. A
-server-minted identity is permitted solely for non-browser/internal
-compatibility callers that omit the field; it still enters that same V2 path
-and cannot select a synchronous execution implementation.
+The four product routes and the Chat route share the same Web `Query` admission
+transaction, outbox, dispatcher, Bot runtime, journal and projector. They
+differ only in route-owned input validation and presentation. A server-minted
+identity is permitted solely for non-browser/internal compatibility callers
+that omit the field; it still enters that same V2 path and cannot select a
+synchronous execution implementation.
 
 `/conversations/:id/runs/:run_id/...` and `/async-tasks/:id/lifecycle` remain
 owner-authorized, read-only views for records created before V2. New browser
-turns never attach a live run-addressed stream and never poll lifecycle once
-an `execution_id` exists.
+turns never attach a live run-addressed stream and never poll lifecycle once an
+`execution_id` exists.
 
 ## Responsibility disposition and deletion evidence
 
-| Responsibility | Canonical owner | Disposition and evidence | Compatibility / deadline |
-|---|---|---|---|
-| Agent catalog/routing policy | Bot `PublicAgentSpec` | retained; all 10 exact identities and derived maps drift-tested | no compatibility copy |
-| Agent business behavior | MCP domain handlers | retained unchanged; Runtime modules are tested not to import Agent implementations | intentional behavior changes require another spec |
-| Public Agent invocation | `execution_entrypoint_v2` + `ExecutionRuntime` | retained; zero-bypass scan and per-Agent reservation/Driver/journal/terminal test | blocking/streaming are views, not alternate execution |
-| A2UI/A2A action and resume | `invoke_public_agent_operation` | old `claim_a2ui_action`, `complete_a2ui_action`, direct input emitters, direct `settle_run`, and fallback execution creation removed from reachable adapters | pre-V2 rows are read-only; no fallback command authority |
-| Remote task submission recording | current Runtime boundary + `record_reserved_submissions` | old submit-recorder fallback `create_run` and run-id mint removed; all five remote/hybrid handlers attach children to the pre-reserved row | missing/mismatched boundaries expose degraded tracking without creating state |
-| Graph/tool/provider/checkpoint/artifact observations | shared instrumentation | retained; business code contains no repeated lifecycle emitter path | private diagnostics remain separate from public summaries |
-| Durable detached/recovery work | Bot supervisor and registered work units | old unregistered durable `create_task` paths removed/blocked by scanner | domain recovery adapters may only execute registered work |
-| Event/span persistence | Bot V2 journal | retained as only new-execution journal writer | V1 event tables historical-read only; remove after 2026-11-30 and 30 clean production days |
-| Bot V1 run-addressed event APIs | V2 projection adapter | thin read/format adapter; no independent Agent dispatch or writer | Bot runtime owner; remove after 2026-11-30 and consumer telemetry reaches zero |
-| Web run-addressed event APIs | Web execution gateway | thin owner-authorized read adapter; GET purity tests assert no DB writes | Web API owner; same retention deadline as Bot V1 route |
-| Web lifecycle GET | Web stored projection | pure read adapter; provider polling and reconciliation removed | Web API owner; remove after 2026-11-30 and legacy client usage reaches zero |
-| Web message execution | transaction + outbox dispatcher | retained as sole normal path; request-owned settlement/fallback removed | blocking compatibility may only wait/format the admitted execution |
-| Bot blocking/native run persistence | Runtime reservation + terminal settlement | V1 `record_sync_run`, `reserve_sync_run`, `settle_reserved_sync_run`, and `fail_reserved_sync_run` implementations and callers deleted; semantic resolver/dispatch failures now settle the Runtime-owned row | no compatibility writer remains |
-| Remote compatibility response identity | current Runtime execution boundary | response `run_id` is the Runtime-owned run and accepted provider identities are projected from the same invocation context, including degraded V1 tracking | V1 tracking failure cannot mint or erase the public identity |
-| Assistant/result settlement | Web projector + `conversation_messages_v2` | retained as sole Bot-derived message/content writer; request/read writers removed | historical aggregate rows remain readable indefinitely and receive no Bot-derived answer/projection writes |
-| V2 turn identity/context | Web admission + `conversation_turns_v2` | retained as the dedicated owner-scoped turn/context record; `conversation_turn_sequences_v2` allocates the stable numeric namespace and context ACK/lock, selected Agent identity/version, execution id and message identities persist here | `question_agent_logs` is historical-read only for V2 admissions and receives no new V2 identity, context, answer, result or lifecycle writes |
-| Private result delivery | Bot `execution_target_bindings_v2` + authenticated Web content proxy | retained; the journal/public API exposes only opaque target ids, while the private storage reference is owner-scoped, immutable and resolved only after click-time authorization | no public event, message, URL, error or browser payload may contain the storage reference; materialized files are confined to a one-shot temporary directory |
-| Current A2UI action | V2 execution command API | retained; `execution_id` messages cannot attach or fall back to legacy transport | legacy conversation/run action only for pre-V2 messages; remove after 2026-11-30 |
-| Browser execution state | execution-id V2 reducer | retained; old `useStreamMessage`/send branch files and implementation tests deleted | historical decoder may label incomplete V1 history |
-| Browser liveness | one resumable SSE + sequence-free heartbeat | retained; heartbeat updates transport contact, never invents Agent activity | lifecycle polling is terminal compatibility/read fallback only |
-| Timeline/Todo/Results/workspace | V2 projection + presentation reducer | retained; generic graph/root lifecycle noise hidden/coalesced, semantic work remains clickable | old records are rendered as legacy/incomplete, never rewritten |
+- **Responsibility:** Agent catalog/routing policy
+  - **Canonical owner:** Bot `PublicAgentSpec`
+  - **Disposition and evidence:** retained; all 10 exact identities and derived
+    maps drift-tested
+  - **Compatibility / deadline:** no compatibility copy
+- **Responsibility:** Agent business behavior
+  - **Canonical owner:** MCP domain handlers
+  - **Disposition and evidence:** retained unchanged; Runtime modules are
+    tested not to import Agent implementations
+  - **Compatibility / deadline:** intentional behavior changes require another
+    spec
+- **Responsibility:** Public Agent invocation
+  - **Canonical owner:** `execution_entrypoint_v2` + `ExecutionRuntime`
+  - **Disposition and evidence:** retained; zero-bypass scan and per-Agent
+    reservation/Driver/journal/terminal test
+  - **Compatibility / deadline:** blocking/streaming are views, not alternate
+    execution
+- **Responsibility:** A2UI/A2A action and resume
+  - **Canonical owner:** `invoke_public_agent_operation`
+  - **Disposition and evidence:** old `claim_a2ui_action`,
+    `complete_a2ui_action`, direct input emitters, direct `settle_run`, and
+    fallback execution creation removed from reachable adapters
+  - **Compatibility / deadline:** pre-V2 rows are read-only; no fallback
+    command authority
+- **Responsibility:** Remote task submission recording
+  - **Canonical owner:** current Runtime boundary +
+    `record_reserved_submissions`
+  - **Disposition and evidence:** old submit-recorder fallback `create_run` and
+    run-id mint removed; all five remote/hybrid handlers attach children to the
+    pre-reserved row
+  - **Compatibility / deadline:** missing/mismatched boundaries expose degraded
+    tracking without creating state
+- **Responsibility:** Graph/tool/provider/checkpoint/artifact observations
+  - **Canonical owner:** shared instrumentation
+  - **Disposition and evidence:** retained; business code contains no repeated
+    lifecycle emitter path
+  - **Compatibility / deadline:** private diagnostics remain separate from
+    public summaries
+- **Responsibility:** Durable detached/recovery work
+  - **Canonical owner:** Bot supervisor and registered work units
+  - **Disposition and evidence:** old unregistered durable `create_task` paths
+    removed/blocked by scanner
+  - **Compatibility / deadline:** domain recovery adapters may only execute
+    registered work
+- **Responsibility:** Event/span persistence
+  - **Canonical owner:** Bot V2 journal
+  - **Disposition and evidence:** retained as only new-execution journal writer
+  - **Compatibility / deadline:** V1 event tables historical-read only; remove
+    after 2026-11-30 and 30 clean production days
+- **Responsibility:** Bot V1 run-addressed event APIs
+  - **Canonical owner:** V2 projection adapter
+  - **Disposition and evidence:** thin read/format adapter; no independent
+    Agent dispatch or writer
+  - **Compatibility / deadline:** Bot runtime owner; remove after 2026-11-30
+    and consumer telemetry reaches zero
+- **Responsibility:** Web run-addressed event APIs
+  - **Canonical owner:** Web execution gateway
+  - **Disposition and evidence:** thin owner-authorized read adapter; GET
+    purity tests assert no DB writes
+  - **Compatibility / deadline:** Web API owner; same retention deadline as Bot
+    V1 route
+- **Responsibility:** Web lifecycle GET
+  - **Canonical owner:** Web stored projection
+  - **Disposition and evidence:** pure read adapter; provider polling and
+    reconciliation removed
+  - **Compatibility / deadline:** Web API owner; remove after 2026-11-30 and
+    legacy client usage reaches zero
+- **Responsibility:** Web message execution
+  - **Canonical owner:** transaction + outbox dispatcher
+  - **Disposition and evidence:** retained as sole normal path; request-owned
+    settlement/fallback removed
+  - **Compatibility / deadline:** blocking compatibility may only wait/format
+    the admitted execution
+- **Responsibility:** Bot blocking/native run persistence
+  - **Canonical owner:** Runtime reservation + terminal settlement
+  - **Disposition and evidence:** V1 `record_sync_run`, `reserve_sync_run`,
+    `settle_reserved_sync_run`, and `fail_reserved_sync_run` implementations
+    and callers deleted; semantic resolver/dispatch failures now settle the
+    Runtime-owned row
+  - **Compatibility / deadline:** no compatibility writer remains
+- **Responsibility:** Remote compatibility response identity
+  - **Canonical owner:** current Runtime execution boundary
+  - **Disposition and evidence:** response `run_id` is the Runtime-owned run
+    and accepted provider identities are projected from the same invocation
+    context, including degraded V1 tracking
+  - **Compatibility / deadline:** V1 tracking failure cannot mint or erase the
+    public identity
+- **Responsibility:** Assistant/result settlement
+  - **Canonical owner:** Web projector + `conversation_messages_v2`
+  - **Disposition and evidence:** retained as sole Bot-derived message/content
+    writer; request/read writers removed
+  - **Compatibility / deadline:** historical aggregate rows remain readable
+    indefinitely and receive no Bot-derived answer/projection writes
+- **Responsibility:** V2 turn identity/context
+  - **Canonical owner:** Web admission + `conversation_turns_v2`
+  - **Disposition and evidence:** retained as the dedicated owner-scoped
+    turn/context record; `conversation_turn_sequences_v2` allocates the stable
+    numeric namespace and context ACK/lock, selected Agent identity/version,
+    execution id and message identities persist here
+  - **Compatibility / deadline:** `question_agent_logs` is historical-read only
+    for V2 admissions and receives no new V2 identity, context, answer, result
+    or lifecycle writes
+- **Responsibility:** Private result delivery
+  - **Canonical owner:** Bot `execution_target_bindings_v2` + authenticated Web
+    content proxy
+  - **Disposition and evidence:** retained; the journal/public API exposes only
+    opaque target ids, while the private storage reference is owner-scoped,
+    immutable and resolved only after click-time authorization
+  - **Compatibility / deadline:** no public event, message, URL, error or
+    browser payload may contain the storage reference; materialized files are
+    confined to a one-shot temporary directory
+- **Responsibility:** Current A2UI action
+  - **Canonical owner:** V2 execution command API
+  - **Disposition and evidence:** retained; `execution_id` messages cannot
+    attach or fall back to legacy transport
+  - **Compatibility / deadline:** legacy conversation/run action only for
+    pre-V2 messages; remove after 2026-11-30
+- **Responsibility:** Browser execution state
+  - **Canonical owner:** execution-id V2 reducer
+  - **Disposition and evidence:** retained; old `useStreamMessage`/send branch
+    files and implementation tests deleted
+  - **Compatibility / deadline:** historical decoder may label incomplete V1
+    history
+- **Responsibility:** Browser liveness
+  - **Canonical owner:** one resumable SSE + sequence-free heartbeat
+  - **Disposition and evidence:** retained; heartbeat updates transport
+    contact, never invents Agent activity
+  - **Compatibility / deadline:** lifecycle polling is terminal
+    compatibility/read fallback only
+- **Responsibility:** Timeline/Todo/Results/workspace
+  - **Canonical owner:** V2 projection + presentation reducer
+  - **Disposition and evidence:** retained; generic graph/root lifecycle noise
+    hidden/coalesced, semantic work remains clickable
+  - **Compatibility / deadline:** old records are rendered as
+    legacy/incomplete, never rewritten
 
 ## Business-parity and cohort gate
 
@@ -167,16 +479,16 @@ A cohort is complete only when all of these are true:
 1. Characterization/differential fixtures preserve routing, validation,
    scientific branches and thresholds, provider/tool calls, prompts/query
    transforms, result/artifact contracts, follow-ups, and conversation effects.
-2. Exactly one reachable production path performs each provider call and
+1. Exactly one reachable production path performs each provider call and
    durable state transition.
-3. Every declared transport reaches the Agent's catalog Driver and the common
+1. Every declared transport reaches the Agent's catalog Driver and the common
    reservation/journal/terminal settlement path.
-4. Compatibility code is bounded to authorize/read/wait/format for V2; it
+1. Compatibility code is bounded to authorize/read/wait/format for V2; it
    cannot be a fallback command path for a V2 execution.
-5. Superseded modules, imports, routes, registrations, flags, maps, comments,
+1. Superseded modules, imports, routes, registrations, flags, maps, comments,
    baseline files, and implementation-specific tests are removed.
-6. Static/reachability gates report zero duplicate responsibility.
-7. Retained historical adapters have an owner, no-new-writes evidence, usage
+1. Static/reachability gates report zero duplicate responsibility.
+1. Retained historical adapters have an owner, no-new-writes evidence, usage
    telemetry, the deadline above, and an explicit removal task.
 
 Structural or semantic validation that occurs after a public Agent has been
@@ -198,7 +510,7 @@ transport-owned execution paths, and V2 admission writes to
 read-only:
 
 - Catalog/route coverage: all 10 public Agents in the matrix above enter the
-  same V2 reservation, Driver and journal boundary.  A deterministic-provider
+  same V2 reservation, Driver and journal boundary. A deterministic-provider
   suite invokes the real registered Handler (not a replacement callback) for
   every declared transport view, keeps schema/tool/Todo/submission formatting
   active, and proves one outer provider call per case; asynchronous Agents
@@ -208,8 +520,8 @@ read-only:
   tests.
 - Bot resolver, attachment, routing, contract and status suites: 203 passed
   across the focused invocations used during convergence.
-- Bot static convergence scan: zero duplicate-responsibility violations and
-  no reachable retired execution module or secondary Runtime writer.
+- Bot static convergence scan: zero duplicate-responsibility violations and no
+  reachable retired execution module or secondary Runtime writer.
 - Bot lint/type gates: Ruff passed; mypy passed for 457 source files; pyright
   reported 0 errors (4 pre-existing `__all__` warnings only); source compile
   passed.

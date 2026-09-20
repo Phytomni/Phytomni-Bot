@@ -23,27 +23,29 @@ from .execution_events import (
 class ExecutionEventSink(Protocol):
     """Minimal production boundary used by shared runtime code."""
 
-    def emit(
-        self, intent: ExecutionEventIntent
-    ) -> ExecutionEventV1 | None: ...
+    def emit(self, intent: ExecutionEventIntent) -> ExecutionEventV1 | None:
+        """Commit one event intent and return its durable representation."""
 
 
 class _AppendStore(Protocol):
+    """Append-only persistence boundary required by the durable sink."""
+
     def append(
         self,
         run_id: str,
         *,
         owner: str,
         intent: ExecutionEventIntent,
-    ) -> ExecutionEventV1: ...
+    ) -> ExecutionEventV1:
+        """Append one intent to the event stream for a run."""
 
 
 class NoOpExecutionEventSink:
     """Compatibility sink for MCP, legacy, and unadvertised paths."""
 
     def emit(self, intent: ExecutionEventIntent) -> None:
+        """Discard one event intent for compatibility-only execution paths."""
         del intent
-        return None
 
 
 class PublishingExecutionEventSink:
@@ -58,6 +60,7 @@ class PublishingExecutionEventSink:
         self._publish = publish
 
     def emit(self, intent: ExecutionEventIntent) -> ExecutionEventV1 | None:
+        """Publish an event only after the delegate durably commits it."""
         event = self._delegate.emit(intent)
         if event is not None:
             self._publish(event)

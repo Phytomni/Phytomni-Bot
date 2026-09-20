@@ -83,7 +83,7 @@ _waiting_execution_id: str | None = None
 
 
 async def _exercise_parallel_siblings() -> None:
-    """Create two overlapping sibling units through production instrumentation."""
+    """Create overlapping sibling units through real instrumentation."""
     arrived = 0
     both_arrived = asyncio.Event()
 
@@ -132,7 +132,7 @@ async def _deterministic_chat_provider(**_kwargs: object) -> dict[str, Any]:
 
 
 async def _scenario_chat_handler(args: Any) -> Any:
-    """Wrap the real Chat handler with a deterministic lifecycle observation."""
+    """Wrap the Chat handler with a deterministic lifecycle observation."""
     global _waiting_execution_id
     value = await _real_chat_handler(args)
     if not _lifecycle_scenario:

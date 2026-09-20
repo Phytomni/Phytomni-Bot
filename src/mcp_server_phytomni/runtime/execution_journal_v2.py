@@ -533,20 +533,21 @@ _WORK_UNIT_TYPES = {
     ExecutionEventType.WORK_UNIT_SUCCEEDED,
     ExecutionEventType.WORK_UNIT_CANCELLED,
 }
+_CANCEL_PAYLOAD = CancellationPublicPayload
 
 _PAYLOAD_MODELS: dict[ExecutionEventType, type[BaseModel]] = {
     **{event_type: EmptyPublicPayload for event_type in _EMPTY_TYPES},
     **{event_type: PhasePublicPayload for event_type in _PHASE_TYPES},
     **{event_type: FailurePublicPayload for event_type in _FAILURE_TYPES},
     **{event_type: WorkUnitPublicPayload for event_type in _WORK_UNIT_TYPES},
-    ExecutionEventType.EXECUTION_CANCELLATION_REQUESTED: CancellationPublicPayload,
-    ExecutionEventType.EXECUTION_CANCELLED: CancellationPublicPayload,
+    ExecutionEventType.EXECUTION_CANCELLATION_REQUESTED: _CANCEL_PAYLOAD,
+    ExecutionEventType.EXECUTION_CANCELLED: _CANCEL_PAYLOAD,
     ExecutionEventType.SPAN_PROGRESS: ProgressPublicPayload,
     ExecutionEventType.SPAN_RETRY_SCHEDULED: RetryPublicPayload,
     ExecutionEventType.WORK_UNIT_PROGRESS: ProgressPublicPayload,
     ExecutionEventType.WORK_UNIT_RETRY_SCHEDULED: RetryPublicPayload,
-    ExecutionEventType.WORK_UNIT_CANCELLATION_REQUESTED: CancellationPublicPayload,
-    ExecutionEventType.WORK_UNIT_CANCELLATION_CONFIRMED: CancellationPublicPayload,
+    ExecutionEventType.WORK_UNIT_CANCELLATION_REQUESTED: _CANCEL_PAYLOAD,
+    ExecutionEventType.WORK_UNIT_CANCELLATION_CONFIRMED: _CANCEL_PAYLOAD,
     ExecutionEventType.TODO_SNAPSHOT: TodoSnapshotPublicPayload,
     ExecutionEventType.REASONING_SUMMARY: PublicTextPayload,
     ExecutionEventType.DECISION_NOTE: PublicTextPayload,

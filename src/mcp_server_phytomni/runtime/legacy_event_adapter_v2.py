@@ -137,7 +137,7 @@ def _append_custom(*, event_type: str, payload: Mapping[str, object]) -> bool:
 def _public_payload(
     kind: str, payload: Mapping[str, object]
 ) -> dict[str, object] | None:
-    if kind == "phase.started" or kind == "phase.completed":
+    if kind in ("phase.started", "phase.completed"):
         phase = payload.get("phase")
         return {"phase": phase} if isinstance(phase, str) else None
     if kind == "phase.progress":

@@ -2,7 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Thin Driver skeletons that delegate to canonical business operation seams."""
+"""Thin Drivers that delegate to canonical business operation seams."""
 
 from __future__ import annotations
 

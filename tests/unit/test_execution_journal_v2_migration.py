@@ -9,6 +9,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
+
 
 def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
     return {
@@ -24,7 +26,7 @@ def test_v2_migration_preserves_legacy_runs_tasks_and_v1_events(
     )
 
     db_path = tmp_path / "legacy.db"
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "CREATE TABLE runs ("
             "run_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, "
@@ -37,7 +39,8 @@ def test_v2_migration_preserves_legacy_runs_tasks_and_v1_events(
             "CREATE TABLE run_events (run_id TEXT, seq INTEGER, kind TEXT)"
         )
         connection.execute(
-            "INSERT INTO runs VALUES ('run-v1', 'alice', 'chat', 'local', 'succeeded')"
+            "INSERT INTO runs VALUES "
+            "('run-v1', 'alice', 'chat', 'local', 'succeeded')"
         )
         connection.execute("INSERT INTO tasks VALUES ('task-v1', 'run-v1')")
         connection.execute(
@@ -92,7 +95,7 @@ def test_run_registry_applies_v2_schema_idempotently(tmp_path: Path) -> None:
     RunRegistry(str(db_path))
     RunRegistry(str(db_path))
 
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         assert "execution_id" in _columns(connection, "runs")
         assert _columns(connection, "execution_events_v2") >= {
             "owner_ref",
@@ -164,12 +167,13 @@ def test_v2_migration_adds_dispatch_integrity_fields_to_existing_queue(
 
     db_path = tmp_path / "legacy-command-queue.db"
     RunRegistry(str(db_path))
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute("DROP TABLE execution_commands_v2")
         connection.execute(
             "CREATE TABLE execution_commands_v2 ("
             "owner_ref TEXT NOT NULL, execution_id TEXT NOT NULL, "
-            "command_json TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', "
+            "command_json TEXT NOT NULL, "
+            "state TEXT NOT NULL DEFAULT 'pending', "
             "attempt INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT, "
             "lease_owner TEXT, lease_expires_at TEXT, last_error_code TEXT, "
             "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "

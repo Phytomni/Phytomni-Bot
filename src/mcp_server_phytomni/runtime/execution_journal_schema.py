@@ -109,9 +109,11 @@ CREATE TABLE IF NOT EXISTS execution_work_units (
     lease_expires_at TEXT,
     provider_kind TEXT,
     provider_task_id TEXT,
-    provider_revision INTEGER NOT NULL DEFAULT 0 CHECK (provider_revision >= 0),
+    provider_revision INTEGER NOT NULL DEFAULT 0
+        CHECK (provider_revision >= 0),
     provider_trace_cursor TEXT,
-    provider_trace_revision INTEGER NOT NULL DEFAULT 0 CHECK (provider_trace_revision >= 0),
+    provider_trace_revision INTEGER NOT NULL DEFAULT 0
+        CHECK (provider_trace_revision >= 0),
     provider_trace_adapter_version TEXT,
     provider_trace_overlap_json TEXT NOT NULL DEFAULT '[]',
     provider_trace_contact_at TEXT,
@@ -131,9 +133,11 @@ CREATE TABLE IF NOT EXISTS execution_projection_v2 (
     owner_ref TEXT NOT NULL,
     execution_id TEXT NOT NULL,
     latest_seq INTEGER NOT NULL DEFAULT 0 CHECK (latest_seq >= 0),
-    first_available_seq INTEGER NOT NULL DEFAULT 1 CHECK (first_available_seq >= 1),
+    first_available_seq INTEGER NOT NULL DEFAULT 1
+        CHECK (first_available_seq >= 1),
     projection_json TEXT NOT NULL,
-    projection_revision INTEGER NOT NULL DEFAULT 0 CHECK (projection_revision >= 0),
+    projection_revision INTEGER NOT NULL DEFAULT 0
+        CHECK (projection_revision >= 0),
     updated_at TEXT NOT NULL,
     PRIMARY KEY (owner_ref, execution_id)
 )

@@ -979,6 +979,9 @@ def _finish_tool_observation(
             status=span_status,
             expected_revision=observation.span.revision,
         )
+        idempotency_key = (
+            f"span:{observation.span.span_id}:{span_status.value}"
+        )
         _append_tool_fact(
             boundary,
             event_type=span_event,
@@ -990,7 +993,7 @@ def _finish_tool_observation(
             presentation=presentation,
             text=text,
             payload=span_payload,
-            idempotency_key=f"span:{observation.span.span_id}:{span_status.value}",
+            idempotency_key=idempotency_key,
         )
 
 

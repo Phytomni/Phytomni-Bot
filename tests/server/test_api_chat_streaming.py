@@ -763,7 +763,7 @@ async def test_disconnect_after_finish_never_attempts_failed_settlement(
     assert result["metadata"]["partial"] is False
 
 
-async def test_stream_run_remains_recoverable_when_client_disconnects_before_finish(
+async def test_stream_run_survives_disconnect_before_finish(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

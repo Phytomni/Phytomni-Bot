@@ -149,6 +149,7 @@ async def test_prepare_tasks_reallocates_shared_default_output_root(
     create_output = AsyncMock(return_value=allocated)
     monkeypatch.setattr(f"{_NETWORK_MODULE}.create_output_dir", create_output)
 
+    child_output = f"{agent.gene_network_config.OUTPUT_DIR}/children/part-001"
     result = await agent.prepare_tasks(
         cast(
             GeneNetworkState,
@@ -156,7 +157,7 @@ async def test_prepare_tasks_reallocates_shared_default_output_root(
                 "to_id": "TO:0000621",
                 "species_code": "osa",
                 "user_id": "user-1",
-                "output_dir": f"{agent.gene_network_config.OUTPUT_DIR}/children/part-001",
+                "output_dir": child_output,
             },
         )
     )

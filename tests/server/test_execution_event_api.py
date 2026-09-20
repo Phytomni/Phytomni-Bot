@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-import sqlite3
-
 import httpx
 import pytest
 
@@ -21,6 +19,7 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunRequestInfo,
 )
 from mcp_server_phytomni.runtime.run_registry_models import RunSpec
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 pytestmark = pytest.mark.server
 
@@ -198,7 +197,7 @@ async def test_execution_stream_waits_for_delayed_execution_registration(
     assert '"kind":"run.succeeded"' in response.text
 
 
-async def test_unknown_and_foreign_execution_identities_have_identical_not_found(
+async def test_unknown_and_foreign_execution_ids_share_not_found(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
@@ -342,7 +341,7 @@ async def test_event_stream_reports_pruned_sequence_gap(
     tasks_db_path: str,
 ) -> None:
     _seed(tasks_db_path, "run-stream-gap", "u1")
-    with sqlite3.connect(tasks_db_path) as connection:
+    with sqlite_transaction(tasks_db_path) as connection:
         connection.execute(
             "DELETE FROM run_events WHERE run_id = ? AND seq = 1",
             ("run-stream-gap",),

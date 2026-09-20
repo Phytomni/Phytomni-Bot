@@ -7,12 +7,13 @@
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
+
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 
 def _runtime(
@@ -1246,7 +1247,7 @@ def test_recovery_enforces_deadline_and_partial_is_terminal(
         )
     )
     past = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
-    with sqlite3.connect(db_path) as connection:
+    with sqlite_transaction(db_path) as connection:
         connection.execute(
             "UPDATE runs SET execution_deadline_at = ? WHERE execution_id = ?",
             (past, "turn-deadline"),

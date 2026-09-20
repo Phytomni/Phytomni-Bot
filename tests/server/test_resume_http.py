@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from types import SimpleNamespace
 from typing import Any
 
@@ -39,6 +38,7 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunRegistry,
     local_run_spec,
 )
+from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
 
 pytestmark = pytest.mark.server
 
@@ -418,7 +418,7 @@ async def test_review_run_interrupt_then_resume_finishes(
         owner="u1", run_id=run_id
     )
     assert actions == []
-    with sqlite3.connect(tasks_db_path) as connection:
+    with sqlite_transaction(tasks_db_path) as connection:
         operations = connection.execute(
             "SELECT operation, state FROM execution_operations_v2 "
             "WHERE owner_ref = ? AND execution_id = ?",
