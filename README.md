@@ -102,8 +102,7 @@ matrix are documented on the HTTP API page.
 
 ### Capability Boundary
 
-The installed package version is `0.1.4`. The `release/0.1.4` tree is the
-current tagged release.
+The installed package version is `0.1.4`.
 
 A2UI Chat/Review widgets are always on. Graph progress is available on
 HTTP SSE and, for Knowledge / Review / Data / BriefGene, through MCP

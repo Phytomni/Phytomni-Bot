@@ -5,8 +5,8 @@ for the full change list.
 
 ## 0.1.3 → 0.1.4
 
-The installed package version is `0.1.4`. This is the current tagged release.
-This section covers the operator-visible work since 0.1.3. There is
+The installed package version is `0.1.4`. This section covers the
+`0.1.3` to `0.1.4` upgrade. There is
 **no required new secret**.
 
 - Outbound pool variables were already required. `config/.env.example`
