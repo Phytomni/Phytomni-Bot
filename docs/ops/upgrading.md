@@ -3,11 +3,10 @@
 Operator upgrade manuals per release. See [CHANGELOG](../../CHANGELOG.md)
 for the full change list.
 
-## 0.1.3 → current (`release/0.1.4`)
+## 0.1.3 → 0.1.4
 
-The installed package version is still `0.1.3`. Branch `release/0.1.4`
-is still in development and is not a tagged release. This section
-covers the operator-visible work on that branch since 0.1.3. There is
+The installed package version is `0.1.4`. This is the current tagged release.
+This section covers the operator-visible work since 0.1.3. There is
 **no required new secret**.
 
 - Outbound pool variables were already required. `config/.env.example`

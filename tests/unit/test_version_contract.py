@@ -26,7 +26,7 @@ def test_release_version_surfaces_agree() -> None:
     )
     project_version = pyproject["project"]["version"]
 
-    assert project_version == "0.1.3"
+    assert project_version == "0.1.4"
     assert __version__ == project_version
     assert version("mcp-server-phytomni") == project_version
     assert create_app().version == project_version

@@ -102,8 +102,8 @@ matrix are documented on the HTTP API page.
 
 ### Capability Boundary
 
-The installed package version remains `0.1.3`. Branch `release/0.1.4`
-is still in development and is not a tagged release.
+The installed package version is `0.1.4`. The `release/0.1.4` tree is the
+current tagged release.
 
 A2UI Chat/Review widgets are always on. Graph progress is available on
 HTTP SSE and, for Knowledge / Review / Data / BriefGene, through MCP
@@ -373,8 +373,7 @@ for the approval and remediation contract.
   demo fixtures, E2E commands, and troubleshooting.
 - [STYLE.md](STYLE.md): naming, docstrings, imports, compatibility rules,
   and repository-specific code style.
-- [CHANGELOG.md](CHANGELOG.md): dated release history (0.1.0–0.1.3 plus
-  Unreleased).
+- [CHANGELOG.md](CHANGELOG.md): dated release history (0.1.0–0.1.4).
 - [CONTRIBUTING.md](CONTRIBUTING.md): setup, local gate, test markers,
   commit convention, and dependency policy.
 - [SECURITY.md](SECURITY.md): supported versions, vulnerability

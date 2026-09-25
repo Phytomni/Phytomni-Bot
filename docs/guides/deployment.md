@@ -21,8 +21,8 @@ databases, local SQLite registries, or local virtual environments.
 
 ## Upgrading an existing deployment
 
-For the current `release/0.1.4` tree, start at
-[Upgrade Notes — 0.1.3 → current](../ops/upgrading.md). For a jump from
+For the current `0.1.4` tree, start at
+[Upgrade Notes — 0.1.3 → 0.1.4](../ops/upgrading.md). For a jump from
 `0.1.2`, follow the complete 0.1.2 → 0.1.3 sequence in the same file
 before replacing the running wheel or image. It covers the
 stop-before-backup sequence, version/OpenAPI smoke, native `/v1/agents`

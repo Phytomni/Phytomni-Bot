@@ -15,10 +15,9 @@ Newest first.
 
 ______________________________________________________________________
 
-## [Unreleased]
+## [0.1.4] — 2026-09-25
 
-Operator-visible changes on `release/0.1.4` since 0.1.3. The installed
-package version remains `0.1.3` until the release bump.
+Operator-visible changes in the 0.1.4 release since 0.1.3.
 
 ### Added
 
@@ -40,7 +39,6 @@ package version remains `0.1.3` until the release bump.
   when the producer manifest is missing or invalid, without admitting
   those files into scientific report context. Deep Genome salvages
   known design summaries, legends, and figures only. Default on. The
-  package version remains `0.1.3`.
 - **Cited unmatched omit** — Selected citations missing from the local
   SQLite artifact are dropped from the formatted answer and reference
   list, and remaining indices are compacted. Default on via

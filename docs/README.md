@@ -73,7 +73,7 @@ Start from the table below, or browse a category directly.
   and the
   [acceptance runbook](ops/bot-contract-acceptance-runbook.md)
 
-- **I want to…:** Upgrade 0.1.3 → current
+- **I want to…:** Upgrade 0.1.3 → 0.1.4
   **Read:** [ops/upgrading.md](ops/upgrading.md)
 
 - **I want to…:** Upgrade 0.1.2 → 0.1.3
