@@ -13,7 +13,6 @@ so the assertions stay inside the class hierarchy.
 
 from __future__ import annotations
 
-import asyncio
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -59,6 +58,11 @@ from tests.support.outbound_fakes import patch_openai_runtime
 from tests.support.sqlite import closed_sqlite_connection
 
 pytestmark = pytest.mark.unit
+
+
+def _write_text_sync(path: Path, text: str) -> None:
+    """Write the tiny report fixture outside the async test function."""
+    path.write_text(text, encoding="utf-8")
 
 
 class _ReportProbe(DeepGenomeReportMixin):
@@ -667,7 +671,7 @@ async def test_synthesizer_and_experiment_paths(
     )
 
     async def capture(path: Path, text: str) -> None:
-        await asyncio.to_thread(path.write_text, text, encoding="utf-8")
+        _write_text_sync(path, text)
 
     monkeypatch.setattr(report_module, "_write_async", capture)
     result = await _ReportProbe().run_synthesizer(
