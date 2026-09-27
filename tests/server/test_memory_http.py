@@ -392,6 +392,14 @@ class _ConfigurableMemoryStore:
 def _isolated_memory_app(
     *, store: object, current_user: str | None = "alice"
 ) -> FastAPI:
+    async def _require_agents() -> None:
+        """Return a no-op async agent guard without a thread-pool hop."""
+        return None
+
+    async def _require_service() -> None:
+        """Return a no-op async service guard without a thread-pool hop."""
+        return None
+
     def _revision(value: str | None, *, required: bool) -> int | None:
         if value is None or not str(value).strip():
             return 1 if required else None
@@ -403,7 +411,8 @@ def _isolated_memory_app(
         memory.MemoryRouteDependencies(
             get_store=lambda: cast(MemoryStore, store),
             auth=memory.MemoryAuthDependencies(
-                require_agents=lambda: None, require_service=lambda: None
+                require_agents=_require_agents,
+                require_service=_require_service,
             ),
             context=memory.MemoryContextDependencies(
                 current_user=lambda: current_user,
