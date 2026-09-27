@@ -704,7 +704,11 @@ async def test_read_obs_text_artifact_reads_downloaded_file(
         assert dest_dir == "terminal-report"
         return str(local)
 
+    async def direct_to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
     monkeypatch.setattr(report_mod, "download_obs_file", fake_download)
+    monkeypatch.setattr(report_mod.asyncio, "to_thread", direct_to_thread)
     assert await read_obs_text_artifact("owner/notes.txt") == "obs text"
 
 
@@ -824,10 +828,14 @@ async def test_default_reader_uses_local_then_obs(
     local = tmp_path / "report.md"
     local.write_text("local body", encoding="utf-8")
 
+    async def direct_to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
     async def fake_obs(reference: str) -> str:
         assert reference == "owner/remote.md"
         return "remote body"
 
+    monkeypatch.setattr(report_mod.asyncio, "to_thread", direct_to_thread)
     monkeypatch.setattr(report_mod, "read_obs_text_artifact", fake_obs)
     assert (
         await getattr(report_mod, "_read_report_artifact")(str(local))
