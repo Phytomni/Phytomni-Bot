@@ -531,6 +531,14 @@ async def test_worker_retries_archive_and_os_errors(
 
     sleeps: list[float] = []
 
+    async def _direct_to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        """Keep retry coverage on the event loop in this test harness."""
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(
+        delivery_module.asyncio, "to_thread", _direct_to_thread
+    )
+
     async def _sleep(delay: float) -> None:
         sleeps.append(delay)
 
