@@ -29,6 +29,18 @@ from mcp_server_phytomni.storage.artifact_listing import ListedArtifactObject
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture
+def _direct_thread_io(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep manifest edge tests independent of executor scheduling."""
+
+    async def _direct_to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(
+        terminal_artifacts.asyncio, "to_thread", _direct_to_thread
+    )
+
+
 def _listed(
     relative_path: str,
     *,
@@ -205,7 +217,9 @@ async def test_collect_set_caps_default_listing_while_walking(
     assert result.warnings[0].code == "artifact_listing_truncated"
 
 
-async def test_collect_set_loads_default_manifest(tmp_path: Path) -> None:
+async def test_collect_set_loads_default_manifest(
+    tmp_path: Path, _direct_thread_io: None
+) -> None:
     """Omitting a loader reads the listed manifest through the default path."""
     manifest = tmp_path / ARTIFACT_MANIFEST_FILENAME
     manifest.write_text(
@@ -385,7 +399,9 @@ async def test_load_manifest_rejects_oversize_content(
         )
 
 
-async def test_read_manifest_bytes_from_local_file(tmp_path: Path) -> None:
+async def test_read_manifest_bytes_from_local_file(
+    tmp_path: Path, _direct_thread_io: None
+) -> None:
     """A local mount path is read directly without OBS download."""
     manifest = tmp_path / ARTIFACT_MANIFEST_FILENAME
     manifest.write_bytes(b'{"version":"1.0"}')
@@ -401,7 +417,7 @@ async def test_read_manifest_bytes_from_local_file(tmp_path: Path) -> None:
 
 
 async def test_read_manifest_bytes_requires_download_ref(
-    tmp_path: Path,
+    tmp_path: Path, _direct_thread_io: None
 ) -> None:
     """A remote-only object without a download ref fails closed."""
     with pytest.raises(OSError, match="download reference unavailable"):
@@ -416,7 +432,9 @@ async def test_read_manifest_bytes_requires_download_ref(
 
 
 async def test_read_manifest_bytes_downloads_remote_object(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    _direct_thread_io: None,
 ) -> None:
     """Missing local files fall back to a bounded OBS download."""
     downloaded = tmp_path / "downloaded.json"
