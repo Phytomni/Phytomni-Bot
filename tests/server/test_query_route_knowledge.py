@@ -259,6 +259,7 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
     """The native Brief Gene route returns its bounded context projection."""
     assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
     install_inline_citation_lookup(monkeypatch)
+    monkeypatch.setenv("CITATION_OMIT_UNMATCHED", "false")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
     calls: list[dict[str, Any]] = []

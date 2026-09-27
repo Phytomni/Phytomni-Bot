@@ -77,6 +77,7 @@ async def test_knowledge_preserves_doc_list(
     """Verify knowledge model surfaces cited docs via the formatter."""
     assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
     install_inline_citation_lookup(monkeypatch)
+    monkeypatch.setenv("CITATION_OMIT_UNMATCHED", "false")
     _stub(
         monkeypatch,
         server.PhytomniAgents.KNOWLEDGE_AGENT.value,
