@@ -37,6 +37,18 @@ from mcp_server_phytomni.storage.artifact_listing import ListedArtifactObject
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture
+def _direct_thread_io(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep local manifest parser tests independent of executor scheduling."""
+
+    async def _direct_to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(
+        terminal_artifacts.asyncio, "to_thread", _direct_to_thread
+    )
+
+
 @pytest.fixture(name="artifacts_caplog")
 def _artifacts_caplog(
     caplog: pytest.LogCaptureFixture,
@@ -460,7 +472,9 @@ async def test_default_listers_use_storage_helpers(
 
 
 @pytest.mark.asyncio
-async def test_default_manifest_loader_reads_local_file(tmp_path) -> None:
+async def test_default_manifest_loader_reads_local_file(
+    tmp_path, _direct_thread_io: None
+) -> None:
     """A listed local manifest is parsed when no custom loader is supplied."""
     payload = {
         "version": "1.0",
@@ -501,7 +515,9 @@ async def test_default_manifest_loader_reads_local_file(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_manifest_size_cap_and_download_fallback(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    _direct_thread_io: None,
 ) -> None:
     """Oversize manifests fail closed and missing local files download."""
 
@@ -557,7 +573,9 @@ async def test_manifest_size_cap_and_download_fallback(
 
 
 @pytest.mark.asyncio
-async def test_manifest_download_requires_reference(tmp_path) -> None:
+async def test_manifest_download_requires_reference(
+    tmp_path, _direct_thread_io: None
+) -> None:
     """A remote manifest without a download ref fails closed."""
 
     async def listed(_output_dir: str) -> list[ListedArtifactObject]:
@@ -578,7 +596,9 @@ async def test_manifest_download_requires_reference(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_manifest_rejects_duplicate_keys_and_oversize_body(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    _direct_thread_io: None,
 ) -> None:
     """Duplicate JSON keys and post-read oversize bodies fail closed."""
     duplicate = tmp_path / "dup.json"
@@ -637,7 +657,7 @@ def test_sanitize_artifact_relpath_replaces_controls() -> None:
 
 @pytest.mark.asyncio
 async def test_manifest_salvages_unescaped_newline_in_path(
-    tmp_path,
+    tmp_path, _direct_thread_io: None
 ) -> None:
     """Producer JSON with a raw LF inside path still classifies the figure."""
     relative = "smoc/Zm00001eb355530;::chr:start-end(\n).png"
@@ -685,7 +705,9 @@ async def test_manifest_salvages_unescaped_newline_in_path(
 
 
 @pytest.mark.asyncio
-async def test_truncated_manifest_stays_invalid(tmp_path) -> None:
+async def test_truncated_manifest_stays_invalid(
+    tmp_path, _direct_thread_io: None
+) -> None:
     """Salvage must not accept truncated JSON."""
     manifest_path = tmp_path / ".phytomni-artifacts.json"
     manifest_path.write_text(
