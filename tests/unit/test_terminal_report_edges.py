@@ -48,6 +48,16 @@ from mcp_server_phytomni.runtime.terminal_report import (
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture
+def _direct_thread_io(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep local report-reader edges independent of executor scheduling."""
+
+    async def _direct_to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(report_mod.asyncio, "to_thread", _direct_to_thread)
+
+
 def _context(
     locale: SupportedLocale = "en-US",
     **overrides: Any,
@@ -163,7 +173,9 @@ async def test_read_snippets_clips_to_remaining_chars() -> None:
 
 
 async def test_read_obs_text_artifact_decodes_utf8(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    _direct_thread_io: None,
 ) -> None:
     """OBS-backed reads decode the downloaded file as UTF-8."""
     local = tmp_path / "report.md"
@@ -224,6 +236,7 @@ def test_mapping_artifact_helpers_cover_invalid_roles() -> None:
 
 async def test_read_report_artifact_prefers_local_file(
     tmp_path: Path,
+    _direct_thread_io: None,
 ) -> None:
     """A local source path is read without falling back to OBS."""
     local = tmp_path / "local.md"
@@ -233,6 +246,7 @@ async def test_read_report_artifact_prefers_local_file(
 
 async def test_read_report_artifact_falls_back_to_obs(
     monkeypatch: pytest.MonkeyPatch,
+    _direct_thread_io: None,
 ) -> None:
     """A missing local path uses the OBS text reader."""
 
