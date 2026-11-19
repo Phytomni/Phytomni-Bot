@@ -67,7 +67,7 @@ class ExecutionV2ReadRouteDependencies(Protocol):
         """Return the execution database path."""
         _dependency_member()
 
-    def owner_header(
+    async def owner_header(
         self,
         x_phyto_owner: str,
         x_phyto_execution_schema: str | None = None,
