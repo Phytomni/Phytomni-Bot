@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import pytest
 from tests.support.provider_trace_v2 import (
     provider_trace_observation,
     provider_trace_presenter_arguments,
@@ -17,6 +20,7 @@ from mcp_server_phytomni.runtime.execution_journal_v2 import (
     WorkUnitPublicPayload,
 )
 from mcp_server_phytomni.runtime.gene_network_provider_trace_v2 import (
+    present_agent_provider_record,
     present_gene_network_provider_record,
 )
 from mcp_server_phytomni.runtime.provider_trace_v2 import ProviderTraceRecord
@@ -96,3 +100,77 @@ def test_unknown_or_mismatched_provider_records_stay_private() -> None:
             )
             == ()
         )
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["succeeded", "failed", "cancelled", "timed_out", "pending"],
+)
+def test_provider_statuses_project_finite_terminal_facts(status: Any) -> None:
+    """Project every finite provider status or omit pending status."""
+    record = ProviderTraceRecord(
+        source_identity=f"status-{status}",
+        record_class="semantic_tool",
+        semantic_code="gene_network.infer_network",
+        status=status,
+    )
+    intents = present_gene_network_provider_record(
+        *provider_trace_presenter_arguments(record),
+        analysis_span_id="analysis-span-public",
+    )
+    if status == "pending":
+        assert len(intents) == 1
+        assert intents[0].type.value == "work_unit.registered"
+    else:
+        assert [intent.type.value for intent in intents] == [
+            "work_unit.registered",
+            f"work_unit.{status}",
+        ]
+
+
+def test_public_summary_and_artifact_records_fail_closed_or_project() -> None:
+    """Keep artifact records private and expose only explicit summaries."""
+    artifact = ProviderTraceRecord(
+        source_identity="artifact",
+        record_class="artifact_available",
+        semantic_code="gene_network.infer_network",
+        status="succeeded",
+        artifact_role="report",
+    )
+    assert (
+        present_gene_network_provider_record(
+            *provider_trace_presenter_arguments(artifact),
+            analysis_span_id="analysis-span-public",
+        )
+        == ()
+    )
+
+    summary = ProviderTraceRecord(
+        source_identity="summary",
+        record_class="public_summary",
+        semantic_code="gene_network.target_validated",
+        status="running",
+        summary_kind="reasoning_summary",
+        public_text="Target validated.",
+        explicit_public=True,
+    )
+    intents = present_gene_network_provider_record(
+        *provider_trace_presenter_arguments(summary),
+        analysis_span_id="analysis-span-public",
+    )
+    assert [intent.type.value for intent in intents] == ["reasoning.summary"]
+
+
+def test_non_provider_agent_is_rejected_before_presenter_lookup() -> None:
+    """A local agent record never crosses the provider presenter boundary."""
+    record = ProviderTraceRecord(
+        source_identity="local",
+        record_class="semantic_tool",
+        semantic_code="gene_network.infer_network",
+        status="running",
+    )
+    assert not present_agent_provider_record(
+        "chat",
+        *provider_trace_presenter_arguments(record),
+        analysis_span_id="analysis-span-public",
+    )

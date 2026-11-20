@@ -9,6 +9,8 @@ import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from tests.support.execution_supervisor_v2 import (
@@ -22,7 +24,10 @@ from mcp_server_phytomni.runtime import execution_supervisor_service_v2
 from mcp_server_phytomni.runtime.execution_journal_store_v2 import (
     SQLiteExecutionJournal,
 )
-from mcp_server_phytomni.runtime.execution_journal_v2 import WorkUnitStatus
+from mcp_server_phytomni.runtime.execution_journal_v2 import (
+    ExecutionStatus,
+    WorkUnitStatus,
+)
 from mcp_server_phytomni.runtime.execution_reservation_v2 import (
     ExecutionReservationConflictError,
     SQLiteExecutionReservationRepository,
@@ -49,6 +54,197 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunSpec,
 )
 from mcp_server_phytomni.runtime.sqlite import sqlite_transaction
+
+
+def _controlled_renewal_work(
+    db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[SQLiteExecutionWorkRepository, SimpleNamespace]:
+    """Build a work store whose first lease renewal is observable."""
+    state = SimpleNamespace(renewed=asyncio.Event())
+    state.now = datetime.now(UTC)
+    state.initial = state.now
+
+    def clock() -> datetime:
+        """Return the test-controlled UTC clock."""
+        return state.now
+
+    work = SQLiteExecutionWorkRepository(db_path, clock=clock)
+    original_renew = work.renew_provider_join_lease
+
+    def renew(
+        execution_id: str,
+        *,
+        owner: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool:
+        """Signal after the wrapped repository renewal succeeds."""
+        result = original_renew(
+            execution_id,
+            owner=owner,
+            lease_token=lease_token,
+            lease_seconds=lease_seconds,
+        )
+        if result:
+            state.renewed.set()
+        return result
+
+    monkeypatch.setattr(work, "renew_provider_join_lease", renew)
+    return work, state
+
+
+def test_supervisor_helpers_cover_finite_status_and_revision_contracts() -> (
+    None
+):
+    """Cover helper normalization without starting a serving process."""
+    provider_status = cast(
+        Any, getattr(execution_supervisor_service_v2, "_provider_status")
+    )
+    observation_revision = cast(
+        Any,
+        getattr(
+            execution_supervisor_service_v2,
+            "_provider_observation_revision",
+        ),
+    )
+    run_status = cast(
+        Any, getattr(execution_supervisor_service_v2, "_run_status")
+    )
+    terminal_outcome = cast(
+        Any,
+        getattr(execution_supervisor_service_v2, "_domain_terminal_outcome"),
+    )
+    for value in ("submitted", "pending", "queued", "acknowledged"):
+        assert provider_status(value) == "pending"
+    for value in ("running", "in_progress"):
+        assert provider_status(value) == "running"
+    for value in ("succeeded", "success", "completed", "done"):
+        assert provider_status(value) == "succeeded"
+    for value in ("failed", "error"):
+        assert provider_status(value) == "failed"
+    for value in ("cancelled", "canceled"):
+        assert provider_status(value) == "cancelled"
+    for value in ("timed_out", "timeout"):
+        assert provider_status(value) == "timed_out"
+    with pytest.raises(RuntimeError, match="unsupported_provider_status"):
+        provider_status("unknown")
+
+    assert observation_revision({}, 3, terminal=False) is None
+    assert observation_revision({}, 3, terminal=True) == 4
+    assert (
+        observation_revision({"actual_running_time": 65}, 1, terminal=False)
+        == 3
+    )
+    assert (
+        observation_revision(
+            {
+                "task_runtime_info": [
+                    {"sub_tasks": [{"actual_running_time": 95}]}
+                ]
+            },
+            1,
+            terminal=True,
+        )
+        == 4
+    )
+    assert (
+        observation_revision(
+            {"task_runtime_info": ["invalid", {"sub_tasks": ["invalid"]}]},
+            4,
+            terminal=False,
+        )
+        is None
+    )
+
+    for raw, expected in (
+        ({"status": "succeeded"}, ExecutionStatus.SUCCEEDED),
+        ({"status": "waiting_input"}, ExecutionStatus.WAITING_INPUT),
+        ({"status": "running"}, ExecutionStatus.RUNNING),
+        (({"status": "failed"}, 1), ExecutionStatus.FAILED),
+    ):
+        assert run_status(raw) is expected
+
+    failed = terminal_outcome(ExecutionStatus.FAILED)
+    cancelled = terminal_outcome(ExecutionStatus.CANCELLED)
+    assert failed is not None and failed.status is ExecutionStatus.FAILED
+    assert (
+        cancelled is not None and cancelled.cancellation_outcome == "confirmed"
+    )
+    assert terminal_outcome(ExecutionStatus.RUNNING) is None
+
+
+def test_supervisor_callable_and_policy_guards() -> None:
+    """Reject malformed services and poll intervals before serving."""
+    run_once_callable = cast(
+        Any, getattr(execution_supervisor_service_v2, "_run_once_callable")
+    )
+    run_reconciler = cast(
+        Any, getattr(execution_supervisor_service_v2, "_run_reconciler")
+    )
+    with pytest.raises(TypeError, match="run_once"):
+        run_once_callable(object())
+    common = {
+        "reservations": cast(Any, object()),
+        "journal": cast(Any, object()),
+        "work": cast(Any, object()),
+        "settle": cast(Any, object()),
+        "worker_id": "worker",
+    }
+    with pytest.raises(ValueError, match="lease_seconds"):
+        ReadyProviderJoinReconciler(**common, lease_seconds=0)
+    with pytest.raises(ValueError, match="renewal interval"):
+        ReadyProviderJoinReconciler(
+            **common, lease_seconds=1, renewal_interval_seconds=1
+        )
+
+    async def failing_run() -> None:
+        raise RuntimeError("synthetic")
+
+    asyncio.run(run_reconciler(failing_run, "synthetic supervisor failure"))
+    with pytest.raises(ValueError, match="invalid supervisor poll interval"):
+        asyncio.run(
+            run_execution_supervisor_loop(
+                supervisor=object(),
+                joins=object(),
+                stop=asyncio.Event(),
+                poll_seconds=0,
+            )
+        )
+
+
+def test_provider_pollers_fail_closed_and_filter_trace_records(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject unbound providers and retain only finite trace records."""
+    unit = SimpleNamespace(provider_task_id=None, provider_revision=1)
+    with pytest.raises(RuntimeError, match="provider_identity_not_bound"):
+        asyncio.run(
+            execution_supervisor_service_v2.poll_analysis_task_platform(
+                cast(Any, unit)
+            )
+        )
+    with pytest.raises(RuntimeError, match="provider_identity_not_bound"):
+        asyncio.run(
+            execution_supervisor_service_v2.poll_analysis_task_platform_trace(
+                cast(Any, unit), ProviderTraceCheckpoint()
+            )
+        )
+
+    monkeypatch.setattr(
+        execution_supervisor_service_v2,
+        "task_log",
+        lambda _task_id: asyncio.sleep(
+            0, result={"logs": ["bad", {"status": "bad"}]}
+        ),
+    )
+    valid_unit = SimpleNamespace(provider_task_id="task", provider_revision=1)
+    result = asyncio.run(
+        execution_supervisor_service_v2.poll_analysis_task_platform_trace(
+            cast(Any, valid_unit), ProviderTraceCheckpoint()
+        )
+    )
+    assert result.observation.records == ()
 
 
 def test_analysis_provider_poller_projects_live_status_and_revision(
@@ -436,8 +632,10 @@ def test_ready_provider_join_is_retried_until_execution_is_terminal(
     ]
 
 
-def test_ready_provider_join_is_single_flight_across_supervisors(
+@pytest.mark.asyncio
+async def test_ready_provider_join_is_single_flight_across_supervisors(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Only one supervisor may execute terminal domain aggregation."""
 
@@ -452,8 +650,7 @@ def test_ready_provider_join_is_single_flight_across_supervisors(
             agent_slug="network", arguments={"query": "network"}
         ),
     )
-    journal = SQLiteExecutionJournal(db_path)
-    work = SQLiteExecutionWorkRepository(db_path)
+    work, clock_state = _controlled_renewal_work(db_path, monkeypatch)
     create_root_span(
         work,
         reservation,
@@ -497,7 +694,7 @@ def test_ready_provider_join_is_single_flight_across_supervisors(
 
     first = ReadyProviderJoinReconciler(
         reservations=reservations,
-        journal=journal,
+        journal=SQLiteExecutionJournal(db_path),
         work=work,
         settle=settle,
         worker_id="join-worker-shared",
@@ -506,7 +703,7 @@ def test_ready_provider_join_is_single_flight_across_supervisors(
     )
     second = ReadyProviderJoinReconciler(
         reservations=reservations,
-        journal=journal,
+        journal=SQLiteExecutionJournal(db_path),
         work=work,
         settle=settle,
         worker_id="join-worker-shared",
@@ -517,14 +714,16 @@ def test_ready_provider_join_is_single_flight_across_supervisors(
     async def exercise() -> tuple[int, int]:
         first_scan = asyncio.create_task(first.run_once())
         await asyncio.wait_for(settle_started.wait(), timeout=1)
-        # Cross the original lease TTL. A unique claim token plus renewal
-        # must still prevent another scan, even with the same worker label.
-        await asyncio.sleep(1.2)
+        # Cross the original lease TTL after observing one successful renewal.
+        # A unique claim token plus renewal must still prevent another scan.
+        clock_state.now = clock_state.initial + timedelta(seconds=0.5)
+        await asyncio.wait_for(clock_state.renewed.wait(), timeout=1)
+        clock_state.now = clock_state.initial + timedelta(seconds=1.25)
         second_count = await second.run_once()
         release_settle.set()
         return await first_scan, second_count
 
-    assert asyncio.run(exercise()) == (1, 0)
+    assert await exercise() == (1, 0)
     assert calls == ["alice:turn-ready-join-single-flight"]
 
 
