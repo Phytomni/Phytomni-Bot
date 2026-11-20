@@ -222,6 +222,7 @@ def test_projection_helpers_remain_runtime_facade_exports() -> None:
 def test_chat_stream_preparation_preserves_runtime_request_metadata(
     tmp_path: Any,
 ) -> None:
+    """Preserve request metadata when preparing a Chat A2UI stream."""
     db_path = str(tmp_path / "chat-preparation.db")
     run_id = "run-chat-preparation"
     RunRegistry(db_path).create_run(
@@ -242,7 +243,8 @@ def test_chat_stream_preparation_preserves_runtime_request_metadata(
         dialogue_id="dialogue-runtime",
     )
 
-    a2ui_runtime._prepare_chat_stream(
+    prepare_chat_stream = getattr(a2ui_runtime, "_prepare_chat_stream")
+    prepare_chat_stream(
         arguments={"user_query": "new query"},
         payload=payload,
         user_query="new query",

@@ -15,7 +15,7 @@ import os
 import threading
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, TypedDict, Unpack
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,6 +41,16 @@ class ExecutionContentDeltaV2(BaseModel):
     )
 
 
+class _ContentPublishFields(TypedDict):
+    """Keyword contract for one transient content publication."""
+
+    owner: str
+    execution_id: str
+    output_revision: int
+    offset: int
+    delta: str
+
+
 @dataclass(slots=True)
 class ExecutionContentStreamV2:
     """Thread-safe bounded content buffer scoped by owner and execution."""
@@ -57,32 +67,30 @@ class ExecutionContentStreamV2:
 
     def publish(
         self,
-        *,
-        owner: str,
-        execution_id: str,
-        output_revision: int,
-        offset: int,
-        delta: str,
+        **fields: Unpack[_ContentPublishFields],
     ) -> ExecutionContentDeltaV2:
         """Publish a monotonic fragment without creating a durable fact."""
-        if not owner:
+        if not fields["owner"]:
             raise ValueError("owner is required")
-        if len(delta.encode("utf-8")) > EXECUTION_CONTENT_DELTA_MAX_BYTES:
+        if (
+            len(fields["delta"].encode("utf-8"))
+            > EXECUTION_CONTENT_DELTA_MAX_BYTES
+        ):
             raise ValueError("content delta exceeds size limit")
         frame = ExecutionContentDeltaV2(
-            execution_id=execution_id,
-            output_revision=output_revision,
-            offset=offset,
-            delta=delta,
+            execution_id=fields["execution_id"],
+            output_revision=fields["output_revision"],
+            offset=fields["offset"],
+            delta=fields["delta"],
         )
-        key = (owner, execution_id)
+        key = (fields["owner"], fields["execution_id"])
         with self._lock:
             frames = self._frames[key]
             if frames:
                 latest = frames[-1]
-                if output_revision < latest.output_revision or (
-                    output_revision == latest.output_revision
-                    and offset <= latest.offset
+                if fields["output_revision"] < latest.output_revision or (
+                    fields["output_revision"] == latest.output_revision
+                    and fields["offset"] <= latest.offset
                 ):
                     raise ExecutionContentConflictError(
                         "content revision or offset regressed"

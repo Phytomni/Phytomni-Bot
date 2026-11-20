@@ -16,7 +16,15 @@ import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Final, Literal, get_args
+from typing import (
+    Any,
+    Final,
+    Literal,
+    NotRequired,
+    TypedDict,
+    Unpack,
+    get_args,
+)
 
 from pydantic import (
     BaseModel,
@@ -222,6 +230,16 @@ ProviderTraceNormalizer = Callable[
 ]
 
 
+class _FullSnapshotAdapterFields(TypedDict):
+    """Keyword construction settings for a full-snapshot adapter."""
+
+    adapter_version: str
+    normalize_record: ProviderTraceNormalizer
+    max_snapshot_records: NotRequired[int]
+    max_record_bytes: NotRequired[int]
+    overlap_size: NotRequired[int]
+
+
 @dataclass(frozen=True, slots=True)
 class _PreparedProviderSnapshot:
     identities: tuple[str, ...]
@@ -266,13 +284,13 @@ class FullSnapshotProviderTraceAdapter(_VersionedProviderTraceAdapter):
 
     def __init__(
         self,
-        *,
-        adapter_version: str,
-        normalize_record: ProviderTraceNormalizer,
-        max_snapshot_records: int = 8192,
-        max_record_bytes: int = 16384,
-        overlap_size: int = 64,
+        **fields: Unpack[_FullSnapshotAdapterFields],
     ) -> None:
+        adapter_version = fields["adapter_version"]
+        normalize_record = fields["normalize_record"]
+        max_snapshot_records = fields.get("max_snapshot_records", 8192)
+        max_record_bytes = fields.get("max_record_bytes", 16384)
+        overlap_size = fields.get("overlap_size", 64)
         _validate_adapter_version(adapter_version)
         if not 1 <= max_snapshot_records <= 10000:
             raise ValueError("invalid maximum snapshot records")

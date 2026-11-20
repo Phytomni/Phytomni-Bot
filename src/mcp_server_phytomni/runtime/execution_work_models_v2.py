@@ -64,6 +64,38 @@ class ProviderTraceStateFields(TypedDict):
     expected_revision: int
 
 
+class SpanStatusUpdateFields(TypedDict):
+    """Keyword contract for one optimistic span status update."""
+
+    owner: str
+    status: SpanStatus | str
+    expected_revision: int
+
+
+class WorkUnitStatusUpdateFields(TypedDict):
+    """Keyword contract for one optimistic work-unit status update."""
+
+    owner: str
+    status: WorkUnitStatus | str
+    expected_revision: int
+
+
+class LeaseReleaseFields(TypedDict):
+    """Keyword contract for one worker lease release."""
+
+    owner: str
+    worker_id: str
+    expected_revision: int
+
+
+class CancellationStateUpdateFields(TypedDict):
+    """Keyword contract for one cancellation-state update."""
+
+    owner: str
+    state: CancellationState
+    expected_revision: int
+
+
 class WorkUnitUpdateFields(TypedDict):
     """Private optimistic update passed to the SQL writer."""
 

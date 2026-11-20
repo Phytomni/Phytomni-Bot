@@ -16,7 +16,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from functools import cached_property, partial
 from importlib import import_module
-from typing import Any, Unpack
+from typing import Any, NotRequired, TypedDict, Unpack
 
 from a2a.server.routes.jsonrpc_routes import create_jsonrpc_routes
 from fastapi import (
@@ -107,6 +107,25 @@ from .upload_runtime import (
 
 __all__ = ["build_app"]
 logger = logging.getLogger(__name__)
+
+
+class _ExpertQueryOptions(TypedDict):
+    """Optional transport options for the Expert route adapter."""
+
+    debug: bool
+    attachment_input: NotRequired[Any | None]
+    idempotency_key: NotRequired[str | None]
+    execution_id: NotRequired[str | None]
+
+
+class _ReviewChatCompletionCall(TypedDict):
+    """Keyword contract for the Review streaming route adapter."""
+
+    payload: ChatCompletionRequest
+    arguments: Mapping[str, object]
+    user_query: str
+    attachment_evidence: NotRequired[Any | None]
+    execution_id: NotRequired[str | None]
 
 
 def project_data_stage_error(exc: BaseException) -> SafeApiError | None:
@@ -430,19 +449,15 @@ class _RouteAdapters:
     async def expert_query(
         self,
         payload: ExpertQueryRequest,
-        *,
-        debug: bool,
-        attachment_input: Any | None = None,
-        idempotency_key: str | None = None,
-        execution_id: str | None = None,
+        **options: Unpack[_ExpertQueryOptions],
     ) -> tuple[dict[str, Any], int]:
         """Route an Expert query through the app-level seam."""
         response_body, status_code = await _app_attr("_route_expert_query")(
             payload,
-            debug=debug,
-            attachment_input=attachment_input,
-            idempotency_key=idempotency_key,
-            execution_id=execution_id,
+            debug=options["debug"],
+            attachment_input=options.get("attachment_input"),
+            idempotency_key=options.get("idempotency_key"),
+            execution_id=options.get("execution_id"),
             research_runtime_options=_agent_runs.ResearchHttpRuntimeOptions(
                 allow_uninstalled=not self.research_input_runtime_required
             ),
@@ -458,21 +473,10 @@ class _RouteAdapters:
 
     async def review_chat_completion(
         self,
-        *,
-        payload: ChatCompletionRequest,
-        arguments: Mapping[str, object],
-        user_query: str,
-        attachment_evidence: Any | None = None,
-        execution_id: str | None = None,
+        **request: Unpack[_ReviewChatCompletionCall],
     ) -> Response:
         """Stream a Review completion through the app-level seam."""
-        return await _app_attr("_review_chat_completion_response")(
-            payload=payload,
-            arguments=arguments,
-            user_query=user_query,
-            attachment_evidence=attachment_evidence,
-            execution_id=execution_id,
-        )
+        return await _app_attr("_review_chat_completion_response")(**request)
 
     async def resolve_chat_query(
         self,

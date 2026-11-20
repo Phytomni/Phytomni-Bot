@@ -83,6 +83,15 @@ class _ExecutionStartFields(CanonicalReservationKwargs):
     transport: str
 
 
+class _OperateFields(TypedDict):
+    """Keyword contract for one Driver operation execution."""
+
+    owner: str
+    execution_id: str
+    command: ExecutionCommand
+    transport: str
+
+
 def build_execution_context(
     record: ExecutionReservationRecord,
     spec: PublicAgentSpec,
@@ -395,12 +404,12 @@ class ExecutionRuntime:
     async def _operate(
         self,
         operation: DriverOperation,
-        *,
-        owner: str,
-        execution_id: str,
-        command: ExecutionCommand,
-        transport: str,
+        **fields: Unpack[_OperateFields],
     ) -> DriverOutcome:
+        owner = fields["owner"]
+        execution_id = fields["execution_id"]
+        command = fields["command"]
+        transport = fields["transport"]
         if command.action_id is None or command.expected_revision is None:
             raise ExecutionRuntimeError("operation_identity_required")
         record = self._reservations.get(owner=owner, execution_id=execution_id)

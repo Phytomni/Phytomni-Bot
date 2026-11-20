@@ -11,7 +11,7 @@ import sqlite3
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
-from typing import Any, Unpack
+from typing import Any, TypedDict, Unpack
 
 from ..public_agent_catalog import public_agent_spec
 from ..storage.path_policy import IdFactory
@@ -65,25 +65,30 @@ class ExecutionReservationNotFoundError(LookupError):
     """The owner-scoped execution binding does not exist."""
 
 
+class _ReservationRepositorySettings(TypedDict, total=False):
+    """Optional construction settings for the reservation repository."""
+
+    run_id_factory: Callable[[], str] | None
+    root_span_id_factory: Callable[[], str] | None
+    clock: Callable[[], datetime] | None
+    expected_provider_join_lease_token: str | None
+
+
 class SQLiteExecutionReservationRepository:
     """Transactional execution/root-run binding in the shared registry DB."""
 
     def __init__(
         self,
         db_path: str,
-        *,
-        run_id_factory: Callable[[], str] | None = None,
-        root_span_id_factory: Callable[[], str] | None = None,
-        clock: Callable[[], datetime] | None = None,
-        expected_provider_join_lease_token: str | None = None,
+        **settings: Unpack[_ReservationRepositorySettings],
     ) -> None:
         self.db_path = db_path
-        self._run_id_factory = run_id_factory
-        self._root_span_id_factory = root_span_id_factory
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._run_id_factory = settings.get("run_id_factory")
+        self._root_span_id_factory = settings.get("root_span_id_factory")
+        self._clock = settings.get("clock") or (lambda: datetime.now(UTC))
         self._expected_provider_join_lease_token = (
             validate_provider_join_lease_token(
-                expected_provider_join_lease_token
+                settings.get("expected_provider_join_lease_token")
             )
         )
         registry_module = import_module(".run_registry", __package__)
@@ -92,7 +97,7 @@ class SQLiteExecutionReservationRepository:
             db_path,
             clock=lambda: self._clock().isoformat(),
             expected_provider_join_lease_token=(
-                expected_provider_join_lease_token
+                settings.get("expected_provider_join_lease_token")
             ),
         )
 

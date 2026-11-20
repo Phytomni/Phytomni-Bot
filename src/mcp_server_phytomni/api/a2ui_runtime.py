@@ -402,6 +402,7 @@ def _prepare_chat_stream(
     runtime_run_id: str,
 ) -> _StreamContext:
     """Prepare a Chat A2UI graph on the Runtime-reserved run."""
+    del payload, user_query
     owner = dependencies.persistence.current_user() or "anonymous"
     try:
         graph = dependencies.graphs.chat_graph()
@@ -430,6 +431,7 @@ def _prepare_review_stream(
     runtime_run_id: str,
 ) -> _StreamContext:
     """Prepare a Review A2UI graph on the Runtime-reserved run."""
+    del payload, user_query
     owner = dependencies.persistence.current_user() or "anonymous"
     try:
         args = dependencies.graphs.validate_review(arguments)

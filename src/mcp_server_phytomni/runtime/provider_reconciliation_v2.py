@@ -79,6 +79,16 @@ class _ProviderReconcilerFields(TypedDict):
     clock: NotRequired[Callable[[], datetime] | None]
 
 
+class _ProviderCallbackFields(TypedDict):
+    """Keyword contract for one provider callback observation."""
+
+    owner: str
+    execution_id: str
+    provider_kind: str
+    provider_task_id: str
+    observation: ProviderObservation
+
+
 @dataclass(frozen=True, slots=True)
 class _ProviderTraceConfig:
     pollers: Mapping[str, ProviderTracePoller]
@@ -138,23 +148,18 @@ class ProviderReconciler:
 
     def observe_callback(
         self,
-        *,
-        owner: str,
-        execution_id: str,
-        provider_kind: str,
-        provider_task_id: str,
-        observation: ProviderObservation,
+        **fields: Unpack[_ProviderCallbackFields],
     ) -> bool:
         """Callback acceleration using the same revision/idempotency rules."""
         unit = self._work.find_work_unit_by_provider_task_id(
-            execution_id,
-            provider_task_id,
-            owner=owner,
-            provider_kind=provider_kind,
+            fields["execution_id"],
+            fields["provider_task_id"],
+            owner=fields["owner"],
+            provider_kind=fields["provider_kind"],
         )
         if unit is None:
             return False
-        return self._commit(unit, observation)
+        return self._commit(unit, fields["observation"])
 
     def _commit(
         self,

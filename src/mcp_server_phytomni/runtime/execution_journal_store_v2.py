@@ -86,6 +86,24 @@ class ProviderTraceBatchKwargs(TypedDict):
     intents: tuple[ExecutionEventIntentV2, ...]
 
 
+class _JournalSettings(TypedDict, total=False):
+    """Optional construction settings for the SQLite journal."""
+
+    event_id_factory: Callable[[], str] | None
+    clock: Callable[[], str] | None
+    limits: ExecutionEventLimits
+    expected_provider_join_lease_token: str | None
+
+
+class _CoalescedProgressFields(TypedDict):
+    """Keyword contract for progress coalescing inside one write."""
+
+    owner: str
+    execution_id: str
+    intent: ExecutionEventIntentV2
+    occurred_at: str
+
+
 @dataclass(frozen=True, slots=True)
 class _ProviderTraceCheckpoint:
     """Private provider cursor state committed beside public facts."""
@@ -209,17 +227,17 @@ class SQLiteExecutionJournal:
     def __init__(
         self,
         db_path: str,
-        *,
-        event_id_factory: Callable[[], str] | None = None,
-        clock: Callable[[], str] | None = None,
-        limits: ExecutionEventLimits = DEFAULT_EXECUTION_EVENT_LIMITS,
-        expected_provider_join_lease_token: str | None = None,
+        **settings: Unpack[_JournalSettings],
     ) -> None:
         self.db_path = db_path
-        self._settings = event_store_settings(event_id_factory, clock, limits)
+        self._settings = event_store_settings(
+            settings.get("event_id_factory"),
+            settings.get("clock"),
+            settings.get("limits", DEFAULT_EXECUTION_EVENT_LIMITS),
+        )
         self._expected_provider_join_lease_token = (
             validate_provider_join_lease_token(
-                expected_provider_join_lease_token
+                settings.get("expected_provider_join_lease_token")
             )
         )
         initialize_execution_v2_store(self.db_path, configure_journal=True)
@@ -351,10 +369,10 @@ class SQLiteExecutionJournal:
         occurred_at = self._settings.clock()
         coalesced = self._coalesced_progress(
             connection,
-            owner,
-            execution_id,
-            intent,
-            occurred_at,
+            owner=owner,
+            execution_id=execution_id,
+            intent=intent,
+            occurred_at=occurred_at,
         )
         if coalesced is not None:
             self._save_idempotency_alias(
@@ -522,11 +540,12 @@ class SQLiteExecutionJournal:
     def _coalesced_progress(
         self,
         connection: sqlite3.Connection,
-        owner: str,
-        execution_id: str,
-        intent: ExecutionEventIntentV2,
-        occurred_at: str,
+        **fields: Unpack[_CoalescedProgressFields],
     ) -> ExecutionEventV2 | None:
+        owner = fields["owner"]
+        execution_id = fields["execution_id"]
+        intent = fields["intent"]
+        occurred_at = fields["occurred_at"]
         if intent.type not in {
             ExecutionEventType.SPAN_PROGRESS,
             ExecutionEventType.WORK_UNIT_PROGRESS,

@@ -19,21 +19,25 @@ from .execution_provider_join_store_v2 import ProviderJoinLeaseRepositoryMixin
 from .execution_store_support_v2 import execution_is_live
 from .execution_work_models_v2 import (
     CancellationState,
+    CancellationStateUpdateFields,
     ExecutionWorkConflictError,
     ExecutionWorkInvariantError,
     ExecutionWorkNotFoundError,
     Identifier,
     JoinPolicy,
+    LeaseReleaseFields,
     MissingOrConflictFields,
     ProviderBindingFields,
     ProviderTraceHealth,
     ProviderTraceStateFields,
     SpanRecord,
     SpanSpec,
+    SpanStatusUpdateFields,
     WorkLeaseClaimFields,
     WorkRetryFields,
     WorkUnitRecord,
     WorkUnitSpec,
+    WorkUnitStatusUpdateFields,
     WorkUnitUpdateFields,
 )
 from .execution_work_status_v2 import TERMINAL_WORK_UNIT_VALUES
@@ -163,13 +167,10 @@ class SQLiteExecutionWorkRepository(ProviderJoinLeaseRepositoryMixin):
         self,
         execution_id: str,
         span_id: str,
-        *,
-        owner: str,
-        status: SpanStatus | str,
-        expected_revision: int,
+        **fields: Unpack[SpanStatusUpdateFields],
     ) -> SpanRecord:
         """CAS-update span status and its lifecycle timestamps."""
-        status = SpanStatus(status)
+        status = SpanStatus(fields["status"])
         now = self._clock().isoformat()
         terminal = status in {
             SpanStatus.SUCCEEDED,
@@ -181,7 +182,7 @@ class SQLiteExecutionWorkRepository(ProviderJoinLeaseRepositoryMixin):
         }
         with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
-            self._authorize(connection, owner, execution_id)
+            self._authorize(connection, fields["owner"], execution_id)
             result = connection.execute(
                 "UPDATE execution_spans SET status = ?, "
                 "started_at = CASE WHEN ? = 'running' "
@@ -197,10 +198,10 @@ class SQLiteExecutionWorkRepository(ProviderJoinLeaseRepositoryMixin):
                     now,
                     terminal,
                     now,
-                    owner,
+                    fields["owner"],
                     execution_id,
                     span_id,
-                    expected_revision,
+                    fields["expected_revision"],
                 ),
             )
             if result.rowcount != 1:
@@ -208,12 +209,12 @@ class SQLiteExecutionWorkRepository(ProviderJoinLeaseRepositoryMixin):
                     connection,
                     table="execution_spans",
                     id_column="span_id",
-                    owner=owner,
+                    owner=fields["owner"],
                     execution_id=execution_id,
                     identity=span_id,
                 )
             connection.commit()
-        return self.get_span(execution_id, span_id, owner=owner)
+        return self.get_span(execution_id, span_id, owner=fields["owner"])
 
     def create_work_unit(self, spec: WorkUnitSpec) -> WorkUnitRecord:
         """Create an idempotent logical unit under an existing parent span."""
@@ -400,13 +401,11 @@ class SQLiteExecutionWorkRepository(ProviderJoinLeaseRepositoryMixin):
         self,
         execution_id: str,
         work_unit_id: str,
-        *,
-        owner: str,
-        status: WorkUnitStatus | str,
-        expected_revision: int,
+        **fields: Unpack[WorkUnitStatusUpdateFields],
     ) -> WorkUnitRecord:
         """CAS-update the current state of one logical work unit."""
-        status = WorkUnitStatus(status)
+        owner = fields["owner"]
+        status = WorkUnitStatus(fields["status"])
         now = self._clock().isoformat()
         with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -416,7 +415,7 @@ class SQLiteExecutionWorkRepository(ProviderJoinLeaseRepositoryMixin):
                 owner=owner,
                 execution_id=execution_id,
                 work_unit_id=work_unit_id,
-                expected_revision=expected_revision,
+                expected_revision=fields["expected_revision"],
                 updates={"status": status.value},
                 updated_at=now,
             )
@@ -475,12 +474,10 @@ class SQLiteExecutionWorkRepository(ProviderJoinLeaseRepositoryMixin):
         self,
         execution_id: str,
         work_unit_id: str,
-        *,
-        owner: str,
-        worker_id: str,
-        expected_revision: int,
+        **fields: Unpack[LeaseReleaseFields],
     ) -> WorkUnitRecord:
         """Release only a lease currently owned at the expected revision."""
+        owner = fields["owner"]
         now = self._clock().isoformat()
         with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -495,8 +492,8 @@ class SQLiteExecutionWorkRepository(ProviderJoinLeaseRepositoryMixin):
                     owner,
                     execution_id,
                     work_unit_id,
-                    worker_id,
-                    expected_revision,
+                    fields["worker_id"],
+                    fields["expected_revision"],
                 ),
             )
             if result.rowcount != 1:
@@ -643,12 +640,10 @@ class SQLiteExecutionWorkRepository(ProviderJoinLeaseRepositoryMixin):
         self,
         execution_id: str,
         work_unit_id: str,
-        *,
-        owner: str,
-        state: CancellationState,
-        expected_revision: int,
+        **fields: Unpack[CancellationStateUpdateFields],
     ) -> WorkUnitRecord:
         """CAS-update the finite cancellation outcome for a work unit."""
+        owner = fields["owner"]
         now = self._clock().isoformat()
         with sqlite_transaction(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -657,8 +652,8 @@ class SQLiteExecutionWorkRepository(ProviderJoinLeaseRepositoryMixin):
                 owner=owner,
                 execution_id=execution_id,
                 work_unit_id=work_unit_id,
-                expected_revision=expected_revision,
-                updates={"cancellation_state": state},
+                expected_revision=fields["expected_revision"],
+                updates={"cancellation_state": fields["state"]},
                 updated_at=now,
             )
             connection.commit()

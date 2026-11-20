@@ -20,17 +20,17 @@ from .execution_journal_store_v2 import ExecutionJournal
 from .execution_journal_v2 import (
     ExecutionStatus,
     PublicTargetKind,
-    SpanStatus,
     TrackingHealth,
-    WorkUnitStatus,
 )
 from .execution_work_store_v2 import (
-    CancellationState,
+    CancellationStateUpdateFields,
     ProviderBindingFields,
     SpanRecord,
     SpanSpec,
+    SpanStatusUpdateFields,
     WorkUnitRecord,
     WorkUnitSpec,
+    WorkUnitStatusUpdateFields,
 )
 
 CancellationOutcome = Literal[
@@ -407,10 +407,7 @@ class ExecutionWorkService(Protocol):
         self,
         execution_id: str,
         span_id: str,
-        *,
-        owner: str,
-        status: SpanStatus | str,
-        expected_revision: int,
+        **fields: Unpack[SpanStatusUpdateFields],
     ) -> SpanRecord:
         """CAS-update one span lifecycle state."""
         raise NotImplementedError
@@ -433,10 +430,7 @@ class ExecutionWorkService(Protocol):
         self,
         execution_id: str,
         work_unit_id: str,
-        *,
-        owner: str,
-        status: WorkUnitStatus | str,
-        expected_revision: int,
+        **fields: Unpack[WorkUnitStatusUpdateFields],
     ) -> WorkUnitRecord:
         """CAS-update one work-unit lifecycle state."""
         raise NotImplementedError
@@ -465,10 +459,7 @@ class ExecutionWorkService(Protocol):
         self,
         execution_id: str,
         work_unit_id: str,
-        *,
-        owner: str,
-        state: CancellationState,
-        expected_revision: int,
+        **fields: Unpack[CancellationStateUpdateFields],
     ) -> WorkUnitRecord:
         """CAS-update the finite cancellation state."""
         raise NotImplementedError

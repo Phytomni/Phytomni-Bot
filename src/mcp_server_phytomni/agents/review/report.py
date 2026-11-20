@@ -20,7 +20,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypedDict, Unpack
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack, cast
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
@@ -155,6 +155,13 @@ _SUPPLEMENTARY_SCOPE_FIELDS = (
     "seen_identities",
     "query_terms",
 )
+_SUPPLEMENTARY_CONTEXT_FIELDS = (
+    "subtopic_idx",
+    "add_queries",
+    "add_query_results",
+    "add_doc_list",
+    "draft_content",
+)
 
 
 def _supplementary_evidence_scope(
@@ -202,24 +209,37 @@ class SupplementaryResultContext:
 
     def __init__(
         self,
-        subtopic_idx: int,
-        add_queries: list[Any],
-        add_query_results: list[Any],
-        add_doc_list: list[dict[str, Any]],
-        draft_content: str,
-        *scope_values: Any,
-        **scope_options: Unpack[_SupplementaryScopeOptions],
+        *values: Any,
+        **options: Any,
     ) -> None:
         """Build formatting context with a compact evidence-scope value."""
-        object.__setattr__(self, "subtopic_idx", subtopic_idx)
-        object.__setattr__(self, "add_queries", add_queries)
-        object.__setattr__(self, "add_query_results", add_query_results)
-        object.__setattr__(self, "add_doc_list", add_doc_list)
-        object.__setattr__(self, "draft_content", draft_content)
+        context: dict[str, Any] = {}
+        for index, name in enumerate(_SUPPLEMENTARY_CONTEXT_FIELDS):
+            if index < len(values):
+                if name in options:
+                    raise TypeError(f"multiple values for argument '{name}'")
+                context[name] = values[index]
+            elif name in options:
+                context[name] = options.pop(name)
+            else:
+                raise TypeError(f"missing required argument '{name}'")
+        scope_values = values[5:]
+        object.__setattr__(self, "subtopic_idx", context["subtopic_idx"])
+        object.__setattr__(self, "add_queries", context["add_queries"])
+        object.__setattr__(
+            self,
+            "add_query_results",
+            context["add_query_results"],
+        )
+        object.__setattr__(self, "add_doc_list", context["add_doc_list"])
+        object.__setattr__(self, "draft_content", context["draft_content"])
         object.__setattr__(
             self,
             "_scope",
-            _supplementary_evidence_scope(scope_values, scope_options),
+            _supplementary_evidence_scope(
+                scope_values,
+                cast(_SupplementaryScopeOptions, options),
+            ),
         )
 
     @property
