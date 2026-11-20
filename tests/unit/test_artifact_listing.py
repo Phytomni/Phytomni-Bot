@@ -386,3 +386,147 @@ def test_obsfs_enumeration_confines_to_requested_tenant_prefix(tmp_path):
 
     assert paths == ["/obs/phytomni/agent_data/user_data/ua/run0/mine.png"]
     assert all("/ub/" not in path for path in paths)
+
+
+@pytest.mark.asyncio
+async def test_runtime_paths_and_objects_cover_page_and_prefix_edges(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Runtime listing pages stop at limits and reject foreign prefixes."""
+
+    async def run(_profile, operation):
+        """Run the supplied operation against a fake client."""
+        return operation(object())
+
+    runtime = SimpleNamespace(run=run)
+
+    monkeypatch.setattr(
+        artifact_listing,
+        "list_object_metadata_page",
+        lambda *_args, **_kwargs: (
+            [
+                artifact_listing.ObsListedObject(
+                    "agent_data/u1/other/secret.csv", None
+                ),
+                artifact_listing.ObsListedObject(
+                    "agent_data/u1/run0/result.csv", None
+                ),
+            ],
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        artifact_listing, "object_size", lambda *_args, **_kwargs: 11
+    )
+    objects = await artifact_listing.list_artifact_objects_with_runtime(
+        "/obs/phytomni/agent_data/u1/run0",
+        bucket_name="phytomni",
+        obs_runtime=runtime,
+        mount_root=str(tmp_path),
+    )
+    assert [(item.relative_path, item.size_bytes) for item in objects] == [
+        ("result.csv", 11)
+    ]
+    with pytest.raises(ValueError, match="positive"):
+        await artifact_listing.list_artifact_objects_with_runtime(
+            "/obs/phytomni/agent_data/u1/run0",
+            bucket_name="phytomni",
+            obs_runtime=runtime,
+            mount_root=str(tmp_path),
+            limit=0,
+        )
+
+    pages = iter(
+        [
+            (["agent_data/u1/run0/a.txt"], "next"),
+            (["agent_data/u1/run0/b.txt"], None),
+        ]
+    )
+    monkeypatch.setattr(
+        artifact_listing,
+        "list_object_keys_page",
+        lambda *_args, **_kwargs: next(pages),
+    )
+    paths = await artifact_listing.list_artifact_paths_with_runtime(
+        "/obs/phytomni/agent_data/u1/run0",
+        bucket_name="phytomni",
+        obs_runtime=runtime,
+        mount_root=str(tmp_path),
+        limit=2,
+    )
+    assert paths == [
+        "/obs/phytomni/agent_data/u1/run0/a.txt",
+        "/obs/phytomni/agent_data/u1/run0/b.txt",
+    ]
+
+
+def test_artifact_key_limit_and_bounded_mount_walk(tmp_path: Path) -> None:
+    """Cover unlimited, capped, and nested mounted-file enumeration."""
+    extend_keys = getattr(artifact_listing, "_extend_keys_up_to_limit")
+    iter_files = getattr(artifact_listing, "_iter_obsfs_files_bounded")
+    keys = ["a"]
+    assert extend_keys(keys, ["b"], None) is False
+    assert keys == ["a", "b"]
+    assert extend_keys(keys, ["c", "d"], 3)
+    assert keys == ["a", "b", "c"]
+    assert extend_keys(keys, ["d"], 3)
+
+    directory = tmp_path / "bucket" / "run"
+    (directory / "nested").mkdir(parents=True)
+    (directory / "nested" / "value.txt").write_text("value")
+    (directory / "skip").mkdir()
+    (directory / "skip" / "child.txt").write_text("child")
+    bounded = list(iter_files(directory))
+    assert [path.name for path in bounded] == ["value.txt", "child.txt"]
+
+
+def test_sdk_key_pagination_stops_at_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The synchronous SDK key helper consumes markers only to the cap."""
+    pages = iter(
+        [
+            (["agent_data/u1/run0/a.txt"], "next"),
+            (["agent_data/u1/run0/b.txt"], None),
+        ]
+    )
+    monkeypatch.setattr(
+        artifact_listing,
+        "list_object_keys_page",
+        lambda *_args, **_kwargs: next(pages),
+    )
+    list_sdk_keys = getattr(artifact_listing, "_list_sdk_keys")
+    keys = list_sdk_keys(
+        "phytomni",
+        "agent_data/u1/run0",
+        access=artifact_listing.ObsAccessOptions(client=object()),
+        limit=2,
+    )
+    assert keys == [
+        "agent_data/u1/run0/a.txt",
+        "agent_data/u1/run0/b.txt",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_path_listing_uses_mounted_limit(tmp_path: Path) -> None:
+    """Runtime path listing keeps the mounted branch and hard cap."""
+    directory = tmp_path / "phytomni" / "agent_data" / "u1" / "run0"
+    directory.mkdir(parents=True)
+    (directory / "a.txt").write_text("a")
+    (directory / "b.txt").write_text("b")
+
+    async def run(_profile, operation):
+        """Run the supplied operation against a fake client."""
+        return operation(object())
+
+    runtime = SimpleNamespace(run=run)
+
+    paths = await artifact_listing.list_artifact_paths_with_runtime(
+        "/obs/phytomni/agent_data/u1/run0",
+        bucket_name="phytomni",
+        obs_runtime=runtime,
+        mount_root=str(tmp_path),
+        limit=1,
+    )
+    assert len(paths) == 1
