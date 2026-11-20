@@ -38,6 +38,7 @@ classifiers = [
 ]
 dependencies = [
     "a2a-sdk[fastapi]>=1.1,<1.2",
+    "anyio>=4.14.0",
     "asyncpg>=0.30.0",
     "cryptography>=42.0.0",
     "esdk-obs-python>=3.26.2",

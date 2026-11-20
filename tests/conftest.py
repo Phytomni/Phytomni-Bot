@@ -65,6 +65,20 @@ TEST_LAYER_MARKERS = {
 }
 
 
+@pytest.fixture(scope="session")
+def event_loop_policy() -> Iterator[asyncio.AbstractEventLoopPolicy]:
+    """Own the bootstrap loop restored by pytest-asyncio after each test."""
+    policy = asyncio.get_event_loop_policy()
+    bootstrap_loop = policy.new_event_loop()
+    policy.set_event_loop(bootstrap_loop)
+    try:
+        yield policy
+    finally:
+        policy.set_event_loop(None)
+        if not bootstrap_loop.is_closed():
+            bootstrap_loop.close()
+
+
 def _env_flag_enabled(name: str) -> bool:
     """Verify env flag enabled."""
     value = os.environ.get(name, "")
